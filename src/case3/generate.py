@@ -1,16 +1,16 @@
-"""Generate .tex from job folder (content.txt + images/) via Qwen API."""
+"""Generate .tex from a text file (text-to-text LLM only)."""
 
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 
-from case3.llm_client import LLMClient, LLMConfig, image_data_url
+from case3.llm_client import LLMClient, LLMConfig
 from case3.tex_utils import extract_tex
 
 log = logging.getLogger("case3.generate")
-
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 def _pkg_file(*parts: str) -> Path:
@@ -48,74 +48,57 @@ def load_gold_appendix(gold_dir: Path, *, max_chars: int = 12000) -> str:
     )
 
 
-def find_job_text(job_dir: Path) -> Path:
-    for name in ("content.txt", "content.md", "input.txt", "text.txt"):
-        p = job_dir / name
-        if p.is_file():
-            return p
-    txts = sorted(job_dir.glob("*.txt")) + sorted(job_dir.glob("*.md"))
-    if not txts:
-        raise FileNotFoundError(f"no .txt/.md in {job_dir}")
-    return txts[0]
+def resolve_text_file(path: Path) -> Path:
+    """Accept a .txt/.md file, or a job folder with content.txt."""
+    path = path.resolve()
+    if path.is_file():
+        if path.suffix.lower() not in {".txt", ".md"}:
+            raise ValueError(f"expected .txt/.md file, got: {path}")
+        return path
+    if path.is_dir():
+        for name in ("content.txt", "content.md", "input.txt", "text.txt"):
+            p = path / name
+            if p.is_file():
+                return p
+        txts = sorted(path.glob("*.txt")) + sorted(path.glob("*.md"))
+        if txts:
+            return txts[0]
+        raise FileNotFoundError(f"no .txt/.md in {path}")
+    raise FileNotFoundError(path)
 
 
-def find_images(job_dir: Path) -> list[Path]:
-    dirs = [job_dir / "images", job_dir / "attachments", job_dir]
-    seen: set[Path] = set()
-    out: list[Path] = []
-    for d in dirs:
-        if not d.is_dir():
-            continue
-        for p in sorted(d.iterdir()):
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTS and p.resolve() not in seen:
-                # skip if sitting next to content and we already have images/
-                if d == job_dir and (job_dir / "images").is_dir():
-                    continue
-                seen.add(p.resolve())
-                out.append(p)
-    return out
-
-
-def build_user_prompt(text: str, image_names: list[str]) -> str:
-    lines = [
-        "Convert the following source material into ONE complete XeLaTeX article.",
-        "Use the skeleton rules from the system prompt (DejaVu, polyglossia russian).",
-        "Return ONLY LaTeX (or a single ```latex fence). No commentary.",
-        "",
-        "## Source text",
-        text.strip(),
-    ]
-    if image_names:
-        lines += [
+def build_user_prompt(text: str) -> str:
+    return "\n".join(
+        [
+            "Convert the following source text into ONE complete XeLaTeX article.",
+            "Use the skeleton rules from the system prompt (DejaVu, polyglossia russian).",
+            "Return ONLY LaTeX (or a single ```latex fence). No commentary.",
+            "Do NOT include \\includegraphics or invent images — text only.",
             "",
-            "## Available image files (use these exact relative paths under images/)",
-            *[f"- images/{name}" for name in image_names],
-            "Include each relevant image with \\includegraphics and \\caption / \\label.",
+            "## Source text",
+            text.strip(),
         ]
-    return "\n".join(lines)
+    )
 
 
 def generate_tex(
-    job_dir: Path,
+    source: Path,
     *,
     out_tex: Path,
     gold_dir: Path | None = None,
     client: LLMClient | None = None,
     dry_run: bool = False,
 ) -> Path:
-    job_dir = job_dir.resolve()
-    text_path = find_job_text(job_dir)
+    text_path = resolve_text_file(source)
     text = text_path.read_text(encoding="utf-8")
-    images = find_images(job_dir)
-    image_names = [p.name for p in images]
+    stem = text_path.stem
 
     system = load_system_prompt()
     if gold_dir is None:
         gold_dir = Path(__file__).resolve().parents[2] / "gold"
     system = system + load_gold_appendix(gold_dir)
-
-    user = build_user_prompt(text, image_names)
-    log.info("job=%s text=%s images=%d", job_dir.name, text_path.name, len(images))
+    user = build_user_prompt(text)
+    log.info("source=%s (%d chars) text-to-text only", text_path, len(text))
 
     if dry_run:
         stub = _pkg_file("templates", "article_skeleton.tex")
@@ -130,11 +113,21 @@ def generate_tex(
 
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
-    urls = [image_data_url(p, max_long_edge=cfg.max_long_edge) for p in images]
-    raw = llm.complete(system=system, user_text=user, image_urls=urls)
+    # text-to-text: no images in the request
+    raw = llm.complete(system=system, user_text=user, image_urls=())
     tex = extract_tex(raw)
     out_tex.parent.mkdir(parents=True, exist_ok=True)
     out_tex.write_text(tex, encoding="utf-8")
-    (out_tex.parent / "raw_model.txt").write_text(raw, encoding="utf-8")
+    (out_tex.parent / f"{stem}.raw_model.txt").write_text(raw, encoding="utf-8")
     log.info("wrote %s (%d chars)", out_tex, len(tex))
     return out_tex
+
+
+def stage_text_as_job(text_file: Path, work_dir: Path) -> Path:
+    """Copy a root-level .txt into a mini job folder (for consistent naming)."""
+    text_file = resolve_text_file(text_file)
+    job = work_dir
+    job.mkdir(parents=True, exist_ok=True)
+    dest = job / "content.txt"
+    shutil.copy2(text_file, dest)
+    return job

@@ -1,4 +1,4 @@
-"""Full pipeline: job dir → LLM .tex → PDF/DOCX + logs."""
+"""Full pipeline: text file → LLM .tex → PDF/DOCX + logs."""
 
 from __future__ import annotations
 
@@ -9,24 +9,26 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from case3.generate import find_images, generate_tex
+from case3.generate import generate_tex, resolve_text_file
 from case3.render import render_tex
 
 log = logging.getLogger("case3.pipeline")
 
 
-def run_job(
-    job_dir: Path,
+def run_pipeline(
+    source: Path,
     *,
     project_root: Path,
     formats: set[str] | None = None,
     dry_run: bool = False,
 ) -> Path:
+    """`source` = path to .txt/.md (or job folder with content.txt)."""
     formats = formats or {"pdf", "docx"}
-    job_dir = job_dir.resolve()
     root = project_root.resolve()
+    text_path = resolve_text_file(source)
+    stem = text_path.stem
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_id = f"{job_dir.name}_{stamp}"
+    run_id = f"{stem}_{stamp}"
 
     work = root / "work" / run_id
     out = root / "out" / run_id
@@ -43,40 +45,22 @@ def run_job(
 
     meta: dict = {
         "run_id": run_id,
-        "job_dir": str(job_dir),
+        "source": str(text_path),
         "formats": sorted(formats),
         "dry_run": dry_run,
+        "mode": "text-to-text",
         "started_at": stamp,
     }
 
     try:
-        tex_path = work / f"{job_dir.name}.tex"
-        generate_tex(
-            job_dir,
-            out_tex=tex_path,
-            gold_dir=root / "gold",
-            dry_run=dry_run,
-        )
-        # stage images next to tex for latexmk
-        images = find_images(job_dir)
-        img_dst = work / "images"
-        if images:
-            img_dst.mkdir(exist_ok=True)
-            for p in images:
-                shutil.copy2(p, img_dst / p.name)
-
+        tex_path = work / f"{stem}.tex"
+        generate_tex(text_path, out_tex=tex_path, gold_dir=root / "gold", dry_run=dry_run)
         shutil.copy2(tex_path, out / tex_path.name)
-        if img_dst.is_dir():
-            if (out / "images").exists():
-                shutil.rmtree(out / "images")
-            shutil.copytree(img_dst, out / "images")
+        raw = work / f"{stem}.raw_model.txt"
+        if raw.is_file():
+            shutil.copy2(raw, out / raw.name)
 
-        artifacts = render_tex(
-            tex_path,
-            out_dir=out,
-            formats=formats,
-            asset_dirs=[img_dst] if img_dst.is_dir() else [],
-        )
+        artifacts = render_tex(tex_path, out_dir=out, formats=formats, asset_dirs=[])
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
     except Exception as exc:
@@ -94,3 +78,8 @@ def run_job(
 
     log.info("done run_id=%s out=%s", run_id, out)
     return out
+
+
+# backward alias
+def run_job(*args, **kwargs):
+    return run_pipeline(*args, **kwargs)

@@ -1,111 +1,103 @@
 # case-3
 
-**Text + images → Qwen (OpenAI-compatible API) → LaTeX → PDF/DOCX** in Docker.
+**Текст → Qwen (text-to-text) → LaTeX → PDF/DOCX** в Docker.
 
-Same API style as [bam-bam-bam](https://github.com/Borisserz/bam-bam-bam): `POST {VISION_API_BASE_URL}/v1/chat/completions` (text and/or `data:image;base64`).
+Модель **не** генерирует картинки. Только LaTeX-код, потом `latexmk` / `pandoc`.
 
-Target OS for daily use: **Windows + Docker Desktop** (also works on macOS/Linux).
+API как в bam-bam-bam: `POST {VISION_API_BASE_URL}/v1/chat/completions` (без image в запросе).
 
-## Architecture
+## Как прогнать (главное)
 
-```
-in/jobs/<name>/
-  content.txt      →  LLM (Qwen)  →  work/…/*.tex  →  docker case-3:tex
-  images/*.png                                         latexmk → PDF
-                                                       pandoc  → DOCX
-                         ↓
-                    out/<run_id>/   logs/<run_id>/
-```
-
-## Windows setup (work PC)
+1. Положи текстовый файл в корень проекта, например `notes.txt`.
+2. Запусти:
 
 ```cmd
-git clone https://github.com/Borisserz/case-3.git
-cd case-3
-git pull
-scripts\setup-windows.cmd
+scripts\run.cmd notes.txt
 ```
 
-Needs **Python 3.9+ on PATH** (`python --version` works). The setup script prefers `python`, not a fixed `py -3.11`.
-
-Edit `.env`:
-
-```env
-VISION_API_BASE_URL=http://192.168.x.x:8080
-```
-
-(Same host you use for bam-bam-bam vision.)
-
-### Run
+Только PDF или только Word:
 
 ```cmd
-REM without API (skeleton tex → PDF/DOCX) — smoke test
-scripts\run-pipeline.cmd in\jobs\demo --dry-run
-
-REM with Qwen
-scripts\run-pipeline.cmd in\jobs\demo
+scripts\run.cmd notes.txt pdf
+scripts\run.cmd notes.txt docx
 ```
 
-### Push outputs for remote debug
+Без API (проверка Docker/TeX):
 
-After a run (success or fail):
+```cmd
+scripts\run.cmd notes.txt both --dry-run
+```
+
+Результат: `out/<имя>_<время>/` — `.tex`, `.pdf`, `.docx`, `meta.json`.  
+Логи: `logs/<имя>_<время>/`.
+
+Отправить вывод на GitHub для удалённого дебага:
 
 ```cmd
 scripts\push-debug.cmd
 ```
 
-Pushes `out/` + `logs/` (+ `debug-bundle/<stamp>/`) to branch **`debug/runs`** on the private GitHub repo so Cursor can inspect logs remotely.
+## Скрипты (всего три для тебя)
+
+| Скрипт | Зачем |
+|--------|--------|
+| `scripts\setup.cmd` | **Один раз:** pip + `docker compose build` |
+| `scripts\run.cmd` | **Каждый день:** текст → модель → PDF/DOCX |
+| `scripts\push-debug.cmd` | Залить `out/` + `logs/` в ветку `debug/runs` |
+
+Остальные файлы в `scripts\` — вспомогательные (`_resolve-python.cmd`, `.sh` для Mac).
+
+## Первый запуск на Windows
+
+```cmd
+git clone https://github.com/Borisserz/case-3.git
+cd case-3
+scripts\setup.cmd
+```
+
+В `.env`:
+
+```env
+VISION_API_BASE_URL=http://192.168.x.x:8080
+```
 
 ## macOS / Linux
 
 ```bash
-cp .env.example .env
-python3 -m pip install -e . -r requirements.txt
+cp .env.example .env   # VISION_API_BASE_URL=...
+pip install -e .
 docker compose build
-make dry-run
-# make run   # needs API
+./scripts/run.sh notes.txt
 ./scripts/push-debug.sh
 ```
 
-## Job layout
+Или: `python -m case3.cli run notes.txt --format both`
+
+## Что внутри
 
 ```
-in/jobs/myreport/
-  content.txt          # required (or .md)
-  images/
-    chart.png          # optional; referenced as images/chart.png in TeX
+notes.txt  →  LLM пишет .tex  →  docker case-3:tex  →  PDF + DOCX
 ```
 
-## Gold examples for the model
+- `gold/` — эталонные куски LaTeX для промпта  
+- `prompts/system_tex.md` — системный промпт (text-only)  
+- `Dockerfile` — lean XeLaTeX + Pandoc  
 
-See [`gold/`](gold/) — figures, tables, lists distilled from real reports (Prototip / CSIS style), adapted to the lean TeX image.
-
-## Manual TeX render (no LLM)
-
-```bash
-./bin/case-3 both in/example.tex
-```
-
-## Env vars
+## Env
 
 | Variable | Meaning |
 |----------|---------|
-| `VISION_API_BASE_URL` | Qwen / VLM base (required for real generate) |
-| `VISION_API_KEY` | optional Bearer |
-| `VISION_MODEL` | optional model id |
-| `CASE3_IMAGE` | Docker tag (default `case-3:tex`) |
+| `VISION_API_BASE_URL` | хост Qwen (обязателен для реальной генерации) |
+| `VISION_API_KEY` | optional |
+| `VISION_MODEL` | optional |
 
-## What is not in this repo
+## Гайд: Docker Desktop («Virtualization support not detected»)
 
-Dashboard, FastAPI, presentations, DB — later. This repo is the **output + LLM→TeX** slice.
+Если Docker пишет **Virtualization support not detected** / **Engine stopped**, образ не собрать без виртуализации.
 
-## Гайд: Docker Desktop на Windows («Virtualization support not detected»)
+### 1. Проверка
 
-Если Docker пишет **Virtualization support not detected** / **Engine stopped**, образ `case-3:tex` не собрать, пока не включена виртуализация.
-
-### 1. Проверка (~1 мин)
-
-PowerShell **от администратора**:
+PowerShell от администратора:
 
 ```powershell
 systeminfo | findstr /i "Hyper-V"
@@ -120,7 +112,7 @@ Get-ComputerInfo -Property "HyperV*"
 
 1. **Virtual Machine Platform**
 2. **Windows Subsystem for Linux**
-3. **Hyper-V** (если есть в редакции; на Home часто нет — хватит пунктов 1–2)
+3. **Hyper-V** (если есть; на Home часто нет)
 
 Перезагрузка, затем:
 
@@ -132,39 +124,13 @@ wsl --set-default-version 2
 
 ### 3. BIOS / UEFI
 
-1. Перезагрузка → вход в BIOS (`F2` / `Del` / `F10` — зависит от ПК).
-2. Включить:
-   - Intel: **Intel VT-x** / Virtualization Technology  
-   - AMD: **SVM Mode** / AMD-V  
-3. Save & Exit.
-
-Если пункты серые или BIOS под паролем — нужен **IT**: «включите VT-x/SVM для Docker Desktop / WSL2».
+Включить Intel **VT-x** или AMD **SVM**. Если BIOS под паролем — через IT.
 
 ### 4. После включения
-
-1. Запустить **Docker Desktop** — статус не «Engine stopped».
-2. Проверка:
 
 ```cmd
 docker version
 docker run --rm hello-world
-```
-
-3. В проекте:
-
-```cmd
 cd C:\Users\serjanovich\Projects\case-3
-git pull
-scripts\build-image.cmd
+scripts\setup.cmd
 ```
-
-### Если виртуализацию на рабочем ПК не дадут
-
-На этой машине можно только шаг LLM → `.tex`:
-
-```cmd
-python -m case3.cli generate in\jobs\demo -o work\demo.tex --dry-run
-scripts\push-debug.cmd
-```
-
-Сборку PDF/DOCX делать на ПК/Mac, где Docker уже работает.
