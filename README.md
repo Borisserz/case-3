@@ -20,10 +20,13 @@ in/jobs/<name>/
 ## Windows setup (work PC)
 
 ```cmd
-git clone <THIS_PRIVATE_REPO_URL> case-3
+git clone https://github.com/Borisserz/case-3.git
 cd case-3
+git pull
 scripts\setup-windows.cmd
 ```
+
+Needs **Python 3.9+ on PATH** (`python --version` works). The setup script prefers `python`, not a fixed `py -3.11`.
 
 Edit `.env`:
 

@@ -17,8 +17,8 @@ if "%JOB%"=="" set "JOB=in\jobs\demo"
 set "EXTRA="
 if /I "%~2"=="--dry-run" set "EXTRA=--dry-run"
 
-set "PY=python"
-where py >nul 2>&1 && set "PY=py -3.11"
+call "%~dp0_resolve-python.cmd"
+if errorlevel 1 exit /b 1
 
 echo Running pipeline: %JOB% %EXTRA%
 %PY% -m case3.cli run "%JOB%" --format both %EXTRA%
