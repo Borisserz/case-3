@@ -26,5 +26,5 @@ if errorlevel 1 (
   echo FAILED. See runs\logs\ then scripts\push-debug.cmd
   exit /b 1
 )
-echo OK → out\
+echo OK → runs\out\
 endlocal

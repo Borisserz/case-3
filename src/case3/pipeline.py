@@ -1,4 +1,4 @@
-"""intent+source → LLM tex+figure prompts → Kandinsky → inject → PDF/DOCX."""
+"""intent+source → LLM tex → Kandinsky + HTML charts → inject → PDF/DOCX."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+from case3.charts import generate_all_charts, max_charts_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
 from case3.kandinsky import KandinskyConfig, generate_all_figures
@@ -51,12 +52,13 @@ def run_pipeline(
         "formats": sorted(formats),
         "dry_run": dry_run,
         "max_images": max_images_from_env(),
+        "max_charts": max_charts_from_env(),
         "started_at": stamp,
     }
 
     try:
         tex_path = work / f"{stem}.tex"
-        _, figures = generate_document(
+        _, figures, charts = generate_document(
             text_path,
             out_tex=tex_path,
             intent=intent,
@@ -64,21 +66,34 @@ def run_pipeline(
             dry_run=dry_run,
         )
         meta["figures_planned"] = [f["id"] for f in figures]
+        meta["charts_planned"] = [c["id"] for c in charts]
 
         status: dict = {}
         figs_dir = work / "figures"
+
         if figures and not dry_run and max_images_from_env() > 0:
             cfg = KandinskyConfig.from_env()
             if not cfg.base_url:
                 log.warning("figures planned but KANDINSKY_API_BASE_URL empty — strip slots")
             else:
-                status = generate_all_figures(figures, figs_dir, cfg=cfg)
-        meta["figures_status"] = status
-        (work / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+                status.update(generate_all_figures(figures, figs_dir, cfg=cfg))
 
-        write_injected(tex_path, figures, status)
+        if charts and not dry_run and max_charts_from_env() > 0:
+            status.update(
+                generate_all_charts(
+                    charts,
+                    figs_dir,
+                    work_root=work / "chart_work",
+                )
+            )
 
-        # copy artifacts to out
+        meta["media_status"] = status
+        (work / "status.json").write_text(
+            json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        write_injected(tex_path, figures, status, charts=charts)
+
         shutil.copy2(tex_path, out / tex_path.name)
         for name in ("figures.json", "status.json", f"{stem}.raw_model.txt"):
             p = work / name

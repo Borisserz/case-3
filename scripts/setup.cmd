@@ -25,6 +25,12 @@ if not exist .env (
 %PY% -m pip install -e .
 if errorlevel 1 exit /b 1
 
+echo Installing Playwright Chromium (HTML charts)...
+%PY% -m playwright install chromium
+if errorlevel 1 (
+  echo WARNING: playwright chromium install failed — charts will be skipped until fixed.
+)
+
 echo Building case-3:tex ...
 docker compose build
 if errorlevel 1 exit /b 1

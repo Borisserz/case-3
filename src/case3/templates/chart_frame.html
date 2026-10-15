@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #ffffff; }
+    #mount {
+      width: 960px;
+      min-height: 540px;
+      padding: 24px;
+      box-sizing: border-box;
+      font-family: "DejaVu Sans", "Segoe UI", sans-serif;
+      color: #1a1a1a;
+    }
+    canvas { max-width: 100%; }
+    .kpi {
+      display: flex; flex-direction: column; justify-content: center;
+      min-height: 480px; text-align: center;
+    }
+    .kpi .value { font-size: 72px; font-weight: 700; color: #0b5fff; }
+    .kpi .label { font-size: 22px; color: #444; margin-top: 12px; }
+  </style>
+  <script src="{{CHART_JS}}"></script>
+</head>
+<body>
+  <div id="mount">
+{{FRAGMENT}}
+  </div>
+  <script>
+    // Fallback ready flag if snippet forgets it
+    setTimeout(function () {
+      if (typeof window.__CASE3_CHART_READY === "undefined") {
+        window.__CASE3_CHART_READY = true;
+      }
+    }, 800);
+  </script>
+</body>
+</html>

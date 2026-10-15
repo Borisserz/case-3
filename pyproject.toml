@@ -1,9 +1,11 @@
 [project]
 name = "case-3"
-version = "0.3.0"
-description = "Text → Qwen LaTeX → PDF/DOCX via Docker"
+version = "0.4.0"
+description = "Text → Qwen LaTeX + HTML charts → PDF/DOCX via Docker"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+  "playwright>=1.40",
+]
 
 [project.scripts]
 case3 = "case3.cli:main"
@@ -16,4 +18,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-case3 = ["templates/*.tex"]
+case3 = ["templates/*.tex", "templates/*.html"]
