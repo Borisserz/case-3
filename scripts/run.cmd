@@ -3,7 +3,10 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0.."
 
 if "%~1"=="" (
-  echo Usage: scripts\run.cmd notes.txt [pdf^|docx^|both] [--dry-run]
+  echo Usage:
+  echo   scripts\run.cmd notes.txt
+  echo   scripts\run.cmd notes.txt -p "сделай PDF с таблицами"
+  echo   scripts\run.cmd notes.txt pdf --dry-run
   exit /b 1
 )
 
@@ -17,15 +20,8 @@ if not defined PY where py >nul 2>&1 && for %%V in (3.13 3.12 3.11 3.10 3.9 3) d
 )
 if not defined PY (echo ERROR: Python 3.9+ not on PATH. & exit /b 1)
 
-set "INPUT=%~1"
-set "FMT=both"
-set "EXTRA="
-if not "%~2"=="" if /I not "%~2"=="--dry-run" set "FMT=%~2"
-if /I "%~2"=="--dry-run" set "EXTRA=--dry-run"
-if /I "%~3"=="--dry-run" set "EXTRA=--dry-run"
-
-echo === %INPUT% → %FMT% ===
-%PY% -m case3.cli run "%INPUT%" --format %FMT% %EXTRA%
+REM Forward all args to Python CLI
+%PY% -m case3.cli run %*
 if errorlevel 1 (
   echo FAILED. See logs\ then scripts\push-debug.cmd
   exit /b 1

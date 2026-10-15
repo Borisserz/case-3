@@ -1,4 +1,4 @@
-"""CLI: case3 run notes.txt → PDF/DOCX."""
+"""CLI: case3 run notes.txt --prompt "…" → PDF/DOCX (+ Kandinsky if enabled)."""
 
 from __future__ import annotations
 
@@ -19,22 +19,34 @@ def _root() -> Path:
     return Path.cwd()
 
 
+def _read_prompt(args: argparse.Namespace) -> str | None:
+    if getattr(args, "prompt_file", None):
+        return Path(args.prompt_file).read_text(encoding="utf-8")
+    if getattr(args, "prompt", None):
+        return args.prompt
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
         prog="case3",
-        description="Text → LaTeX (Qwen) → PDF/DOCX",
+        description="Text + intent → LaTeX (+ Kandinsky) → PDF/DOCX",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_run = sub.add_parser("run", help="notes.txt → LLM → PDF/DOCX")
-    p_run.add_argument("input", type=Path, help=".txt/.md in project root")
+    p_run = sub.add_parser("run", help="source.txt → LLM → PDF/DOCX")
+    p_run.add_argument("input", type=Path, help=".txt/.md source data")
+    p_run.add_argument("--prompt", "-p", default=None, help="Intent in natural language")
+    p_run.add_argument("--prompt-file", type=Path, default=None, help="Intent from file")
     p_run.add_argument("--format", choices=("pdf", "docx", "both"), default="both")
     p_run.add_argument("--dry-run", action="store_true")
 
-    p_gen = sub.add_parser("generate", help="Only LLM → .tex")
+    p_gen = sub.add_parser("generate", help="Only LLM → .tex (+ figures.json)")
     p_gen.add_argument("input", type=Path)
     p_gen.add_argument("-o", "--output", type=Path, default=None)
+    p_gen.add_argument("--prompt", "-p", default=None)
+    p_gen.add_argument("--prompt-file", type=Path, default=None)
     p_gen.add_argument("--dry-run", action="store_true")
 
     p_ren = sub.add_parser("render", help="Only .tex → PDF/DOCX")
@@ -51,16 +63,28 @@ def main(argv: list[str] | None = None) -> int:
             from case3.pipeline import run_pipeline
 
             fmt = {"pdf", "docx"} if args.format == "both" else {args.format}
-            out = run_pipeline(args.input, project_root=root, formats=fmt, dry_run=args.dry_run)
+            out = run_pipeline(
+                args.input,
+                project_root=root,
+                formats=fmt,
+                dry_run=args.dry_run,
+                intent=_read_prompt(args),
+            )
             print(out)
             return 0
 
         if args.cmd == "generate":
-            from case3.generate import generate_tex, resolve_text_file
+            from case3.generate import generate_document, resolve_text_file
 
             src = resolve_text_file(args.input)
             out = args.output or (root / "work" / f"{src.stem}.tex")
-            generate_tex(src, out_tex=out, gold_dir=root / "gold", dry_run=args.dry_run)
+            generate_document(
+                src,
+                out_tex=out,
+                intent=_read_prompt(args),
+                gold_dir=root / "gold",
+                dry_run=args.dry_run,
+            )
             print(out)
             return 0
 

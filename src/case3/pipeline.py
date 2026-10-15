@@ -1,4 +1,4 @@
-"""Text file → LLM .tex → PDF/DOCX + logs."""
+"""intent+source → LLM tex+figure prompts → Kandinsky → inject → PDF/DOCX."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from case3.generate import generate_tex, resolve_text_file
+from case3.generate import generate_document, max_images_from_env, resolve_text_file
+from case3.inject import write_injected
+from case3.kandinsky import KandinskyConfig, generate_all_figures
 from case3.render import render_tex
 
 log = logging.getLogger("case3.pipeline")
@@ -21,6 +23,7 @@ def run_pipeline(
     project_root: Path,
     formats: set[str] | None = None,
     dry_run: bool = False,
+    intent: str | None = None,
 ) -> Path:
     formats = formats or {"pdf", "docx"}
     root = project_root.resolve()
@@ -44,20 +47,55 @@ def run_pipeline(
     meta: dict = {
         "run_id": run_id,
         "source": str(text_path),
+        "intent": intent,
         "formats": sorted(formats),
         "dry_run": dry_run,
+        "max_images": max_images_from_env(),
         "started_at": stamp,
     }
 
     try:
         tex_path = work / f"{stem}.tex"
-        generate_tex(text_path, out_tex=tex_path, gold_dir=root / "gold", dry_run=dry_run)
-        shutil.copy2(tex_path, out / tex_path.name)
-        raw = work / f"{stem}.raw_model.txt"
-        if raw.is_file():
-            shutil.copy2(raw, out / raw.name)
+        _, figures = generate_document(
+            text_path,
+            out_tex=tex_path,
+            intent=intent,
+            gold_dir=root / "gold",
+            dry_run=dry_run,
+        )
+        meta["figures_planned"] = [f["id"] for f in figures]
 
-        artifacts = render_tex(tex_path, out_dir=out, formats=formats)
+        status: dict = {}
+        figs_dir = work / "figures"
+        if figures and not dry_run and max_images_from_env() > 0:
+            cfg = KandinskyConfig.from_env()
+            if not cfg.base_url:
+                log.warning("figures planned but KANDINSKY_API_BASE_URL empty — strip slots")
+            else:
+                status = generate_all_figures(figures, figs_dir, cfg=cfg)
+        meta["figures_status"] = status
+        (work / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        write_injected(tex_path, figures, status)
+
+        # copy artifacts to out
+        shutil.copy2(tex_path, out / tex_path.name)
+        for name in ("figures.json", "status.json", f"{stem}.raw_model.txt"):
+            p = work / name
+            if p.is_file():
+                shutil.copy2(p, out / name)
+        if figs_dir.is_dir() and any(figs_dir.glob("*.png")):
+            dest = out / "figures"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(figs_dir, dest)
+
+        artifacts = render_tex(
+            tex_path,
+            out_dir=out,
+            formats=formats,
+            extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+        )
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
     except Exception as exc:

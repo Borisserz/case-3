@@ -39,7 +39,13 @@ def ensure_image() -> None:
         raise RuntimeError(f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd")
 
 
-def render_tex(tex_path: Path, *, out_dir: Path, formats: set[str]) -> dict[str, Path]:
+def render_tex(
+    tex_path: Path,
+    *,
+    out_dir: Path,
+    formats: set[str],
+    extra_dirs: list[Path] | None = None,
+) -> dict[str, Path]:
     ensure_image()
     tex_path = tex_path.resolve()
     stem = tex_path.stem
@@ -50,6 +56,12 @@ def render_tex(tex_path: Path, *, out_dir: Path, formats: set[str]) -> dict[str,
         work = Path(tmp)
         (work / ".cache").mkdir()
         shutil.copy2(tex_path, work / tex_path.name)
+        for d in extra_dirs or []:
+            if d.is_dir():
+                dest = work / d.name
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(d, dest)
 
         if "pdf" in formats:
             _docker_run(work, "latexmk", "-xelatex", "-interaction=nonstopmode", "-synctex=1", tex_path.name)

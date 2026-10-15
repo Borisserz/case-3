@@ -1,79 +1,56 @@
 # case-3
 
-Текст → **Qwen (text-to-text)** → LaTeX → **PDF/DOCX** (Docker).
-
-Модель пишет только `.tex`. Картинки не генерирует.
+**Файл + промпт (intent)** → Qwen пишет LaTeX **и** промпты для Kandinsky → картинки (если включено) → PDF/DOCX.
 
 ## Каждый день
 
-1. Положи `notes.txt` в корень проекта.
-2. Запусти:
-
 ```cmd
-scripts\run.cmd notes.txt
+REM данные в notes.txt, что сделать — в -p
+scripts\run.cmd notes.txt -p "сделай PDF-отчёт с таблицами и 2 иллюстрациями"
+
+scripts\run.cmd notes.txt --format pdf
+scripts\run.cmd notes.txt --dry-run
 ```
 
-Только PDF / только Word:
+Или intent из файла:
 
 ```cmd
-scripts\run.cmd notes.txt pdf
-scripts\run.cmd notes.txt docx
+scripts\run.cmd notes.txt --prompt-file intent.txt
 ```
 
-Без API (проверка TeX):
+Результат: `out\<run>\` (`.tex`, `.pdf`/`.docx`, `figures\`, `figures.json`).
 
-```cmd
-scripts\run.cmd notes.txt both --dry-run
-```
+## Скрипты (3)
 
-Результат: `out\<имя>_<время>\` (`.tex`, `.pdf`, `.docx`).  
-Логи: `logs\...`
-
-Залить tex+логи на GitHub для дебага:
-
-```cmd
-scripts\push-debug.cmd
-```
-
-## Скрипты (только 3)
-
-| Скрипт | Когда |
-|--------|--------|
+| | |
+|--|--|
 | `scripts\setup.cmd` | один раз |
-| `scripts\run.cmd` | каждый прогон |
-| `scripts\push-debug.cmd` | отправить логи нам |
+| `scripts\run.cmd` | прогон |
+| `scripts\push-debug.cmd` | tex+логи на GitHub |
 
-На Mac/Linux: `make setup` / `make run` / `make push-debug`.
-
-## Первый запуск (Windows)
-
-```cmd
-git clone https://github.com/Borisserz/case-3.git
-cd case-3
-git pull
-scripts\setup.cmd
-```
-
-В `.env` укажи хост Qwen:
+## Env
 
 ```env
 VISION_API_BASE_URL=http://192.168.x.x:8080
+
+# сколько картинок максимум (0 = без Kandinsky)
+KANDINSKY_MAX_IMAGES=2
+KANDINSKY_API_BASE_URL=http://192.168.x.x:8081
 ```
 
-## macOS
+Если Kandinsky недоступен — PDF всё равно соберётся, слоты картинок уберутся.
 
-```bash
-cp .env.example .env
-pip install -e .
-docker compose build
-./scripts/run.sh notes.txt
+## Как думает модель
+
+1. `prompts/system_tex.md` — правила + формат ответа (latex + json)
+2. `gold/` — 2–3 примера по тегам intent (`gold/index.yaml`)
+3. User: **Intent** (`-p`) + **Source** (`notes.txt`)
+
+## Первый запуск
+
+```cmd
+git pull
+scripts\setup.cmd
+REM правь .env
+scripts\run.cmd notes.txt -p "краткий отчёт с таблицей" --dry-run
 ```
-
-## Docker / виртуализация
-
-Если Engine stopped / «Virtualization support not detected»:
-
-1. PowerShell админ: `systeminfo | findstr /i Hyper-V` — нужно **Virtualization Enabled In Firmware: Yes**
-2. `optionalfeatures`: Virtual Machine Platform + WSL → reboot → `wsl --install`
-3. BIOS: Intel VT-x / AMD SVM
-4. Потом: `docker version` и `scripts\setup.cmd`
