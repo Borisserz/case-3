@@ -1,0 +1,5 @@
+services:
+  tex:
+    build: .
+    image: case-3:tex
+    # Qwen / VLM API is external (VISION_API_BASE_URL), same pattern as bam-bam-bam.

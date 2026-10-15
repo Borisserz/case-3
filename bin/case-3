@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# case-3: render LaTeX → PDF (latexmk) and/or DOCX (pandoc) via Docker.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+IMAGE="${CASE3_IMAGE:-case-3:tex}"
+FORMAT=""
+OUTPUT=""
+INPUT=""
+
+usage() {
+  cat <<'EOF'
+Usage:
+  case-3 pdf  in/example.tex
+  case-3 docx in/example.tex
+  case-3 both in/example.tex
+
+  Input is a .tex file (same contract a future LLM will produce).
+  PDF via latexmk -xelatex; DOCX via pandoc from the same .tex.
+
+Options:
+  -o, --output PATH   Output path without extension (default: out/<basename>)
+  -h, --help          Show this help
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|--output)
+      OUTPUT="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    pdf|docx|both)
+      if [[ -n "$FORMAT" ]]; then
+        echo "error: format already set to $FORMAT" >&2
+        exit 1
+      fi
+      FORMAT="$1"
+      shift
+      ;;
+    --format)
+      FORMAT="${2:-}"
+      shift 2
+      ;;
+    -*)
+      echo "error: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "$INPUT" ]]; then
+        echo "error: unexpected argument: $1" >&2
+        exit 1
+      fi
+      INPUT="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$FORMAT" ]]; then
+  echo "error: choose format: pdf, docx, or both" >&2
+  usage >&2
+  exit 1
+fi
+
+case "$FORMAT" in
+  pdf|docx|both) ;;
+  *)
+    echo "error: format must be pdf, docx, or both (got: $FORMAT)" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -z "$INPUT" ]]; then
+  echo "error: pass a .tex file, e.g. in/example.tex" >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ "$INPUT" != /* ]]; then
+  if [[ -f "$INPUT" ]]; then
+    :
+  elif [[ -f "$ROOT/$INPUT" ]]; then
+    INPUT="$ROOT/$INPUT"
+  fi
+fi
+
+if [[ ! -f "$INPUT" ]]; then
+  echo "error: input file not found: $INPUT" >&2
+  exit 1
+fi
+
+case "$INPUT" in
+  *.tex) ;;
+  *)
+    echo "error: input must be a .tex file (got: $INPUT)" >&2
+    exit 1
+    ;;
+esac
+
+STEM="$(basename "$INPUT" .tex)"
+
+if [[ -z "$OUTPUT" ]]; then
+  OUTPUT="$ROOT/out/$STEM"
+fi
+
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "error: Docker image '$IMAGE' not found. Run: make build-image" >&2
+  exit 1
+fi
+
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/case-3.XXXXXX")"
+cleanup() {
+  rm -rf "$WORKDIR"
+}
+trap cleanup EXIT
+
+mkdir -p "$WORKDIR/.cache"
+# Copy .tex and any siblings from the same directory (images, \input files).
+INPUT_DIR="$(cd "$(dirname "$INPUT")" && pwd)"
+cp -R "$INPUT_DIR"/. "$WORKDIR"/
+MAIN_TEX="$(basename "$INPUT")"
+
+docker_run() {
+  docker run --rm \
+    --user="$(id -u):$(id -g)" \
+    --net=none \
+    -e HOME=/work \
+    -e XDG_CACHE_HOME=/work/.cache \
+    -v "$WORKDIR:/work" \
+    -w=/work \
+    "$IMAGE" \
+    "$@"
+}
+
+BASENAME="$(basename "$OUTPUT")"
+OUT_DIR="$(dirname "$OUTPUT")"
+mkdir -p "$OUT_DIR"
+
+if [[ "$FORMAT" == "pdf" || "$FORMAT" == "both" ]]; then
+  echo "==> Building PDF from $MAIN_TEX (latexmk -xelatex)..."
+  docker_run latexmk -xelatex -interaction=nonstopmode -synctex=1 "$MAIN_TEX"
+  if [[ ! -f "$WORKDIR/${STEM}.pdf" ]]; then
+    echo "error: latexmk did not produce ${STEM}.pdf" >&2
+    exit 1
+  fi
+  cp "$WORKDIR/${STEM}.pdf" "${OUT_DIR}/${BASENAME}.pdf"
+  echo "wrote ${OUT_DIR}/${BASENAME}.pdf"
+fi
+
+if [[ "$FORMAT" == "docx" || "$FORMAT" == "both" ]]; then
+  echo "==> Building DOCX from $MAIN_TEX (pandoc)..."
+  docker_run pandoc "$MAIN_TEX" -o "${BASENAME}.docx"
+  cp "$WORKDIR/${BASENAME}.docx" "${OUT_DIR}/${BASENAME}.docx"
+  echo "wrote ${OUT_DIR}/${BASENAME}.docx"
+fi

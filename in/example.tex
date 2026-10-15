@@ -1,0 +1,36 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\usepackage{geometry}
+
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\geometry{margin=2.5cm}
+
+\title{Пример документа case-3}
+\author{TeX render}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Назначение}
+
+Этот файл --- контракт входа для слоя вывода: готовый \LaTeX{},
+который собирается в PDF через \texttt{latexmk} и в DOCX через Pandoc
+в Docker-образе \texttt{case-3:tex}.
+
+\section{Как собрать}
+
+\begin{verbatim}
+make both FILE=in/example.tex
+\end{verbatim}
+
+В будущем такой \texttt{.tex} будет генерировать LLM; сейчас его
+можно писать вручную, как отчёты по лабораторным.
+
+\end{document}
