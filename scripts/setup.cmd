@@ -1,12 +1,19 @@
 @echo off
-REM One-time setup (Python + Docker image). Daily work = run.cmd + push-debug.cmd
+REM One-time: Python + Docker image. Daily = run.cmd + push-debug.cmd
 setlocal
 cd /d "%~dp0.."
-echo === case-3 one-time setup ===
+echo === case-3 setup ===
 
 where docker >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: Docker not found / not running.
+  echo ERROR: Docker not installed.
+  exit /b 1
+)
+
+docker info >nul 2>&1
+if errorlevel 1 (
+  echo ERROR: Docker Desktop Engine not running.
+  echo Open Docker Desktop. If "Virtualization support not detected" — see README.
   exit /b 1
 )
 
@@ -15,18 +22,18 @@ if errorlevel 1 exit /b 1
 
 if not exist .env (
   copy /Y .env.example .env >nul
-  echo Created .env — set VISION_API_BASE_URL
+  echo Created .env — set VISION_API_BASE_URL to your Qwen host
 )
 
-%PY% -m pip install -e . -r requirements.txt
+%PY% -m pip install -e .
 if errorlevel 1 exit /b 1
 
-echo Building Docker image case-3:tex ...
+echo Building case-3:tex ...
 docker compose build
 if errorlevel 1 exit /b 1
 
 echo.
-echo Setup OK. Daily:
+echo OK. Daily:
 echo   1. put notes.txt in project root
 echo   2. scripts\run.cmd notes.txt
 echo   3. scripts\push-debug.cmd

@@ -1,4 +1,4 @@
-"""Full pipeline: text file → LLM .tex → PDF/DOCX + logs."""
+"""Text file → LLM .tex → PDF/DOCX + logs."""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ def run_pipeline(
     formats: set[str] | None = None,
     dry_run: bool = False,
 ) -> Path:
-    """`source` = path to .txt/.md (or job folder with content.txt)."""
     formats = formats or {"pdf", "docx"}
     root = project_root.resolve()
     text_path = resolve_text_file(source)
@@ -33,9 +32,8 @@ def run_pipeline(
     work = root / "work" / run_id
     out = root / "out" / run_id
     logs = root / "logs" / run_id
-    work.mkdir(parents=True, exist_ok=True)
-    out.mkdir(parents=True, exist_ok=True)
-    logs.mkdir(parents=True, exist_ok=True)
+    for d in (work, out, logs):
+        d.mkdir(parents=True, exist_ok=True)
 
     handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
@@ -48,7 +46,6 @@ def run_pipeline(
         "source": str(text_path),
         "formats": sorted(formats),
         "dry_run": dry_run,
-        "mode": "text-to-text",
         "started_at": stamp,
     }
 
@@ -60,7 +57,7 @@ def run_pipeline(
         if raw.is_file():
             shutil.copy2(raw, out / raw.name)
 
-        artifacts = render_tex(tex_path, out_dir=out, formats=formats, asset_dirs=[])
+        artifacts = render_tex(tex_path, out_dir=out, formats=formats)
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
     except Exception as exc:
@@ -71,15 +68,11 @@ def run_pipeline(
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         raise
     finally:
-        (logs / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+        (out / "meta.json").write_text(payload, encoding="utf-8")
         root_logger.removeHandler(handler)
         handler.close()
 
     log.info("done run_id=%s out=%s", run_id, out)
     return out
-
-
-# backward alias
-def run_job(*args, **kwargs):
-    return run_pipeline(*args, **kwargs)

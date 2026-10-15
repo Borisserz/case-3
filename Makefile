@@ -2,22 +2,17 @@
 
 PYTHON ?= python3
 
-.PHONY: help setup test dry-run run push-debug clean
+.PHONY: help setup run dry-run push-debug clean
 
 help:
-	@echo "case-3 — text → LaTeX → PDF/DOCX"
-	@echo "  make setup              pip + docker image"
+	@echo "  make setup"
 	@echo "  make run FILE=notes.txt"
 	@echo "  make dry-run FILE=notes.txt"
 	@echo "  make push-debug"
-	@echo "  make test"
 
 setup:
-	$(PYTHON) -m pip install -e . -r requirements.txt
+	$(PYTHON) -m pip install -e .
 	docker compose build
-
-test:
-	$(PYTHON) -m pytest -q
 
 FILE ?= notes.txt
 

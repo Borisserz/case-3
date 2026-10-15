@@ -7,19 +7,24 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.local-tests/
+
+# tests: keep on disk locally, never push
+tests/
+
 work/
 out/*
 !out/.gitkeep
 logs/*
 !logs/.gitkeep
 debug-bundle/
+
+*.pdf
+*.docx
 .DS_Store
 *.aux
-*.log
 *.toc
 *.fls
 *.fdb_latexmk
 *.synctex.gz
 *.xdv
-# keep gold and demo assets
-!in/jobs/**/images/**

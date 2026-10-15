@@ -1,19 +1,16 @@
-"""OpenAI-compatible client (same pattern as bam-bam-bam VisionClient)."""
+"""OpenAI-compatible text client (same HTTP shape as bam-bam-bam)."""
 
 from __future__ import annotations
 
-import base64
 import http.client
 import json
-import mimetypes
 import os
 import re
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
@@ -53,7 +50,6 @@ class LLMConfig:
     model: str | None = None
     timeout_s: float = 300.0
     max_retries: int = 2
-    max_long_edge: int = 2048
     temperature: float = 0.2
     reasoning: str = "low"
 
@@ -68,8 +64,7 @@ class LLMConfig:
         base = _env("VISION_API_BASE_URL", "CASE3_API_BASE_URL", "INGEST_VISION_API_BASE_URL")
         if base is None:
             raise LLMConfigError(
-                "API not configured: set VISION_API_BASE_URL "
-                "(e.g. http://127.0.0.1:8080 or LAN host at work)"
+                "Set VISION_API_BASE_URL in .env (e.g. http://192.168.x.x:8080)"
             )
         reasoning = (_env("VISION_REASONING", "CASE3_REASONING") or "low").lower()
         if reasoning not in _REASONING:
@@ -80,37 +75,9 @@ class LLMConfig:
             model=_env("VISION_MODEL", "CASE3_MODEL", "INGEST_VISION_MODEL"),
             timeout_s=_number("VISION_TIMEOUT_S", 300, float),
             max_retries=_number("VISION_MAX_RETRIES", 2, int),
-            max_long_edge=_number("VISION_MAX_LONG_EDGE", 2048, int),
             temperature=_number("VISION_TEMPERATURE", 0.2, float),
             reasoning=reasoning,
         )
-
-
-def image_data_url(path: Path, *, max_long_edge: int = 2048) -> str:
-    """Encode image as data URL; optionally downscale long edge (Pillow)."""
-    mime, _ = mimetypes.guess_type(str(path))
-    mime = mime or "image/png"
-    raw = path.read_bytes()
-    try:
-        from PIL import Image
-        import io
-
-        with Image.open(io.BytesIO(raw)) as im:
-            im = im.convert("RGB") if im.mode not in ("RGB", "L") else im
-            w, h = im.size
-            long_edge = max(w, h)
-            if long_edge > max_long_edge:
-                scale = max_long_edge / long_edge
-                im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
-            buf = io.BytesIO()
-            fmt = "JPEG" if mime == "image/jpeg" else "PNG"
-            im.save(buf, format=fmt)
-            raw = buf.getvalue()
-            mime = "image/jpeg" if fmt == "JPEG" else "image/png"
-    except Exception:
-        pass
-    b64 = base64.b64encode(raw).decode("ascii")
-    return f"data:{mime};base64,{b64}"
 
 
 def _as_text(value: Any) -> str:
@@ -155,7 +122,6 @@ def build_body(
     *,
     system: str,
     user_text: str,
-    image_urls: Sequence[str] = (),
     model: str | None = None,
     temperature: float = 0.2,
     reasoning: str = "low",
@@ -165,13 +131,10 @@ def build_body(
         if reasoning == "off"
         else {"enable_thinking": True, "resolved_reasoning_effort": reasoning}
     )
-    content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
-    for url in image_urls:
-        content.append({"type": "image_url", "image_url": {"url": url}})
     body: dict[str, Any] = {
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": content},
+            {"role": "user", "content": user_text},
         ],
         "temperature": temperature,
         "chat_template_kwargs": thinking,
@@ -182,27 +145,17 @@ def build_body(
 
 
 class LLMClient:
-    """POST {base}/v1/chat/completions — text-only or text+images."""
-
     def __init__(self, config: LLMConfig, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self.config = config
         self._sleep = sleep
 
-    def complete(
-        self,
-        *,
-        system: str,
-        user_text: str,
-        image_urls: Sequence[str] = (),
-        reasoning: str | None = None,
-    ) -> str:
+    def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
         r = reasoning or self.config.reasoning
         if r not in _REASONING:
             raise LLMConfigError(f"reasoning={r!r}: expected {', '.join(_REASONING)}")
         body = build_body(
             system=system,
             user_text=user_text,
-            image_urls=image_urls,
             model=self.config.model,
             temperature=self.config.temperature,
             reasoning=r,

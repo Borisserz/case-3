@@ -15,64 +15,31 @@ IMAGE = os.environ.get("CASE3_IMAGE", "case-3:tex")
 
 
 def _docker_run(workdir: Path, *cmd: str) -> None:
-    args = [
-        "docker",
-        "run",
-        "--rm",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") else "1000:1000",
-        "--net=none",
-        "-e",
-        "HOME=/work",
-        "-e",
-        "XDG_CACHE_HOME=/work/.cache",
-        "-v",
-        f"{workdir}:/work",
-        "-w",
-        "/work",
-        IMAGE,
-        *cmd,
-    ]
-    # Windows Docker Desktop: --user often breaks volume writes; omit on nt
     if os.name == "nt":
         args = [
-            "docker",
-            "run",
-            "--rm",
+            "docker", "run", "--rm", "--net=none",
+            "-e", "HOME=/work", "-e", "XDG_CACHE_HOME=/work/.cache",
+            "-v", f"{workdir}:/work", "-w", "/work", IMAGE, *cmd,
+        ]
+    else:
+        args = [
+            "docker", "run", "--rm",
+            "--user", f"{os.getuid()}:{os.getgid()}",
             "--net=none",
-            "-e",
-            "HOME=/work",
-            "-e",
-            "XDG_CACHE_HOME=/work/.cache",
-            "-v",
-            f"{workdir}:/work",
-            "-w",
-            "/work",
-            IMAGE,
-            *cmd,
+            "-e", "HOME=/work", "-e", "XDG_CACHE_HOME=/work/.cache",
+            "-v", f"{workdir}:/work", "-w", "/work", IMAGE, *cmd,
         ]
     log.info("exec: %s", " ".join(args))
     subprocess.run(args, check=True)
 
 
 def ensure_image() -> None:
-    r = subprocess.run(
-        ["docker", "image", "inspect", IMAGE],
-        capture_output=True,
-        text=True,
-    )
+    r = subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"Docker image {IMAGE!r} missing. Run: docker compose build")
+        raise RuntimeError(f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd")
 
 
-def render_tex(
-    tex_path: Path,
-    *,
-    out_dir: Path,
-    formats: set[str],
-    asset_dirs: list[Path] | None = None,
-) -> dict[str, Path]:
-    """formats subset of {'pdf','docx'}."""
+def render_tex(tex_path: Path, *, out_dir: Path, formats: set[str]) -> dict[str, Path]:
     ensure_image()
     tex_path = tex_path.resolve()
     stem = tex_path.stem
@@ -83,29 +50,12 @@ def render_tex(
         work = Path(tmp)
         (work / ".cache").mkdir()
         shutil.copy2(tex_path, work / tex_path.name)
-        for ad in asset_dirs or []:
-            if ad.is_dir():
-                dest = work / ad.name
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(ad, dest)
-        # also copy sibling images/ next to tex if present
-        sib = tex_path.parent / "images"
-        if sib.is_dir() and not (work / "images").exists():
-            shutil.copytree(sib, work / "images")
 
         if "pdf" in formats:
-            _docker_run(
-                work,
-                "latexmk",
-                "-xelatex",
-                "-interaction=nonstopmode",
-                "-synctex=1",
-                tex_path.name,
-            )
+            _docker_run(work, "latexmk", "-xelatex", "-interaction=nonstopmode", "-synctex=1", tex_path.name)
             pdf_src = work / f"{stem}.pdf"
             if not pdf_src.is_file():
-                raise RuntimeError("latexmk did not produce PDF — see logs")
+                raise RuntimeError("latexmk did not produce PDF")
             pdf_dst = out_dir / f"{stem}.pdf"
             shutil.copy2(pdf_src, pdf_dst)
             results["pdf"] = pdf_dst
@@ -113,9 +63,8 @@ def render_tex(
 
         if "docx" in formats:
             _docker_run(work, "pandoc", tex_path.name, "-o", f"{stem}.docx")
-            docx_src = work / f"{stem}.docx"
             docx_dst = out_dir / f"{stem}.docx"
-            shutil.copy2(docx_src, docx_dst)
+            shutil.copy2(work / f"{stem}.docx", docx_dst)
             results["docx"] = docx_dst
             log.info("wrote %s", docx_dst)
 
