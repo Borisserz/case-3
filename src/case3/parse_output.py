@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from case3.tex_safe import sanitize_width
 from case3.tex_utils import extract_tex
 
 _FENCE = re.compile(r"```(\w*)\s*([\s\S]*?)```", re.I)
@@ -49,7 +50,7 @@ def parse_model_output(raw: str, *, max_images: int) -> tuple[str, list[dict[str
                         "id": fid,
                         "caption": str(item.get("caption", "")).strip() or fid,
                         "prompt": prompt,
-                        "width": str(item.get("width", r"0.85\textwidth")).strip(),
+                        "width": sanitize_width(str(item.get("width", "")) or None),
                     }
                 )
                 if len(figures) >= max_images:

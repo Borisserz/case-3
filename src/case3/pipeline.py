@@ -95,6 +95,7 @@ def run_pipeline(
             out_dir=out,
             formats=formats,
             extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+            log_dir=logs,
         )
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"

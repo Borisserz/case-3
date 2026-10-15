@@ -6,16 +6,17 @@ import re
 from pathlib import Path
 from typing import Any
 
+from case3.tex_safe import escape_tex_text, sanitize_width
+
 _SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
 
 
 def _ensure_graphicx(tex: str) -> str:
-    if r"\usepackage{graphicx}" in tex or r"\usepackage[pdftex]{graphicx}" in tex:
+    if r"\usepackage{graphicx}" in tex:
         return tex
-    # after documentclass
     return re.sub(
         r"(\\documentclass[^\n]*\n)",
-        r"\1\\usepackage{graphicx}\n\\usepackage{float}\n",
+        r"\1\\usepackage{graphicx}\n",
         tex,
         count=1,
     )
@@ -35,17 +36,9 @@ def inject_figures(
         st = status.get(fid) or {}
         meta = by_id.get(fid)
         if not st.get("ok") or not meta:
-            return ""  # strip slot
-        width = meta.get("width") or r"0.85\textwidth"
-        caption = meta.get("caption") or fid
-        # escape caption specials lightly
-        caption = (
-            caption.replace("\\", "/")
-            .replace("&", r"\&")
-            .replace("%", r"\%")
-            .replace("_", r"\_")
-            .replace("#", r"\#")
-        )
+            return ""
+        width = sanitize_width(meta.get("width"))
+        caption = escape_tex_text(str(meta.get("caption") or fid))
         path = f"{rel_dir}/{fid}.png"
         return (
             "\\begin{figure}[H]\n"
@@ -59,7 +52,6 @@ def inject_figures(
     out = _SLOT.sub(repl, tex)
     if any(status.get(f["id"], {}).get("ok") for f in figures):
         out = _ensure_graphicx(out)
-    # strip any leftover slots without status
     out = _SLOT.sub("", out)
     return out
 

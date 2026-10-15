@@ -14,6 +14,14 @@ log = logging.getLogger("case3.render")
 IMAGE = os.environ.get("CASE3_IMAGE", "case-3:tex")
 
 
+class RenderError(RuntimeError):
+    """LaTeX/Docker failed; optional path to saved .log."""
+
+    def __init__(self, message: str, *, log_path: Path | None = None) -> None:
+        super().__init__(message)
+        self.log_path = log_path
+
+
 def _docker_run(workdir: Path, *cmd: str) -> None:
     if os.name == "nt":
         args = [
@@ -30,13 +38,34 @@ def _docker_run(workdir: Path, *cmd: str) -> None:
             "-v", f"{workdir}:/work", "-w", "/work", IMAGE, *cmd,
         ]
     log.info("exec: %s", " ".join(args))
-    subprocess.run(args, check=True)
+    try:
+        subprocess.run(args, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        tail = ((exc.stderr or "") + "\n" + (exc.stdout or ""))[-2000:]
+        raise RenderError(
+            f"docker {' '.join(cmd[:2])} failed (exit {exc.returncode}): {tail.strip()}"
+        ) from exc
 
 
 def ensure_image() -> None:
     r = subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd")
+        raise RenderError(f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd")
+
+
+def _save_tex_logs(work: Path, stem: str, log_dir: Path | None) -> Path | None:
+    if log_dir is None:
+        return None
+    log_dir.mkdir(parents=True, exist_ok=True)
+    saved = None
+    for name in (f"{stem}.log", f"{stem}.blg", "texput.log"):
+        src = work / name
+        if src.is_file():
+            dest = log_dir / name
+            shutil.copy2(src, dest)
+            saved = dest
+            log.info("saved TeX log → %s", dest)
+    return saved
 
 
 def render_tex(
@@ -45,6 +74,7 @@ def render_tex(
     out_dir: Path,
     formats: set[str],
     extra_dirs: list[Path] | None = None,
+    log_dir: Path | None = None,
 ) -> dict[str, Path]:
     ensure_image()
     tex_path = tex_path.resolve()
@@ -64,17 +94,34 @@ def render_tex(
                 shutil.copytree(d, dest)
 
         if "pdf" in formats:
-            _docker_run(work, "latexmk", "-xelatex", "-interaction=nonstopmode", "-synctex=1", tex_path.name)
+            try:
+                _docker_run(
+                    work,
+                    "latexmk",
+                    "-xelatex",
+                    "-interaction=nonstopmode",
+                    "-synctex=1",
+                    tex_path.name,
+                )
+            except RenderError as exc:
+                saved = _save_tex_logs(work, stem, log_dir)
+                raise RenderError(str(exc), log_path=saved) from exc
+
             pdf_src = work / f"{stem}.pdf"
             if not pdf_src.is_file():
-                raise RuntimeError("latexmk did not produce PDF")
+                saved = _save_tex_logs(work, stem, log_dir)
+                raise RenderError("latexmk did not produce PDF", log_path=saved)
+            _save_tex_logs(work, stem, log_dir)  # keep log even on success (optional triage)
             pdf_dst = out_dir / f"{stem}.pdf"
             shutil.copy2(pdf_src, pdf_dst)
             results["pdf"] = pdf_dst
             log.info("wrote %s", pdf_dst)
 
         if "docx" in formats:
-            _docker_run(work, "pandoc", tex_path.name, "-o", f"{stem}.docx")
+            try:
+                _docker_run(work, "pandoc", tex_path.name, "-o", f"{stem}.docx")
+            except RenderError as exc:
+                raise RenderError(str(exc), log_path=None) from exc
             docx_dst = out_dir / f"{stem}.docx"
             shutil.copy2(work / f"{stem}.docx", docx_dst)
             results["docx"] = docx_dst

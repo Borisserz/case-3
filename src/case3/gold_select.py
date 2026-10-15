@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Minimal YAML-ish parser for our flat index (no PyYAML dependency).
 _TAG_SPLIT = re.compile(r"[,\s]+")
 
 
@@ -23,8 +22,7 @@ def _parse_index(text: str) -> list[dict]:
         elif cur is not None and line.startswith("file:"):
             cur["file"] = line.split(":", 1)[1].strip()
         elif cur is not None and line.startswith("tags:"):
-            inside = line.split(":", 1)[1].strip()
-            inside = inside.strip("[]")
+            inside = line.split(":", 1)[1].strip().strip("[]")
             cur["tags"] = [t.strip() for t in _TAG_SPLIT.split(inside) if t.strip()]
     if cur:
         items.append(cur)
@@ -34,34 +32,60 @@ def _parse_index(text: str) -> list[dict]:
 def intent_tokens(intent: str) -> set[str]:
     low = (intent or "").lower()
     tokens = set(re.findall(r"[a-zа-яё0-9_]+", low, flags=re.I))
-    # synonym boosts
-    mapping = {
-        "таблиц": "table",
-        "таблица": "table",
-        "таблицу": "table",
-        "таблицы": "table",
-        "список": "list",
-        "списки": "list",
-        "разделы": "sections",
-        "отчёт": "report",
-        "отчет": "report",
-        "кратко": "short",
-        "заметка": "memo",
-        "картинк": "image",
-        "рисунк": "figure",
-        "фото": "photo",
-        "иллюстрац": "illustration",
-        "без": "no_table",  # weak; refined below
-    }
-    for ru, en in mapping.items():
+
+    no_tables = bool(re.search(r"без\s+таблиц", low))
+    no_images = bool(
+        re.search(r"без\s+картин", low)
+        or re.search(r"без\s+рисун", low)
+        or re.search(r"без\s+иллюстрац", low)
+    )
+
+    boosts = [
+        ("таблиц", "table"),
+        ("список", "list"),
+        ("списки", "list"),
+        ("раздел", "sections"),
+        ("отчёт", "report"),
+        ("отчет", "report"),
+        ("кратко", "short"),
+        ("заметка", "memo"),
+        ("картинк", "image"),
+        ("рисунок", "figure"),
+        ("рисунк", "figure"),
+        ("схем", "figure"),
+        ("диаграмм", "figure"),
+        ("иллюстрац", "illustration"),
+        ("фото", "photo"),
+    ]
+    for ru, en in boosts:
         if ru in low:
             tokens.add(en)
-    if "без таблиц" in low or "без таблицы" in low:
+
+    # Phrase overrides AFTER stems («без таблиц» contains «таблиц»)
+    if no_tables:
         tokens.add("no_table")
         tokens.discard("table")
+    if no_images:
+        tokens.discard("image")
+        tokens.discard("figure")
+        tokens.discard("photo")
+        tokens.discard("illustration")
+
     if not tokens:
         tokens.add("default")
     return tokens
+
+
+def _safe_gold_path(gold_dir: Path, rel: str) -> Path | None:
+    if not rel or ".." in rel.replace("\\", "/").split("/"):
+        return None
+    p = (gold_dir / rel).resolve()
+    root = gold_dir.resolve()
+    try:
+        p.relative_to(root)
+    except ValueError:
+        return None
+    return p if p.is_file() else None
 
 
 def select_gold(
@@ -82,18 +106,29 @@ def select_gold(
         tags = set(it.get("tags") or [])
         if it.get("id") == "image_slot" and max_images <= 0:
             continue
+        # negative: no_table intent should not boost table gold
+        if "no_table" in tokens and "table" in tags and "no_table" not in tags:
+            continue
         score = len(tokens & tags)
         if "default" in tags:
             score += 1
         if score > 0:
             scored.append((score, it))
     scored.sort(key=lambda x: (-x[0], x[1].get("id", "")))
-    chosen = scored[:max_items] if scored else [(1, items[0])] if items else []
+    chosen = scored[:max_items] if scored else ([(1, items[0])] if items else [])
+
+    # Always include image_slot when images enabled and intent suggests visuals
+    if max_images > 0 and ({"image", "figure", "photo", "illustration"} & tokens):
+        for it in items:
+            if it.get("id") == "image_slot":
+                if all(c[1].get("id") != "image_slot" for c in chosen):
+                    chosen = chosen[: max_items - 1] + [(99, it)]
+                break
 
     paths: list[Path] = []
     for _, it in chosen:
-        p = gold_dir / it["file"]
-        if p.is_file():
+        p = _safe_gold_path(gold_dir, it.get("file", ""))
+        if p is not None:
             paths.append(p)
     return paths
 

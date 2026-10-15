@@ -39,6 +39,7 @@ If {{MAX_IMAGES}} is 0, use `"figures": []`.
 \usepackage{geometry}
 \usepackage{booktabs}
 \usepackage{longtable}
+\usepackage{float}
 \usepackage{hyperref}
 \setdefaultlanguage{russian}
 \setotherlanguage{english}

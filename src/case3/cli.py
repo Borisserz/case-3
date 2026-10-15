@@ -9,6 +9,7 @@ from pathlib import Path
 
 from case3.envfile import load_dotenv
 from case3.llm_client import LLMConfigError, LLMError
+from case3.render import RenderError
 
 
 def _root() -> Path:
@@ -97,8 +98,10 @@ def main(argv: list[str] | None = None) -> int:
             for k, v in arts.items():
                 print(f"{k}: {v}")
             return 0
-    except (LLMConfigError, LLMError, FileNotFoundError, ValueError, RuntimeError) as exc:
+    except (LLMConfigError, LLMError, RenderError, FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        if isinstance(exc, RenderError) and exc.log_path:
+            print(f"TeX log: {exc.log_path}", file=sys.stderr)
         print("See runs\\logs\\  then: scripts\\push-debug.cmd", file=sys.stderr)
         return 1
 
