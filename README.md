@@ -35,13 +35,15 @@ scripts\run.cmd notes.txt both --dry-run
 scripts\push-debug.cmd
 ```
 
-## Скрипты
+## Скрипты (только 3)
 
 | Скрипт | Когда |
 |--------|--------|
-| `scripts\setup.cmd` | один раз (pip + docker image) |
+| `scripts\setup.cmd` | один раз |
 | `scripts\run.cmd` | каждый прогон |
 | `scripts\push-debug.cmd` | отправить логи нам |
+
+На Mac/Linux: `make setup` / `make run` / `make push-debug`.
 
 ## Первый запуск (Windows)
 
