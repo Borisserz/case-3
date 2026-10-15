@@ -98,3 +98,73 @@ See [`gold/`](gold/) — figures, tables, lists distilled from real reports (Pro
 ## What is not in this repo
 
 Dashboard, FastAPI, presentations, DB — later. This repo is the **output + LLM→TeX** slice.
+
+## Гайд: Docker Desktop на Windows («Virtualization support not detected»)
+
+Если Docker пишет **Virtualization support not detected** / **Engine stopped**, образ `case-3:tex` не собрать, пока не включена виртуализация.
+
+### 1. Проверка (~1 мин)
+
+PowerShell **от администратора**:
+
+```powershell
+systeminfo | findstr /i "Hyper-V"
+Get-ComputerInfo -Property "HyperV*"
+```
+
+Нужно: **Virtualization Enabled In Firmware: Yes**.
+
+### 2. Компоненты Windows
+
+`Win + R` → `optionalfeatures` → включить:
+
+1. **Virtual Machine Platform**
+2. **Windows Subsystem for Linux**
+3. **Hyper-V** (если есть в редакции; на Home часто нет — хватит пунктов 1–2)
+
+Перезагрузка, затем:
+
+```powershell
+wsl --install
+wsl --update
+wsl --set-default-version 2
+```
+
+### 3. BIOS / UEFI
+
+1. Перезагрузка → вход в BIOS (`F2` / `Del` / `F10` — зависит от ПК).
+2. Включить:
+   - Intel: **Intel VT-x** / Virtualization Technology  
+   - AMD: **SVM Mode** / AMD-V  
+3. Save & Exit.
+
+Если пункты серые или BIOS под паролем — нужен **IT**: «включите VT-x/SVM для Docker Desktop / WSL2».
+
+### 4. После включения
+
+1. Запустить **Docker Desktop** — статус не «Engine stopped».
+2. Проверка:
+
+```cmd
+docker version
+docker run --rm hello-world
+```
+
+3. В проекте:
+
+```cmd
+cd C:\Users\serjanovich\Projects\case-3
+git pull
+scripts\build-image.cmd
+```
+
+### Если виртуализацию на рабочем ПК не дадут
+
+На этой машине можно только шаг LLM → `.tex`:
+
+```cmd
+python -m case3.cli generate in\jobs\demo -o work\demo.tex --dry-run
+scripts\push-debug.cmd
+```
+
+Сборку PDF/DOCX делать на ПК/Mac, где Docker уже работает.
