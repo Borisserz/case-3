@@ -8,15 +8,14 @@ __pycache__/
 dist/
 build/
 .local-tests/
-
-# tests: keep on disk locally, never push
 tests/
 
-work/
-out/*
-!out/.gitkeep
-logs/*
-!logs/.gitkeep
+# all run artifacts under one tree
+runs/work/
+runs/out/*
+!runs/out/.gitkeep
+runs/logs/*
+!runs/logs/.gitkeep
 debug-bundle/
 
 *.pdf

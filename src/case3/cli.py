@@ -77,12 +77,12 @@ def main(argv: list[str] | None = None) -> int:
             from case3.generate import generate_document, resolve_text_file
 
             src = resolve_text_file(args.input)
-            out = args.output or (root / "work" / f"{src.stem}.tex")
+            out = args.output or (root / "runs" / "work" / f"{src.stem}.tex")
             generate_document(
                 src,
                 out_tex=out,
                 intent=_read_prompt(args),
-                gold_dir=root / "gold",
+                gold_dir=root / "prompt" / "gold",
                 dry_run=args.dry_run,
             )
             print(out)
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "render":
             from case3.render import render_tex
 
-            out_dir = args.out_dir or (root / "out")
+            out_dir = args.out_dir or (root / "runs" / "out")
             fmt = {"pdf", "docx"} if args.format == "both" else {args.format}
             arts = render_tex(args.tex, out_dir=out_dir, formats=fmt)
             for k, v in arts.items():
@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
     except (LLMConfigError, LLMError, FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        print("See logs\\  then: scripts\\push-debug.cmd", file=sys.stderr)
+        print("See runs\\logs\\  then: scripts\\push-debug.cmd", file=sys.stderr)
         return 1
 
     return 1

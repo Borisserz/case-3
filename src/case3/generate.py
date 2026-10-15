@@ -32,7 +32,7 @@ def max_images_from_env() -> int:
 
 
 def load_system_prompt(*, max_images: int) -> str:
-    path = _repo_root() / "prompts" / "system_tex.md"
+    path = _repo_root() / "prompt" / "system_tex.md"
     text = path.read_text(encoding="utf-8")
     return text.replace("{{MAX_IMAGES}}", str(max_images))
 
@@ -75,7 +75,7 @@ def generate_document(
     source_text = text_path.read_text(encoding="utf-8")
     stem = text_path.stem
     root = _repo_root()
-    gold_dir = gold_dir or (root / "gold")
+    gold_dir = gold_dir or (root / "prompt" / "gold")
     intent_text = (intent or DEFAULT_INTENT).strip()
     max_images = max_images_from_env()
 

@@ -32,9 +32,9 @@ def run_pipeline(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{stem}_{stamp}"
 
-    work = root / "work" / run_id
-    out = root / "out" / run_id
-    logs = root / "logs" / run_id
+    work = root / "runs" / "work" / run_id
+    out = root / "runs" / "out" / run_id
+    logs = root / "runs" / "logs" / run_id
     for d in (work, out, logs):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -60,7 +60,7 @@ def run_pipeline(
             text_path,
             out_tex=tex_path,
             intent=intent,
-            gold_dir=root / "gold",
+            gold_dir=root / "prompt" / "gold",
             dry_run=dry_run,
         )
         meta["figures_planned"] = [f["id"] for f in figures]

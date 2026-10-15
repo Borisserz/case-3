@@ -1,50 +1,36 @@
 # case-3
 
-**Файл + промпт (intent)** → Qwen пишет LaTeX **и** промпты для Kandinsky → картинки (если включено) → PDF/DOCX.
+**Файл + промпт** → Qwen (LaTeX + промпты Kandinsky) → PDF/DOCX.
 
 ## Каждый день
 
 ```cmd
-REM данные в notes.txt, что сделать — в -p
-scripts\run.cmd notes.txt -p "сделай PDF-отчёт с таблицами и 2 иллюстрациями"
-
-scripts\run.cmd notes.txt --format pdf
+scripts\run.cmd notes.txt -p "сделай PDF с таблицами и 2 картинками"
 scripts\run.cmd notes.txt --dry-run
+scripts\push-debug.cmd
 ```
 
-Или intent из файла:
+Результат: `runs\out\<run>\`
 
-```cmd
-scripts\run.cmd notes.txt --prompt-file intent.txt
-```
-
-Результат: `out\<run>\` (`.tex`, `.pdf`/`.docx`, `figures\`, `figures.json`).
-
-## Скрипты (3)
+## Папки (мало)
 
 | | |
 |--|--|
-| `scripts\setup.cmd` | один раз |
-| `scripts\run.cmd` | прогон |
-| `scripts\push-debug.cmd` | tex+логи на GitHub |
+| `scripts\` | setup / run / push-debug |
+| `src\` | код |
+| `prompt\` | system prompt + gold-примеры |
+| `runs\` | out / logs / work (всё промежуточное) |
+| `notes.txt` | твой исходный текст |
 
 ## Env
 
 ```env
 VISION_API_BASE_URL=http://192.168.x.x:8080
-
-# сколько картинок максимум (0 = без Kandinsky)
 KANDINSKY_MAX_IMAGES=2
 KANDINSKY_API_BASE_URL=http://192.168.x.x:8081
 ```
 
-Если Kandinsky недоступен — PDF всё равно соберётся, слоты картинок уберутся.
-
-## Как думает модель
-
-1. `prompts/system_tex.md` — правила + формат ответа (latex + json)
-2. `gold/` — 2–3 примера по тегам intent (`gold/index.yaml`)
-3. User: **Intent** (`-p`) + **Source** (`notes.txt`)
+`KANDINSKY_MAX_IMAGES=0` — без картинок.
 
 ## Первый запуск
 
@@ -52,5 +38,5 @@ KANDINSKY_API_BASE_URL=http://192.168.x.x:8081
 git pull
 scripts\setup.cmd
 REM правь .env
-scripts\run.cmd notes.txt -p "краткий отчёт с таблицей" --dry-run
+scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run
 ```

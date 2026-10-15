@@ -23,7 +23,7 @@ if not defined PY (echo ERROR: Python 3.9+ not on PATH. & exit /b 1)
 REM Forward all args to Python CLI
 %PY% -m case3.cli run %*
 if errorlevel 1 (
-  echo FAILED. See logs\ then scripts\push-debug.cmd
+  echo FAILED. See runs\logs\ then scripts\push-debug.cmd
   exit /b 1
 )
 echo OK → out\

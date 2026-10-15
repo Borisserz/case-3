@@ -8,8 +8,8 @@ for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddTHHmmss
 set DEST=debug-bundle\%STAMP%
 mkdir "%DEST%\out" 2>nul
 mkdir "%DEST%\logs" 2>nul
-for /r out %%F in (*.tex *.json *.txt) do xcopy /Y /Q "%%F" "%DEST%\out\" >nul 2>&1
-for /r logs %%F in (*.log *.json *.txt) do xcopy /Y /Q "%%F" "%DEST%\logs\" >nul 2>&1
+for /r runs\out %%F in (*.tex *.json *.txt) do xcopy /Y /Q "%%F" "%DEST%\out\" >nul 2>&1
+for /r runs\logs %%F in (*.log *.json *.txt) do xcopy /Y /Q "%%F" "%DEST%\logs\" >nul 2>&1
 
 git fetch origin 2>nul
 git checkout -B debug/runs
