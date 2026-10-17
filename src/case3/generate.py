@@ -73,7 +73,7 @@ def build_user_prompt(
         "",
         "## Limits",
         f"- max_images (Kandinsky slots): {max_images}",
-        f"- max_charts (HTML → PNG): {max_charts}",
+        f"- CASE3_MAX_CHARTS (HTML → PNG budget): {max_charts}",
         "- Follow system output format exactly (latex fence, then json fence).",
         "",
         "## Source",
@@ -93,16 +93,27 @@ def generate_document(
     gold_dir: Path | None = None,
     client: LLMClient | None = None,
     dry_run: bool = False,
+    max_images: int | None = None,
+    max_charts: int | None = None,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Returns (tex_path, figures, charts)."""
+    """Returns (tex_path, figures, charts).
+
+    max_images / max_charts: per-request overrides; None → env defaults.
+    """
     text_path = resolve_text_file(source)
     source_text = text_path.read_text(encoding="utf-8")
     stem = text_path.stem
     root = _repo_root()
     gold_dir = gold_dir or (root / "prompt" / "gold")
     intent_text = (intent or DEFAULT_INTENT).strip()
-    max_images = max_images_from_env()
-    max_charts = max_charts_from_env()
+    if max_images is None:
+        max_images = max_images_from_env()
+    else:
+        max_images = max(0, int(max_images))
+    if max_charts is None:
+        max_charts = max_charts_from_env()
+    else:
+        max_charts = max(0, int(max_charts))
 
     gold_paths = select_gold(gold_dir, intent_text, max_items=3, max_images=max_images)
     system = load_system_prompt(max_images=max_images, max_charts=max_charts) + format_gold_appendix(
@@ -126,9 +137,15 @@ def generate_document(
     out_tex.parent.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
+        from case3.tex_safe import escape_tex_text
+
         stub = Path(__file__).resolve().parent / "templates" / "article_skeleton.tex"
-        body = stub.read_text(encoding="utf-8")
-        body = body.replace("%%CONTENT%%", source_text[:2000].replace("\\", "/"))
+        # Escape specials; no verbatim (source may contain \end{verbatim}).
+        lines = [
+            escape_tex_text(line) for line in source_text[:2000].splitlines()
+        ]
+        content = "\n\n".join(lines) if lines else "(пусто)"
+        body = stub.read_text(encoding="utf-8").replace("%%CONTENT%%", content)
         out_tex.write_text(body, encoding="utf-8")
         payload = {"figures": [], "charts": []}
         (out_tex.parent / "figures.json").write_text(

@@ -6,7 +6,8 @@ if "%~1"=="" (
   echo Usage:
   echo   scripts\run.cmd notes.txt
   echo   scripts\run.cmd notes.txt -p "сделай PDF с таблицами"
-  echo   scripts\run.cmd notes.txt --format pdf --dry-run
+  echo   scripts\run.cmd notes.txt --dry-run
+  echo   scripts\run.cmd notes.txt -p "..." --format both
   exit /b 1
 )
 

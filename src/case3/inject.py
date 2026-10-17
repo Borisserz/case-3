@@ -6,21 +6,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+from case3.tex_preamble import ensure_document_preamble, strip_orphan_slots
 from case3.tex_safe import escape_tex_text, sanitize_width
 
 _FIG_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
 _CHART_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
-
-
-def _ensure_graphicx(tex: str) -> str:
-    if r"\usepackage{graphicx}" in tex:
-        return tex
-    return re.sub(
-        r"(\\documentclass[^\n]*\n)",
-        r"\1\\usepackage{graphicx}\n",
-        tex,
-        count=1,
-    )
 
 
 def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: str) -> str:
@@ -66,11 +56,8 @@ def inject_media(
 
     out = _FIG_SLOT.sub(repl_fig, tex)
     out = _CHART_SLOT.sub(repl_chart, out)
-    any_ok = any(status.get(x["id"], {}).get("ok") for x in figures + charts)
-    if any_ok:
-        out = _ensure_graphicx(out)
-    out = _FIG_SLOT.sub("", out)
-    out = _CHART_SLOT.sub("", out)
+    out = strip_orphan_slots(out)
+    out = ensure_document_preamble(out)
     return out
 
 

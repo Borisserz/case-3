@@ -41,7 +41,12 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("input", type=Path, help=".txt/.md source data")
     p_run.add_argument("--prompt", "-p", default=None, help="Intent in natural language")
     p_run.add_argument("--prompt-file", type=Path, default=None, help="Intent from file")
-    p_run.add_argument("--format", choices=("pdf", "docx", "both"), default="both")
+    p_run.add_argument(
+        "--format",
+        choices=("pdf", "docx", "both"),
+        default="pdf",
+        help="Primary artifact is PDF; DOCX is secondary (default: pdf)",
+    )
     p_run.add_argument("--dry-run", action="store_true")
 
     p_gen = sub.add_parser("generate", help="Only LLM → .tex (+ figures.json)")
@@ -54,7 +59,12 @@ def main(argv: list[str] | None = None) -> int:
     p_ren = sub.add_parser("render", help="Only .tex → PDF/DOCX")
     p_ren.add_argument("tex", type=Path)
     p_ren.add_argument("-o", "--out-dir", type=Path, default=None)
-    p_ren.add_argument("--format", choices=("pdf", "docx", "both"), default="both")
+    p_ren.add_argument(
+        "--format",
+        choices=("pdf", "docx", "both"),
+        default="pdf",
+        help="Primary artifact is PDF (default: pdf)",
+    )
 
     args = parser.parse_args(argv)
     root = _root()

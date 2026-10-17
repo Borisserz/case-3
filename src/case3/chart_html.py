@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# Only types Chart.js 4.x (+ HTML kpi) can render without extra plugins.
+# heatmap/treemap/waterfall live in prototip (Plotly) — not here.
 CHART_TYPES = frozenset(
     {
         "bar",
@@ -14,16 +16,12 @@ CHART_TYPES = frozenset(
         "horizontal_bar",
         "donut",
         "kpi",
-        "heatmap",
         "area",
         "scatter",
-        "waterfall",
-        "treemap",
     }
 )
 
 _MAX_HTML_BYTES = 80 * 1024
-# Keep inline <script> for Chart.js; drop remote/host tags.
 _FORBIDDEN_TAGS = re.compile(
     r"<(?:iframe|object|embed|link|base|meta|form)\b[^>]*>.*?</(?:iframe|object|embed|link|base|meta|form)>\s*"
     r"|<(?:iframe|object|embed|link|base|meta|form)\b[^>]*/?>"
@@ -73,4 +71,4 @@ def frame_template_path() -> Path:
 
 def wrap_chart_page(*, fragment: str, chart_js_href: str = "./chart.umd.min.js") -> str:
     tpl = frame_template_path().read_text(encoding="utf-8")
-    return tpl.replace("{{CHART_JS}}", chart_js_href).replace("{{FRAGMENT}}", fragment)
+    return tpl.replace("{{CHART_JS}}", chart_js_href).replace("{{FRAGMENT}}", fragment or "")

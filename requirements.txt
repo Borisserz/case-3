@@ -1,2 +1,6 @@
 # Host pipeline (LLM + optional Chart.js screenshots). TeX stays in Docker.
 playwright>=1.40
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+httpx>=0.27

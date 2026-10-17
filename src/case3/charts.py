@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,14 @@ from case3.chart_html import assets_charts_dir, sanitize_chart_html, wrap_chart_
 log = logging.getLogger("case3.charts")
 
 _MAX_PNG = 12 * 1024 * 1024
+# Single env knob for chart budget (used by generate / parse / pipeline / render).
+ENV_MAX_CHARTS = "CASE3_MAX_CHARTS"
 
 
 def max_charts_from_env() -> int:
+    """Only CASE3_MAX_CHARTS controls how many charts may appear."""
     try:
-        return max(0, int(os.environ.get("CASE3_MAX_CHARTS", "0") or "0"))
+        return max(0, int(os.environ.get(ENV_MAX_CHARTS, "0") or "0"))
     except ValueError:
         return 0
 
@@ -29,21 +33,76 @@ def chart_timeout_s() -> float:
         return 15.0
 
 
-def _write_page(work_dir: Path, fragment: str) -> Path:
+def file_url_to_path(url: str) -> Path:
+    """Convert file:// URL to a filesystem Path (Windows Chromium-safe)."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "file":
+        raise ValueError(f"not a file URL: {url!r}")
+    raw = urllib.parse.unquote(parsed.path or "")
+    # Windows: urlparse gives /C:/Users/... or /C|/Users/...
+    if len(raw) >= 3 and raw[0] == "/" and raw[2] in ":|":
+        raw = raw[1:]
+        if raw[1] == "|":
+            raw = raw[0] + ":" + raw[2:]
+    # UNC: file://server/share → netloc set
+    if parsed.netloc and parsed.netloc not in ("", "localhost"):
+        raw = f"//{parsed.netloc}{raw}"
+    return Path(raw)
+
+
+def paths_equal(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(
+            os.path.normpath(str(b))
+        )
+
+
+def _write_frame(work_dir: Path) -> Path:
+    """Write empty frame (fragment injected via DOM to avoid #mount breakout)."""
     work_dir.mkdir(parents=True, exist_ok=True)
     vendor = assets_charts_dir() / "chart.umd.min.js"
     if not vendor.is_file():
         raise RuntimeError(f"missing vendored Chart.js: {vendor}")
     shutil.copy2(vendor, work_dir / "chart.umd.min.js")
-    page = wrap_chart_page(fragment=fragment)
+    page = wrap_chart_page(fragment="")  # mount left empty
     index = work_dir / "index.html"
     index.write_text(page, encoding="utf-8")
     return index
 
 
+def _assert_chart_visible(page) -> None:  # noqa: ANN001
+    """Reject blank / empty charts before accepting PNG."""
+    stats = page.evaluate(
+        """() => {
+          const mount = document.getElementById('mount');
+          if (!mount) return {ok: false, reason: 'no mount'};
+          const canvas = mount.querySelector('canvas');
+          if (canvas && canvas.width > 0 && canvas.height > 0) {
+            const ctx = canvas.getContext('2d');
+            const {width, height} = canvas;
+            const data = ctx.getImageData(0, 0, width, height).data;
+            let painted = 0;
+            for (let i = 0; i < data.length; i += 16) {
+              const a = data[i+3];
+              if (a < 8) continue;  // ignore fully transparent
+              if (data[i] < 250 || data[i+1] < 250 || data[i+2] < 250) painted++;
+            }
+            return {ok: painted >= 40, reason: 'canvas painted=' + painted, painted};
+          }
+          const text = (mount.innerText || '').trim();
+          if (text.length >= 1) return {ok: true, reason: 'kpi/text'};
+          return {ok: false, reason: 'empty mount'};
+        }"""
+    )
+    if not stats or not stats.get("ok"):
+        raise RuntimeError(f"blank chart screenshot: {stats}")
+
+
 def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -> None:
     html = sanitize_chart_html(str(chart.get("html") or ""))
-    index = _write_page(work_dir, html)
+    index = _write_frame(work_dir)
     timeout_ms = int(chart_timeout_s() * 1000)
 
     try:
@@ -60,6 +119,7 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
         index.resolve(),
         (work_dir / "chart.umd.min.js").resolve(),
     }
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -69,21 +129,17 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
             )
 
             def _route(route, request):  # noqa: ANN001
-                import urllib.parse
-
                 url = request.url
                 if url.startswith("data:"):
                     route.continue_()
                     return
                 if url.startswith("file:"):
-                    path = Path(urllib.parse.unquote(urllib.parse.urlparse(url).path))
-                    # Windows file:///C:/... → path may need adjust
                     try:
-                        resolved = path.resolve()
-                    except OSError:
+                        resolved = file_url_to_path(url)
+                    except (ValueError, OSError):
                         route.abort()
                         return
-                    if resolved in allowed:
+                    if any(paths_equal(resolved, a) for a in allowed):
                         route.continue_()
                     else:
                         route.abort()
@@ -93,12 +149,28 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
             context.route("**/*", _route)
             page = context.new_page()
             page.goto(index.as_uri(), wait_until="load", timeout=timeout_ms)
+            # Inject via DOM (stray </div> cannot break #mount). Re-exec <script>
+            # because browsers do not run scripts inserted with innerHTML.
+            page.evaluate(
+                """(html) => {
+                  const mount = document.getElementById('mount');
+                  window.__CASE3_CHART_READY = false;
+                  mount.innerHTML = html;
+                  for (const old of Array.from(mount.querySelectorAll('script'))) {
+                    const s = document.createElement('script');
+                    s.textContent = old.textContent;
+                    old.replaceWith(s);
+                  }
+                }""",
+                html,
+            )
             page.wait_for_function(
                 "() => window.__CASE3_CHART_READY === true",
                 timeout=timeout_ms,
             )
-            mount = page.locator("#mount")
-            mount.screenshot(path=str(dest_png), type="png")
+            page.wait_for_timeout(80)
+            _assert_chart_visible(page)
+            page.locator("#mount").screenshot(path=str(dest_png), type="png")
             context.close()
         finally:
             browser.close()
@@ -110,6 +182,9 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         dest_png.unlink(missing_ok=True)
         raise RuntimeError("chart screenshot is not PNG")
+    if len(data) < 800:
+        dest_png.unlink(missing_ok=True)
+        raise RuntimeError(f"chart png suspiciously small: {len(data)} bytes")
 
 
 def generate_all_charts(
@@ -117,14 +192,16 @@ def generate_all_charts(
     figures_dir: Path,
     *,
     work_root: Path | None = None,
+    max_charts: int | None = None,
 ) -> dict[str, Any]:
     """Render charts into figures_dir/<id>.png. Soft-fail per chart."""
     status: dict[str, Any] = {}
-    if max_charts_from_env() <= 0:
+    limit = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
+    if limit <= 0:
         return status
     figures_dir.mkdir(parents=True, exist_ok=True)
     root = work_root or (figures_dir.parent / "chart_work")
-    for chart in charts[: max_charts_from_env()]:
+    for chart in charts[:limit]:
         cid = chart["id"]
         dest = figures_dir / f"{cid}.png"
         cdir = root / cid

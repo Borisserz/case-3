@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 import traceback
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,13 +26,18 @@ def run_pipeline(
     formats: set[str] | None = None,
     dry_run: bool = False,
     intent: str | None = None,
+    max_images: int | None = None,
+    max_charts: int | None = None,
 ) -> Path:
-    formats = formats or {"pdf", "docx"}
+    formats = formats or {"pdf"}
     root = project_root.resolve()
     text_path = resolve_text_file(source)
     stem = text_path.stem
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = f"{stem}_{stamp}"
+
+    images_budget = max_images_from_env() if max_images is None else max(0, int(max_images))
+    charts_budget = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
 
     work = root / "runs" / "work" / run_id
     out = root / "runs" / "out" / run_id
@@ -51,8 +57,8 @@ def run_pipeline(
         "intent": intent,
         "formats": sorted(formats),
         "dry_run": dry_run,
-        "max_images": max_images_from_env(),
-        "max_charts": max_charts_from_env(),
+        "max_images": images_budget,
+        "max_charts": charts_budget,
         "started_at": stamp,
     }
 
@@ -64,6 +70,8 @@ def run_pipeline(
             intent=intent,
             gold_dir=root / "prompt" / "gold",
             dry_run=dry_run,
+            max_images=images_budget,
+            max_charts=charts_budget,
         )
         meta["figures_planned"] = [f["id"] for f in figures]
         meta["charts_planned"] = [c["id"] for c in charts]
@@ -71,19 +79,21 @@ def run_pipeline(
         status: dict = {}
         figs_dir = work / "figures"
 
-        if figures and not dry_run and max_images_from_env() > 0:
+        if figures and not dry_run and images_budget > 0:
             cfg = KandinskyConfig.from_env()
+            cfg = replace(cfg, max_images=images_budget)
             if not cfg.base_url:
                 log.warning("figures planned but KANDINSKY_API_BASE_URL empty — strip slots")
             else:
                 status.update(generate_all_figures(figures, figs_dir, cfg=cfg))
 
-        if charts and not dry_run and max_charts_from_env() > 0:
+        if charts and not dry_run and charts_budget > 0:
             status.update(
                 generate_all_charts(
                     charts,
                     figs_dir,
                     work_root=work / "chart_work",
+                    max_charts=charts_budget,
                 )
             )
 

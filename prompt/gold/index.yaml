@@ -18,3 +18,6 @@ items:
   - id: image_slot
     file: image_slot.tex
     tags: [image, figure, picture, photo, illustration, slot]
+  - id: chart_slot
+    file: chart_slot.tex
+    tags: [chart, graph, diagram, bar, line, donut, kpi, numbers]

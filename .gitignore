@@ -8,15 +8,18 @@ __pycache__/
 dist/
 build/
 .local-tests/
-tests/
 
 # all run artifacts under one tree
 runs/work/
+runs/uploads/
 runs/out/*
 !runs/out/.gitkeep
 runs/logs/*
 !runs/logs/.gitkeep
 debug-bundle/
+
+web/node_modules/
+web/dist/
 
 *.pdf
 *.docx

@@ -2,7 +2,20 @@
 
 **Файл + промпт** → Qwen (LaTeX + HTML-графики + Kandinsky) → PDF/DOCX (Docker TeX).
 
-## Запуск на Windows (рабочий ПК)
+## Demo UI (React)
+
+Два терминала после `scripts\setup.cmd`:
+
+```cmd
+scripts\api.cmd
+scripts\web.cmd
+```
+
+Открой http://127.0.0.1:5173 — drag-drop Source, лимиты графиков/картинок (потолок, не план), чип **«на усмотрение модели»** или свой тип/пожелание, Intent в чат → **PDF + DOCX**. Графики и Kandinsky только если уместны по Source.
+
+API: http://127.0.0.1:8000/docs · health: `/api/health`
+
+## Запуск CLI на Windows
 
 ### 1. Один раз (~5–20 мин)
 
@@ -26,35 +39,21 @@ KANDINSKY_MAX_IMAGES=0
 
 | Env | Смысл |
 |-----|--------|
-| `CASE3_MAX_CHARTS` | 0 = без графиков; 1–N HTML→PNG |
-| `KANDINSKY_MAX_IMAGES` | 0 = без картинок Kandinsky |
+| `CASE3_MAX_CHARTS` | **единственный** бюджет графиков по умолчанию: 0 = off, 1–N (UI может переопределить на запрос) |
+| `KANDINSKY_MAX_IMAGES` | 0 = без картинок Kandinsky (UI тоже может переопределить) |
 | `VISION_API_BASE_URL` | Qwen API |
 
-### 2. Прогон
+Типы графиков (Chart.js): `bar`, `line`, `donut`, `horizontal_bar`, `grouped_bar`, `stacked_bar`, `area`, `scatter`, `kpi`.
 
-Положи текст в `notes.txt` (или любой `.txt`/`.md`).
+### 2. Прогон CLI
 
 ```cmd
-REM без API — проверка Docker/TeX
-scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run --format pdf
-
-REM полный прогон (модель сама решит про графики, если в -p не запретил)
-scripts\run.cmd notes.txt -p "сделай PDF с таблицами"
-
-REM явный тип графика
-scripts\run.cmd notes.txt -p "добавь столбчатую диаграмму bar по цифрам"
-
-REM запрет графиков
-scripts\run.cmd notes.txt -p "без графиков и диаграмм, только текст и таблицы"
-
-REM только PDF
-scripts\run.cmd notes.txt -p "короткий отчёт" --format pdf
-
-REM только DOCX
-scripts\run.cmd notes.txt -p "короткий отчёт" --format docx
+scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run
+scripts\run.cmd notes.txt -p "сделай отчёт с таблицами"
+scripts\run.cmd notes.txt -p "короткий отчёт" --format both
 ```
 
-Результат: `runs\out\<run_id>\` → `notes.pdf`, `notes.docx`, `.tex`, `figures\`, `meta.json`.
+Результат: `runs\out\<run_id>\`.
 
 ### 3. Флаги `run.cmd`
 
@@ -63,14 +62,13 @@ scripts\run.cmd notes.txt -p "короткий отчёт" --format docx
 | `notes.txt` | исходный текст |
 | `-p` / `--prompt "..."` | Intent |
 | `--prompt-file path` | Intent из файла |
-| `--format pdf\|docx\|both` | формат (по умолчанию `both`) |
-| `--dry-run` | без Qwen/графиков — stub TeX |
+| `--format pdf\|docx\|both` | по умолчанию **`pdf`** |
+| `--dry-run` | без Qwen — stub TeX |
 
 ### 4. Отладка
 
 ```cmd
 scripts\run.cmd notes.txt -p "тест" --dry-run
-REM ошибка → runs\logs\<run>\error.txt и *.log
 scripts\push-debug.cmd
 ```
 
@@ -78,19 +76,18 @@ scripts\push-debug.cmd
 
 | | |
 |--|--|
-| `scripts\` | `setup` / `run` / `push-debug` |
-| `src\case3\` | код |
+| `scripts\` | setup / run / api / web / push-debug |
+| `web\` | React demo UI |
+| `src\case3\` | pipeline + FastAPI |
 | `prompt\` | system prompt + gold |
 | `assets\charts\` | offline Chart.js |
-| `runs\` | `out` / `logs` / `work` |
+| `runs\` | out / logs / work / uploads |
 | `notes.txt` | исходный текст |
 
 ## Pipeline
 
-1. Intent (`-p`) + Source (`notes.txt`).
-2. Gold-примеры из `prompt\gold\`.
-3. Qwen → LaTeX + JSON (`figures` + `charts` с HTML).
-4. Если Intent **молчит** про графики, но в Source есть числа — модель **сама** выбирает тип/число/место (каталог: bar, line, donut, …).
-5. HTML → Playwright PNG → слоты `%CASE3_CHART:id%`.
-6. Kandinsky (если включён) → `%CASE3_FIG:id%`.
-7. Docker `case-3:tex` → PDF/DOCX.
+1. Intent + Source.
+2. Gold из `prompt\gold\`.
+3. Qwen → LaTeX + JSON (`figures` + `charts`).
+4. HTML charts → Playwright PNG; Kandinsky (если включён).
+5. Docker `case-3:tex` → PDF/DOCX.

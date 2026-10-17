@@ -39,6 +39,11 @@ def intent_tokens(intent: str) -> set[str]:
         or re.search(r"без\s+рисун", low)
         or re.search(r"без\s+иллюстрац", low)
     )
+    no_charts = bool(
+        re.search(r"без\s+график", low)
+        or re.search(r"без\s+диаграмм", low)
+        or re.search(r"без\s+chart", low)
+    )
 
     boosts = [
         ("таблиц", "table"),
@@ -53,9 +58,13 @@ def intent_tokens(intent: str) -> set[str]:
         ("рисунок", "figure"),
         ("рисунк", "figure"),
         ("схем", "figure"),
-        ("диаграмм", "figure"),
         ("иллюстрац", "illustration"),
         ("фото", "photo"),
+        ("график", "chart"),
+        ("диаграмм", "diagram"),
+        ("столбчат", "bar"),
+        ("линейн", "line"),
+        ("круг", "donut"),
     ]
     for ru, en in boosts:
         if ru in low:
@@ -70,6 +79,15 @@ def intent_tokens(intent: str) -> set[str]:
         tokens.discard("figure")
         tokens.discard("photo")
         tokens.discard("illustration")
+    if no_charts:
+        tokens.discard("chart")
+        tokens.discard("diagram")
+        tokens.discard("bar")
+        tokens.discard("line")
+        tokens.discard("donut")
+        tokens.discard("kpi")
+        tokens.discard("graph")
+        tokens.discard("numbers")
 
     if not tokens:
         tokens.add("default")

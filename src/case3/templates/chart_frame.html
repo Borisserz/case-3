@@ -11,7 +11,7 @@
       min-height: 540px;
       padding: 24px;
       box-sizing: border-box;
-      font-family: "DejaVu Sans", "Segoe UI", sans-serif;
+      font-family: "Segoe UI", "DejaVu Sans", sans-serif;
       color: #1a1a1a;
     }
     canvas { max-width: 100%; }
@@ -23,18 +23,15 @@
     .kpi .label { font-size: 22px; color: #444; margin-top: 12px; }
   </style>
   <script src="{{CHART_JS}}"></script>
+  <script>
+    if (window.Chart) {
+      Chart.defaults.animation = false;
+      Chart.defaults.responsive = false;
+      Chart.defaults.maintainAspectRatio = false;
+    }
+  </script>
 </head>
 <body>
-  <div id="mount">
-{{FRAGMENT}}
-  </div>
-  <script>
-    // Fallback ready flag if snippet forgets it
-    setTimeout(function () {
-      if (typeof window.__CASE3_CHART_READY === "undefined") {
-        window.__CASE3_CHART_READY = true;
-      }
-    }, 800);
-  </script>
+  <div id="mount">{{FRAGMENT}}</div>
 </body>
 </html>
