@@ -17,6 +17,8 @@ def test_build_intent_prefers_whitelist_types():
     assert "spider" not in text
     assert "не более 1" in text
     assert "Kandinsky" in text
+    assert "пиши заново" in text
+    assert "презентабельный" in text
 
 
 def test_auto_mode_wording():

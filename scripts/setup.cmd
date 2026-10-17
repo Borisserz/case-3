@@ -35,5 +35,10 @@ echo Building case-3:tex ...
 docker compose build
 if errorlevel 1 exit /b 1
 
-echo OK. Next: scripts\run.cmd notes.txt
+echo.
+echo OK. Next:
+echo   CLI:  scripts\run.cmd notes.txt -p "отчёт" --dry-run
+echo   UI:   scripts\api.cmd   then   scripts\web.cmd
+echo         ^(Node 18+ needed for web^)  → http://127.0.0.1:5173
+echo   Edit .env: VISION_API_BASE_URL, CASE3_MAX_CHARTS
 endlocal

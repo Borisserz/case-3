@@ -58,14 +58,36 @@ Do **not** use heatmap / treemap / waterfall (those need Plotly plugins from ano
 - two numeric series scatter → `scatter`
 - simple categories → `bar`
 
-## Chart.js recipes (copy pattern; put real numbers from Source)
+## Chart HTML — generate fresh every time (recipes = examples only)
+
+You **write** each chart’s `html` yourself for **this** document (ids, labels, colors, layout).
+Recipes below are **patterns to learn from**, not templates to paste. Do **not** reuse the same
+labels/`#0b5fff`-only look on every run. Keep individuality: palette, spacing, legend, and
+emphasis should fit **this** Source and Intent.
+
+When Intent **asks for a chart**, names a type, or UI lists preferred types → deliver a **good,
+readable, presentation-quality** chart (still honest to Source numbers). Same bar if you choose
+the type yourself under auto.
+
+### Quality bar (every chart)
+
+- Unique `canvas` / element `id` per chart (`c1`, `c2`, …).
+- Labels and legend in **Russian** when Source/Intent are Russian; short, no overflow.
+- Distinct colors per series/category (harmonious palette, enough contrast on white).
+- Readable axes: `beginAtZero` when comparing counts; sensible ticks; no tiny unreadable text.
+- `plugins.legend` on when ≥2 series or categories need names; off for single obvious series.
+- Padding / layout so the PNG is not cramped; canvas ~900×480 unless KPI.
+- Set `options.animation = false` (host also disables it). End with `window.__CASE3_CHART_READY=true;`.
+- Never invent numbers; never CDN/`fetch`; fragment only (no full HTML document).
+
+### Recipes (structure only — replace data, colors, labels)
 
 **bar**
 
 ```html
 <canvas id="c1" width="900" height="480"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:'#0b5fff'}]},options:{plugins:{legend:{display:true}}}});
+new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#2563eb','#0d9488']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
@@ -75,26 +97,30 @@ window.__CASE3_CHART_READY=true;
 ```html
 <canvas id="c1" width="900" height="480"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Zaprosy',data:[1400,2100,3100],borderColor:'#0b5fff',tension:0.2}]},options:{}});
+new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.12)',fill:true,tension:0.25,pointRadius:3}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
 
-**donut**
+**donut** (Chart.js type `doughnut`)
 
 ```html
 <canvas id="c1" width="900" height="480"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B'],datasets:[{data:[60,40],backgroundColor:['#0b5fff','#94b6ff']}]},options:{}});
+new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B'],datasets:[{data:[60,40],backgroundColor:['#2563eb','#14b8a6','#f59e0b','#64748b']}]},options:{plugins:{legend:{position:'bottom'}},cutout:'55%',animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
 
-**horizontal_bar** — Chart type `bar` + `indexAxis:'y'`.
+**horizontal_bar** — Chart type `bar` + `indexAxis:'y'`, `beginAtZero:true`.
 
-**grouped_bar** — several datasets, `options.scales` default.
+**grouped_bar** — several datasets with distinct `backgroundColor`, shared labels.
 
-**stacked_bar** — `options.scales.x.stacked=true` and `y.stacked=true` (or both).
+**stacked_bar** — `options.scales.x.stacked=true` and `y.stacked=true` (as needed).
+
+**area** — `type:'line'` with `fill:true` and translucent `backgroundColor`.
+
+**scatter** — `type:'scatter'`, points from Source pairs; label axes clearly.
 
 **kpi**
 
@@ -103,7 +129,7 @@ window.__CASE3_CHART_READY=true;
 <script>window.__CASE3_CHART_READY=true;</script>
 ```
 
-Animation is already disabled in the host frame. Still set `window.__CASE3_CHART_READY=true` at the end.
+Host frame already loads Chart.js offline and disables animation. Still set `__CASE3_CHART_READY`.
 
 # When to add charts / figures (context fit — mandatory)
 

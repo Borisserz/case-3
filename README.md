@@ -1,61 +1,83 @@
 # case-3
 
-**Файл + промпт** → Qwen (LaTeX + HTML-графики + Kandinsky) → PDF/DOCX (Docker TeX).
+**Файл + Intent** → Qwen (LaTeX + HTML-графики Chart.js + Kandinsky) → PDF/DOCX (Docker TeX).
 
-## Demo UI (React)
+Модель **сама пишет** HTML каждого графика под документ. Рецепты в `prompt/system_tex.md` — только образцы; цифры только из Source.
 
-Два терминала после `scripts\setup.cmd`:
+## Требования (Windows)
 
-```cmd
-scripts\api.cmd
-scripts\web.cmd
-```
+| Что | Зачем |
+|-----|--------|
+| **Docker Desktop** (WSL2) | образ `case-3:tex` → PDF/DOCX |
+| **Python 3.9+** (`python` или `py`) | pipeline, API, Playwright |
+| **Node.js 18+** + npm | только для React demo UI |
+| Сеть до Qwen | полный прогон (не dry-run) |
 
-Открой http://127.0.0.1:5173 — drag-drop Source, лимиты графиков/картинок (потолок, не план), чип **«на усмотрение модели»** или свой тип/пожелание, Intent в чат → **PDF + DOCX**. Графики и Kandinsky только если уместны по Source.
-
-API: http://127.0.0.1:8000/docs · health: `/api/health`
-
-## Запуск CLI на Windows
+## Быстрый старт Windows
 
 ### 1. Один раз (~5–20 мин)
 
-1. Docker Desktop **запущен** (WSL 2 / virtualization).
-2. В корне репо:
-
 ```cmd
+cd /d C:\path\to\case-3
 git pull
 scripts\setup.cmd
 ```
 
-`setup` ставит Python-пакет, **Playwright Chromium** (для графиков) и собирает образ `case-3:tex`.
+`setup.cmd` делает:
 
-3. Правь `.env` (из `.env.example`):
+1. проверяет Docker;
+2. копирует `.env.example` → `.env` (если нет);
+3. `pip install -e .`;
+4. `playwright install chromium` (PNG графиков);
+5. `docker compose build` → образ `case-3:tex`.
+
+Правь `.env`:
 
 ```env
 VISION_API_BASE_URL=http://192.168.x.x:8080
 CASE3_MAX_CHARTS=3
 KANDINSKY_MAX_IMAGES=0
+CASE3_IMAGE=case-3:tex
 ```
 
 | Env | Смысл |
 |-----|--------|
-| `CASE3_MAX_CHARTS` | **единственный** бюджет графиков по умолчанию: 0 = off, 1–N (UI может переопределить на запрос) |
-| `KANDINSKY_MAX_IMAGES` | 0 = без картинок Kandinsky (UI тоже может переопределить) |
-| `VISION_API_BASE_URL` | Qwen API |
+| `VISION_API_BASE_URL` | Qwen / Vision API |
+| `CASE3_MAX_CHARTS` | потолок графиков по умолчанию (0 = off; UI может переопределить) |
+| `KANDINSKY_MAX_IMAGES` | потолок картинок (0 = off) |
+| `KANDINSKY_API_BASE_URL` | если нужны иллюстрации |
+| `CASE3_IMAGE` | Docker-образ TeX (по умолчанию `case-3:tex`) |
 
-Типы графиков (Chart.js): `bar`, `line`, `donut`, `horizontal_bar`, `grouped_bar`, `stacked_bar`, `area`, `scatter`, `kpi`.
+Типы Chart.js: `bar`, `line`, `donut`, `horizontal_bar`, `grouped_bar`, `stacked_bar`, `area`, `scatter`, `kpi`.
 
-### 2. Прогон CLI
+### 2. Demo UI (два окна cmd)
+
+```cmd
+scripts\api.cmd
+```
+
+```cmd
+scripts\web.cmd
+```
+
+- UI: http://127.0.0.1:5173  
+- API / docs: http://127.0.0.1:8000/docs  
+- health: http://127.0.0.1:8000/api/health  
+
+В UI: Source (drag-drop / текст), **«на усмотрение модели»** или типы / своё пожелание, лимиты (потолок), Intent → **PDF + DOCX**.  
+Без Vision — включи **Dry-run** (проверка Docker/TeX без LLM).
+
+`web.cmd` при первом запуске выполнит `npm install` в `web\`.
+
+### 3. CLI без UI
 
 ```cmd
 scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run
-scripts\run.cmd notes.txt -p "сделай отчёт с таблицами"
+scripts\run.cmd notes.txt -p "сделай отчёт с таблицами и графиком"
 scripts\run.cmd notes.txt -p "короткий отчёт" --format both
 ```
 
-Результат: `runs\out\<run_id>\`.
-
-### 3. Флаги `run.cmd`
+Результат: `runs\out\<run_id>\` (`*.pdf`, `*.docx`, `meta.json`).
 
 | Флаг | Что делает |
 |------|------------|
@@ -63,7 +85,7 @@ scripts\run.cmd notes.txt -p "короткий отчёт" --format both
 | `-p` / `--prompt "..."` | Intent |
 | `--prompt-file path` | Intent из файла |
 | `--format pdf\|docx\|both` | по умолчанию **`pdf`** |
-| `--dry-run` | без Qwen — stub TeX |
+| `--dry-run` | без Qwen — stub TeX + Docker |
 
 ### 4. Отладка
 
@@ -72,22 +94,49 @@ scripts\run.cmd notes.txt -p "тест" --dry-run
 scripts\push-debug.cmd
 ```
 
+### 5. Если что-то не стартует
+
+| Симптом | Что сделать |
+|---------|-------------|
+| `Docker image missing` | Docker Desktop запущен → `scripts\setup.cmd` |
+| `VISION_API…` / health `ok: false` | заполни `.env`, или UI → Dry-run |
+| графики skip / Playwright | `python -m playwright install chromium` |
+| UI не открывается | Node 18+: `cd web && npm install && npm run dev` |
+| API `ModuleNotFoundError` | снова `scripts\setup.cmd` (`pip install -e .`) |
+| порт занят | закрой старый `api.cmd` / `web.cmd` или смени порт |
+
+Проверка health (PowerShell / curl):
+
+```cmd
+curl http://127.0.0.1:8000/api/health
+```
+
+Ожидаемо для полного парада: `docker_ok`, `playwright_ok`, `vision_configured`.
+
+## Графики: как это устроено
+
+1. Intent + Source → Qwen пишет LaTeX + JSON со слотами `%CASE3_CHART:id%` и полем `html`.
+2. HTML — **уникальный фрагмент Chart.js** на каждый запуск (не копипаст рецептов).
+3. Playwright + offline `assets/charts/chart.umd.min.js` → PNG → inject в TeX → PDF/DOCX.
+
+Правила качества и «не выдумывать числа» — в `prompt/system_tex.md`. UI передаёт потолок, auto/типы/пожелания в Intent (`src/case3/api.py`).
+
 ## Папки
 
 | | |
 |--|--|
-| `scripts\` | setup / run / api / web / push-debug |
-| `web\` | React demo UI |
+| `scripts\` | `setup` / `run` / `api` / `web` / `push-debug` |
+| `web\` | React demo |
 | `src\case3\` | pipeline + FastAPI |
 | `prompt\` | system prompt + gold |
 | `assets\charts\` | offline Chart.js |
 | `runs\` | out / logs / work / uploads |
-| `notes.txt` | исходный текст |
+| `tests\` | pytest |
 
-## Pipeline
+## Pipeline (кратко)
 
-1. Intent + Source.
+1. Intent ∥ Source (+ UI-требования).
 2. Gold из `prompt\gold\`.
 3. Qwen → LaTeX + JSON (`figures` + `charts`).
-4. HTML charts → Playwright PNG; Kandinsky (если включён).
+4. Charts → Playwright PNG; Kandinsky (если URL в `.env`).
 5. Docker `case-3:tex` → PDF/DOCX.

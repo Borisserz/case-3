@@ -9,18 +9,18 @@
     #mount {
       width: 960px;
       min-height: 540px;
-      padding: 24px;
+      padding: 28px 32px;
       box-sizing: border-box;
       font-family: "Segoe UI", "DejaVu Sans", sans-serif;
-      color: #1a1a1a;
+      color: #1e293b;
     }
-    canvas { max-width: 100%; }
+    canvas { max-width: 100%; display: block; margin: 0 auto; }
     .kpi {
       display: flex; flex-direction: column; justify-content: center;
       min-height: 480px; text-align: center;
     }
-    .kpi .value { font-size: 72px; font-weight: 700; color: #0b5fff; }
-    .kpi .label { font-size: 22px; color: #444; margin-top: 12px; }
+    .kpi .value { font-size: 76px; font-weight: 700; color: #2563eb; letter-spacing: -0.02em; }
+    .kpi .label { font-size: 22px; color: #475569; margin-top: 14px; font-weight: 500; }
   </style>
   <script src="{{CHART_JS}}"></script>
   <script>
@@ -28,6 +28,14 @@
       Chart.defaults.animation = false;
       Chart.defaults.responsive = false;
       Chart.defaults.maintainAspectRatio = false;
+      Chart.defaults.font.family = '"Segoe UI", "DejaVu Sans", sans-serif';
+      Chart.defaults.font.size = 14;
+      Chart.defaults.color = '#334155';
+      Chart.defaults.plugins.legend.labels.boxWidth = 14;
+      Chart.defaults.plugins.legend.labels.padding = 16;
+      Chart.defaults.elements.bar.borderRadius = 4;
+      Chart.defaults.elements.line.borderWidth = 2.5;
+      Chart.defaults.scale.grid.color = 'rgba(148,163,184,0.35)';
     }
   </script>
 </head>
