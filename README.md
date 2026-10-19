@@ -26,8 +26,11 @@ scripts\api.cmd
 scripts\web.cmd
 ```
 
-Открой http://127.0.0.1:5173  
-API: http://127.0.0.1:8000/docs
+Открой **сайт:** http://127.0.0.1:5173  
+API docs: http://127.0.0.1:8000/docs · health: `/api/health`  
+(корень `:8000/` сам уводит на `/docs` — это не сайт)
+
+Если `web.cmd` пишет про **npm**: поставь [Node.js LTS](https://nodejs.org/), галка Add to PATH, **новые** окна cmd, проверка `node -v` и `npm -v`.
 
 **Только CLI (без сайта):**
 
@@ -132,7 +135,8 @@ scripts\push-debug.cmd
 | `Docker image missing` | Docker Desktop запущен → `scripts\setup.cmd` |
 | `VISION_API…` / health `ok: false` | заполни `.env`, или UI → Dry-run |
 | графики skip / Playwright | `python -m playwright install chromium` |
-| UI не открывается | Node 18+: `cd web && npm install && npm run dev` |
+| UI / `npm не является…` | [Node.js LTS](https://nodejs.org/) + PATH, новые cmd; `node -v` / `npm -v` |
+| 404 на `http://127.0.0.1:8000/` | это API, не сайт → `/docs` или UI на `:5173` |
 | API `ModuleNotFoundError` | снова `scripts\setup.cmd` (`pip install -e .`) |
 | порт занят | закрой старый `api.cmd` / `web.cmd` или смени порт |
 

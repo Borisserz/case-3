@@ -11,6 +11,10 @@ if not defined PY where py >nul 2>&1 && for %%V in (3.13 3.12 3.11 3.10 3.9 3) d
 )
 if not defined PY (echo ERROR: Python 3.9+ not on PATH. & exit /b 1)
 
-echo API → http://127.0.0.1:8000  (docs /docs)
+echo.
+echo API  → http://127.0.0.1:8000/docs
+echo Health→ http://127.0.0.1:8000/api/health
+echo Сайт → подними вторым окном: scripts\web.cmd  → http://127.0.0.1:5173
+echo.
 %PY% -m uvicorn case3.api:app --reload --host 127.0.0.1 --port 8000
 endlocal

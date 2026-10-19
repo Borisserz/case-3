@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from case3.chart_html import CHART_TYPES
 from case3.charts import max_charts_from_env
@@ -52,6 +52,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root() -> RedirectResponse:
+    """Redirect API root to OpenAPI docs; UI is on :5173."""
+    return RedirectResponse("/docs")
 
 
 _CHART_TYPE_LIST = ", ".join(sorted(CHART_TYPES))
