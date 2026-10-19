@@ -1,10 +1,15 @@
 # Smoke fixtures
 
-Готовые Source для `scripts\smoke.cmd` (Windows) или:
+Готовые Source — на Windows:
 
-```bash
-PYTHONPATH=src python -m case3.cli run fixtures/smoke/01_temp_shares.txt \
-  -p "отчёт с графиками" --format both
+```cmd
+scripts\smoke.cmd
+```
+
+Или один файл:
+
+```cmd
+scripts\run.cmd fixtures\smoke\01_temp_shares.txt -p "отчёт с графиками" --format both
 ```
 
 | File | Проверка |

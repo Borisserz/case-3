@@ -35,10 +35,19 @@ echo Building case-3:tex ...
 docker compose build
 if errorlevel 1 exit /b 1
 
+if not exist assets\docx\reference.docx (
+  echo WARNING: assets\docx\reference.docx missing — DOCX will use pandoc default.
+  echo          git pull origin main
+)
+
 echo.
 echo OK. Next:
-echo   CLI:  scripts\run.cmd notes.txt -p "отчёт" --dry-run
-echo   UI:   scripts\api.cmd   then   scripts\web.cmd
-echo         ^(Node 18+ needed for web^)  → http://127.0.0.1:5173
-echo   Edit .env: VISION_API_BASE_URL, CASE3_MAX_CHARTS
+echo   1^) Edit .env: VISION_API_BASE_URL=http://^<qwen-host^>:8080
+echo      ^(KANDINSKY_MAX_IMAGES=0 if no image API^)
+echo   2^) Two windows:
+echo        scripts\api.cmd
+echo        scripts\web.cmd
+echo      UI http://127.0.0.1:5173  ·  API http://127.0.0.1:8000/docs
+echo   3^) CLI: scripts\run.cmd notes.txt -p "отчёт" --dry-run
+echo   4^) Smoke: scripts\smoke.cmd
 endlocal

@@ -2,6 +2,14 @@
 setlocal EnableExtensions
 cd /d "%~dp0..\web"
 
+REM Don't inherit Cursor/corporate proxy into Vite → API proxy.
+set "HTTP_PROXY="
+set "HTTPS_PROXY="
+set "http_proxy="
+set "https_proxy="
+set "ALL_PROXY="
+set "all_proxy="
+
 REM Find node even when PATH is broken (common on Windows / Cursor terminal)
 set "NODE_EXE="
 if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles%\nodejs\node.exe"
