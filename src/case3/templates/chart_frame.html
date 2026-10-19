@@ -7,20 +7,25 @@
   <style>
     html, body { margin: 0; padding: 0; background: #ffffff; }
     #mount {
-      width: 960px;
-      min-height: 540px;
-      padding: 28px 32px;
+      width: 1120px;
+      min-height: 600px;
+      padding: 32px 36px;
       box-sizing: border-box;
       font-family: "Segoe UI", "DejaVu Sans", sans-serif;
-      color: #1e293b;
+      color: #0F3D3E;
     }
     canvas { max-width: 100%; display: block; margin: 0 auto; }
     .kpi {
       display: flex; flex-direction: column; justify-content: center;
-      min-height: 480px; text-align: center;
+      min-height: 520px; text-align: center;
     }
-    .kpi .value { font-size: 76px; font-weight: 700; color: #2563eb; letter-spacing: -0.02em; }
-    .kpi .label { font-size: 22px; color: #475569; margin-top: 14px; font-weight: 500; }
+    .kpi .value {
+      font-size: 88px; font-weight: 700; color: #E85D04;
+      letter-spacing: -0.03em; line-height: 1;
+    }
+    .kpi .label {
+      font-size: 22px; color: #264653; margin-top: 16px; font-weight: 600;
+    }
   </style>
   <script src="{{CHART_JS}}"></script>
   <script>
@@ -28,14 +33,21 @@
       Chart.defaults.animation = false;
       Chart.defaults.responsive = false;
       Chart.defaults.maintainAspectRatio = false;
+      Chart.defaults.devicePixelRatio = Math.max(2, window.devicePixelRatio || 2);
       Chart.defaults.font.family = '"Segoe UI", "DejaVu Sans", sans-serif';
-      Chart.defaults.font.size = 14;
-      Chart.defaults.color = '#334155';
+      Chart.defaults.font.size = 15;
+      Chart.defaults.font.weight = "500";
+      Chart.defaults.color = "#264653";
       Chart.defaults.plugins.legend.labels.boxWidth = 14;
-      Chart.defaults.plugins.legend.labels.padding = 16;
-      Chart.defaults.elements.bar.borderRadius = 4;
-      Chart.defaults.elements.line.borderWidth = 2.5;
-      Chart.defaults.scale.grid.color = 'rgba(148,163,184,0.35)';
+      Chart.defaults.plugins.legend.labels.padding = 18;
+      Chart.defaults.plugins.legend.labels.usePointStyle = true;
+      Chart.defaults.elements.bar.borderRadius = 6;
+      Chart.defaults.elements.bar.borderSkipped = false;
+      Chart.defaults.elements.line.borderWidth = 3;
+      Chart.defaults.elements.point.radius = 4;
+      Chart.defaults.elements.point.hoverRadius = 5;
+      Chart.defaults.scale.grid.color = "rgba(15,61,62,0.08)";
+      Chart.defaults.scale.grid.drawBorder = false;
     }
   </script>
 </head>

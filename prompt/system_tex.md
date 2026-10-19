@@ -73,21 +73,53 @@ the type yourself under auto.
 
 - Unique `canvas` / element `id` per chart (`c1`, `c2`, …).
 - Labels and legend in **Russian** when Source/Intent are Russian; short, no overflow.
-- Distinct colors per series/category (harmonious palette, enough contrast on white).
-- Readable axes: `beginAtZero` when comparing counts; sensible ticks; no tiny unreadable text.
-- `plugins.legend` on when ≥2 series or categories need names; off for single obvious series.
-- Padding / layout so the PNG is not cramped; canvas ~900×480 unless KPI.
-- Set `options.animation = false` (host also disables it). End with `window.__CASE3_CHART_READY=true;`.
-- Never invent numbers; never CDN/`fetch`; fragment only (no full HTML document).
+- Readable axes: `beginAtZero` when comparing counts; maxTicksLimit ~6; no tiny text.
+- `plugins.legend` on when ≥2 series/categories need names; off for one obvious series.
+- Canvas **1100×560** (sharp PNG); KPI may use the host `.kpi` block instead.
+- `options.animation = false`. End with `window.__CASE3_CHART_READY=true;`.
+- Never invent numbers; never CDN/`fetch`; fragment only.
 
-### Recipes (structure only — replace data, colors, labels)
+### Visual style — vivid, editorial, NOT AI-slop
+
+Aim for a **print magazine / annual-report** chart: juicy saturated inks, crisp edges, calm whitespace.
+Pick **one** palette per document and stick to it (vary by category within that palette).
+
+**Preferred ink set (use these hexes):**
+
+| Role | Hex | Notes |
+|------|-----|--------|
+| Ink / primary | `#0F3D3E` | deep teal-ink |
+| Accent A | `#E85D04` | vivid coral-orange |
+| Accent B | `#2A9D8F` | rich teal |
+| Accent C | `#E9C46A` | warm gold |
+| Accent D | `#264653` | slate-teal |
+| Muted | `#94A3B8` | grid / secondary only |
+| Area fill | `rgba(42,157,143,0.18)` | soft, not neon glow |
+
+**Do:**
+
+- Solid fills for bars/donut slices (full opacity or ~0.92) — look **juicy**, not washed-out pastel.
+- Bars: `borderRadius: 6`, slight `borderWidth: 0`, category colors from the table above.
+- Lines: `borderWidth: 3`, `tension: 0.2–0.3`, `pointRadius: 4`, `pointHoverRadius: 5`; optional soft fill under one series.
+- Donut: `cutout: '58%'`, legend `position: 'bottom'`, saturated slice colors, no gray-on-gray.
+- Grid: light (`rgba(15,61,62,0.08)`), **no** heavy frames; hide top/right spines if using scales.
+- Typography via Chart defaults is fine; keep labels short.
+
+**Don’t (AI-slop tells):**
+
+- Purple / indigo / violet gradients (`#7c3aed`, `#6366f1`, neon pink-blue).
+- Only default Chart.js blue (`#0b5fff` / `#36a2eb`) on every chart.
+- Glow, shadows-as-decoration, rainbow 8+ unrelated hues, glassmorphism.
+- Tiny unreadable legends, cramped canvas, identical look copy-pasted from recipes.
+
+### Recipes (structure only — replace data; keep the ink palette spirit)
 
 **bar**
 
 ```html
-<canvas id="c1" width="900" height="480"></canvas>
+<canvas id="c1" width="1100" height="560"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#2563eb','#0d9488']}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}},animation:false}});
+new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#E85D04','#2A9D8F'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.08)'},ticks:{maxTicksLimit:6}},x:{grid:{display:false}}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
@@ -95,9 +127,9 @@ window.__CASE3_CHART_READY=true;
 **line**
 
 ```html
-<canvas id="c1" width="900" height="480"></canvas>
+<canvas id="c1" width="1100" height="560"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,0.12)',fill:true,tension:0.25,pointRadius:3}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true}},animation:false}});
+new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#0F3D3E',backgroundColor:'rgba(42,157,143,0.18)',fill:true,tension:0.28,borderWidth:3,pointRadius:4,pointBackgroundColor:'#E85D04'}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.08)'}},x:{grid:{display:false}}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
@@ -105,22 +137,22 @@ window.__CASE3_CHART_READY=true;
 **donut** (Chart.js type `doughnut`)
 
 ```html
-<canvas id="c1" width="900" height="480"></canvas>
+<canvas id="c1" width="1100" height="560"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B'],datasets:[{data:[60,40],backgroundColor:['#2563eb','#14b8a6','#f59e0b','#64748b']}]},options:{plugins:{legend:{position:'bottom'}},cutout:'55%',animation:false}});
+new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B','C'],datasets:[{data:[50,30,20],backgroundColor:['#E85D04','#2A9D8F','#E9C46A'],borderWidth:2,borderColor:'#ffffff'}]},options:{plugins:{legend:{position:'bottom'}},cutout:'58%',animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
 
-**horizontal_bar** — Chart type `bar` + `indexAxis:'y'`, `beginAtZero:true`.
+**horizontal_bar** — `type:'bar'`, `indexAxis:'y'`, same ink colors, `borderRadius:6`.
 
-**grouped_bar** — several datasets with distinct `backgroundColor`, shared labels.
+**grouped_bar** — datasets in `#E85D04` / `#2A9D8F` / `#264653` (not purple).
 
-**stacked_bar** — `options.scales.x.stacked=true` and `y.stacked=true` (as needed).
+**stacked_bar** — stacked scales + ink palette.
 
-**area** — `type:'line'` with `fill:true` and translucent `backgroundColor`.
+**area** — line + `fill:true` with `rgba(42,157,143,0.18)`.
 
-**scatter** — `type:'scatter'`, points from Source pairs; label axes clearly.
+**scatter** — points `#E85D04` / `#0F3D3E`, clear axis titles in options if helpful.
 
 **kpi**
 
@@ -129,7 +161,7 @@ window.__CASE3_CHART_READY=true;
 <script>window.__CASE3_CHART_READY=true;</script>
 ```
 
-Host frame already loads Chart.js offline and disables animation. Still set `__CASE3_CHART_READY`.
+Host frame loads Chart.js offline, sets DPR for sharpness, disables animation. Still set `__CASE3_CHART_READY`.
 
 # When to add charts / figures (context fit — mandatory)
 
