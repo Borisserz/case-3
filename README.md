@@ -75,7 +75,32 @@ winget list | findstr -i node
 
 Потом снова раздел **A** (только `.msi` по ссылке выше).
 
-### E. Не делай так
+### E. `node -v` ок, а `npm` — «невозможно загрузить… выполнение сценариев отключено»
+
+PowerShell режет `npm.ps1`. **npm есть**, просто зови `.cmd`:
+
+```powershell
+npm.cmd -v
+npm.cmd install
+```
+
+Или один раз разреши скрипты для своего пользователя:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Подтверди `Y` → **новое** окно → снова `npm -v`.
+
+Для `web.cmd` это уже учтено (`npm.cmd`). Если запускаешь руками из `web\`:
+
+```powershell
+cd web
+npm.cmd install
+npm.cmd run dev
+```
+
+### F. Не делай так
 
 - способ **Docker** на nodejs.org  
 - способ **Chocolatey** (`choco install…`)  

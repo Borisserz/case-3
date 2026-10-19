@@ -145,7 +145,35 @@ winget list | findstr -i node
 
 ---
 
-## 5. Запуск сайта case-3
+## 5. `node` есть, `npm` — «выполнение сценариев отключено»
+
+PowerShell блокирует `npm.ps1`. Это **не** «npm не установлен».
+
+Обход сразу:
+
+```powershell
+npm.cmd -v
+```
+
+Или разрешить скрипты (CurrentUser):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+`Y` → новое окно → `npm -v`.
+
+Вручную в папке UI:
+
+```powershell
+cd web
+npm.cmd install
+npm.cmd run dev
+```
+
+`scripts\web.cmd` вызывает `npm.cmd` сам.
+
+## 6. Запуск сайта case-3
 
 Из **корня** репозитория (не из `web\`):
 
