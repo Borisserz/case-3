@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -271,14 +273,18 @@ async def api_run(
         raise HTTPException(400, detail="provide source file or source_text")
 
     try:
-        out_dir = run_pipeline(
-            src_path,
-            project_root=ROOT,
-            formats=fmt_set,
-            dry_run=is_dry,
-            intent=full_intent,
-            max_images=max_images,
-            max_charts=max_charts,
+        # Playwright sync API cannot run inside FastAPI's asyncio loop.
+        out_dir = await asyncio.to_thread(
+            partial(
+                run_pipeline,
+                src_path,
+                project_root=ROOT,
+                formats=fmt_set,
+                dry_run=is_dry,
+                intent=full_intent,
+                max_images=max_images,
+                max_charts=max_charts,
+            )
         )
     except PipelineError as exc:
         raise HTTPException(

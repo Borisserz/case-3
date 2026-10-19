@@ -11,6 +11,19 @@ from case3.tex_safe import escape_tex_text, sanitize_width
 
 _FIG_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
 _CHART_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
+# Model sometimes wraps a slot in figure; after a failed chart we must drop the shell.
+_EMPTY_FIGURE = re.compile(
+    r"\\begin\{figure\}(?:\[[^\]]*\])?\{?\}?\s*"
+    r"(?:\\centering\s*)?"
+    r"(?:\\caption\{[^}]*\}\s*)?"
+    r"(?:\\label\{[^}]*\}\s*)?"
+    r"\\end\{figure\}\s*",
+    re.S,
+)
+_EMPTY_FIGURE_LOOSE = re.compile(
+    r"\\begin\{figure\}.*?\\end\{figure\}",
+    re.S,
+)
 
 
 def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: str) -> str:
@@ -57,6 +70,12 @@ def inject_media(
     out = _FIG_SLOT.sub(repl_fig, tex)
     out = _CHART_SLOT.sub(repl_chart, out)
     out = strip_orphan_slots(out)
+    # Drop figure envs that no longer contain \includegraphics (failed/stripped slot)
+    def _drop_empty_fig(m: re.Match[str]) -> str:
+        body = m.group(0)
+        return body if r"\includegraphics" in body else ""
+
+    out = _EMPTY_FIGURE_LOOSE.sub(_drop_empty_fig, out)
     out = ensure_document_preamble(out)
     return out
 
