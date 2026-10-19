@@ -30,7 +30,8 @@ scripts\web.cmd
 API docs: http://127.0.0.1:8000/docs · health: `/api/health`  
 (корень `:8000/` сам уводит на `/docs` — это не сайт)
 
-Если `web.cmd` пишет про **npm**: поставь [Node.js LTS](https://nodejs.org/), галка Add to PATH, **новые** окна cmd, проверка `node -v` и `npm -v`.
+Если `web.cmd` / `node` / `npm` «не распознано»: полная инструкция → **[docs/WINDOWS_NODE.md](docs/WINDOWS_NODE.md)**  
+(кратко: https://nodejs.org/ → LTS `.msi` → новые окна → `node -v` и `npm -v`).
 
 **Только CLI (без сайта):**
 
