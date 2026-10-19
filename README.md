@@ -165,8 +165,13 @@ curl http://127.0.0.1:8000/api/health
 | `src\case3\` | pipeline + FastAPI |
 | `prompt\` | system prompt + gold |
 | `assets\charts\` | offline Chart.js |
-| `runs\` | out / logs / work / uploads |
-| `tests\` | pytest |
+| `runs\` | локальные артефакты прогонов (не код) |
+
+**`runs\out\`** — готовые PDF/DOCX/tex после генерации.  
+**`runs\logs\`** — логи ошибок TeX.  
+**`runs\work\`** / **`uploads\`** — временные файлы.  
+
+Можно спокойно удалять содержимое `runs\out`, `runs\logs`, `runs\work` — это мусор прогонов, в git почти не попадает. Нужные PDF копируй куда сдаёшь.
 
 ## Pipeline (кратко)
 
