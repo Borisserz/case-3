@@ -34,9 +34,9 @@ JSON schema:
     {
       "id": "cht_01",
       "type": "bar",
-      "caption": "Подпись на русском",
+      "caption": "Клиенты по годам, 2024–2025",
       "width": "0.85\\textwidth",
-      "html": "<canvas id=\"c1\" width=\"900\" height=\"480\"></canvas><script>new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['2024','2025'],datasets:[{label:'Клиенты',data:[12,28],backgroundColor:'#0b5fff'}]},options:{plugins:{legend:{display:true}}}});window.__CASE3_CHART_READY=true;</script>"
+      "html": "<canvas id=\"c1\" width=\"1100\" height=\"560\"></canvas><script>new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['2024','2025'],datasets:[{label:'Клиенты',data:[12,28],backgroundColor:['#E85D04','#2A9D8F'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}},animation:false}});window.__CASE3_CHART_READY=true;</script>"
     }
   ]
 }
@@ -165,38 +165,37 @@ window.__CASE3_CHART_READY=true;
 
 Host frame loads Chart.js offline, sets DPR for sharpness, disables animation. Still set `__CASE3_CHART_READY`.
 
-# When to add charts / figures (context fit — mandatory)
+# When to add charts / figures
 
-`{{MAX_CHARTS}}` and `{{MAX_IMAGES}}` are **ceilings**, not quotas. **0** of either is normal. Do **not** fill the budget for decoration.
+`{{MAX_CHARTS}}` / `{{MAX_IMAGES}}` are **ceilings**. Do **not** invent numbers to fill the budget.
+But if the ceiling is **≥ 1** and Source **has usable numbers**, you **should** add charts (often what the user wants). Prefer **variety of types** when adding 2+.
 
-## Charts — add only when **all** hold
+## Charts — add when **all** hold
 
-1. Source has **explicit numbers** usable as a chart (≥2 comparable points, shares, a time series, or one KPI with clear context).
-2. A chart is **clearer** than a `booktabs` table or a short paragraph for that comparison.
-3. Every plotted value comes **from Source** (only simple derived % / differences allowed).
-4. The chart sits next to the prose/table it explains; `caption` names the same entities as Source.
+1. Source has **explicit numbers** (≥2 comparable points, shares, time series, or one clear KPI).
+2. A chart helps the reader more than (or alongside) a table.
+3. Every plotted value is from Source (only simple % / differences allowed).
+4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains.
+5. `caption`: Russian, specific («Клиенты по годам», not «График 1»).
 
-Otherwise: `"charts": []` and **no** `%CASE3_CHART:%` slots.
-
-## Intent priority for charts
-
-- Intent **forbids** charts/graphs/diagrams/графики/диаграммы → empty charts, no slots.
-- Intent **names** a type (or free-text wish like «pie», «воронка», «столбцы») → map to the **nearest** catalog type below; if you cannot without inventing numbers → **skip** that chart.
-- Intent says **auto / на усмотрение модели / silent on types** → default to **0** charts; add only when the checklist above is satisfied. You choose type, count (≤ ceiling), and placement.
-- User wishes in Intent **never** override «do not invent numbers» or the `type` whitelist.
+If Intent **forbids** charts → `"charts": []`, no slots.  
+If Intent **asks** for a chart / names types → honor (map wishes to whitelist).  
+If Intent is auto/silent but Source has numbers and ceiling ≥ 1 → **add 1…ceiling charts**, pick types by playbook, prefer **different** types.
 
 ## `charts[].type` whitelist (strict)
 
 Only: `bar`, `grouped_bar`, `stacked_bar`, `line`, `horizontal_bar`, `donut`, `kpi`, `area`, `scatter`.
 
-Synonyms → catalog: pie / круговая / doughnut → `donut`; column / столбчатая → `bar`; тренд / ряд → `line`; топ-N / рейтинг → `horizontal_bar`; одна крупная цифра → `kpi`.  
-Any other label (heatmap, treemap, waterfall, funnel, radar) → nearest catalog type **or omit** the chart. Never emit a non-catalog `type`.
+Synonyms: pie/круговая/doughnut → `donut`; column/столбцы → `bar`; тренд → `line`; топ-N → `horizontal_bar`; одна цифра → `kpi`.  
+Never emit non-catalog `type`.
 
-## Kandinsky figures
+## Kandinsky `figures` (images)
 
-- Only if Source describes a **concrete scene / object / process** that cannot be shown honestly as a table or data chart.
-- **Never** illustrate numeric comparisons with Kandinsky — use `charts` or a table.
-- `{{MAX_IMAGES}}` is a ceiling; **0 figures** is normal. No decorative stock art.
+- Only when Source describes a **concrete visual scene/object/process** (not numbers).
+- `caption`: Russian, what the reader sees.
+- `prompt`: **English only**, photographic/illustrative, no Cyrillic, no watermark, no tiny text overlays, no charts/tables of numbers.
+- Never use Kandinsky for KPI comparisons — those are `charts`.
+- If {{MAX_IMAGES}} is 0 → `"figures": []`, no `%CASE3_FIG:%` slots.
 
 # Hard rules
 

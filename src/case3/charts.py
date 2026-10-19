@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
 import os
 import shutil
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from case3.chart_html import assets_charts_dir, sanitize_chart_html, wrap_chart_page
 
 log = logging.getLogger("case3.charts")
+
+_T = TypeVar("_T")
+
+
+def _run_sync_playwright(fn: Callable[[], _T]) -> _T:
+    """Playwright sync API must not run on a thread with a running asyncio loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return fn()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(fn).result()
 
 _MAX_PNG = 12 * 1024 * 1024
 # Single env knob for chart budget (used by generate / parse / pipeline / render).
@@ -120,60 +134,63 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
         (work_dir / "chart.umd.min.js").resolve(),
     }
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            context = browser.new_context(
-                viewport={"width": 1200, "height": 680},
-                device_scale_factor=2,
-            )
+    def _render() -> None:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    viewport={"width": 1200, "height": 680},
+                    device_scale_factor=2,
+                )
 
-            def _route(route, request):  # noqa: ANN001
-                url = request.url
-                if url.startswith("data:"):
-                    route.continue_()
-                    return
-                if url.startswith("file:"):
-                    try:
-                        resolved = file_url_to_path(url)
-                    except (ValueError, OSError):
-                        route.abort()
-                        return
-                    if any(paths_equal(resolved, a) for a in allowed):
+                def _route(route, request):  # noqa: ANN001
+                    url = request.url
+                    if url.startswith("data:"):
                         route.continue_()
-                    else:
-                        route.abort()
-                    return
-                route.abort()
+                        return
+                    if url.startswith("file:"):
+                        try:
+                            resolved = file_url_to_path(url)
+                        except (ValueError, OSError):
+                            route.abort()
+                            return
+                        if any(paths_equal(resolved, a) for a in allowed):
+                            route.continue_()
+                        else:
+                            route.abort()
+                        return
+                    route.abort()
 
-            context.route("**/*", _route)
-            page = context.new_page()
-            page.goto(index.as_uri(), wait_until="load", timeout=timeout_ms)
-            # Inject via DOM (stray </div> cannot break #mount). Re-exec <script>
-            # because browsers do not run scripts inserted with innerHTML.
-            page.evaluate(
-                """(html) => {
-                  const mount = document.getElementById('mount');
-                  window.__CASE3_CHART_READY = false;
-                  mount.innerHTML = html;
-                  for (const old of Array.from(mount.querySelectorAll('script'))) {
-                    const s = document.createElement('script');
-                    s.textContent = old.textContent;
-                    old.replaceWith(s);
-                  }
-                }""",
-                html,
-            )
-            page.wait_for_function(
-                "() => window.__CASE3_CHART_READY === true",
-                timeout=timeout_ms,
-            )
-            page.wait_for_timeout(80)
-            _assert_chart_visible(page)
-            page.locator("#mount").screenshot(path=str(dest_png), type="png")
-            context.close()
-        finally:
-            browser.close()
+                context.route("**/*", _route)
+                page = context.new_page()
+                page.goto(index.as_uri(), wait_until="load", timeout=timeout_ms)
+                # Inject via DOM (stray </div> cannot break #mount). Re-exec <script>
+                # because browsers do not run scripts inserted with innerHTML.
+                page.evaluate(
+                    """(html) => {
+                      const mount = document.getElementById('mount');
+                      window.__CASE3_CHART_READY = false;
+                      mount.innerHTML = html;
+                      for (const old of Array.from(mount.querySelectorAll('script'))) {
+                        const s = document.createElement('script');
+                        s.textContent = old.textContent;
+                        old.replaceWith(s);
+                      }
+                    }""",
+                    html,
+                )
+                page.wait_for_function(
+                    "() => window.__CASE3_CHART_READY === true",
+                    timeout=timeout_ms,
+                )
+                page.wait_for_timeout(120)
+                _assert_chart_visible(page)
+                page.locator("#mount").screenshot(path=str(dest_png), type="png")
+                context.close()
+            finally:
+                browser.close()
+
+    _run_sync_playwright(_render)
 
     data = dest_png.read_bytes()
     if len(data) > _MAX_PNG:

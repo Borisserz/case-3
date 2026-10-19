@@ -95,54 +95,45 @@ def build_intent_from_ui(
         req.append("- без графиков и диаграмм")
     else:
         req.append(
-            f"- графики: не более {max_charts} "
-            "(0 допустимо, если Source не тянет диаграмму; не заполняй бюджет)"
+            f"- СДЕЛАЙ до {max_charts} качественных HTML-графиков (Chart.js), "
+            "если в Source есть числа/даты/доли; цель — полезные диаграммы в PDF, "
+            "не пустой charts:[]"
         )
         req.append(
-            f"- JSON charts[].type — строго из: {_CHART_TYPE_LIST} "
-            "(pie/круговая→donut, column/столбчатая→bar, тренд→line, "
-            "топ-N→horizontal_bar, одна цифра→kpi)"
+            f"- JSON charts[].type — только: {_CHART_TYPE_LIST} "
+            "(pie→donut, столбцы→bar, тренд→line, топ-N→horizontal_bar, KPI→kpi)"
         )
         req.append(
-            "- каждый график только по явным числам из Source; "
-            "не выдумывай данные; иначе charts: [] без слотов"
+            "- при 2+ графиках — РАЗНЫЕ типы (например line+donut или bar+horizontal_bar)"
         )
         req.append(
-            "- html каждого графика пиши заново; стиль editorial/print: "
-            "сочные цвета (#E85D04/#2A9D8F/#0F3D3E), чёткий PNG, "
-            "без фиолетового нейрослопа и без одного только синего Chart.js"
+            "- caption на русском, конкретный (что сравниваем); "
+            "html с сочной editorial-палитрой #E85D04/#2A9D8F/#0F3D3E/#E9C46A; "
+            "canvas 1100×560; без фиолетового нейрослопа"
+        )
+        req.append(
+            "- слот %CASE3_CHART:id% один на строке, БЕЗ обёртки \\begin{figure}; "
+            "числа только из Source"
         )
         if auto and not hints:
             req.append(
-                "- режим типов: на усмотрение модели — выбери type из whitelist "
-                "по данным Source; если данных нет — 0 графиков"
+                "- типы на усмотрение модели по смыслу данных (playbook time→line, "
+                "share→donut, compare→bar/grouped_bar)"
             )
         elif clean:
-            req.append(
-                "- предпочитаемые типы (только если Source поддерживает): "
-                + ", ".join(clean)
-            )
-            req.append(
-                "- если данных под выбранный тип нет — меньше графиков, "
-                "не выдумывай числа"
-            )
+            req.append("- предпочитай типы: " + ", ".join(clean))
         if hints:
-            req.append(
-                f"- пожелания по визуализации (свободный текст, не enum): {hints}"
-            )
-            req.append(
-                "- сведи пожелания к ближайшему type из whitelist "
-                "или пропусти график; не создавай type вне списка"
-            )
+            req.append(f"- пожелания по виду: {hints} (сведи к whitelist или пропусти)")
     if forbid_images or max_images <= 0:
         req.append("- без картинок и иллюстраций Kandinsky")
     else:
         req.append(
-            f"- иллюстрации Kandinsky: не более {max_images} "
-            "(0 допустимо; только нечисловые сцены/объекты из Source, не декор)"
+            f"- до {max_images} Kandinsky figures: только конкретная сцена/объект из Source"
         )
         req.append(
-            "- числа и сравнения — таблица или charts, не Kandinsky"
+            "- figures[].caption — русская подпись к рисунку; "
+            "figures[].prompt — English, visual, no Cyrillic/watermark/tiny text; "
+            "не дублируй числами то, что уже в charts"
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()
@@ -175,9 +166,14 @@ def health() -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            browser.close()
+        from case3.charts import _run_sync_playwright
+
+        def _probe() -> None:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                browser.close()
+
+        _run_sync_playwright(_probe)
         playwright_ok = True
     except Exception as exc:  # noqa: BLE001
         log.info("playwright check failed: %s", exc)
