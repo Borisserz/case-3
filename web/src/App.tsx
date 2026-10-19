@@ -248,278 +248,310 @@ export default function App() {
     }
   }
 
+  const paradeHint = health
+    ? [
+        health.vision_configured ? "Vision" : null,
+        health.docker_ok ? "Docker" : null,
+        health.playwright_ok ? "Playwright" : null,
+        health.kandinsky_configured ? "Kandinsky" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "сервисы не готовы"
+    : "проверка…";
+
   return (
     <div className="app">
       <aside className="panel">
-        <h1 className="brand">case-3</h1>
-        <p className="tagline">
-          Source + условия → Qwen → LaTeX → графики/картинки → PDF &amp; DOCX
-        </p>
+        <header className="brand-block">
+          <p className="eyebrow">документ · студия</p>
+          <h1 className="brand">case-3</h1>
+          <p className="tagline">
+            Текст и цифры → отчёт с графиками в PDF и DOCX
+          </p>
+        </header>
 
-        <label className="field">Source документ</label>
-        <div
-          className={`dropzone${drag ? " active" : ""}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={onDrop}
-          onClick={() => fileRef.current?.click()}
-        >
-          <strong>{file ? file.name : "Перетащи .txt / .md"}</strong>
-          или кликни, чтобы выбрать
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".txt,.md,text/plain,text/markdown"
-            hidden
+        <section className="section" aria-labelledby="sec-source">
+          <h2 className="section-title" id="sec-source">
+            Source
+          </h2>
+          <label className="field">Файл</label>
+          <div
+            className={`dropzone${drag ? " active" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+            onClick={() => fileRef.current?.click()}
+          >
+            <strong>{file ? file.name : "Перетащи .txt / .md"}</strong>
+            или кликни, чтобы выбрать
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".txt,.md,text/plain,text/markdown"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setFile(f);
+                  setSourceText("");
+                }
+              }}
+            />
+          </div>
+
+          <label className="field">Или вставь текст</label>
+          <textarea
+            rows={5}
+            placeholder="Цифры, разделы, факты…"
+            value={sourceText}
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) {
-                setFile(f);
-                setSourceText("");
-              }
+              setSourceText(e.target.value);
+              if (e.target.value) setFile(null);
             }}
           />
-        </div>
+        </section>
 
-        <label className="field">или вставь текст</label>
-        <textarea
-          rows={6}
-          placeholder="Цифры, разделы, факты…"
-          value={sourceText}
-          onChange={(e) => {
-            setSourceText(e.target.value);
-            if (e.target.value) setFile(null);
-          }}
-        />
+        <section className="section" aria-labelledby="sec-charts">
+          <h2 className="section-title" id="sec-charts">
+            Графики
+          </h2>
+          <label className="field">Тип</label>
+          <div className="chips">
+            <button
+              type="button"
+              className={`chip auto${chartAuto ? " on" : ""}`}
+              onClick={enableAuto}
+              disabled={forbidCharts}
+              title="Модель сама выберет тип из каталога по данным Source"
+            >
+              на усмотрение модели
+            </button>
+            {catalog.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`chip${!chartAuto && types.includes(t) ? " on" : ""}`}
+                onClick={() => toggleType(t)}
+                disabled={forbidCharts}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
 
-        <label className="field">Типы графиков</label>
-        <div className="chips">
-          <button
-            type="button"
-            className={`chip auto${chartAuto ? " on" : ""}`}
-            onClick={enableAuto}
+          <label className="field">Свой тип / пожелание</label>
+          <input
+            type="text"
+            placeholder="pie, воронка, сравнение долей…"
+            value={chartHints}
             disabled={forbidCharts}
-            title="Модель сама выберет тип из каталога по данным Source"
-          >
-            на усмотрение модели
-          </button>
-          {catalog.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={`chip${!chartAuto && types.includes(t) ? " on" : ""}`}
-              onClick={() => toggleType(t)}
-              disabled={forbidCharts}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+            onChange={(e) => {
+              setChartHints(e.target.value);
+              if (e.target.value.trim()) setChartAuto(false);
+            }}
+          />
+          <p className="hint">Сведём к Chart.js-каталогу. Бюджет — потолок, не план.</p>
 
-        <label className="field">Свой тип / пожелание</label>
-        <input
-          type="text"
-          placeholder="напр. pie, воронка, сравнение долей…"
-          value={chartHints}
-          disabled={forbidCharts}
-          onChange={(e) => {
-            setChartHints(e.target.value);
-            if (e.target.value.trim()) setChartAuto(false);
-          }}
-        />
-        <p className="hint">
-          Модель сведёт к Chart.js-каталогу или пропустит график. Бюджет — потолок, не план.
-        </p>
-
-        <label className="field">Палитра графиков</label>
-        <div className="chips palettes">
-          {palettes.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`chip palette${chartPalette === p.id ? " on" : ""}`}
-              disabled={forbidCharts}
-              onClick={() => setChartPalette(p.id)}
-              title={p.label}
-            >
-              <span className="swatches" aria-hidden>
-                {p.swatches.slice(0, 4).map((c) => (
-                  <i key={c} style={{ background: c }} />
-                ))}
-              </span>
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <label className="field">Стиль / нюансы</label>
-        <input
-          type="text"
-          placeholder="напр. без сетки, толще линии, легенда снизу…"
-          value={chartStyle}
-          disabled={forbidCharts}
-          onChange={(e) => setChartStyle(e.target.value)}
-        />
-        <p className="hint">Цвета — из палитры выше; поле уточняет оформление Chart.js.</p>
-
-        <div className="row">
-          <div>
-            <label className="field">Графиков ≤</label>
-            <input
-              type="number"
-              min={0}
-              max={8}
-              value={maxCharts}
-              disabled={forbidCharts}
-              onChange={(e) => setMaxCharts(Number(e.target.value))}
-            />
+          <label className="field">Палитра</label>
+          <div className="chips palettes">
+            {palettes.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`chip palette${chartPalette === p.id ? " on" : ""}`}
+                disabled={forbidCharts}
+                onClick={() => setChartPalette(p.id)}
+                title={p.label}
+              >
+                <span className="swatches" aria-hidden>
+                  {p.swatches.slice(0, 4).map((c) => (
+                    <span key={c} className="swatch" style={{ background: c }} />
+                  ))}
+                </span>
+                {p.label}
+              </button>
+            ))}
           </div>
-          <div>
-            <label className="field">Картинок ≤</label>
-            <input
-              type="number"
-              min={0}
-              max={8}
-              value={maxImages}
-              disabled={forbidImages}
-              onChange={(e) => setMaxImages(Number(e.target.value))}
-            />
-          </div>
-        </div>
 
-        <label className="check">
+          <label className="field">Стиль / нюансы</label>
           <input
-            type="checkbox"
-            checked={forbidCharts}
-            onChange={(e) => setForbidCharts(e.target.checked)}
+            type="text"
+            placeholder="без сетки, толще линии, легенда снизу…"
+            value={chartStyle}
+            disabled={forbidCharts}
+            onChange={(e) => setChartStyle(e.target.value)}
           />
-          Без графиков
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={forbidImages}
-            onChange={(e) => setForbidImages(e.target.checked)}
-          />
-          Без картинок Kandinsky
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={dryRun}
-            onChange={(e) => setDryRun(e.target.checked)}
-          />
-          Dry-run (без LLM, проверка Docker/TeX)
-        </label>
+          <p className="hint">Цвета из палитры; поле уточняет оформление.</p>
+
+          <div className="row">
+            <div>
+              <label className="field">Графиков ≤</label>
+              <input
+                type="number"
+                min={0}
+                max={8}
+                value={maxCharts}
+                disabled={forbidCharts}
+                onChange={(e) => setMaxCharts(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="field">Картинок ≤</label>
+              <input
+                type="number"
+                min={0}
+                max={8}
+                value={maxImages}
+                disabled={forbidImages}
+                onChange={(e) => setMaxImages(Number(e.target.value))}
+              />
+            </div>
+          </div>
+
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={forbidCharts}
+              onChange={(e) => setForbidCharts(e.target.checked)}
+            />
+            Без графиков
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={forbidImages}
+              onChange={(e) => setForbidImages(e.target.checked)}
+            />
+            Без картинок Kandinsky
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+            />
+            Dry-run (без LLM, проверка Docker/TeX)
+          </label>
+        </section>
 
         <div className="health">
-          {!health && "Проверка API…"}
+          <p className="health-title">Статус</p>
+          {!health && <div className="health-grid">Проверка API…</div>}
           {health && (
             <>
-              <div>
-                Docker:{" "}
-                <span className={health.docker_ok ? "" : "bad"}>
-                  {health.docker_ok ? "ok" : health.docker_error || "fail"}
-                </span>
+              <div className="health-grid">
+                <div className="health-row">
+                  <span>Docker</span>
+                  <span className={`val${health.docker_ok ? "" : " bad"}`}>
+                    {health.docker_ok ? "ok" : health.docker_error || "fail"}
+                  </span>
+                </div>
+                <div className="health-row">
+                  <span>Vision</span>
+                  <span className={`val${health.vision_configured ? "" : " bad"}`}>
+                    {health.vision_configured ? "ok" : "нет URL"}
+                  </span>
+                </div>
+                <div className="health-row">
+                  <span>Playwright</span>
+                  <span className={`val${health.playwright_ok ? "" : " bad"}`}>
+                    {health.playwright_ok ? "ok" : "нет Chromium"}
+                  </span>
+                </div>
+                <div className="health-row">
+                  <span>Kandinsky</span>
+                  <span className={`val${health.kandinsky_configured ? "" : " bad"}`}>
+                    {health.kandinsky_configured ? "ok" : "нет URL"}
+                  </span>
+                </div>
               </div>
-              <div>
-                Vision (Qwen):{" "}
-                <span className={health.vision_configured ? "" : "bad"}>
-                  {health.vision_configured ? "ok" : "нет VISION_API_BASE_URL"}
-                </span>
-              </div>
-              <div>
-                Playwright:{" "}
-                <span className={health.playwright_ok ? "" : "bad"}>
-                  {health.playwright_ok ? "ok" : "нет Chromium (графики skip)"}
-                </span>
-              </div>
-              <div>
-                Kandinsky:{" "}
-                <span className={health.kandinsky_configured ? "" : "bad"}>
-                  {health.kandinsky_configured
-                    ? "ok"
-                    : "нет URL (картинки skip)"}
-                </span>
-              </div>
-              <div style={{ marginTop: "0.45rem" }}>
-                Полный парад: Vision + Docker
-                {health.playwright_ok ? " + Playwright" : ""}
-                {health.kandinsky_configured ? " + Kandinsky" : ""}
-                {!health.vision_configured || !health.docker_ok
-                  ? " — пока dry-run / почини .env"
-                  : ""}
-              </div>
+              <p className="health-foot">
+                {health.vision_configured && health.docker_ok
+                  ? `Готово: ${paradeHint}`
+                  : `Нужны Vision + Docker · сейчас: ${paradeHint}`}
+              </p>
             </>
           )}
         </div>
       </aside>
 
       <main className="main">
-        <div className="messages">
-          {msgs.length === 0 && (
-            <div className="empty">
-              <h2>Покажи полный парад</h2>
-              <p>
-                Загрузи Source слева, типы — «на усмотрение модели» или свои
-                пожелания, Intent в чат → PDF и DOCX.
-              </p>
-            </div>
-          )}
-          {msgs.map((m) => (
-            <div key={m.id} className={`msg ${m.role}`}>
-              <div className="meta">{m.role === "user" ? "ты" : "case-3"}</div>
-              <div>{m.text}</div>
-              {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
-              {m.role === "bot" && m.result && (
-                <>
-                  <p style={{ margin: "0.5rem 0 0", color: "var(--muted)", fontSize: "0.88rem" }}>
-                    charts {m.result.charts_ok}/{m.result.charts_planned?.length || 0}
-                    {" · "}
-                    figures {m.result.figures_ok}/{m.result.figures_planned?.length || 0}
-                  </p>
-                  {m.result.warnings?.length > 0 && (
-                    <div className="warns">{m.result.warnings.join(" · ")}</div>
-                  )}
-                  <div className="downloads">
-                    {m.result.downloads?.pdf && (
-                      <a href={m.result.downloads.pdf} download>
-                        PDF
-                      </a>
-                    )}
-                    {m.result.downloads?.docx && (
-                      <a className="secondary" href={m.result.downloads.docx} download>
-                        DOCX
-                      </a>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
+        <div className="desk">
+          <div className="desk-head">
+            <h2>Сборка</h2>
+            <span className="desk-meta">{busy ? "генерация…" : "intent → pdf"}</span>
+          </div>
 
-        <div className="composer">
-          <input
-            type="text"
-            placeholder='Intent: «с таблицами, короткий отчёт…»'
-            value={chat}
-            disabled={busy}
-            onChange={(e) => setChat(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <button className="send" type="button" disabled={!canSend} onClick={() => void send()}>
-            {busy ? "…" : "Send"}
-          </button>
+          <div className="messages">
+            {msgs.length === 0 && (
+              <div className="empty">
+                <h2>Собери отчёт на столе</h2>
+                <p>
+                  Слева — исходник и оформление графиков. Здесь пишешь Intent и
+                  забираешь PDF с DOCX.
+                </p>
+                <ol>
+                  <li>Загрузи Source или вставь текст с числами</li>
+                  <li>Выбери палитру и типы (или «на усмотрение»)</li>
+                  <li>Напиши Intent и нажми «Собрать»</li>
+                </ol>
+              </div>
+            )}
+            {msgs.map((m) => (
+              <div key={m.id} className={`msg ${m.role}`}>
+                <div className="meta">{m.role === "user" ? "запрос" : "отчёт"}</div>
+                <div className="msg-body">{m.text}</div>
+                {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
+                {m.role === "bot" && m.result && (
+                  <>
+                    <p className="stats">
+                      charts {m.result.charts_ok}/{m.result.charts_planned?.length || 0}
+                      {" · "}
+                      figures {m.result.figures_ok}/{m.result.figures_planned?.length || 0}
+                    </p>
+                    {m.result.warnings?.length > 0 && (
+                      <div className="warns">{m.result.warnings.join(" · ")}</div>
+                    )}
+                    <div className="downloads">
+                      {m.result.downloads?.pdf && (
+                        <a href={m.result.downloads.pdf} download>
+                          PDF
+                        </a>
+                      )}
+                      {m.result.downloads?.docx && (
+                        <a className="secondary" href={m.result.downloads.docx} download>
+                          DOCX
+                        </a>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          <div className="composer">
+            <input
+              type="text"
+              placeholder="Intent: с таблицами, короткий отчёт…"
+              value={chat}
+              disabled={busy}
+              onChange={(e) => setChat(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <button className="send" type="button" disabled={!canSend} onClick={() => void send()}>
+              {busy ? "…" : "Собрать"}
+            </button>
+          </div>
         </div>
       </main>
     </div>
