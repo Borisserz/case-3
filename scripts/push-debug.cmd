@@ -1,8 +1,12 @@
 @echo off
-REM Upload runs\ artifacts to a NEW branch debug/upload-STAMP (no PDF/DOCX)
+REM Upload runs\ artifacts to a NEW branch debug/upload-STAMP (no PDF/DOCX).
+REM Non-interactive: no pause / no more / no pager.
 setlocal EnableExtensions
 cd /d "%~dp0.."
 if not exist .git (echo Not a git repo. & exit /b 1)
+
+set "GIT_PAGER="
+set "PAGER="
 
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddTHHmmss"') do set STAMP=%%I
 set "DEST=debug-bundle\%STAMP%"
@@ -26,28 +30,28 @@ echo       files ready.
 
 for /f %%I in ('git rev-parse --abbrev-ref HEAD') do set "CURBRANCH=%%I"
 echo [2/4] Branch %BRANCH% from %CURBRANCH%
-git checkout -B "%BRANCH%"
+git --no-pager checkout -B "%BRANCH%"
 if errorlevel 1 (echo FAIL: git checkout & exit /b 1)
 
 echo [3/4] Commit
-git add -f "%DEST%"
-git status --short "%DEST%" | more
-git commit -m "debug: %STAMP% (tex+logs+raw)"
+git --no-pager add -f "%DEST%"
+git --no-pager status --short "%DEST%"
+git --no-pager commit -m "debug: %STAMP% (tex+logs+raw)"
 if errorlevel 1 (
   echo FAIL: nothing to commit
-  git checkout "%CURBRANCH%"
+  git --no-pager checkout "%CURBRANCH%"
   exit /b 1
 )
 
 echo [4/4] Push origin %BRANCH%
-git push -u origin "%BRANCH%"
+git --no-pager push -u origin "%BRANCH%"
 if errorlevel 1 (
   echo FAIL: git push — проверь логин GitHub / gh auth login
-  git checkout "%CURBRANCH%"
+  git --no-pager checkout "%CURBRANCH%"
   exit /b 1
 )
 
-git checkout "%CURBRANCH%"
+git --no-pager checkout "%CURBRANCH%"
 echo.
 echo OK. Скажи агенту ветку: %BRANCH%
 echo https://github.com/Borisserz/case-3/tree/%BRANCH%

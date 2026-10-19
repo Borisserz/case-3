@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from case3.charts import max_charts_from_env
 from case3.gold_select import format_gold_appendix, select_gold
 from case3.llm_client import LLMClient, LLMConfig, LLMError
 from case3.parse_output import parse_model_output
+from case3.tex_safe import escape_tex_text
 
 log = logging.getLogger("case3.generate")
 
@@ -108,6 +110,27 @@ def output_looks_truncated(raw: str) -> bool:
     return False
 
 
+def _extract_loose_latex(raw: str) -> str | None:
+    """Grab \\documentclass… even from an unclosed ```latex fence."""
+    text = raw or ""
+    m = re.search(
+        r"```(?:latex|tex)?\s*\n(\\documentclass[\s\S]*)",
+        text,
+        re.I,
+    )
+    if m:
+        body = m.group(1)
+        # stop before a following ```json if present
+        cut = re.search(r"\n```(?:json)?\s*\n", body)
+        if cut:
+            body = body[: cut.start()]
+        return body.strip() or None
+    idx = text.find(r"\documentclass")
+    if idx >= 0:
+        return text[idx:].strip() or None
+    return None
+
+
 def merge_continuation(raw: str, cont: str) -> str:
     """Attach a continuation (often ```json only) to a truncated first reply."""
     from case3.parse_output import _pick_fences
@@ -119,14 +142,20 @@ def merge_continuation(raw: str, cont: str) -> str:
 
     b_tex, b_json = _pick_fences(base)
     e_tex, e_json = _pick_fences(extra)
+    if not b_tex:
+        b_tex = _extract_loose_latex(base)
 
-    # Prefer continuation only when its LaTeX is a real document.
-    if e_json and e_tex and r"\begin{document}" in e_tex:
+    # Prefer continuation only when its LaTeX is a real document with prose.
+    if (
+        e_json
+        and e_tex
+        and r"\begin{document}" in e_tex
+        and (r"\section" in e_tex or len(e_tex) > 800)
+    ):
         return extra
 
-    # Take the richer JSON + keep/repair base (parse will finish preamble-only TeX).
+    # Take the richer JSON + keep base TeX (even preamble-only) for repair.
     json_part = e_json or b_json
-    tex_part = None
     if b_tex and r"\begin{document}" in b_tex:
         tex_part = b_tex
     elif e_tex and r"\begin{document}" in e_tex:
@@ -149,6 +178,84 @@ def merge_continuation(raw: str, cont: str) -> str:
             extra = "```json\n" + extra + "\n```"
         return base + "\n\n" + extra
     return base + "\n" + extra
+
+
+def tex_body_is_sparse(tex: str) -> bool:
+    """True when the document has almost no prose (charts/slots only)."""
+    m = re.search(r"\\begin\{document\}([\s\S]*?)\\end\{document\}", tex or "")
+    if not m:
+        return True
+    body = m.group(1)
+    body = re.sub(r"\\maketitle", "", body)
+    body = re.sub(
+        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+        "",
+        body,
+    )
+    body = re.sub(r"\\begin\{figure\}[\s\S]*?\\end\{figure\}", "", body)
+    body = re.sub(r"\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}", "", body)
+    body = re.sub(r"\\caption\{[^}]*\}", "", body)
+    body = re.sub(r"\\label\{[^}]*\}", "", body)
+    body = re.sub(r"\\centering", "", body)
+    body = re.sub(r"%[^\n]*", "", body)
+    letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", body))
+    return letters < 40
+
+
+def fill_sparse_tex_with_source(
+    tex: str,
+    source: str,
+    *,
+    chart_ids: list[str],
+    figure_ids: list[str],
+) -> str:
+    """Replace an empty body with Source prose + media slots (keeps preamble)."""
+    raw_src = (source or "").strip()
+    paras = [p.strip() for p in re.split(r"\n\s*\n", raw_src) if p.strip()]
+    if not paras and raw_src:
+        paras = [ln.strip() for ln in raw_src.splitlines() if ln.strip()]
+    paras = paras[:12]
+    if not paras:
+        paras = ["(исходный текст пуст)"]
+
+    escaped = [escape_tex_text(p) for p in paras]
+    mid = max(1, len(escaped) // 2)
+
+    parts: list[str] = [
+        r"\begin{document}",
+        r"\maketitle",
+        "",
+        r"\section{Исходные данные}",
+        "",
+    ]
+    parts.extend(escaped[:mid])
+    parts.append("")
+    if figure_ids or chart_ids:
+        parts.append(r"\section{Иллюстрации}")
+        parts.append("")
+    for fid in figure_ids:
+        parts.append(f"%CASE3_FIG:{fid}%")
+        parts.append("")
+    for cid in chart_ids:
+        parts.append(f"%CASE3_CHART:{cid}%")
+        parts.append("")
+    if escaped[mid:]:
+        parts.append(r"\section{Дополнительные сведения}")
+        parts.append("")
+        parts.extend(escaped[mid:])
+        parts.append("")
+    parts.append(r"\end{document}")
+
+    new_body = "\n".join(parts) + "\n"
+    if re.search(r"\\begin\{document\}[\s\S]*\\end\{document\}", tex or ""):
+        return re.sub(
+            r"\\begin\{document\}[\s\S]*\\end\{document\}\s*",
+            lambda _m: new_body,
+            tex,
+            count=1,
+        )
+    # preamble-only / broken: append body
+    return (tex or "").rstrip() + "\n" + new_body
 
 
 def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> str:
@@ -229,8 +336,6 @@ def generate_document(
     out_tex.parent.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
-        from case3.tex_safe import escape_tex_text
-
         stub = Path(__file__).resolve().parent / "templates" / "article_skeleton.tex"
         # Escape specials; no verbatim (source may contain \end{verbatim}).
         lines = [
@@ -283,6 +388,19 @@ def generate_document(
             "parse failed; raw saved at %s (%d chars)", raw_path, len(raw or "")
         )
         raise
+
+    if tex_body_is_sparse(tex) and source_text.strip():
+        log.warning(
+            "TeX body is charts-only — filling prose from Source (%d chars)",
+            len(source_text),
+        )
+        tex = fill_sparse_tex_with_source(
+            tex,
+            source_text,
+            chart_ids=[c["id"] for c in charts],
+            figure_ids=[f["id"] for f in figures],
+        )
+
     out_tex.write_text(tex, encoding="utf-8")
     (out_tex.parent / "figures.json").write_text(
         json.dumps({"figures": figures, "charts": charts}, ensure_ascii=False, indent=2)
