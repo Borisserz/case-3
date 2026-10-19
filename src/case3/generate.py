@@ -171,6 +171,17 @@ def merge_continuation(raw: str, cont: str) -> str:
     if chunks:
         return "\n\n".join(chunks)
 
+    # JSON-only truncation: do NOT close an open ```json fence — salvage needs
+    # the unbroken stream to finish chart objects across the continuation.
+    base_is_json = "```json" in base or '"charts"' in base
+    extra_is_json = (
+        "```json" in extra
+        or extra.lstrip().startswith("{")
+        or '"charts"' in extra
+    )
+    if base_is_json and extra_is_json and not b_tex and not e_tex:
+        return base + "\n" + extra
+
     if base.count("```") % 2 == 1:
         base += "\n```"
     if "```json" in extra or extra.lstrip().startswith("{"):

@@ -44,6 +44,27 @@ def _strip_chart_slots(tex: str, keep: set[str]) -> str:
     return _CHART_SLOT_LINE.sub(repl, tex)
 
 
+def _json_candidates(raw: str) -> list[str]:
+    """All JSON-looking blobs (closed fences + trailing unclosed ```json)."""
+    out: list[str] = []
+    for m in _FENCE.finditer(raw or ""):
+        lang = (m.group(1) or "").lower()
+        body = m.group(2).strip()
+        if lang == "json" or (lang == "" and body.lstrip().startswith("{")):
+            out.append(body)
+    # Trailing unclosed ```json … (continuation cut mid-object)
+    m_open = re.search(r"```json\s*\n([\s\S]*)$", raw or "", re.I)
+    if m_open:
+        tail = m_open.group(1).strip()
+        if tail and (not out or tail != out[-1]):
+            # Only if this region isn't already captured as a closed fence
+            closed_spans = [m.span() for m in _FENCE.finditer(raw or "")]
+            start = m_open.start(1)
+            if not any(a <= start < b for a, b in closed_spans):
+                out.append(tail)
+    return out
+
+
 def _pick_fences(raw: str) -> tuple[str | None, str | None]:
     fences = [(m.group(1).lower(), m.group(2).strip()) for m in _FENCE.finditer(raw or "")]
     tex_body = None
@@ -59,12 +80,111 @@ def _pick_fences(raw: str) -> tuple[str | None, str | None]:
                 tex_body = body
             elif lang in ("",) and r"\documentclass" in body and tex_body is None:
                 tex_body = body
-    for lang, body in fences:
-        if lang == "json" and json_body is None:
-            json_body = body
-        elif lang in ("",) and json_body is None and body.lstrip().startswith("{"):
-            json_body = body
+    # Prefer the longest JSON that json.loads accepts; else longest candidate.
+    best_ok: str | None = None
+    best_any: str | None = None
+    for body in _json_candidates(raw):
+        if best_any is None or len(body) > len(best_any):
+            best_any = body
+        try:
+            json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        if best_ok is None or len(body) > len(best_ok):
+            best_ok = body
+    json_body = best_ok or best_any
     return tex_body, json_body
+
+
+def salvage_json_object(raw: str) -> dict[str, Any] | None:
+    """Recover figures/charts from truncated or multi-fence JSON.
+
+    Keeps only complete chart/figure objects (valid JSON object substrings).
+    """
+    figures: list[Any] = []
+    charts: list[Any] = []
+    seen_fig: set[str] = set()
+    seen_cht: set[str] = set()
+
+    blobs = _json_candidates(raw)
+    if not blobs and (raw or "").lstrip().startswith("{"):
+        blobs = [(raw or "").strip()]
+    # Also scan the full raw (fence markers ignored by brace walker) so a chart
+    # completed only after a premature ``` close is still recovered.
+    if raw and raw not in blobs:
+        blobs.append(raw)
+
+    for blob in blobs:
+        try:
+            data = json.loads(blob)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            for item in data.get("figures") or []:
+                if isinstance(item, dict) and str(item.get("id", "")) not in seen_fig:
+                    figures.append(item)
+                    seen_fig.add(str(item.get("id", "")))
+            for item in data.get("charts") or []:
+                if isinstance(item, dict) and str(item.get("id", "")) not in seen_cht:
+                    charts.append(item)
+                    seen_cht.add(str(item.get("id", "")))
+            continue
+
+        # Truncated root: scan every `{`; skip unclosed spans (advance by 1).
+        i = 0
+        while i < len(blob):
+            start = blob.find("{", i)
+            if start < 0:
+                break
+            depth = 0
+            in_str = False
+            esc = False
+            end = None
+            for j, ch in enumerate(blob[start:], start):
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = j + 1
+                        break
+            if end is None:
+                i = start + 1
+                continue
+            chunk = blob[start:end]
+            i = end
+            try:
+                obj = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or "id" not in obj:
+                # Root or wrapper object — keep scanning inside via next `{`.
+                if i == end and chunk.startswith("{") and len(chunk) > 2:
+                    # already advanced to end; nested objects were skipped.
+                    # Re-scan interior by not jumping over children: step in.
+                    pass
+                continue
+            oid = str(obj.get("id", ""))
+            if "html" in obj and oid and oid not in seen_cht:
+                charts.append(obj)
+                seen_cht.add(oid)
+            elif "prompt" in obj and oid and oid not in seen_fig:
+                figures.append(obj)
+                seen_fig.add(oid)
+
+    if not figures and not charts:
+        return None
+    return {"figures": figures, "charts": charts}
 
 
 def _parse_figures_list(raw_figs: Any, *, max_images: int) -> list[dict[str, Any]]:
@@ -144,27 +264,35 @@ def _align(
     return aligned[:max_n]
 
 
-def _chart_ids_from_json(json_body: str | None, *, max_charts: int) -> list[str]:
-    if not json_body or max_charts <= 0:
-        return []
-    try:
-        data = json.loads(json_body)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, dict):
+def _load_media_payload(raw: str, json_body: str | None) -> dict[str, Any]:
+    """Load figures/charts dict; salvage complete objects if JSON is truncated."""
+    if json_body:
+        try:
+            data = json.loads(json_body)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    salvaged = salvage_json_object(raw)
+    if salvaged:
+        log.warning(
+            "salvaged truncated JSON → %d charts, %d figures",
+            len(salvaged.get("charts") or []),
+            len(salvaged.get("figures") or []),
+        )
+        return salvaged
+    return {}
+
+
+def _chart_ids_from_data(data: dict[str, Any], *, max_charts: int) -> list[str]:
+    if max_charts <= 0:
         return []
     charts = _parse_charts_list(data.get("charts"), max_charts=max_charts)
     return [c["id"] for c in charts]
 
 
-def _figure_ids_from_json(json_body: str | None, *, max_images: int) -> list[str]:
-    if not json_body or max_images <= 0:
-        return []
-    try:
-        data = json.loads(json_body)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, dict):
+def _figure_ids_from_data(data: dict[str, Any], *, max_images: int) -> list[str]:
+    if max_images <= 0:
         return []
     figs = _parse_figures_list(data.get("figures"), max_images=max_images)
     return [f["id"] for f in figs]
@@ -177,10 +305,11 @@ def parse_model_output(
     max_charts: int = 0,
 ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
     tex_body, json_body = _pick_fences(raw)
+    data = _load_media_payload(raw, json_body)
 
     # Peek chart/figure ids early so we can rebuild a body if preamble was truncated.
-    early_charts = _chart_ids_from_json(json_body, max_charts=max_charts)
-    early_figs = _figure_ids_from_json(json_body, max_images=max_images)
+    early_charts = _chart_ids_from_data(data, max_charts=max_charts)
+    early_figs = _figure_ids_from_data(data, max_images=max_images)
 
     try:
         if tex_body is None:
@@ -224,7 +353,7 @@ def parse_model_output(
         chart_slots = []
 
     need_json = bool(fig_slots or chart_slots)
-    if need_json and json_body is None:
+    if need_json and not data:
         # Truncated model output often has slots but no ```json — drop slots and
         # still return TeX so PDF can build (charts/figures empty this run).
         log.warning(
@@ -243,18 +372,9 @@ def parse_model_output(
 
     figures: list[dict[str, Any]] = []
     charts: list[dict[str, Any]] = []
-    data: Any = {}
-    if json_body is not None:
-        try:
-            data = json.loads(json_body)
-        except json.JSONDecodeError as exc:
-            if need_json or early_charts or early_figs:
-                raise ParseError(f"invalid JSON fence while slots/charts present: {exc}") from exc
-            log.warning("invalid JSON fence ignored (no slots): %s", exc)
-            data = {}
-        if isinstance(data, dict):
-            figures = _parse_figures_list(data.get("figures"), max_images=max_images)
-            charts = _parse_charts_list(data.get("charts"), max_charts=max_charts)
+    if isinstance(data, dict) and data:
+        figures = _parse_figures_list(data.get("figures"), max_images=max_images)
+        charts = _parse_charts_list(data.get("charts"), max_charts=max_charts)
 
     # Id collision across figures and charts
     fig_ids = {f["id"] for f in figures}

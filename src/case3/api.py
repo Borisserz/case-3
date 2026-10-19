@@ -219,7 +219,7 @@ async def api_run(
     source: UploadFile | None = File(None),
     source_text: str | None = Form(None),
     intent: str = Form(""),
-    max_charts: int = Form(3),
+    max_charts: int = Form(2),
     max_images: int = Form(0),
     chart_types: str = Form(""),
     chart_hints: str = Form(""),
