@@ -173,6 +173,7 @@ def build_body(
     temperature: float = 0.2,
     reasoning: str = "off",
     max_tokens: int = 16384,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (
         {"enable_thinking": False}
@@ -186,8 +187,22 @@ def build_body(
         ],
         "temperature": temperature,
         "max_tokens": max(256, int(max_tokens)),
-        "chat_template_kwargs": thinking,
     }
+    host = (base_url or "").lower()
+    openrouter = "openrouter.ai" in host
+    if openrouter:
+        # MiniMax Flash etc.: thinking is mandatory — cannot send effort "none".
+        # VISION_REASONING=off → cheapest effort + hide reasoning from content.
+        effort = "low" if reasoning == "off" else reasoning
+        if effort not in ("low", "medium", "high", "xhigh", "max", "minimal"):
+            effort = "low"
+        body["reasoning"] = {
+            "effort": effort,
+            "exclude": reasoning == "off",
+        }
+    else:
+        # Local Qwen / vLLM-style thinking switch.
+        body["chat_template_kwargs"] = thinking
     if model:
         body["model"] = model
     return body
@@ -210,11 +225,16 @@ class LLMClient:
             temperature=self.config.temperature,
             reasoning=r,
             max_tokens=self.config.max_tokens,
+            base_url=self.config.base_url,
         )
         data = json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
+        # OpenRouter ranking / app attribution (optional but recommended).
+        if "openrouter.ai" in (self.config.base_url or "").lower():
+            headers.setdefault("HTTP-Referer", "https://github.com/Borisserz/case-3")
+            headers.setdefault("X-Title", "case-3")
 
         error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
