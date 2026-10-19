@@ -96,6 +96,36 @@ def _soft_close_truncated(tex: str) -> str:
     return t + "\n"
 
 
+def finish_preamble_only_tex(
+    tex: str,
+    *,
+    chart_ids: list[str] | None = None,
+    figure_ids: list[str] | None = None,
+    title: str = "Отчёт",
+) -> str:
+    """When the model truncates mid-preamble (has \\documentclass, no \\begin{document})."""
+    t = (tex or "").rstrip()
+    if r"\begin{document}" in t:
+        return t if t.endswith("\n") else t + "\n"
+    if r"\documentclass" not in t:
+        raise ValueError("cannot finish preamble: no \\documentclass")
+    # Drop incomplete last line (e.g. \\setotherlanguage{engl)
+    last = t.rsplit("\n", 1)[-1]
+    if last.count("{") != last.count("}") or re.search(r"\\[a-zA-Z]+$", last):
+        t = t.rsplit("\n", 1)[0].rstrip()
+    if r"\title{" not in t:
+        t += f"\n\\title{{{title}}}\n\\author{{}}\n\\date{{\\today}}"
+    body = ["\\begin{document}", "\\maketitle", ""]
+    for fid in figure_ids or []:
+        body.append(f"%CASE3_FIG:{fid}%")
+        body.append("")
+    for cid in chart_ids or []:
+        body.append(f"%CASE3_CHART:{cid}%")
+        body.append("")
+    body.append("\\end{document}")
+    return t + "\n" + "\n".join(body) + "\n"
+
+
 def extract_tex(raw: str) -> str:
     text = _normalize_backslashes((raw or "").strip())
     if not text:

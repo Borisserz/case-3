@@ -98,6 +98,8 @@ def output_looks_truncated(raw: str) -> bool:
         return True
     if r"\begin{document}" in text and r"\end{document}" not in text:
         return True
+    if r"\documentclass" in text and r"\begin{document}" not in text:
+        return True
     if text.count("```") % 2 == 1:
         return True
     has_slots = ("%CASE3_CHART:" in text) or ("%CASE3_FIG:" in text)
@@ -108,14 +110,38 @@ def output_looks_truncated(raw: str) -> bool:
 
 def merge_continuation(raw: str, cont: str) -> str:
     """Attach a continuation (often ```json only) to a truncated first reply."""
+    from case3.parse_output import _pick_fences
+
     base = (raw or "").rstrip()
     extra = (cont or "").strip()
     if not extra:
         return base
-    if "```json" in extra and (
-        "```latex" in extra or r"\documentclass" in extra
-    ):
+
+    b_tex, b_json = _pick_fences(base)
+    e_tex, e_json = _pick_fences(extra)
+
+    # Prefer continuation only when its LaTeX is a real document.
+    if e_json and e_tex and r"\begin{document}" in e_tex:
         return extra
+
+    # Take the richer JSON + keep/repair base (parse will finish preamble-only TeX).
+    json_part = e_json or b_json
+    tex_part = None
+    if b_tex and r"\begin{document}" in b_tex:
+        tex_part = b_tex
+    elif e_tex and r"\begin{document}" in e_tex:
+        tex_part = e_tex
+    else:
+        tex_part = b_tex or e_tex
+
+    chunks: list[str] = []
+    if json_part:
+        chunks.append("```json\n" + json_part.strip() + "\n```")
+    if tex_part:
+        chunks.append("```latex\n" + tex_part.strip() + "\n```")
+    if chunks:
+        return "\n\n".join(chunks)
+
     if base.count("```") % 2 == 1:
         base += "\n```"
     if "```json" in extra or extra.lstrip().startswith("{"):
@@ -131,14 +157,12 @@ def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> 
     return "\n".join(
         [
             "Your previous answer was TRUNCATED (length limit).",
-            "Finish the job without repeating the whole document.",
+            "Do NOT repeat a half-written preamble.",
             "",
-            "Priority:",
-            "1) Emit a complete ```json fence with figures=[] and charts=[…] for every",
-            "   %CASE3_CHART:id% / %CASE3_FIG:id% that appears in the partial below.",
-            f"   At most {max_charts} charts; html must use Source numbers only.",
-            "2) If LaTeX has no \\end{document}, append only the missing closing lines",
-            "   (close open tables, then \\end{document} and ```).",
+            "Return ONLY a complete ```json fence:",
+            f'{{"figures":[],"charts":[...≤{max_charts}...]}} with full Chart.js html from Source numbers.',
+            "Include every chart id you planned (cht_01, …).",
+            "Skip LaTeX in this continuation — the pipeline will rebuild the body from JSON if needed.",
             "",
             "Partial output so far:",
             "<<<PARTIAL>>>",

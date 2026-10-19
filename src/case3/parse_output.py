@@ -10,7 +10,7 @@ from typing import Any
 from case3.chart_html import CHART_TYPES, ChartHtmlError, sanitize_chart_html
 from case3.image_prompt import ImagePromptError, sanitize_image_prompt
 from case3.tex_safe import sanitize_width
-from case3.tex_utils import extract_tex
+from case3.tex_utils import extract_tex, finish_preamble_only_tex
 
 log = logging.getLogger("case3.parse")
 
@@ -144,6 +144,32 @@ def _align(
     return aligned[:max_n]
 
 
+def _chart_ids_from_json(json_body: str | None, *, max_charts: int) -> list[str]:
+    if not json_body or max_charts <= 0:
+        return []
+    try:
+        data = json.loads(json_body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    charts = _parse_charts_list(data.get("charts"), max_charts=max_charts)
+    return [c["id"] for c in charts]
+
+
+def _figure_ids_from_json(json_body: str | None, *, max_images: int) -> list[str]:
+    if not json_body or max_images <= 0:
+        return []
+    try:
+        data = json.loads(json_body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    figs = _parse_figures_list(data.get("figures"), max_images=max_images)
+    return [f["id"] for f in figs]
+
+
 def parse_model_output(
     raw: str,
     *,
@@ -152,13 +178,42 @@ def parse_model_output(
 ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
     tex_body, json_body = _pick_fences(raw)
 
+    # Peek chart/figure ids early so we can rebuild a body if preamble was truncated.
+    early_charts = _chart_ids_from_json(json_body, max_charts=max_charts)
+    early_figs = _figure_ids_from_json(json_body, max_images=max_images)
+
     try:
         if tex_body is None:
             tex = extract_tex(raw)
         else:
+            if (
+                r"\documentclass" in tex_body
+                and r"\begin{document}" not in tex_body
+            ):
+                log.warning(
+                    "LaTeX fence is preamble-only — synthesizing \\begin{document} "
+                    "with slots for charts=%s figures=%s",
+                    early_charts,
+                    early_figs,
+                )
+                tex_body = finish_preamble_only_tex(
+                    tex_body,
+                    chart_ids=early_charts,
+                    figure_ids=early_figs,
+                )
             tex = extract_tex("```latex\n" + tex_body + "\n```")
     except ValueError as exc:
-        raise ParseError(str(exc)) from exc
+        # Last resort: valid JSON charts but unusable TeX → minimal document.
+        if early_charts or early_figs:
+            log.warning("extract_tex failed (%s) — building minimal doc from JSON ids", exc)
+            tex = finish_preamble_only_tex(
+                "\\documentclass[a4paper,12pt]{article}\n"
+                "\\usepackage{graphicx}\n\\usepackage{float}\n\\usepackage{hyperref}\n",
+                chart_ids=early_charts,
+                figure_ids=early_figs,
+            )
+        else:
+            raise ParseError(str(exc)) from exc
 
     fig_slots = _ids(_FIG_SLOT, tex) if max_images > 0 else []
     chart_slots = _ids(_CHART_SLOT, tex) if max_charts > 0 else []
@@ -193,8 +248,8 @@ def parse_model_output(
         try:
             data = json.loads(json_body)
         except json.JSONDecodeError as exc:
-            if need_json:
-                raise ParseError(f"invalid JSON fence while slots present: {exc}") from exc
+            if need_json or early_charts or early_figs:
+                raise ParseError(f"invalid JSON fence while slots/charts present: {exc}") from exc
             log.warning("invalid JSON fence ignored (no slots): %s", exc)
             data = {}
         if isinstance(data, dict):
