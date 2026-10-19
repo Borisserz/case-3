@@ -110,7 +110,11 @@ export default function App() {
         return r.json();
       })
       .then((data) => {
-        if (!cancelled) setHealth(data);
+        if (cancelled) return;
+        setHealth(data);
+        const d = data?.defaults;
+        if (d && typeof d.max_charts === "number") setMaxCharts(d.max_charts);
+        if (d && typeof d.max_images === "number") setMaxImages(d.max_images);
       })
       .catch(() => {
         if (!cancelled) {

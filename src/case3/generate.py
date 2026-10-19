@@ -288,9 +288,9 @@ def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> 
             "Do NOT repeat a half-written preamble.",
             "",
             "Return ONLY a complete ```json fence:",
-            f'{{"figures":[],"charts":[...≤{min(2, max_charts)} complete objects...]}} '
+            f'{{"figures":[],"charts":[...≤{max_charts} complete objects...]}} '
             "with FULL Chart.js html (end each html with window.__CASE3_CHART_READY=true;).",
-            "Prefer finishing 1–2 charts completely over starting a third.",
+            "Finish fewer complete charts rather than starting another truncated one.",
             "Skip LaTeX in this continuation — the pipeline will rebuild the body from JSON + Source.",
             "",
             "Partial output so far:",

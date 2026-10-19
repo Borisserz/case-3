@@ -100,9 +100,9 @@ def build_intent_from_ui(
         req.append("- без графиков и диаграмм")
     else:
         req.append(
-            f"- СДЕЛАЙ до {max_charts} качественных HTML-графиков (Chart.js), "
-            "если в Source есть числа/даты/доли; цель — полезные диаграммы в PDF, "
-            "не пустой charts:[]"
+            f"- не больше {max_charts} HTML-графиков (Chart.js); 0 OK если чисел мало; "
+            "если в Source есть числа/даты/доли — сделай полезные диаграммы, "
+            "не раздувай charts ради квоты"
         )
         req.append(
             f"- JSON charts[].type — только: {_CHART_TYPE_LIST} "
@@ -219,8 +219,8 @@ async def api_run(
     source: UploadFile | None = File(None),
     source_text: str | None = Form(None),
     intent: str = Form(""),
-    max_charts: int = Form(2),
-    max_images: int = Form(0),
+    max_charts: int | None = Form(None),
+    max_images: int | None = Form(None),
     chart_types: str = Form(""),
     chart_hints: str = Form(""),
     chart_auto: str = Form("false"),
@@ -235,6 +235,10 @@ async def api_run(
     no_images = _as_bool(forbid_images)
     is_dry = _as_bool(dry_run)
     is_auto = _as_bool(chart_auto)
+    if max_charts is None:
+        max_charts = max_charts_from_env()
+    if max_images is None:
+        max_images = max_images_from_env()
     if no_charts:
         max_charts = 0
     if no_images:

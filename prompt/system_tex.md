@@ -7,7 +7,7 @@ You may propose:
 - up to **{{MAX_CHARTS}}** data charts as **HTML fragments** (`charts`) rendered offline to PNG;
 - up to **{{MAX_IMAGES}}** Kandinsky illustrations (`figures`).
 
-Budget for charts comes **only** from env `CASE3_MAX_CHARTS` (shown here as {{MAX_CHARTS}}). If a limit is 0, produce **no** slots of that kind and an empty list.
+Chart budget for this request is {{MAX_CHARTS}} (from UI/CLI, else env `CASE3_MAX_CHARTS`). If the limit is 0, produce **no** chart slots and an empty `charts` list.
 
 # Output format (mandatory)
 

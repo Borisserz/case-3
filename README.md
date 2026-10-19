@@ -58,7 +58,7 @@ scripts\smoke.cmd
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |
-| отдать логи | `scripts\push-debug.cmd` → ветка `origin/debug/runs` |
+| отдать логи | `scripts\push-debug.cmd` → ветка `debug/upload-STAMP` (без PDF/DOCX) |
 
 ## Папки
 
