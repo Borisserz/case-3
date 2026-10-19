@@ -10,7 +10,8 @@
 scripts\setup.cmd
 ```
 
-Правь `.env`: `VISION_API_BASE_URL=...`
+Правь `.env`: `VISION_API_BASE_URL=...`  
+Если ошибка «нет documentclass» / пустой ответ модели → в `.env` поставь `VISION_REASONING=off` и перезапусти `api.cmd`.
 
 **Сайт — два окна:**
 

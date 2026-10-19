@@ -93,6 +93,28 @@ def _after_think(raw: str) -> str:
     return text.strip()
 
 
+def _has_tex_signal(text: str) -> bool:
+    t = text or ""
+    low = t.lower()
+    return (
+        r"\documentclass" in t
+        or "```latex" in low
+        or "```tex" in low
+        or r"\begin{document}" in t
+    )
+
+
+def _usable_assistant_text(raw: str) -> str:
+    """Prefer post-think answer; if empty, keep raw when it still has LaTeX."""
+    cleaned = _after_think(raw)
+    if cleaned:
+        return cleaned
+    # Some Qwen builds put the whole answer inside <think>…</think>
+    if _has_tex_signal(raw):
+        return (raw or "").strip()
+    return ""
+
+
 def _content(data: Any) -> str:
     try:
         message = data["choices"][0]["message"]
@@ -100,15 +122,33 @@ def _content(data: Any) -> str:
         raise LLMError(f"unexpected response: {str(data)[:200]}") from exc
     if not isinstance(message, dict):
         raise LLMError(f"unexpected response: {str(data)[:200]}")
-    content_raw = _as_text(message.get("content"))
-    cleaned = _after_think(content_raw)
-    if cleaned:
-        return cleaned
-    for key in ("reasoning_content", "reasoning"):
-        got = _after_think(_as_text(message.get(key)))
+
+    blobs = [
+        _as_text(message.get("content")),
+        _as_text(message.get("reasoning_content")),
+        _as_text(message.get("reasoning")),
+    ]
+    for blob in blobs:
+        got = _usable_assistant_text(blob)
         if got:
             return got
-    raise LLMError("empty response")
+
+    # Last resort: any field that still contains a latex fence
+    for blob in blobs:
+        if _has_tex_signal(blob):
+            return blob.strip()
+
+    finish = ""
+    try:
+        finish = str(data["choices"][0].get("finish_reason") or "")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        pass
+    raise LLMError(
+        "empty response from Vision API "
+        f"(finish_reason={finish!r}). "
+        "Проверь VISION_API_BASE_URL / модель; "
+        "в .env попробуй VISION_REASONING=off и перезапусти api.cmd"
+    )
 
 
 def _http_body(exc: urllib.error.HTTPError) -> str:

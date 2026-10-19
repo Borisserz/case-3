@@ -10,7 +10,7 @@ from typing import Any
 
 from case3.charts import max_charts_from_env
 from case3.gold_select import format_gold_appendix, select_gold
-from case3.llm_client import LLMClient, LLMConfig
+from case3.llm_client import LLMClient, LLMConfig, LLMError
 from case3.parse_output import parse_model_output
 
 log = logging.getLogger("case3.generate")
@@ -158,11 +158,23 @@ def generate_document(
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
     raw = llm.complete(system=system, user_text=user)
-    (out_tex.parent / f"{stem}.raw_model.txt").write_text(raw, encoding="utf-8")
+    raw_path = out_tex.parent / f"{stem}.raw_model.txt"
+    raw_path.write_text(raw or "", encoding="utf-8")
+    if not (raw or "").strip():
+        raise LLMError(
+            f"модель вернула пустой текст (см. {raw_path.name}). "
+            "В .env поставь VISION_REASONING=off и перезапусти api.cmd"
+        )
 
-    tex, figures, charts = parse_model_output(
-        raw, max_images=max_images, max_charts=max_charts
-    )
+    try:
+        tex, figures, charts = parse_model_output(
+            raw, max_images=max_images, max_charts=max_charts
+        )
+    except Exception:
+        log.exception(
+            "parse failed; raw saved at %s (%d chars)", raw_path, len(raw or "")
+        )
+        raise
     out_tex.write_text(tex, encoding="utf-8")
     (out_tex.parent / "figures.json").write_text(
         json.dumps({"figures": figures, "charts": charts}, ensure_ascii=False, indent=2)
