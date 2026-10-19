@@ -248,9 +248,48 @@ def _is_md_table_sep(line: str) -> bool:
     return bool(s) and "-" in s and bool(re.match(r"^\|?[\s\-:|]+\|?$", s))
 
 
+def _next_nonempty(raw_lines: list[str], start: int) -> tuple[int, str]:
+    j = start
+    while j < len(raw_lines) and not raw_lines[j].strip():
+        j += 1
+    if j >= len(raw_lines):
+        return j, ""
+    return j, raw_lines[j].strip()
+
+
+def _looks_like_md_table_start(raw_lines: list[str], i: int) -> bool:
+    """Header `|…|` then (optional blanks) a markdown separator row."""
+    if not raw_lines[i].strip().startswith("|"):
+        return False
+    j, nxt = _next_nonempty(raw_lines, i + 1)
+    return bool(nxt) and _is_md_table_sep(nxt)
+
+
+def _emit_tabularx(rows: list[list[str]]) -> list[str]:
+    if not rows:
+        return []
+    ncol = max(len(r) for r in rows)
+    spec = "l" + ("X" * max(0, ncol - 1))
+    out = [
+        rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}",
+        r"\toprule",
+    ]
+    for ri, row in enumerate(rows[:24]):
+        cells = [escape_tex_text(c) for c in (row + [""] * ncol)[:ncol]]
+        out.append(" & ".join(cells) + r" \\")
+        if ri == 0:
+            out.append(r"\midrule")
+    out.append(r"\bottomrule")
+    out.append(r"\end{tabularx}")
+    out.append("")
+    return out
+
+
 def _source_lines_to_tex(source: str) -> list[str]:
     """Turn Source (plain / light Markdown) into TeX body lines — not raw dumps."""
     text = (source or "").replace("\r\n", "\n").strip()
+    # Markdown tables often arrive with blank lines between rows — normalize.
+    text = re.sub(r"(\|[^\n]*\|)\n(?:\s*\n)+(?=\s*\|)", r"\1\n", text)
     drop_re = re.compile(
         r"(?i)^(понял вас|ниже представлен|вот текст|конечно[,.]?|"
         r"ниже данны|скопируй|для построения график).*"
@@ -267,30 +306,58 @@ def _source_lines_to_tex(source: str) -> list[str]:
         if drop_re.match(stripped):
             i += 1
             continue
-        if stripped.startswith("|") and i + 1 < len(raw_lines) and _is_md_table_sep(
-            raw_lines[i + 1]
-        ):
+        if stripped.startswith(">"):
+            quote = stripped.lstrip("> ").strip()
+            quote = re.sub(r"\*\*(.+?)\*\*", r"«\1»", quote)
+            lines_out.append(r"\begin{quote}")
+            lines_out.append(escape_tex_text(quote))
+            lines_out.append(r"\end{quote}")
+            lines_out.append("")
+            i += 1
+            continue
+        if _looks_like_md_table_start(raw_lines, i):
             rows: list[list[str]] = []
-            while i < len(raw_lines) and raw_lines[i].strip().startswith("|"):
+            while i < len(raw_lines):
                 row = raw_lines[i].strip()
+                if not row:
+                    # blank inside table: keep going if more | rows follow
+                    j, nxt = _next_nonempty(raw_lines, i + 1)
+                    if nxt.startswith("|"):
+                        i = j
+                        continue
+                    break
+                if not row.startswith("|"):
+                    break
                 i += 1
                 if _is_md_table_sep(row):
                     continue
                 cells = [c.strip() for c in row.strip("|").split("|")]
                 rows.append(cells)
-            if rows:
-                ncol = max(len(r) for r in rows)
-                spec = "l" + ("X" * max(0, ncol - 1))
-                lines_out.append(rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}")
-                lines_out.append(r"\toprule")
-                for ri, row in enumerate(rows[:16]):
-                    cells = [escape_tex_text(c) for c in (row + [""] * ncol)[:ncol]]
-                    lines_out.append(" & ".join(cells) + r" \\")
-                    if ri == 0:
-                        lines_out.append(r"\midrule")
-                lines_out.append(r"\bottomrule")
-                lines_out.append(r"\end{tabularx}")
-                lines_out.append("")
+            lines_out.extend(_emit_tabularx(rows))
+            continue
+        # Orphan pipe-rows (no separator): still try to tabulate ≥2 consecutive.
+        if stripped.startswith("|"):
+            rows = []
+            while i < len(raw_lines):
+                row = raw_lines[i].strip()
+                if not row:
+                    j, nxt = _next_nonempty(raw_lines, i + 1)
+                    if nxt.startswith("|"):
+                        i = j
+                        continue
+                    break
+                if not row.startswith("|"):
+                    break
+                i += 1
+                if _is_md_table_sep(row):
+                    continue
+                rows.append([c.strip() for c in row.strip("|").split("|")])
+            if len(rows) >= 2:
+                lines_out.extend(_emit_tabularx(rows))
+                continue
+            # single weird pipe line → plain text
+            lines_out.append(escape_tex_text(stripped.replace("|", " ").strip()))
+            lines_out.append("")
             continue
         m_h = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if m_h:
@@ -310,7 +377,9 @@ def _source_lines_to_tex(source: str) -> list[str]:
         i += 1
         while i < len(raw_lines):
             nxt = raw_lines[i].strip()
-            if not nxt or nxt.startswith("#") or nxt.startswith("|") or nxt in {
+            if not nxt or nxt.startswith("#") or nxt.startswith("|") or nxt.startswith(
+                ">"
+            ) or nxt in {
                 "***",
                 "---",
             }:
@@ -322,14 +391,14 @@ def _source_lines_to_tex(source: str) -> list[str]:
         para = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"«\1»", para)
         lines_out.append(escape_tex_text(para))
         lines_out.append("")
-        if len(lines_out) > 80:
+        if len(lines_out) > 120:
             break
 
     if not lines_out:
         lines_out = [escape_tex_text(text[:2000] or "(исходный текст пуст)")]
     if title:
         lines_out.insert(0, f"%CASE3_TITLE:{title}")
-    return lines_out[:100]
+    return lines_out[:160]
 
 
 def fill_sparse_tex_with_source(
@@ -346,8 +415,29 @@ def fill_sparse_tex_with_source(
         title = body_lines[0].split(":", 1)[1].strip() or title
         body_lines = body_lines[1:]
 
-    # Split prose around media slots.
+    # Insert media after the first completed section/table block — never mid-tabularx.
     mid = max(1, len(body_lines) // 2)
+    for idx in range(mid, len(body_lines)):
+        if body_lines[idx].strip() == r"\end{tabularx}":
+            mid = idx + 1
+            break
+        if body_lines[idx].startswith(r"\section{"):
+            mid = idx
+            break
+    # If mid landed inside an open tabularx, push to after \end{tabularx}.
+    open_tx = 0
+    for idx, ln in enumerate(body_lines):
+        if r"\begin{tabularx}" in ln:
+            open_tx += 1
+        if r"\end{tabularx}" in ln:
+            open_tx = max(0, open_tx - 1)
+        if idx + 1 == mid and open_tx:
+            for j in range(idx, len(body_lines)):
+                if r"\end{tabularx}" in body_lines[j]:
+                    mid = j + 1
+                    break
+            break
+
     parts: list[str] = [
         r"\begin{document}",
         r"\maketitle",

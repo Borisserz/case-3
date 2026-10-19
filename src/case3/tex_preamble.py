@@ -75,6 +75,12 @@ def _simple_lcr_count(colspec: str) -> int | None:
     return len(cols) if cols else None
 
 
+_TABULARX_BLOCK = re.compile(
+    r"\\begin\{tabularx\}\{\\textwidth\}\{([^}]*)\}([\s\S]*?)\\end\{tabularx\}",
+    re.M,
+)
+
+
 def harden_wide_tables(tex: str) -> str:
     """Rewrite wide ``tabular{lll…}`` into ``tabularx{\\textwidth}{lXX…}``."""
 
@@ -98,6 +104,63 @@ def harden_wide_tables(tex: str) -> str:
         )
 
     return _TABULAR_BLOCK.sub(_repl, tex)
+
+
+def harden_tabularx_colcount(tex: str) -> str:
+    """Fix ``tabularx{…}{lrrrr}`` when the header has more ``&`` than columns."""
+
+    def _repl(m: re.Match[str]) -> str:
+        spec, body = m.group(1), m.group(2)
+        if r"\begin{tabular" in body:
+            return m.group(0)
+        # Split on \\ row terminators (body may be one long line).
+        ncol_body = 0
+        chunks = re.split(r"\\\\", body)
+        for chunk in chunks:
+            s = chunk.strip()
+            if not s or "&" not in s:
+                continue
+            s = re.sub(
+                r"^\\(?:toprule|midrule|bottomrule|hline)\s*",
+                "",
+                s,
+            )
+            s = re.sub(
+                r"\\(?:toprule|midrule|bottomrule|hline)\s*",
+                " ",
+                s,
+            ).strip()
+            if "&" not in s:
+                continue
+            ncol_body = s.count("&") + 1
+            break
+        if ncol_body < 2:
+            return m.group(0)
+        letters = re.findall(r"[lcrX]", spec)
+        if len(letters) == ncol_body:
+            return m.group(0)
+        # rebuild: first col l, rest X (safe for A4)
+        new_spec = "l" + ("X" * (ncol_body - 1))
+        return (
+            rf"\begin{{tabularx}}{{\textwidth}}{{{new_spec}}}"
+            + body
+            + r"\end{tabularx}"
+        )
+
+    return _TABULARX_BLOCK.sub(_repl, tex)
+
+
+def ensure_font_aliases(tex: str) -> str:
+    """Model often emits font names missing in the Docker image."""
+    repls = (
+        (r"\setmonofont{DejaVu Mono}", r"\setmonofont{DejaVu Sans Mono}"),
+        (r"\setmainfont{Times New Roman}", r"\setmainfont{DejaVu Serif}"),
+        (r"\setsansfont{Arial}", r"\setsansfont{DejaVu Sans}"),
+    )
+    out = tex
+    for a, b in repls:
+        out = out.replace(a, b)
+    return out
 
 
 def scrub_project_branding(tex: str) -> str:
@@ -232,9 +295,11 @@ def ensure_document_preamble(tex: str) -> str:
             insert_at = m.end()
             out = out[:insert_at] + "\n" + block + out[insert_at:].lstrip("\n")
     out = ensure_cyrillic_fonts(out)
+    out = ensure_font_aliases(out)
     out = ensure_a4_layout(out)
     out = ensure_report_style(out)
-    return harden_wide_tables(out)
+    out = harden_wide_tables(out)
+    return harden_tabularx_colcount(out)
 
 
 def strip_orphan_slots(tex: str) -> str:

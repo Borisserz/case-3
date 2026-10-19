@@ -56,6 +56,35 @@ def test_fill_inserts_source_and_keeps_slots() -> None:
     assert not tex_body_is_sparse(out)
 
 
+def test_fill_converts_markdown_tables_with_blank_lines() -> None:
+    """Regression: Source fill left raw `| col |` pipes in PDF (091453Z)."""
+    sparse = r"""\documentclass{article}
+\begin{document}
+\maketitle
+%CASE3_CHART:cht_01%
+\end{document}
+"""
+    source = (
+        "## Данные\n\n"
+        "| Год | Численность |\n\n"
+        "| :--- | :--- |\n\n"
+        "| 2019 | 9470 |\n\n"
+        "| 2020 | 9446 |\n"
+    )
+    out = fill_sparse_tex_with_source(
+        sparse, source, chart_ids=["cht_01"], figure_ids=[]
+    )
+    assert r"\begin{tabularx}" in out
+    assert "| 2019 |" not in out
+    assert "9470" in out
+    # charts not inserted mid-table
+    tx = out.find(r"\begin{tabularx}")
+    te = out.find(r"\end{tabularx}")
+    slot = out.find("%CASE3_CHART:cht_01%")
+    assert tx < te
+    assert slot < tx or slot > te
+
+
 def test_fill_converts_markdown_and_fonts_survive_preamble() -> None:
     sparse = r"""\documentclass[a4paper,12pt]{article}
 \usepackage{graphicx}
