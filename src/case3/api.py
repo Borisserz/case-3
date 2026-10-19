@@ -19,7 +19,7 @@ from case3.envfile import load_dotenv
 from case3.generate import max_images_from_env
 from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
-from case3.pipeline import run_pipeline
+from case3.pipeline import PipelineError, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
 
 log = logging.getLogger("case3.api")
@@ -280,6 +280,20 @@ async def api_run(
             max_images=max_images,
             max_charts=max_charts,
         )
+    except PipelineError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": str(exc),
+                "run_id": exc.run_id,
+                "max_charts": (exc.meta or {}).get("max_charts"),
+                "max_images": (exc.meta or {}).get("max_images"),
+                "dry_run": (exc.meta or {}).get("dry_run"),
+                "hint": "logs: runs\\logs\\"
+                + exc.run_id
+                + " — then scripts\\push-debug.cmd",
+            },
+        ) from exc
     except (LLMConfigError, LLMError, ParseError, RenderError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

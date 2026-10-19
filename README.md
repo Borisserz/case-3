@@ -47,8 +47,11 @@ scripts\run.cmd notes.txt -p "сделай отчёт" --format both
 |--|--|
 | нет Docker-образа | Docker Desktop → `scripts\setup.cmd` |
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
+| нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
+| Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |
+| отдать логи | `scripts\push-debug.cmd` → ветка `origin/debug/runs` |
 
 ## Папки
 

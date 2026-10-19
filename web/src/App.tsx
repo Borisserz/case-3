@@ -183,12 +183,19 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) {
         const detail = data.detail;
-        const msg =
-          typeof detail === "string"
-            ? detail
-            : Array.isArray(detail)
-              ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ")
-              : data.error || res.statusText;
+        let msg: string;
+        if (typeof detail === "string") {
+          msg = detail;
+        } else if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+          const d = detail as { message?: string; run_id?: string; hint?: string };
+          msg = [d.message, d.run_id ? `run ${d.run_id}` : null, d.hint]
+            .filter(Boolean)
+            .join(" · ");
+        } else if (Array.isArray(detail)) {
+          msg = detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ");
+        } else {
+          msg = data.error || res.statusText;
+        }
         throw new Error(msg);
       }
       const result = data as RunResult;

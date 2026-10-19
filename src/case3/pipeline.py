@@ -19,6 +19,25 @@ from case3.render import render_tex
 log = logging.getLogger("case3.pipeline")
 
 
+class PipelineError(RuntimeError):
+    """Pipeline failed after writing meta/logs — includes run_id for debug upload."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        run_id: str,
+        out_dir: Path,
+        logs_dir: Path,
+        meta: dict,
+    ) -> None:
+        super().__init__(message)
+        self.run_id = run_id
+        self.out_dir = out_dir
+        self.logs_dir = logs_dir
+        self.meta = meta
+
+
 def run_pipeline(
     source: Path,
     *,
@@ -130,11 +149,21 @@ def run_pipeline(
         meta["traceback"] = traceback.format_exc()
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
-        raise
-    finally:
         payload = json.dumps(meta, ensure_ascii=False, indent=2)
         (logs / "meta.json").write_text(payload, encoding="utf-8")
         (out / "meta.json").write_text(payload, encoding="utf-8")
+        raise PipelineError(
+            str(exc),
+            run_id=run_id,
+            out_dir=out,
+            logs_dir=logs,
+            meta=meta,
+        ) from exc
+    finally:
+        if meta.get("status") != "error":
+            payload = json.dumps(meta, ensure_ascii=False, indent=2)
+            (logs / "meta.json").write_text(payload, encoding="utf-8")
+            (out / "meta.json").write_text(payload, encoding="utf-8")
         root_logger.removeHandler(handler)
         handler.close()
 
