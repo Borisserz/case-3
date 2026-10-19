@@ -4,6 +4,17 @@
 
 Модель **сама пишет** HTML каждого графика под документ. Рецепты в `prompt/system_tex.md` — только образцы; цифры только из Source.
 
+## Node.js для сайта (Windows) — сначала это
+
+Нужен **локальный** Node (не Docker, не Chocolatey, не winget).
+
+1. Скачай установщик (.msi):  
+   **https://nodejs.org/dist/v24.22.0/node-v24.22.0-x64.msi**  
+   (или https://nodejs.org/ → LTS → **Windows Installer (.msi)**)
+2. Установи → закрой все терминалы → открой новый PowerShell
+3. Проверь: `node -v` и `npm -v`
+4. Подробно: [docs/WINDOWS_NODE.md](docs/WINDOWS_NODE.md)
+
 ## Запуск из корня проекта (терминал)
 
 Все команды — из корня репо (`case-3\`), не из `web\` / `scripts\`.
