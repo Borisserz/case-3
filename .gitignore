@@ -31,5 +31,3 @@ web/dist/
 *.fdb_latexmk
 *.synctex.gz
 *.xdv
-
-tests/
