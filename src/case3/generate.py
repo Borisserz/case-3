@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from case3.chart_html import CHART_TYPES
+from case3.chart_types_coerce import coerce_chart_types
 from case3.charts import max_charts_from_env
 from case3.gold_select import format_gold_appendix, select_gold
 from case3.llm_client import LLMClient, LLMConfig, LLMError
@@ -24,6 +26,27 @@ DEFAULT_INTENT = (
 
 SOURCE_BEGIN = "<<<CASE3_SOURCE_BEGIN>>>"
 SOURCE_END = "<<<CASE3_SOURCE_END>>>"
+
+_PREFERRED_TYPES_RE = re.compile(
+    r"(?:ОБЯЗАТЕЛЬНО типы графиков по порядку[^:]*|предпочитай типы)\s*:\s*([^\n—]+)",
+    re.I,
+)
+
+
+def preferred_types_from_intent(intent: str) -> list[str]:
+    """Parse forced chart types from Intent UI block."""
+    m = _PREFERRED_TYPES_RE.search(intent or "")
+    if not m:
+        return []
+    parts = re.split(r"[,;]+", m.group(1))
+    out: list[str] = []
+    for p in parts:
+        t = p.strip().lower()
+        # strip trailing notes like "line (foo)"
+        t = re.split(r"\s+", t, maxsplit=1)[0]
+        if t in CHART_TYPES and t not in out:
+            out.append(t)
+    return out
 
 
 def _repo_root() -> Path:
@@ -621,6 +644,10 @@ def generate_document(
         )
         raise
 
+    preferred = preferred_types_from_intent(intent_text)
+    if preferred:
+        charts = coerce_chart_types(charts, preferred)
+
     if tex_body_is_sparse(tex) and source_text.strip():
         log.warning(
             "TeX body is charts-only — filling prose from Source (%d chars)",
@@ -632,6 +659,20 @@ def generate_document(
             chart_ids=[c["id"] for c in charts],
             figure_ids=[f["id"] for f in figures],
         )
+
+    # Safety: no raw Markdown pipes should remain after Source-fill.
+    if re.search(r"(?m)^[ \t]*\|.+\|[ \t]*$", tex):
+        log.warning("raw Markdown table pipes still in TeX — re-running table convert")
+        from case3.tex_preamble import ensure_document_preamble
+
+        # Re-fill from source only if sparse path already ran; else strip pipes.
+        fixed_lines = []
+        for ln in tex.splitlines():
+            if re.match(r"^[ \t]*\|.+\|[ \t]*$", ln):
+                continue
+            fixed_lines.append(ln)
+        tex = "\n".join(fixed_lines) + "\n"
+        tex = ensure_document_preamble(tex)
 
     out_tex.write_text(tex, encoding="utf-8")
     (out_tex.parent / "figures.json").write_text(

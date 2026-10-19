@@ -130,7 +130,11 @@ def build_intent_from_ui(
                 "share→donut, compare→bar/grouped_bar)"
             )
         elif clean:
-            req.append("- предпочитай типы: " + ", ".join(clean))
+            req.append(
+                "- ОБЯЗАТЕЛЬНО типы графиков по порядку (charts[0], charts[1], …): "
+                + ", ".join(clean)
+                + " — не подменяй на line/donut без причины"
+            )
         if hints:
             req.append(f"- пожелания по виду/типу: {hints} (сведи к whitelist или пропусти)")
     if forbid_images or max_images <= 0:

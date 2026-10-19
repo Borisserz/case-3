@@ -40,6 +40,22 @@ def test_tabularx_already_ok() -> None:
     assert harden_wide_tables(src) == src
 
 
+def test_tabularx_with_thinspace_numbers_stays_aligned() -> None:
+    """Numbers like 85\\,000 must not break colcount harden."""
+    tex = r"""
+\begin{tabularx}{\textwidth}{lrrrr}
+\toprule
+Показатель & 2019 & 2020 & 2021 & 2022 & 2023 \\
+\midrule
+Рождения & 85\,000 & 82\,000 & 78\,000 & 74\,000 & 72\,000 \\
+\bottomrule
+\end{tabularx}
+"""
+    out = harden_tabularx_colcount(tex)
+    assert r"{lXXXXX}" in out.replace(" ", "")
+    assert r"85\,000" in out
+
+
 def test_tabularx_colcount_mismatch_fixed() -> None:
     src = (
         r"\begin{tabularx}{\textwidth}{lrrrr}"

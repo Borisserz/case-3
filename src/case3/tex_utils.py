@@ -104,15 +104,21 @@ def finish_preamble_only_tex(
     title: str = "Отчёт",
 ) -> str:
     """When the model truncates mid-preamble (has \\documentclass, no \\begin{document})."""
+    from case3.tex_preamble import preamble_looks_broken
+
     t = (tex or "").rstrip()
     if r"\begin{document}" in t:
         return t if t.endswith("\n") else t + "\n"
     if r"\documentclass" not in t:
         raise ValueError("cannot finish preamble: no \\documentclass")
-    # Drop incomplete last line (e.g. \\setotherlanguage{engl)
-    last = t.rsplit("\n", 1)[-1]
-    if last.count("{") != last.count("}") or re.search(r"\\[a-zA-Z]+$", last):
-        t = t.rsplit("\n", 1)[0].rstrip()
+    # Truncated mid-package → discard and use the known-good min preamble.
+    if preamble_looks_broken(t + "\n\\begin{document}\n\\end{document}\n"):
+        t = _MIN_PREAMBLE.rstrip()
+    else:
+        # Drop incomplete last line (e.g. \\setotherlanguage{engl)
+        last = t.rsplit("\n", 1)[-1]
+        if last.count("{") != last.count("}") or re.search(r"\\[a-zA-Z]+$", last):
+            t = t.rsplit("\n", 1)[0].rstrip()
     if r"\title{" not in t:
         t += f"\n\\title{{{title}}}\n\\author{{}}\n\\date{{\\today}}"
     body = ["\\begin{document}", "\\maketitle", ""]

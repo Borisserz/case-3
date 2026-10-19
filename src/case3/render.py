@@ -77,11 +77,27 @@ def _docker_run(workdir: Path, *cmd: str) -> None:
 
 
 def ensure_image() -> None:
-    r = subprocess.run(
-        ["docker", "image", "inspect", IMAGE], capture_output=True, text=True
+    """Retry lookup — Docker daemon can flap under parallel load."""
+    import time
+
+    last = None
+    for attempt in range(4):
+        # `docker images -q` is more reliable than `image inspect` on some hosts.
+        r = subprocess.run(
+            ["docker", "images", "-q", IMAGE],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode == 0 and (r.stdout or "").strip():
+            return
+        last = r
+        time.sleep(0.35 * (attempt + 1))
+    detail = ""
+    if last is not None:
+        detail = f" ({(last.stderr or last.stdout or '')[:120].strip()})"
+    raise RenderError(
+        f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd{detail}"
     )
-    if r.returncode != 0:
-        raise RenderError(f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd")
 
 
 def _save_tex_logs(work: Path, stem: str, log_dir: Path | None) -> Path | None:

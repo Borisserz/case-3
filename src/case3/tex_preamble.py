@@ -284,9 +284,41 @@ def ensure_a4_layout(tex: str) -> str:
     return out
 
 
+def preamble_looks_broken(tex: str) -> bool:
+    """True if preamble is truncated / unbalanced (unsafe for latexmk)."""
+    t = tex or ""
+    m = _BEGIN_DOC.search(t)
+    head = t[: m.start()] if m else t
+    if not head.strip():
+        return True
+    if head.count("{") != head.count("}"):
+        return True
+    last = head.rstrip().rsplit("\n", 1)[-1].strip()
+    if re.search(r"\\[a-zA-Z]+$", last):
+        return True
+    # Truncated \usepackage{geom  or \setotherlanguage{engl
+    if re.search(r"\\(?:usepackage|set(?:main|sans|mono)font|set(?:default|other)language|geometry)\{[^}]*$", head):
+        return True
+    if re.search(r"\\usepackage\{[a-zA-Z]*$", head, re.M):
+        return True
+    return False
+
+
+def _replace_preamble(tex: str, new_preamble: str) -> str:
+    m = _BEGIN_DOC.search(tex or "")
+    if not m:
+        return new_preamble.rstrip() + "\n"
+    body = tex[m.start() :]
+    return new_preamble.rstrip() + "\n" + body.lstrip()
+
+
 def ensure_document_preamble(tex: str) -> str:
     """Packages + Cyrillic fonts + A4 + report style + branding scrub + tables."""
+    from case3.tex_utils import _MIN_PREAMBLE
+
     out = scrub_project_branding(tex)
+    if preamble_looks_broken(out):
+        out = _replace_preamble(out, _MIN_PREAMBLE)
     m = _DOCCLASS.search(out)
     if m:
         missing = [p for p in REQUIRED_PACKAGES if rf"\usepackage{{{p}}}" not in out]

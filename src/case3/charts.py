@@ -17,6 +17,22 @@ log = logging.getLogger("case3.charts")
 _T = TypeVar("_T")
 
 
+def _prefer_stable_playwright_browsers() -> None:
+    """Cursor sandbox temp browsers often miss the right CPU arch → SEGV / blank PNG."""
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return
+    candidates = [
+        Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS
+        Path.home() / ".cache" / "ms-playwright",  # Linux
+        Path.home() / "AppData" / "Local" / "ms-playwright",  # Windows
+    ]
+    for c in candidates:
+        if c.is_dir() and any(c.glob("chromium*")):
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(c)
+            log.info("PLAYWRIGHT_BROWSERS_PATH → %s", c)
+            return
+
+
 def _run_sync_playwright(fn: Callable[[], _T]) -> _T:
     """Always run Playwright Sync API in a fresh OS thread.
 
@@ -136,6 +152,7 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
     }
 
     def _render() -> None:
+        _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -184,8 +201,22 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                     "() => window.__CASE3_CHART_READY === true",
                     timeout=timeout_ms,
                 )
-                page.wait_for_timeout(120)
-                _assert_chart_visible(page)
+                # Poll until canvas has ink — READY can still beat first paint.
+                deadline = timeout_ms
+                step = 50
+                last_err: Exception | None = None
+                waited = 0
+                while waited <= min(deadline, 2500):
+                    try:
+                        _assert_chart_visible(page)
+                        last_err = None
+                        break
+                    except RuntimeError as exc:
+                        last_err = exc
+                        page.wait_for_timeout(step)
+                        waited += step
+                if last_err is not None:
+                    raise last_err
                 page.locator("#mount").screenshot(path=str(dest_png), type="png")
                 context.close()
             finally:
