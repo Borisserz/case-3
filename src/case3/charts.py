@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import concurrent.futures
 import logging
 import os
@@ -19,11 +18,12 @@ _T = TypeVar("_T")
 
 
 def _run_sync_playwright(fn: Callable[[], _T]) -> _T:
-    """Playwright sync API must not run on a thread with a running asyncio loop."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return fn()
+    """Always run Playwright Sync API in a fresh OS thread.
+
+    FastAPI/uvicorn may call us under a running asyncio loop (or from
+    ``asyncio.to_thread`` on a worker that still confuses Playwright on
+    Windows). A dedicated thread has no running loop → Sync API is safe.
+    """
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(fn).result()
 
