@@ -48,10 +48,19 @@ def _pick_fences(raw: str) -> tuple[str | None, str | None]:
     fences = [(m.group(1).lower(), m.group(2).strip()) for m in _FENCE.finditer(raw or "")]
     tex_body = None
     json_body = None
+    # Prefer a latex/tex fence that actually contains \documentclass
     for lang, body in fences:
-        if lang in ("latex", "tex") and tex_body is None:
+        if lang in ("latex", "tex") and r"\documentclass" in body:
             tex_body = body
-        elif lang == "json" and json_body is None:
+            break
+    if tex_body is None:
+        for lang, body in fences:
+            if lang in ("latex", "tex") and tex_body is None:
+                tex_body = body
+            elif lang in ("",) and r"\documentclass" in body and tex_body is None:
+                tex_body = body
+    for lang, body in fences:
+        if lang == "json" and json_body is None:
             json_body = body
         elif lang in ("",) and json_body is None and body.lstrip().startswith("{"):
             json_body = body
@@ -143,12 +152,13 @@ def parse_model_output(
 ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
     tex_body, json_body = _pick_fences(raw)
 
-    if tex_body is None:
-        tex = extract_tex(raw)
-        if r"\documentclass" not in tex and r"\begin{document}" not in tex:
-            raise ParseError("missing ```latex fence with full document")
-    else:
-        tex = extract_tex("```latex\n" + tex_body + "\n```")
+    try:
+        if tex_body is None:
+            tex = extract_tex(raw)
+        else:
+            tex = extract_tex("```latex\n" + tex_body + "\n```")
+    except ValueError as exc:
+        raise ParseError(str(exc)) from exc
 
     fig_slots = _ids(_FIG_SLOT, tex) if max_images > 0 else []
     chart_slots = _ids(_CHART_SLOT, tex) if max_charts > 0 else []

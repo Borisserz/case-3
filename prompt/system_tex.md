@@ -13,8 +13,10 @@ Budget for charts comes **only** from env `CASE3_MAX_CHARTS` (shown here as {{MA
 
 Return **exactly two** fenced blocks, in this order:
 
-1. ` ```latex ` … full document … ` ``` `
+1. ` ```latex ` … **complete** XeLaTeX document starting with `\documentclass[a4paper,12pt]{article}` and ending with `\end{document}` … ` ``` `
 2. ` ```json ` … metadata … ` ``` `
+
+Never put only a fragment (`\section` without `\documentclass`). Never omit `\documentclass`.
 
 JSON schema:
 
