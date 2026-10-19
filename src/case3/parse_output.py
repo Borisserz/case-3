@@ -44,6 +44,30 @@ def _strip_chart_slots(tex: str, keep: set[str]) -> str:
     return _CHART_SLOT_LINE.sub(repl, tex)
 
 
+def _append_missing_slots(
+    tex: str,
+    *,
+    chart_ids: list[str],
+    figure_ids: list[str],
+) -> str:
+    """If JSON has media but the LaTeX forgot slots, append them before \\end{document}."""
+    have_c = set(_ids(_CHART_SLOT, tex))
+    have_f = set(_ids(_FIG_SLOT, tex))
+    lines: list[str] = []
+    for fid in figure_ids:
+        if fid and fid not in have_f:
+            lines.append(f"%CASE3_FIG:{fid}%")
+    for cid in chart_ids:
+        if cid and cid not in have_c:
+            lines.append(f"%CASE3_CHART:{cid}%")
+    if not lines:
+        return tex
+    block = "\n" + "\n".join(lines) + "\n"
+    if r"\end{document}" in (tex or ""):
+        return tex.replace(r"\end{document}", block + r"\end{document}", 1)
+    return (tex or "").rstrip() + block
+
+
 def _json_candidates(raw: str) -> list[str]:
     """All JSON-looking blobs (closed fences + trailing unclosed ```json)."""
     out: list[str] = []
@@ -383,13 +407,54 @@ def parse_model_output(
     if clash:
         raise ParseError(f"id collision between figures and charts: {sorted(clash)}")
 
-    if max_images > 0 and fig_slots:
-        figures = _align(fig_slots, figures, kind="figure", max_n=max_images)
+    if max_images > 0 and figures:
+        if not fig_slots:
+            log.warning(
+                "JSON figures without slots — appending %s",
+                [f["id"] for f in figures],
+            )
+            tex = _append_missing_slots(
+                tex,
+                chart_ids=[],
+                figure_ids=[f["id"] for f in figures[:max_images]],
+            )
+            fig_slots = _ids(_FIG_SLOT, tex)
+        by_fig = {f["id"]: f for f in figures}
+        aligned_figs = [by_fig[s] for s in fig_slots if s in by_fig][:max_images]
+        missing_figs = [s for s in fig_slots if s not in by_fig]
+        if missing_figs:
+            log.warning("stripping figure slots without valid JSON: %s", missing_figs)
+            tex = re.sub(
+                r"(?m)^[ \t]*%CASE3_FIG:("
+                + "|".join(re.escape(s) for s in missing_figs)
+                + r")%[ \t]*\r?\n?",
+                "",
+                tex,
+            )
+        figures = aligned_figs
     else:
+        if fig_slots:
+            tex = re.sub(
+                r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+                "",
+                tex,
+            )
         figures = []
 
     # Charts: soft-fail — drop invalid slots from TeX instead of aborting the run.
-    if max_charts > 0 and chart_slots:
+    # Critical: if JSON has charts but LaTeX forgot slots, APPEND slots (do not wipe charts).
+    if max_charts > 0 and charts:
+        if not chart_slots:
+            log.warning(
+                "JSON charts without slots — appending %s",
+                [c["id"] for c in charts],
+            )
+            tex = _append_missing_slots(
+                tex,
+                chart_ids=[c["id"] for c in charts[:max_charts]],
+                figure_ids=[],
+            )
+            chart_slots = _ids(_CHART_SLOT, tex)
         by_id = {c["id"]: c for c in charts}
         aligned = [by_id[s] for s in chart_slots if s in by_id][:max_charts]
         missing = [s for s in chart_slots if s not in by_id]

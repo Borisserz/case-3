@@ -51,7 +51,7 @@ class LLMConfig:
     timeout_s: float = 300.0
     max_retries: int = 2
     temperature: float = 0.2
-    reasoning: str = "low"
+    reasoning: str = "off"
     max_tokens: int = 16384
 
     @property
@@ -67,7 +67,8 @@ class LLMConfig:
             raise LLMConfigError(
                 "Set VISION_API_BASE_URL in .env (e.g. http://192.168.x.x:8080)"
             )
-        reasoning = (_env("VISION_REASONING", "CASE3_REASONING") or "low").lower()
+        # Default off: thinking burns max_tokens and was the #1 truncation cause.
+        reasoning = (_env("VISION_REASONING", "CASE3_REASONING") or "off").lower()
         if reasoning not in _REASONING:
             raise LLMConfigError(f"reasoning={reasoning!r}: expected {', '.join(_REASONING)}")
         return cls(
@@ -166,7 +167,7 @@ def build_body(
     user_text: str,
     model: str | None = None,
     temperature: float = 0.2,
-    reasoning: str = "low",
+    reasoning: str = "off",
     max_tokens: int = 16384,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (

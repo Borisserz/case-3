@@ -107,6 +107,16 @@ def output_looks_truncated(raw: str) -> bool:
     has_slots = ("%CASE3_CHART:" in text) or ("%CASE3_FIG:" in text)
     if has_slots and "```json" not in text and '"charts"' not in text:
         return True
+    # Closed ```json fence whose body does not json.loads → cut mid-object.
+    if "```json" in text or '"charts"' in text:
+        from case3.parse_output import _pick_fences
+
+        _tex, jb = _pick_fences(text)
+        if jb:
+            try:
+                json.loads(jb)
+            except json.JSONDecodeError:
+                return True
     return False
 
 
@@ -278,9 +288,10 @@ def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> 
             "Do NOT repeat a half-written preamble.",
             "",
             "Return ONLY a complete ```json fence:",
-            f'{{"figures":[],"charts":[...≤{max_charts}...]}} with full Chart.js html from Source numbers.',
-            "Include every chart id you planned (cht_01, …).",
-            "Skip LaTeX in this continuation — the pipeline will rebuild the body from JSON if needed.",
+            f'{{"figures":[],"charts":[...≤{min(2, max_charts)} complete objects...]}} '
+            "with FULL Chart.js html (end each html with window.__CASE3_CHART_READY=true;).",
+            "Prefer finishing 1–2 charts completely over starting a third.",
+            "Skip LaTeX in this continuation — the pipeline will rebuild the body from JSON + Source.",
             "",
             "Partial output so far:",
             "<<<PARTIAL>>>",

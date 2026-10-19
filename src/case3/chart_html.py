@@ -58,6 +58,17 @@ def sanitize_chart_html(html: str) -> str:
     text = text.strip()
     if not text:
         raise ChartHtmlError("chart html empty after sanitize")
+    # Model often forgets the ready flag → Playwright wait times out → chart dropped.
+    if "__CASE3_CHART_READY" not in text:
+        if re.search(r"(?is)</script>\s*$", text):
+            text = re.sub(
+                r"(?is)</script>\s*$",
+                "window.__CASE3_CHART_READY=true;</script>",
+                text,
+                count=1,
+            )
+        else:
+            text = text + "<script>window.__CASE3_CHART_READY=true;</script>"
     return text
 
 

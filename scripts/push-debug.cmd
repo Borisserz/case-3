@@ -15,11 +15,13 @@ set "BRANCH=debug/upload-%STAMP%"
 mkdir "%DEST%\out" 2>nul
 mkdir "%DEST%\logs" 2>nul
 mkdir "%DEST%\work" 2>nul
+mkdir "%DEST%\uploads" 2>nul
 
-echo [1/4] Copy runs\out logs work → %DEST%
+echo [1/4] Copy runs\out logs work uploads → %DEST%
 if exist runs\out xcopy /E /I /Y /Q "runs\out\*" "%DEST%\out\" >nul
 if exist runs\logs xcopy /E /I /Y /Q "runs\logs\*" "%DEST%\logs\" >nul
 if exist runs\work xcopy /E /I /Y /Q "runs\work\*" "%DEST%\work\" >nul
+if exist runs\uploads xcopy /E /I /Y /Q "runs\uploads\*" "%DEST%\uploads\" >nul
 
 dir /s /b "%DEST%\*.json" "%DEST%\*.tex" "%DEST%\*.txt" "%DEST%\*.log" 2>nul | findstr /r "." >nul
 if errorlevel 1 (

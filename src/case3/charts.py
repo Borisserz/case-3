@@ -35,9 +35,10 @@ ENV_MAX_CHARTS = "CASE3_MAX_CHARTS"
 def max_charts_from_env() -> int:
     """Only CASE3_MAX_CHARTS controls how many charts may appear."""
     try:
-        return max(0, int(os.environ.get(ENV_MAX_CHARTS, "0") or "0"))
+        # Default 2 matches API/UI when .env forgot the knobs (0 still disables).
+        return max(0, int(os.environ.get(ENV_MAX_CHARTS, "2") or "2"))
     except ValueError:
-        return 0
+        return 2
 
 
 def chart_timeout_s() -> float:
