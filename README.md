@@ -6,14 +6,82 @@
 
 ## Node.js для сайта (Windows) — сначала это
 
-Нужен **локальный** Node (не Docker, не Chocolatey, не winget).
+Всё ниже — **только Windows / PowerShell**. Нужен **локальный** Node  
+(**не** Docker, **не** Chocolatey, **не** winget с сайта nodejs.org).
 
-1. Скачай установщик (.msi):  
-   **https://nodejs.org/dist/v24.22.0/node-v24.22.0-x64.msi**  
-   (или https://nodejs.org/ → LTS → **Windows Installer (.msi)**)
-2. Установи → закрой все терминалы → открой новый PowerShell
-3. Проверь: `node -v` и `npm -v`
-4. Подробно: [docs/WINDOWS_NODE.md](docs/WINDOWS_NODE.md)
+### A. Скачать и поставить
+
+1. Скачай `.msi`: **https://nodejs.org/dist/v24.22.0/node-v24.22.0-x64.msi**  
+2. Запусти → Next → Finish  
+3. **Закрой все** окна PowerShell / cmd / терминал Cursor  
+4. Открой **новый** PowerShell
+
+### B. Проверка (новый PowerShell)
+
+```powershell
+Test-Path "C:\Program Files\nodejs\node.exe"
+node -v
+npm -v
+where.exe node
+```
+
+Норма: `True` и номера версий (`v24…`, `10…` / `11…`).  
+Тогда дальше — раздел «Запуск из корня» (`api.cmd` + `web.cmd`).
+
+### C. Пишет «уже установлена», а `node -v` — «не распознано»
+
+Это сломанный PATH. В **новом** PowerShell по очереди:
+
+```powershell
+Test-Path "C:\Program Files\nodejs\node.exe"
+dir "C:\Program Files\nodejs"
+```
+
+```powershell
+Get-ChildItem -Path "C:\Program Files","C:\Program Files (x86)","$env:LOCALAPPDATA" -Filter node.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+```
+
+Если `node.exe` нашёлся (часто `C:\Program Files\nodejs\node.exe`):
+
+```powershell
+$nodeDir = "C:\Program Files\nodejs"
+$p = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($p -notlike "*$nodeDir*") {
+  [Environment]::SetEnvironmentVariable("Path", "$p;$nodeDir", "User")
+}
+$env:Path = "$nodeDir;" + $env:Path
+node -v
+npm -v
+```
+
+Снова **закрой окно → новое** → ещё раз `node -v` и `npm -v`.
+
+Проверка в обход PATH:
+
+```powershell
+& "C:\Program Files\nodejs\node.exe" -v
+& "C:\Program Files\nodejs\npm.cmd" -v
+```
+
+### D. Файла нет — снести фантом и поставить .msi заново
+
+PowerShell **от имени администратора**:
+
+```powershell
+winget uninstall OpenJS.NodeJS.LTS
+winget uninstall OpenJS.NodeJS
+winget list | findstr -i node
+```
+
+Потом снова раздел **A** (только `.msi` по ссылке выше).
+
+### E. Не делай так
+
+- способ **Docker** на nodejs.org  
+- способ **Chocolatey** (`choco install…`)  
+- способ **winget** с сайта, если он уже падал  
+
+Подробнее: [docs/WINDOWS_NODE.md](docs/WINDOWS_NODE.md)
 
 ## Запуск из корня проекта (терминал)
 
@@ -41,8 +109,7 @@ scripts\web.cmd
 API docs: http://127.0.0.1:8000/docs · health: `/api/health`  
 (корень `:8000/` сам уводит на `/docs` — это не сайт)
 
-Если `web.cmd` / `node` / `npm` «не распознано»: полная инструкция → **[docs/WINDOWS_NODE.md](docs/WINDOWS_NODE.md)**  
-(кратко: https://nodejs.org/ → LTS `.msi` → новые окна → `node -v` и `npm -v`).
+Если `node`/`npm` не находятся — смотри блок **Node.js** в начале этого README (разделы C–D).
 
 **Только CLI (без сайта):**
 

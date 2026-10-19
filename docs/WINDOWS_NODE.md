@@ -74,13 +74,22 @@ v22.20.0
 
 ---
 
-## 4. Если файл есть, а команды «не распознаны» (PATH)
+## 4. «Уже установлена», а `node -v` — «не распознано» (PATH)
+
+Типичная беда Windows: установщик/winget думает, что Node есть, а PowerShell его не видит.
+
+### 4.0. Все команды подряд (новый PowerShell)
 
 ```powershell
 Test-Path "C:\Program Files\nodejs\node.exe"
+dir "C:\Program Files\nodejs"
+where.exe node
+Get-Command node -ErrorAction SilentlyContinue
 ```
 
-Если `True`:
+```powershell
+Get-ChildItem -Path "C:\Program Files","C:\Program Files (x86)","$env:LOCALAPPDATA" -Filter node.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+```
 
 ### 4.1. Проверка в обход PATH
 
@@ -89,22 +98,30 @@ Test-Path "C:\Program Files\nodejs\node.exe"
 & "C:\Program Files\nodejs\npm.cmd" -v
 ```
 
-Если версии есть — почини PATH.
+Если версии есть — чини PATH (ниже). Если ошибка «не найден файл» — раздел 6 / переустанови `.msi`.
 
 ### 4.2. Добавить PATH навсегда (PowerShell)
 
 ```powershell
-$node = "C:\Program Files\nodejs"
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$node*") {
-  [Environment]::SetEnvironmentVariable("Path", $userPath + ";" + $node, "User")
-  Write-Host "PATH updated. Close this window and open a new one."
+$nodeDir = "C:\Program Files\nodejs"
+$p = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($p -notlike "*$nodeDir*") {
+  [Environment]::SetEnvironmentVariable("Path", "$p;$nodeDir", "User")
+  Write-Host "PATH updated."
 } else {
-  Write-Host "PATH already contains nodejs. Open a NEW terminal."
+  Write-Host "PATH already has nodejs folder."
 }
+$env:Path = "$nodeDir;" + $env:Path
+node -v
+npm -v
 ```
 
-Закрой окно → новое → снова `node -v` и `npm -v`.
+**Закрой окно полностью → открой новое** → снова:
+
+```powershell
+node -v
+npm -v
+```
 
 ### 4.3. Через интерфейс Windows
 
@@ -113,6 +130,18 @@ if ($userPath -notlike "*$node*") {
 3. Вставь: `C:\Program Files\nodejs`
 4. OK везде.
 5. Новые окна терминала.
+
+### 4.4. Снести фантом и поставить .msi заново
+
+PowerShell **от администратора**:
+
+```powershell
+winget uninstall OpenJS.NodeJS.LTS
+winget uninstall OpenJS.NodeJS
+winget list | findstr -i node
+```
+
+Потом снова раздел 2 (только `.msi`, не Docker/Chocolatey).
 
 ---
 
