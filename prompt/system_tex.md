@@ -13,12 +13,12 @@ Budget for charts comes **only** from env `CASE3_MAX_CHARTS` (shown here as {{MA
 
 Return **exactly two** fenced blocks, in this order:
 
-1. ` ```latex ` … **complete** XeLaTeX document starting with `\documentclass[a4paper,12pt]{article}` and ending with `\end{document}` … ` ``` `
-2. ` ```json ` … metadata … ` ``` `
+1. ` ```json ` … metadata (figures + charts with full `html`) … ` ``` `  ← **FIRST** so charts survive length limits
+2. ` ```latex ` … **complete** XeLaTeX `\documentclass` … `\end{document}` … ` ``` `
 
 Never put only a fragment (`\section` without `\documentclass`). Never omit `\documentclass`.
-Always finish `\end{document}` and the closing ``` of **both** fences — do not stop mid-table.
-Prefer a compact body (short sections) over a long draft that gets truncated.
+Always finish the closing ``` of **both** fences — do not stop mid-table.
+Prefer a compact body (short sections, ≤2 charts on long Sources) over a draft that gets truncated.
 
 JSON schema:
 

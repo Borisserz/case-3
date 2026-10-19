@@ -56,16 +56,36 @@ def _ensure_documentclass(text: str) -> str:
     return text
 
 
+def _drop_incomplete_trailing_envs(tex: str) -> str:
+    """Cut from the last unclosed table/figure/tabular instead of emitting empty shells."""
+    t = tex.rstrip()
+    for env in ("table", "figure", "tabularx", "tabular", "itemize", "enumerate"):
+        begins = list(re.finditer(rf"\\begin\{{{env}\}}", t))
+        if not begins:
+            continue
+        last = begins[-1]
+        tail = t[last.start() :]
+        if f"\\end{{{env}}}" not in tail:
+            t = t[: last.start()].rstrip()
+    return t
+
+
 def _soft_close_truncated(tex: str) -> str:
     """Model often hits max tokens mid-doc: open ```latex, no \\end{document}.
 
-    Close the most common open envs, then \\end{document}, so latexmk can finish.
+    Drop incomplete trailing floats/tables, close leftover envs, then \\end{document}.
     """
-    t = tex.rstrip()
-    # Drop a trailing incomplete line that is only a comment or half-command
-    if t.endswith("%") or re.search(r"\\\\[a-zA-Z]*$", t):
+    t = _drop_incomplete_trailing_envs(tex)
+    last_line = t.rsplit("\n", 1)[-1]
+    # Drop half-finished \\command… but never drop %CASE3_CHART / FIG slots.
+    if re.search(r"\\[a-zA-Z]+$", last_line):
         t = t.rsplit("\n", 1)[0].rstrip()
-    # Close nested envs that commonly remain open on truncation (innermost first).
+    elif last_line.strip() == "%" or (
+        last_line.rstrip().endswith("%")
+        and "%CASE3_" not in last_line
+        and len(last_line.strip()) < 3
+    ):
+        t = t.rsplit("\n", 1)[0].rstrip()
     for env in ("tabularx", "tabular", "table", "figure", "itemize", "enumerate"):
         opens = len(re.findall(rf"\\begin\{{{env}\}}", t))
         closes = len(re.findall(rf"\\end\{{{env}\}}", t))

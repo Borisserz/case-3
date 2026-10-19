@@ -52,7 +52,7 @@ class LLMConfig:
     max_retries: int = 2
     temperature: float = 0.2
     reasoning: str = "low"
-    max_tokens: int = 8192
+    max_tokens: int = 16384
 
     @property
     def endpoint(self) -> str:
@@ -78,7 +78,7 @@ class LLMConfig:
             max_retries=_number("VISION_MAX_RETRIES", 2, int),
             temperature=_number("VISION_TEMPERATURE", 0.2, float),
             reasoning=reasoning,
-            max_tokens=max(1024, int(_number("VISION_MAX_TOKENS", 8192, int))),
+            max_tokens=max(1024, int(_number("VISION_MAX_TOKENS", 16384, int))),
         )
 
 
@@ -167,7 +167,7 @@ def build_body(
     model: str | None = None,
     temperature: float = 0.2,
     reasoning: str = "low",
-    max_tokens: int = 8192,
+    max_tokens: int = 16384,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (
         {"enable_thinking": False}

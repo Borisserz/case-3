@@ -74,12 +74,11 @@ def build_user_prompt(
         "## Limits",
         f"- max_images (Kandinsky slots): {max_images}",
         f"- CASE3_MAX_CHARTS (HTML→PNG budget): {max_charts}",
-        "- Output: exactly ```latex (full \\documentclass…\\end{document}) then ```json.",
-        "- Finish BOTH fences completely — never stop mid-table; prefer shorter prose over truncation.",
+        "- Output order (mandatory): ```json FIRST (figures+charts), then ```latex full document.",
+        "- Finish BOTH fences — never stop mid-table. Prefer short prose; ≤2 charts if Source is long.",
         "- If max_charts≥1 and Source has numbers → include charts with variety of types.",
         "- Chart colors: follow Intent palette hexes; captions RU; Kandinsky prompts EN.",
         "- Page: A4 portrait; wide tables → tabularx{\\textwidth}{…} (no landscape overflow).",
-        "- With many charts: compact sections; put chart slots early, then ```json before length limit.",
         "- Never write case-3/case3 in \\title/\\author/body; topical title; \\author{} if unknown.",
         "- Keep the shared preamble (setspace/fancyhdr/caption); do not invent a different class.",
         "",
@@ -90,6 +89,68 @@ def build_user_prompt(
         SOURCE_END,
     ]
     return "\n".join(lines)
+
+
+def output_looks_truncated(raw: str) -> bool:
+    """True when the model likely hit a length limit mid-answer."""
+    text = raw or ""
+    if not text.strip():
+        return True
+    if r"\begin{document}" in text and r"\end{document}" not in text:
+        return True
+    if text.count("```") % 2 == 1:
+        return True
+    has_slots = ("%CASE3_CHART:" in text) or ("%CASE3_FIG:" in text)
+    if has_slots and "```json" not in text and '"charts"' not in text:
+        return True
+    return False
+
+
+def merge_continuation(raw: str, cont: str) -> str:
+    """Attach a continuation (often ```json only) to a truncated first reply."""
+    base = (raw or "").rstrip()
+    extra = (cont or "").strip()
+    if not extra:
+        return base
+    if "```json" in extra and (
+        "```latex" in extra or r"\documentclass" in extra
+    ):
+        return extra
+    if base.count("```") % 2 == 1:
+        base += "\n```"
+    if "```json" in extra or extra.lstrip().startswith("{"):
+        if not extra.lstrip().startswith("```"):
+            extra = "```json\n" + extra + "\n```"
+        return base + "\n\n" + extra
+    return base + "\n" + extra
+
+
+def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> str:
+    tail = (partial or "")[-7000:]
+    safe = neutralize_source((source or "").strip())
+    return "\n".join(
+        [
+            "Your previous answer was TRUNCATED (length limit).",
+            "Finish the job without repeating the whole document.",
+            "",
+            "Priority:",
+            "1) Emit a complete ```json fence with figures=[] and charts=[…] for every",
+            "   %CASE3_CHART:id% / %CASE3_FIG:id% that appears in the partial below.",
+            f"   At most {max_charts} charts; html must use Source numbers only.",
+            "2) If LaTeX has no \\end{document}, append only the missing closing lines",
+            "   (close open tables, then \\end{document} and ```).",
+            "",
+            "Partial output so far:",
+            "<<<PARTIAL>>>",
+            tail,
+            "<<<END_PARTIAL>>>",
+            "",
+            "## Source (data only)",
+            SOURCE_BEGIN,
+            safe,
+            SOURCE_END,
+        ]
+    )
 
 
 def generate_document(
@@ -165,6 +226,22 @@ def generate_document(
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
     raw = llm.complete(system=system, user_text=user)
+    if output_looks_truncated(raw or ""):
+        log.warning(
+            "model output looks truncated (%d chars) — continuation pass",
+            len(raw or ""),
+        )
+        cont = llm.complete(
+            system=system,
+            user_text=build_continuation_prompt(
+                partial=raw or "",
+                source=source_text,
+                max_charts=max_charts,
+            ),
+        )
+        raw = merge_continuation(raw or "", cont or "")
+        log.info("continuation merged → %d chars", len(raw or ""))
+
     raw_path = out_tex.parent / f"{stem}.raw_model.txt"
     raw_path.write_text(raw or "", encoding="utf-8")
     if not (raw or "").strip():
