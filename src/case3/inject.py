@@ -26,18 +26,29 @@ _EMPTY_FIGURE_LOOSE = re.compile(
 )
 
 
-def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: str) -> str:
+def _includegraphics_line(fid: str, meta: dict[str, Any], *, rel_dir: str) -> str:
     width = sanitize_width(meta.get("width"))
-    caption = escape_tex_text(str(meta.get("caption") or fid))
     path = f"{rel_dir}/{fid}.png"
+    return f"  \\includegraphics[width={width}]{{{path}}}\n"
+
+
+def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: str) -> str:
+    caption = escape_tex_text(str(meta.get("caption") or fid))
     return (
         "\\begin{figure}[H]\n"
         "  \\centering\n"
-        f"  \\includegraphics[width={width}]{{{path}}}\n"
-        f"  \\caption{{{caption}}}\n"
+        + _includegraphics_line(fid, meta, rel_dir=rel_dir)
+        + f"  \\caption{{{caption}}}\n"
         f"  \\label{{{label_prefix}:{fid}}}\n"
         "\\end{figure}\n"
     )
+
+
+def _slot_inside_figure(tex: str, start: int) -> bool:
+    """True if match start sits between \\begin{figure} and \\end{figure}."""
+    begin = tex.rfind(r"\begin{figure}", 0, start)
+    end = tex.rfind(r"\end{figure}", 0, start)
+    return begin != -1 and begin > end
 
 
 def inject_media(
@@ -57,6 +68,8 @@ def inject_media(
         meta = by_fig.get(fid)
         if not st.get("ok") or not meta:
             return ""
+        if _slot_inside_figure(tex, m.start()):
+            return _includegraphics_line(fid, meta, rel_dir=rel_dir)
         return _figure_env(fid, meta, rel_dir=rel_dir, label_prefix="fig")
 
     def repl_chart(m: re.Match[str]) -> str:
@@ -65,6 +78,8 @@ def inject_media(
         meta = by_chart.get(cid)
         if not st.get("ok") or not meta:
             return ""
+        if _slot_inside_figure(tex, m.start()):
+            return _includegraphics_line(cid, meta, rel_dir=rel_dir)
         return _figure_env(cid, meta, rel_dir=rel_dir, label_prefix="chart")
 
     out = _FIG_SLOT.sub(repl_fig, tex)
