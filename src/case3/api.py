@@ -24,6 +24,7 @@ from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
+from case3.tex_preview import build_report_preview
 
 log = logging.getLogger("case3.api")
 
@@ -78,12 +79,14 @@ def build_intent_from_ui(
     chart_auto: bool = False,
     chart_palette: str = "editorial",
     chart_style: str = "",
+    doc_title: str = "",
 ) -> str:
     """Compose Intent from chat + UI controls.
 
     chart_auto / empty chart_types → model picks type from CHART_TYPES by Source.
     chart_hints → free-text wishes (pie, «воронка»…); model maps to whitelist or skips.
     chart_palette / chart_style → color preset + optional look notes.
+    doc_title → forced \\title (also applied post-LLM).
     max_* are ceilings, not quotas.
     """
     parts: list[str] = []
@@ -95,6 +98,14 @@ def build_intent_from_ui(
     clean = [t for t in chart_types if t in CHART_TYPES]
     auto = bool(chart_auto) or (not clean and not hints)
     palette = normalize_palette_id(chart_palette)
+    title = (doc_title or "").strip()
+    if title:
+        # Marker parsed by generate.doc_title_from_intent — keep format stable.
+        req.append(f"- CASE3_DOC_TITLE: {title}")
+        req.append(
+            f"- заголовок документа (\\title): «{title}» — ОБЯЗАТЕЛЬНО этот текст, "
+            "не подменяй и не сокращай"
+        )
 
     if forbid_charts or max_charts <= 0:
         req.append("- без графиков и диаграмм")
@@ -230,6 +241,7 @@ async def api_run(
     chart_auto: str = Form("false"),
     chart_palette: str = Form("editorial"),
     chart_style: str = Form(""),
+    doc_title: str = Form(""),
     forbid_charts: str = Form("false"),
     forbid_images: str = Form("false"),
     formats: str = Form("both"),
@@ -262,6 +274,7 @@ async def api_run(
         chart_auto=is_auto,
         chart_palette=chart_palette or "editorial",
         chart_style=chart_style or "",
+        doc_title=(doc_title or "").strip()[:200],
     )
 
     fmt_raw = (formats or "both").strip().lower()
@@ -346,6 +359,7 @@ async def api_run(
     )
 
     previews = _media_previews(run_id, out_dir, media)
+    preview = _build_preview_payload(run_id, out_dir, media)
 
     return {
         "run_id": run_id,
@@ -361,6 +375,7 @@ async def api_run(
         "files": files,
         "downloads": files,
         "previews": previews,
+        "preview": preview,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=max_images),
     }
@@ -390,6 +405,59 @@ def _media_previews(
             }
         )
     return out
+
+
+def _find_out_tex(out_dir: Path) -> Path | None:
+    texs = sorted(out_dir.glob("*.tex"))
+    return texs[0] if texs else None
+
+
+def _load_figures_json(out_dir: Path) -> dict[str, Any]:
+    path = out_dir / "figures.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _build_preview_payload(
+    run_id: str, out_dir: Path, media: dict[str, Any]
+) -> dict[str, Any]:
+    tex_path = _find_out_tex(out_dir)
+    if tex_path is None:
+        return {"title": "", "blocks": []}
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return {"title": "", "blocks": []}
+    return build_report_preview(
+        tex,
+        run_id=run_id,
+        media_status=media,
+        figures_json=_load_figures_json(out_dir),
+    )
+
+
+@app.get("/api/runs/{run_id}/preview")
+def get_run_preview(run_id: str) -> dict[str, Any]:
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
+        raise HTTPException(404, detail="run not found")
+    meta: dict[str, Any] = {}
+    meta_path = out_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    media = meta.get("media_status") or {}
+    return _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:

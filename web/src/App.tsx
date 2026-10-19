@@ -6,6 +6,8 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
+import { ReportView, type ReportPreview } from "./ReportView";
 
 const FALLBACK_TYPES = [
   "bar",
@@ -47,6 +49,7 @@ type RunResult = {
   status: string;
   downloads: Record<string, string>;
   previews?: MediaPreview[];
+  preview?: ReportPreview;
   charts_ok: number;
   figures_ok: number;
   charts_planned: string[];
@@ -75,6 +78,7 @@ export default function App() {
   const [chartHints, setChartHints] = useState("");
   const [chartPalette, setChartPalette] = useState("editorial");
   const [chartStyle, setChartStyle] = useState("");
+  const [docTitle, setDocTitle] = useState("");
   const [maxCharts, setMaxCharts] = useState(2);
   const [maxImages, setMaxImages] = useState(0);
   const [forbidCharts, setForbidCharts] = useState(false);
@@ -179,6 +183,7 @@ export default function App() {
       "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.";
     const userLabel = [
       intentText,
+      docTitle.trim() ? `название: ${docTitle.trim()}` : null,
       chartsLabel(),
       forbidImages ? "картинки: выкл" : `картинки: ≤${maxImages}`,
       dryRun ? "dry-run" : null,
@@ -207,6 +212,7 @@ export default function App() {
     fd.append("chart_auto", String(chartAuto));
     fd.append("chart_palette", chartPalette);
     fd.append("chart_style", chartStyle.trim());
+    fd.append("doc_title", docTitle.trim().slice(0, 200));
     fd.append("forbid_charts", String(forbidCharts));
     fd.append("forbid_images", String(forbidImages));
     fd.append("formats", "both");
@@ -281,6 +287,26 @@ export default function App() {
           </p>
         </header>
 
+        <section className="section" aria-labelledby="sec-doc">
+          <h2 className="section-title" id="sec-doc">
+            Документ
+          </h2>
+          <label className="field" htmlFor="doc-title">
+            Название
+          </label>
+          <input
+            id="doc-title"
+            type="text"
+            maxLength={200}
+            placeholder="Как назвать отчёт на титуле…"
+            value={docTitle}
+            onChange={(e) => setDocTitle(e.target.value)}
+          />
+          <p className="hint">
+            Попадёт в {"\\title"} PDF/DOCX. Пусто — модель придумает сама.
+          </p>
+        </section>
+
         <section className="section" aria-labelledby="sec-source">
           <h2 className="section-title" id="sec-source">
             Source
@@ -331,25 +357,24 @@ export default function App() {
           </h2>
           <label className="field">Тип</label>
           <div className="chips">
-            <button
-              type="button"
+            <ChartTypeChip
+              typeId="auto"
               className={`chip auto${chartAuto ? " on" : ""}`}
               onClick={enableAuto}
               disabled={forbidCharts}
-              title="Модель сама выберет тип из каталога по данным Source"
             >
               на усмотрение модели
-            </button>
+            </ChartTypeChip>
             {catalog.map((t) => (
-              <button
+              <ChartTypeChip
                 key={t}
-                type="button"
+                typeId={t as ChartTypeId}
                 className={`chip${!chartAuto && types.includes(t) ? " on" : ""}`}
                 onClick={() => toggleType(t)}
                 disabled={forbidCharts}
               >
                 {t}
-              </button>
+              </ChartTypeChip>
             ))}
           </div>
 
@@ -493,7 +518,9 @@ export default function App() {
         <div className="desk">
           <div className="desk-head">
             <h2>Сборка</h2>
-            <span className="desk-meta">{busy ? "генерация…" : "intent → pdf"}</span>
+            <span className="desk-meta">
+              {busy ? "генерация…" : "чат · pdf · docx"}
+            </span>
           </div>
 
           <div className="messages">
@@ -501,64 +528,91 @@ export default function App() {
               <div className="empty">
                 <h2>Собери отчёт на столе</h2>
                 <p>
-                  Слева — исходник и оформление графиков. Здесь пишешь Intent и
-                  забираешь PDF с DOCX.
+                  Слева — исходник и оформление. Здесь в чате появится отчёт:
+                  текст, таблицы и графики — плюс PDF и DOCX.
                 </p>
                 <ol>
                   <li>Загрузи Source или вставь текст с числами</li>
-                  <li>Выбери палитру и типы (или «на усмотрение»)</li>
+                  <li>Назови документ, выбери палитру и типы</li>
                   <li>Напиши Intent и нажми «Собрать»</li>
                 </ol>
               </div>
             )}
-            {msgs.map((m) => (
-              <div key={m.id} className={`msg ${m.role}`}>
+            {msgs.map((m) => {
+              const hasReport =
+                m.role === "bot" &&
+                m.result?.preview &&
+                (m.result.preview.blocks?.length ?? 0) > 0;
+              return (
+              <div
+                key={m.id}
+                className={`msg ${m.role}${hasReport ? " has-report" : ""}`}
+              >
                 <div className="meta">{m.role === "user" ? "запрос" : "отчёт"}</div>
-                <div className="msg-body">{m.text}</div>
-                {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
-                {m.role === "bot" && m.result && (
+                {m.role === "bot" && hasReport && m.result?.preview ? (
+                  <ReportView
+                    preview={m.result.preview}
+                    downloads={m.result.downloads}
+                    runId={m.result.run_id}
+                    stats={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
+                    warnings={m.result.warnings}
+                  />
+                ) : (
                   <>
-                    <p className="stats">
-                      charts {m.result.charts_ok}/{m.result.charts_planned?.length || 0}
-                      {" · "}
-                      figures {m.result.figures_ok}/{m.result.figures_planned?.length || 0}
-                    </p>
-                    {m.result.warnings?.length > 0 && (
-                      <div className="warns">{m.result.warnings.join(" · ")}</div>
-                    )}
-                    <div className="downloads">
-                      {m.result.downloads?.pdf && (
-                        <a href={m.result.downloads.pdf} download>
-                          PDF
-                        </a>
-                      )}
-                      {m.result.downloads?.docx && (
-                        <a className="secondary" href={m.result.downloads.docx} download>
-                          DOCX
-                        </a>
-                      )}
+                    <div
+                      className={`msg-body${
+                        m.role === "bot" && m.pending ? " pending" : ""
+                      }`}
+                    >
+                      {m.text}
                     </div>
-                    {m.result.previews && m.result.previews.length > 0 && (
-                      <div className="previews">
-                        {m.result.previews.map((p) => (
-                          <a
-                            key={p.id}
-                            className="preview"
-                            href={p.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={`${p.kind} ${p.id}`}
-                          >
-                            <img src={p.url} alt={`${p.kind} ${p.id}`} />
-                            <span>{p.id}</span>
-                          </a>
-                        ))}
-                      </div>
+                    {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
+                    {m.role === "bot" && m.result && (
+                      <>
+                        <p className="stats">
+                          charts {m.result.charts_ok}/{m.result.charts_planned?.length || 0}
+                          {" · "}
+                          figures {m.result.figures_ok}/{m.result.figures_planned?.length || 0}
+                        </p>
+                        {m.result.warnings?.length > 0 && (
+                          <div className="warns">{m.result.warnings.join(" · ")}</div>
+                        )}
+                        <div className="downloads">
+                          {m.result.downloads?.pdf && (
+                            <a href={m.result.downloads.pdf} download>
+                              PDF
+                            </a>
+                          )}
+                          {m.result.downloads?.docx && (
+                            <a className="secondary" href={m.result.downloads.docx} download>
+                              DOCX
+                            </a>
+                          )}
+                        </div>
+                        {m.result.previews && m.result.previews.length > 0 && (
+                          <div className="previews">
+                            {m.result.previews.map((p) => (
+                              <a
+                                key={p.id}
+                                className="preview"
+                                href={p.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={`${p.kind} ${p.id}`}
+                              >
+                                <img src={p.url} alt={`${p.kind} ${p.id}`} />
+                                <span>{p.id}</span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 )}
               </div>
-            ))}
+              );
+            })}
             <div ref={bottomRef} />
           </div>
 

@@ -212,6 +212,90 @@ button:disabled {
   gap: 0.35rem;
 }
 
+/* Hover preview card for chart-type chips (portal → body, fixed) */
+.chip-preview-wrap {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.chip-preview-wrap.is-disabled {
+  pointer-events: none;
+}
+
+.chip-preview-card {
+  position: fixed;
+  z-index: 1200;
+  width: 188px;
+  padding: 0.55rem 0.55rem 0.65rem;
+  border-radius: 12px;
+  background: var(--sheet);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--rule));
+  box-shadow:
+    0 1px 2px rgba(25, 25, 25, 0.04),
+    0 14px 32px rgba(25, 25, 25, 0.12),
+    0 0 0 1px rgba(223, 236, 198, 0.4);
+  animation: chip-preview-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+
+.chip-preview-card.place-above {
+  transform-origin: bottom center;
+}
+
+.chip-preview-card.place-below {
+  transform-origin: top center;
+}
+
+@keyframes chip-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chip-preview-glyph {
+  display: block;
+  line-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 60% at 20% 0%, rgba(223, 236, 198, 0.55), transparent 60%),
+    var(--paper);
+}
+
+.chart-preview-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chip-preview-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  margin-top: 0.45rem;
+  padding: 0 0.1rem;
+}
+
+.chip-preview-title {
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.chip-preview-blurb {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
 .chip {
   border: 1px solid var(--rule);
   background: var(--sheet);
@@ -221,7 +305,13 @@ button:disabled {
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.chip-preview-wrap:hover .chip:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--rule));
+  color: var(--ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary) 70%, transparent);
 }
 
 .chip:hover:not(:disabled) {
@@ -433,6 +523,14 @@ button:disabled {
   border: 1px solid var(--rule);
 }
 
+.msg.bot.has-report {
+  max-width: min(96%, 48rem);
+  width: 100%;
+  padding: 1rem 1.1rem 1.15rem;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+}
+
 .msg .meta {
   font-family: var(--mono);
   font-size: 0.68rem;
@@ -445,6 +543,171 @@ button:disabled {
 .msg-body {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.msg-body.pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ——— In-chat report (Liber desk) ——— */
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.report-warns {
+  color: var(--warn);
+}
+
+.report-title {
+  margin: 0.15rem 0 0.25rem;
+  font-family: var(--serif);
+  font-size: 1.55rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.report-title.muted {
+  color: var(--muted);
+  font-weight: 560;
+}
+
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.report-h {
+  margin: 0.55rem 0 0;
+  font-family: var(--serif);
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.report-h1 {
+  font-size: 1.15rem;
+}
+
+.report-h2 {
+  font-size: 1.02rem;
+  color: color-mix(in srgb, var(--ink) 85%, var(--muted));
+}
+
+.report-p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink);
+  text-align: justify;
+  hyphens: auto;
+}
+
+.report-table-wrap,
+.report-fig {
+  margin: 0.25rem 0 0.15rem;
+  padding: 0;
+}
+
+.report-caption {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.report-caption.muted {
+  font-style: italic;
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--paper) 70%, var(--sheet));
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.report-table th,
+.report-table td {
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+
+.report-table thead th {
+  font-weight: 650;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--ink) 35%, var(--rule));
+  background: color-mix(in srgb, var(--secondary) 45%, var(--sheet));
+}
+
+.report-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.report-fig-link {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% 0%, rgba(223, 236, 198, 0.45), transparent 55%),
+    var(--paper);
+}
+
+.report-fig-link img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 420px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.report-fig .report-caption {
+  margin-top: 0.45rem;
+  margin-bottom: 0;
+}
+
+.report-fig-missing {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border: 1px dashed var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.report-actions {
+  margin-top: 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--rule);
 }
 
 .stats {
