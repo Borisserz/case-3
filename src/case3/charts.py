@@ -124,7 +124,7 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
         browser = p.chromium.launch(headless=True)
         try:
             context = browser.new_context(
-                viewport={"width": 1008, "height": 600},
+                viewport={"width": 1200, "height": 680},
                 device_scale_factor=2,
             )
 
