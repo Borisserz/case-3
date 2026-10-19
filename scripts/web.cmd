@@ -16,10 +16,10 @@ if not defined NODE_EXE (
 if not defined NODE_EXE (
   echo.
   echo ERROR: node.exe не найден.
-  echo 1^) Поставь: https://nodejs.org/dist/v24.22.0/node-v24.22.0-x64.msi
-  echo 2^) Проверь файл:  dir "%%ProgramFiles%%\nodejs\node.exe"
-  echo 3^) Полная инструкция: docs\WINDOWS_NODE.md  и README сверху
+  echo 1^) Поставь Node.js LTS с https://nodejs.org/  ^(Windows Installer .msi^)
+  echo 2^) Проверь:  dir "%%ProgramFiles%%\nodejs\node.exe"
   echo.
+
   exit /b 1
 )
 
