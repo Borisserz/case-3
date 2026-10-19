@@ -75,32 +75,43 @@ winget list | findstr -i node
 
 Потом снова раздел **A** (только `.msi` по ссылке выше).
 
-### E. `node -v` ок, а `npm` — «невозможно загрузить… выполнение сценариев отключено»
+### E. Снова «не распознано» — полный путь (PATH снова слетел)
 
-PowerShell режет `npm.ps1`. **npm есть**, просто зови `.cmd`:
+В **cmd.exe** (Пуск → cmd):
+
+```cmd
+"C:\Program Files\nodejs\node.exe" -v
+"C:\Program Files\nodejs\npm.cmd" -v
+dir "C:\Program Files\nodejs"
+```
+
+Если версии есть — Node стоит. Из корня case-3:
+
+```cmd
+git pull
+scripts\web.cmd
+```
+
+`web.cmd` сам находит `C:\Program Files\nodejs\` **без** PATH.
+
+Починить PATH (PowerShell), потом закрыть **все** окна Cursor:
+
+```powershell
+$nodeDir = "C:\Program Files\nodejs"
+$p = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($p -notlike "*$nodeDir*") {
+  [Environment]::SetEnvironmentVariable("Path", "$p;$nodeDir", "User")
+}
+```
+
+### F. `npm` — «выполнение сценариев отключено»
 
 ```powershell
 npm.cmd -v
-npm.cmd install
-```
-
-Или один раз разреши скрипты для своего пользователя:
-
-```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-Подтверди `Y` → **новое** окно → снова `npm -v`.
-
-Для `web.cmd` это уже учтено (`npm.cmd`). Если запускаешь руками из `web\`:
-
-```powershell
-cd web
-npm.cmd install
-npm.cmd run dev
-```
-
-### F. Не делай так
+### G. Не делай так
 
 - способ **Docker** на nodejs.org  
 - способ **Chocolatey** (`choco install…`)  
