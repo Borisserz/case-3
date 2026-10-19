@@ -72,23 +72,31 @@ def inject_media(
             return _includegraphics_line(fid, meta, rel_dir=rel_dir)
         return _figure_env(fid, meta, rel_dir=rel_dir, label_prefix="fig")
 
+    out = _FIG_SLOT.sub(repl_fig, tex)
+
     def repl_chart(m: re.Match[str]) -> str:
         cid = m.group(1)
         st = status.get(cid) or {}
         meta = by_chart.get(cid)
         if not st.get("ok") or not meta:
             return ""
-        if _slot_inside_figure(tex, m.start()):
+        # Positions are relative to `out` (post-figure inject), not original `tex`.
+        if _slot_inside_figure(out, m.start()):
             return _includegraphics_line(cid, meta, rel_dir=rel_dir)
         return _figure_env(cid, meta, rel_dir=rel_dir, label_prefix="chart")
 
-    out = _FIG_SLOT.sub(repl_fig, tex)
     out = _CHART_SLOT.sub(repl_chart, out)
     out = strip_orphan_slots(out)
-    # Drop figure envs that no longer contain \includegraphics (failed/stripped slot)
+    # Drop figure envs that only held a failed CASE3 slot (keep TikZ / tabular floats).
     def _drop_empty_fig(m: re.Match[str]) -> str:
         body = m.group(0)
-        return body if r"\includegraphics" in body else ""
+        if r"\includegraphics" in body:
+            return body
+        if re.search(
+            r"\\begin\{(?:tikzpicture|tabularx|tabular|minipage)\}", body
+        ):
+            return body
+        return ""
 
     out = _EMPTY_FIGURE_LOOSE.sub(_drop_empty_fig, out)
     out = ensure_document_preamble(out)

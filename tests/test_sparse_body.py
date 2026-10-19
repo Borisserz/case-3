@@ -19,6 +19,15 @@ def test_sparse_detection() -> None:
         r"\section{Введение} Население республики составило девять миллионов человек.",
     )
     assert not tex_body_is_sparse(rich)
+    headings_only = r"""\documentclass{article}
+\begin{document}
+\maketitle
+\section{Демографический сдвиг в Республике Беларусь за пять лет}
+\section{Естественное движение и миграционный обмен населения}
+%CASE3_CHART:cht_01%
+\end{document}
+"""
+    assert tex_body_is_sparse(headings_only)
 
 
 def test_fill_inserts_source_and_keeps_slots() -> None:
@@ -29,7 +38,11 @@ def test_fill_inserts_source_and_keeps_slots() -> None:
 %CASE3_CHART:cht_02%
 \end{document}
 """
-    source = "Население 2019: 9470 тыс.\nРождаемость 9.0."
+    source = (
+        "Население республики в две тысячи девятнадцатом году "
+        "составило девять тысяч четыреста семьдесят тысяч человек.\n\n"
+        "Рождаемость снизилась до девяти промилле."
+    )
     out = fill_sparse_tex_with_source(
         sparse,
         source,

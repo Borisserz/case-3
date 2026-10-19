@@ -249,6 +249,10 @@ def _parse_charts_list(raw_charts: Any, *, max_charts: int) -> list[dict[str, An
             continue
         cid = str(item.get("id", "")).strip()
         ctype = str(item.get("type", "")).strip().lower()
+        if ctype == "doughnut":
+            ctype = "donut"
+        if ctype == "pie":
+            ctype = "donut"
         html_raw = str(item.get("html", "")).strip()
         if not _ID_OK.match(cid) or ctype not in CHART_TYPES or not html_raw:
             continue
@@ -288,24 +292,59 @@ def _align(
     return aligned[:max_n]
 
 
+def _merge_media_lists(primary: list[Any], extra: list[Any]) -> list[Any]:
+    """Union by id; prefer the entry with longer html/prompt."""
+    by_id: dict[str, Any] = {}
+    for item in list(primary or []) + list(extra or []):
+        if not isinstance(item, dict):
+            continue
+        oid = str(item.get("id", "")).strip()
+        if not oid:
+            continue
+        prev = by_id.get(oid)
+        if prev is None:
+            by_id[oid] = item
+            continue
+        prev_len = len(str(prev.get("html") or prev.get("prompt") or ""))
+        new_len = len(str(item.get("html") or item.get("prompt") or ""))
+        if new_len > prev_len:
+            by_id[oid] = item
+    return list(by_id.values())
+
+
 def _load_media_payload(raw: str, json_body: str | None) -> dict[str, Any]:
     """Load figures/charts dict; salvage complete objects if JSON is truncated."""
+    data: dict[str, Any] = {}
     if json_body:
         try:
-            data = json.loads(json_body)
-            if isinstance(data, dict):
-                return data
+            parsed = json.loads(json_body)
+            if isinstance(parsed, dict):
+                data = parsed
         except json.JSONDecodeError:
             pass
     salvaged = salvage_json_object(raw)
     if salvaged:
-        log.warning(
-            "salvaged truncated JSON → %d charts, %d figures",
-            len(salvaged.get("charts") or []),
-            len(salvaged.get("figures") or []),
+        charts = _merge_media_lists(data.get("charts") or [], salvaged.get("charts") or [])
+        figures = _merge_media_lists(
+            data.get("figures") or [], salvaged.get("figures") or []
         )
-        return salvaged
-    return {}
+        if charts or figures:
+            if not (data.get("charts") or data.get("figures")):
+                log.warning(
+                    "salvaged truncated JSON → %d charts, %d figures",
+                    len(charts),
+                    len(figures),
+                )
+            elif len(charts) > len(data.get("charts") or []) or len(figures) > len(
+                data.get("figures") or []
+            ):
+                log.warning(
+                    "merged salvage into JSON → %d charts, %d figures",
+                    len(charts),
+                    len(figures),
+                )
+            return {"figures": figures, "charts": charts}
+    return data if isinstance(data, dict) else {}
 
 
 def _chart_ids_from_data(data: dict[str, Any], *, max_charts: int) -> list[str]:

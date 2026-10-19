@@ -114,9 +114,15 @@ def output_looks_truncated(raw: str) -> bool:
         _tex, jb = _pick_fences(text)
         if jb:
             try:
-                json.loads(jb)
+                data = json.loads(jb)
             except json.JSONDecodeError:
                 return True
+            # Slots present but JSON says empty media → model never finished charts.
+            if has_slots and isinstance(data, dict):
+                charts = data.get("charts") or []
+                figs = data.get("figures") or []
+                if not charts and not figs:
+                    return True
     return False
 
 
@@ -155,12 +161,14 @@ def merge_continuation(raw: str, cont: str) -> str:
     if not b_tex:
         b_tex = _extract_loose_latex(base)
 
-    # Prefer continuation only when its LaTeX is a real document with prose.
+    # Prefer continuation only when its LaTeX is a real document with prose
+    # richer than the truncated base (avoid wiping a longer first reply).
     if (
         e_json
         and e_tex
         and r"\begin{document}" in e_tex
         and (r"\section" in e_tex or len(e_tex) > 800)
+        and len(extra) >= len(base) * 0.8
     ):
         return extra
 
@@ -224,6 +232,12 @@ def tex_body_is_sparse(tex: str) -> bool:
     body = re.sub(r"\\caption\{[^}]*\}", "", body)
     body = re.sub(r"\\label\{[^}]*\}", "", body)
     body = re.sub(r"\\centering", "", body)
+    # Headings alone must not count as prose (charts-only + long \\section titles).
+    body = re.sub(
+        r"\\(?:chapter|section|subsection|subsubsection|paragraph)\*?\{[^{}]*\}",
+        "",
+        body,
+    )
     body = re.sub(r"%[^\n]*", "", body)
     letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", body))
     return letters < 40
@@ -480,10 +494,13 @@ def generate_document(
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
     raw = llm.complete(system=system, user_text=user)
-    if output_looks_truncated(raw or ""):
+    finish = getattr(llm, "last_finish_reason", "") or ""
+    need_cont = output_looks_truncated(raw or "") or finish == "length"
+    if need_cont:
         log.warning(
-            "model output looks truncated (%d chars) — continuation pass",
+            "model output looks truncated (%d chars, finish_reason=%r) — continuation pass",
             len(raw or ""),
+            finish,
         )
         cont = llm.complete(
             system=system,

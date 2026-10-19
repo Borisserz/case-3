@@ -104,11 +104,14 @@ def _has_tex_signal(text: str) -> bool:
         or "```latex" in low
         or "```tex" in low
         or r"\begin{document}" in t
+        or "```json" in low
+        or '"charts"' in t
+        or '"figures"' in t
     )
 
 
 def _usable_assistant_text(raw: str) -> str:
-    """Prefer post-think answer; if empty, keep raw when it still has LaTeX."""
+    """Prefer post-think answer; if empty, keep raw when it still has LaTeX/JSON."""
     cleaned = _after_think(raw)
     if cleaned:
         return cleaned
@@ -118,7 +121,13 @@ def _usable_assistant_text(raw: str) -> str:
     return ""
 
 
-def _content(data: Any) -> str:
+def _content(data: Any) -> tuple[str, str]:
+    """Return (assistant_text, finish_reason)."""
+    finish = ""
+    try:
+        finish = str(data["choices"][0].get("finish_reason") or "")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        pass
     try:
         message = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -134,18 +143,13 @@ def _content(data: Any) -> str:
     for blob in blobs:
         got = _usable_assistant_text(blob)
         if got:
-            return got
+            return got, finish
 
-    # Last resort: any field that still contains a latex fence
+    # Last resort: any field that still contains a latex/json fence
     for blob in blobs:
         if _has_tex_signal(blob):
-            return blob.strip()
+            return blob.strip(), finish
 
-    finish = ""
-    try:
-        finish = str(data["choices"][0].get("finish_reason") or "")
-    except (KeyError, IndexError, TypeError, AttributeError):
-        pass
     raise LLMError(
         "empty response from Vision API "
         f"(finish_reason={finish!r}). "
@@ -193,6 +197,7 @@ class LLMClient:
     def __init__(self, config: LLMConfig, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self.config = config
         self._sleep = sleep
+        self.last_finish_reason: str = ""
 
     def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
         r = reasoning or self.config.reasoning
@@ -218,7 +223,9 @@ class LLMClient:
             req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
-                    return _content(json.loads(resp.read().decode("utf-8")))
+                    text, finish = _content(json.loads(resp.read().decode("utf-8")))
+                    self.last_finish_reason = finish
+                    return text
             except urllib.error.HTTPError as exc:
                 error = LLMError(f"HTTP {exc.code} from {self.config.endpoint}: {_http_body(exc)}")
                 if exc.code < 500 and exc.code != 429:

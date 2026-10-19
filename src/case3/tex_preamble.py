@@ -80,8 +80,14 @@ def harden_wide_tables(tex: str) -> str:
 
     def _repl(m: re.Match[str]) -> str:
         spec, body = m.group(1), m.group(2)
+        # Nested tabular: non-greedy match would break the outer env — skip.
+        if r"\begin{tabular}" in body or r"\begin{tabularx}" in body:
+            return m.group(0)
         n = _simple_lcr_count(spec)
         if n is None or n < 3:
+            return m.group(0)
+        # Only plain l/c/r (no | @{} etc.) — preserve ruled specs.
+        if not re.fullmatch(r"[lcr\s]+", (spec or "").strip()):
             return m.group(0)
         letters = re.findall(r"[lcr]", spec)
         new_spec = letters[0] + ("X" * (len(letters) - 1))
