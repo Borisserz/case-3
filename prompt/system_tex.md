@@ -17,6 +17,8 @@ Return **exactly two** fenced blocks, in this order:
 2. ` ```json ` … metadata … ` ``` `
 
 Never put only a fragment (`\section` without `\documentclass`). Never omit `\documentclass`.
+Always finish `\end{document}` and the closing ``` of **both** fences — do not stop mid-table.
+Prefer a compact body (short sections) over a long draft that gets truncated.
 
 JSON schema:
 

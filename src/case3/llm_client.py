@@ -52,6 +52,7 @@ class LLMConfig:
     max_retries: int = 2
     temperature: float = 0.2
     reasoning: str = "low"
+    max_tokens: int = 8192
 
     @property
     def endpoint(self) -> str:
@@ -77,6 +78,7 @@ class LLMConfig:
             max_retries=_number("VISION_MAX_RETRIES", 2, int),
             temperature=_number("VISION_TEMPERATURE", 0.2, float),
             reasoning=reasoning,
+            max_tokens=max(1024, int(_number("VISION_MAX_TOKENS", 8192, int))),
         )
 
 
@@ -165,6 +167,7 @@ def build_body(
     model: str | None = None,
     temperature: float = 0.2,
     reasoning: str = "low",
+    max_tokens: int = 8192,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (
         {"enable_thinking": False}
@@ -177,6 +180,7 @@ def build_body(
             {"role": "user", "content": user_text},
         ],
         "temperature": temperature,
+        "max_tokens": max(256, int(max_tokens)),
         "chat_template_kwargs": thinking,
     }
     if model:
@@ -199,6 +203,7 @@ class LLMClient:
             model=self.config.model,
             temperature=self.config.temperature,
             reasoning=r,
+            max_tokens=self.config.max_tokens,
         )
         data = json.dumps(body).encode("utf-8")
         headers = {"Content-Type": "application/json"}

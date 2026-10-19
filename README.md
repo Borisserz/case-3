@@ -48,6 +48,7 @@ scripts\run.cmd notes.txt -p "сделай отчёт" --format both
 | нет Docker-образа | Docker Desktop → `scripts\setup.cmd` |
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
 | нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
+| `missing \begin/\end{document}` (обрыв) | меньше `max_charts` (2), или `VISION_MAX_TOKENS=12288` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |

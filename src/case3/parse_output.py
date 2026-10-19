@@ -170,9 +170,21 @@ def parse_model_output(
 
     need_json = bool(fig_slots or chart_slots)
     if need_json and json_body is None:
-        raise ParseError(
-            f"TeX has slots (figures={fig_slots}, charts={chart_slots}) but missing ```json fence"
+        # Truncated model output often has slots but no ```json — drop slots and
+        # still return TeX so PDF can build (charts/figures empty this run).
+        log.warning(
+            "missing ```json with slots figures=%s charts=%s — stripping slots",
+            fig_slots,
+            chart_slots,
         )
+        tex = re.sub(
+            r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+            "",
+            tex,
+        )
+        tex = _CHART_SLOT_LINE.sub("", tex)
+        fig_slots = []
+        chart_slots = []
 
     figures: list[dict[str, Any]] = []
     charts: list[dict[str, Any]] = []

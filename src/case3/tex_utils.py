@@ -51,6 +51,26 @@ def _ensure_documentclass(text: str) -> str:
     return text
 
 
+def _soft_close_truncated(tex: str) -> str:
+    """Model often hits max tokens mid-doc: open ```latex, no \\end{document}.
+
+    Close the most common open envs, then \\end{document}, so latexmk can finish.
+    """
+    t = tex.rstrip()
+    # Drop a trailing incomplete line that is only a comment or half-command
+    if t.endswith("%") or re.search(r"\\\\[a-zA-Z]*$", t):
+        t = t.rsplit("\n", 1)[0].rstrip()
+    # Close nested envs that commonly remain open on truncation (innermost first).
+    for env in ("tabularx", "tabular", "table", "figure", "itemize", "enumerate"):
+        opens = len(re.findall(rf"\\begin\{{{env}\}}", t))
+        closes = len(re.findall(rf"\\end\{{{env}\}}", t))
+        for _ in range(max(0, opens - closes)):
+            t += f"\n\\end{{{env}}}"
+    if r"\end{document}" not in t:
+        t += "\n\\end{document}"
+    return t + "\n"
+
+
 def extract_tex(raw: str) -> str:
     text = _normalize_backslashes((raw or "").strip())
     if not text:
@@ -65,6 +85,12 @@ def extract_tex(raw: str) -> str:
             candidates.append(body)
         elif lang in ("",) and r"\begin{document}" in body:
             candidates.append(body)
+
+    # Unclosed ```latex fence (truncation): take everything after the opener.
+    if not candidates:
+        m_open = re.match(r"```(?:latex|tex)?\s*\n([\s\S]*)", text, re.I)
+        if m_open and _looks_like_tex(m_open.group(1)):
+            candidates.append(m_open.group(1).strip())
 
     chosen = None
     for body in candidates:
@@ -100,6 +126,9 @@ def extract_tex(raw: str) -> str:
             "(нужен полный LaTeX: ```latex … \\documentclass … \\end{document}```). "
             f"Начало ответа модели: {preview!r}"
         )
-    if r"\begin{document}" not in text or r"\end{document}" not in text:
-        raise ValueError("missing \\begin{document} / \\end{document}")
+    if r"\begin{document}" not in text:
+        raise ValueError("missing \\begin{document}")
+    if r"\end{document}" not in text:
+        # Truncated completion — recover instead of failing the whole run.
+        text = _soft_close_truncated(text)
     return text.strip() + "\n"
