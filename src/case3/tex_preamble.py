@@ -163,6 +163,60 @@ def ensure_font_aliases(tex: str) -> str:
     return out
 
 
+def scrub_package_typos(tex: str) -> str:
+    """Rewrite common LLM package typos (titlespec → titlesec, …)."""
+    out = tex or ""
+    # Drop bogus package; real titlesec is injected via REQUIRED_PACKAGES if missing.
+    out = re.sub(r"\\usepackage\{titlespec\}\s*", "", out)
+    return out
+
+
+def fix_tabularx_colspec_junk(tex: str) -> str:
+    """Remove garbage after colspec until \\toprule / \\midrule / \\hline.
+
+    Models emit both ``{lXX}X r X}`` and
+    ``{lXXXX}\\raggedright...}p{2.4cm}…`` — anything between the real
+    colspec ``}`` and the first booktabs rule must go.
+    """
+    return re.sub(
+        r"(\\begin\{tabularx\}\{[^}]+\}\{[^}]+\})"
+        r"\s*"
+        r"(?:(?!\\(?:toprule|midrule|hline|bottomrule)).)*?"
+        r"(?=\\(?:toprule|midrule|hline|bottomrule))",
+        r"\1\n",
+        tex or "",
+        flags=re.S,
+    )
+
+
+def fix_tabularx_end_mismatch(tex: str) -> str:
+    """``\\begin{tabularx}…\\end{tabular}`` → close with ``tabularx``."""
+    pattern = re.compile(
+        r"\\begin\{tabularx\}|\\end\{tabularx\}|\\end\{tabular\}(?!x)"
+    )
+    depth = 0
+    parts: list[str] = []
+    last = 0
+    for m in pattern.finditer(tex or ""):
+        parts.append(tex[last : m.start()])
+        tok = m.group(0)
+        if tok == r"\begin{tabularx}":
+            depth += 1
+            parts.append(tok)
+        elif tok == r"\end{tabularx}":
+            depth = max(0, depth - 1)
+            parts.append(tok)
+        else:
+            if depth > 0:
+                parts.append(r"\end{tabularx}")
+                depth -= 1
+            else:
+                parts.append(tok)
+        last = m.end()
+    parts.append((tex or "")[last:])
+    return "".join(parts)
+
+
 def scrub_project_branding(tex: str) -> str:
     """Remove project codename from title/author (must not appear in PDF)."""
 
@@ -326,10 +380,13 @@ def ensure_document_preamble(tex: str) -> str:
             block = "".join(rf"\usepackage{{{p}}}" + "\n" for p in missing)
             insert_at = m.end()
             out = out[:insert_at] + "\n" + block + out[insert_at:].lstrip("\n")
+    out = scrub_package_typos(out)
     out = ensure_cyrillic_fonts(out)
     out = ensure_font_aliases(out)
     out = ensure_a4_layout(out)
     out = ensure_report_style(out)
+    out = fix_tabularx_colspec_junk(out)
+    out = fix_tabularx_end_mismatch(out)
     out = harden_wide_tables(out)
     return harden_tabularx_colcount(out)
 

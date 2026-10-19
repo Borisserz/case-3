@@ -75,17 +75,14 @@ def coerce_chart_types(
         if not want or c.get("type") == want:
             out.append(c)
             continue
+        html = str(c.get("html") or "")
         if want == "kpi":
-            # Cannot safely invent KPI markup — keep model chart, log only.
-            log.warning(
-                "chart %s type=%s but preferred kpi — leaving model html",
-                c.get("id"),
-                c.get("type"),
-            )
+            c["html"] = _kpi_html_from_chart(c)
+            c["type"] = "kpi"
+            log.info("coerced chart %s → kpi markup", c.get("id"))
             out.append(c)
             continue
-        html = str(c.get("html") or "")
-        if want != "kpi" and html:
+        if html:
             c["html"] = _rewrite_js_type(html, want)
         log.info(
             "coerced chart %s type %s → %s",
@@ -96,3 +93,30 @@ def coerce_chart_types(
         c["type"] = want
         out.append(c)
     return out
+
+
+def _kpi_html_from_chart(chart: dict[str, Any]) -> str:
+    """Build Liber-style KPI block from caption / dataset numbers."""
+    caption = str(chart.get("caption") or "").strip() or "Показатель"
+    html = str(chart.get("html") or "")
+    value = None
+    m = re.search(
+        r"(\d+(?:[.,]\d+)?)\s*%?",
+        caption,
+    )
+    if m:
+        value = m.group(1).replace(",", ".")
+    if value is None:
+        m = re.search(r"data\s*:\s*\[\s*([\d.]+)", html)
+        if m:
+            value = m.group(1)
+    if value is None:
+        value = "—"
+    label = re.sub(r"\s*\d+(?:[.,]\d+)?\s*%?\s*", " ", caption).strip(" —–-") or caption
+    return (
+        f'<div class="kpi"><div class="value">{value}</div>'
+        f'<div class="label">{label}</div></div>'
+        "<script>requestAnimationFrame(function(){"
+        "requestAnimationFrame(function(){"
+        "window.__CASE3_CHART_READY=true;});});</script>"
+    )

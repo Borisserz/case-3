@@ -58,6 +58,14 @@ def sanitize_chart_html(html: str) -> str:
     text = text.strip()
     if not text:
         raise ChartHtmlError("chart html empty after sanitize")
+    # Frame sets responsive:false; model often overrides → blank / tiny canvas.
+    text = re.sub(r"responsive\s*:\s*true", "responsive:false", text, flags=re.I)
+    text = re.sub(
+        r"maintainAspectRatio\s*:\s*true",
+        "maintainAspectRatio:false",
+        text,
+        flags=re.I,
+    )
     # Sync READY right after new Chart() races paint (scatter → painted=0).
     # Always defer via double rAF so Playwright waits for a real frame.
     text = re.sub(

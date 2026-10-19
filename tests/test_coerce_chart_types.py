@@ -52,3 +52,23 @@ def test_coerce_rewrites_type_field_and_html() -> None:
 def test_coerce_noop_when_auto_or_empty() -> None:
     charts = [{"id": "cht_01", "type": "donut", "html": "<div class='kpi'>1</div>"}]
     assert coerce_chart_types(charts, preferred=[])[0]["type"] == "donut"
+
+
+def test_coerce_kpi_replaces_line_with_kpi_markup() -> None:
+    charts = [
+        {
+            "id": "cht_01",
+            "type": "line",
+            "caption": "Доля продаж 45%",
+            "html": (
+                "<canvas id=\"c1\" width=\"1100\" height=\"560\"></canvas>"
+                "<script>new Chart(document.getElementById('c1'),"
+                "{type:'line',data:{labels:['a'],datasets:[{data:[45]}]},"
+                "options:{animation:false}});</script>"
+            ),
+        }
+    ]
+    out = coerce_chart_types(charts, preferred=["kpi"])
+    assert out[0]["type"] == "kpi"
+    assert 'class="kpi"' in out[0]["html"] or "class='kpi'" in out[0]["html"]
+    assert "45" in out[0]["html"]
