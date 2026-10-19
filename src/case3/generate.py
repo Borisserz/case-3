@@ -31,6 +31,36 @@ _PREFERRED_TYPES_RE = re.compile(
     r"(?:ОБЯЗАТЕЛЬНО типы графиков по порядку[^:]*|предпочитай типы)\s*:\s*([^\n—]+)",
     re.I,
 )
+_DOC_TITLE_RE = re.compile(r"(?m)^- CASE3_DOC_TITLE:\s*(.+)$")
+
+
+def doc_title_from_intent(intent: str) -> str | None:
+    """User title from UI marker in Intent (empty → None)."""
+    m = _DOC_TITLE_RE.search(intent or "")
+    if not m:
+        return None
+    title = m.group(1).strip().strip("«»\"'")
+    return title[:200] if title else None
+
+
+def apply_doc_title(tex: str, title: str) -> str:
+    """Force \\title{…} to the user-chosen string (escaped)."""
+    safe = escape_tex_text((title or "").strip())
+    if not safe:
+        return tex
+    if r"\title{" in (tex or ""):
+        return re.sub(
+            r"\\title\{[^{}]*\}",
+            lambda _m: r"\title{" + safe + "}",
+            tex,
+            count=1,
+        )
+    # Insert before \begin{document} if missing
+    m = re.search(r"\\begin\{document\}", tex or "")
+    if not m:
+        return tex
+    block = f"\\title{{{safe}}}\n\\author{{}}\n\\date{{\\today}}\n"
+    return tex[: m.start()] + block + tex[m.start() :]
 
 
 def preferred_types_from_intent(intent: str) -> list[str]:
@@ -648,6 +678,10 @@ def generate_document(
     if preferred:
         charts = coerce_chart_types(charts, preferred)
 
+    forced_title = doc_title_from_intent(intent_text)
+    if forced_title:
+        tex = apply_doc_title(tex, forced_title)
+
     if tex_body_is_sparse(tex) and source_text.strip():
         log.warning(
             "TeX body is charts-only — filling prose from Source (%d chars)",
@@ -659,6 +693,8 @@ def generate_document(
             chart_ids=[c["id"] for c in charts],
             figure_ids=[f["id"] for f in figures],
         )
+        if forced_title:
+            tex = apply_doc_title(tex, forced_title)
 
     # Safety: no raw Markdown pipes should remain after Source-fill.
     if re.search(r"(?m)^[ \t]*\|.+\|[ \t]*$", tex):
