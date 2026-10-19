@@ -217,11 +217,16 @@ def build_report_preview(
     media = media_status or {}
     fj = figures_json or {}
     cap_by_id: dict[str, str] = {}
+    type_by_id: dict[str, str] = {}
     for item in fj.get("charts") or []:
         if isinstance(item, dict) and item.get("id"):
+            fid0 = str(item["id"])
             cap = str(item.get("caption") or "").strip()
             if cap:
-                cap_by_id[str(item["id"])] = cap
+                cap_by_id[fid0] = cap
+            ctype = str(item.get("type") or "").strip()
+            if ctype:
+                type_by_id[fid0] = ctype
     for item in fj.get("figures") or []:
         if isinstance(item, dict) and item.get("id"):
             cap = str(item.get("caption") or "").strip()
@@ -246,8 +251,9 @@ def build_report_preview(
             "kind": "chart" if kind == "chart" or fid.startswith("cht_") else "image",
             "caption": caption,
         }
+        if fid in type_by_id:
+            entry["chartType"] = type_by_id[fid]
         if st.get("ok") and fid:
             entry["url"] = f"/api/runs/{run_id}/figures/{fid}.png"
         out_blocks.append(entry)
-
     return {"title": data["title"], "blocks": out_blocks}

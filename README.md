@@ -2,6 +2,8 @@
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + Kandinsky) → PDF/DOCX (Docker TeX).
 
+DOCX стилизуется через `assets/docx/reference.docx` (pandoc `--reference-doc`), не «как получится» из дефолта.
+
 ## Запуск (из корня `case-3\`)
 
 **Один раз:**

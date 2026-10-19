@@ -23,6 +23,7 @@ web/dist/
 
 *.pdf
 *.docx
+!assets/docx/reference.docx
 .DS_Store
 *.aux
 *.toc

@@ -9,6 +9,7 @@ import traceback
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 
 from case3.charts import generate_all_charts, max_charts_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
@@ -38,6 +39,51 @@ class PipelineError(RuntimeError):
         self.meta = meta
 
 
+def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (logs / "meta.json").write_text(payload, encoding="utf-8")
+    (out / "meta.json").write_text(payload, encoding="utf-8")
+
+
+def _set_stage(
+    meta: dict[str, Any],
+    out: Path,
+    logs: Path,
+    stage: str,
+    *,
+    detail: str | None = None,
+    status: str = "running",
+) -> None:
+    meta["status"] = status
+    meta["stage"] = stage
+    if detail:
+        meta["stage_detail"] = detail
+    else:
+        meta.pop("stage_detail", None)
+    _write_meta(meta, out, logs)
+
+
+def prepare_run_dirs(
+    source: Path,
+    *,
+    project_root: Path,
+    run_id: str | None = None,
+) -> tuple[str, Path, Path, Path, Path]:
+    """Create work/out/logs for a run. Returns run_id, text_path, work, out, logs."""
+    root = project_root.resolve()
+    text_path = resolve_text_file(source)
+    stem = text_path.stem
+    if run_id is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_id = f"{stem}_{stamp}"
+    work = root / "runs" / "work" / run_id
+    out = root / "runs" / "out" / run_id
+    logs = root / "runs" / "logs" / run_id
+    for d in (work, out, logs):
+        d.mkdir(parents=True, exist_ok=True)
+    return run_id, text_path, work, out, logs
+
+
 def run_pipeline(
     source: Path,
     *,
@@ -47,22 +93,21 @@ def run_pipeline(
     intent: str | None = None,
     max_images: int | None = None,
     max_charts: int | None = None,
+    run_id: str | None = None,
+    on_stage: Callable[[str, str | None], None] | None = None,
 ) -> Path:
     formats = formats or {"pdf"}
     root = project_root.resolve()
-    text_path = resolve_text_file(source)
+    run_id, text_path, work, out, logs = prepare_run_dirs(
+        source, project_root=root, run_id=run_id
+    )
     stem = text_path.stem
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_id = f"{stem}_{stamp}"
+    stamp = run_id.rsplit("_", 1)[-1] if "_" in run_id else datetime.now(
+        timezone.utc
+    ).strftime("%Y%m%dT%H%M%SZ")
 
     images_budget = max_images_from_env() if max_images is None else max(0, int(max_images))
     charts_budget = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
-
-    work = root / "runs" / "work" / run_id
-    out = root / "runs" / "out" / run_id
-    logs = root / "runs" / "logs" / run_id
-    for d in (work, out, logs):
-        d.mkdir(parents=True, exist_ok=True)
 
     handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
@@ -79,9 +124,18 @@ def run_pipeline(
         "max_images": images_budget,
         "max_charts": charts_budget,
         "started_at": stamp,
+        "status": "running",
+        "stage": "queued",
     }
+    _write_meta(meta, out, logs)
+
+    def bump(stage: str, detail: str | None = None) -> None:
+        _set_stage(meta, out, logs, stage, detail=detail)
+        if on_stage:
+            on_stage(stage, detail)
 
     try:
+        bump("llm")
         tex_path = work / f"{stem}.tex"
         _, figures, charts = generate_document(
             text_path,
@@ -94,11 +148,13 @@ def run_pipeline(
         )
         meta["figures_planned"] = [f["id"] for f in figures]
         meta["charts_planned"] = [c["id"] for c in charts]
+        _write_meta(meta, out, logs)
 
         status: dict = {}
         figs_dir = work / "figures"
 
         if figures and not dry_run and images_budget > 0:
+            bump("images")
             cfg = KandinskyConfig.from_env()
             cfg = replace(cfg, max_images=images_budget)
             if not cfg.base_url:
@@ -107,12 +163,18 @@ def run_pipeline(
                 status.update(generate_all_figures(figures, figs_dir, cfg=cfg))
 
         if charts and not dry_run and charts_budget > 0:
+            bump("charts")
+
+            def _chart_progress(cid: str) -> None:
+                bump("charts", cid)
+
             status.update(
                 generate_all_charts(
                     charts,
                     figs_dir,
                     work_root=work / "chart_work",
                     max_charts=charts_budget,
+                    on_progress=_chart_progress,
                 )
             )
 
@@ -121,6 +183,7 @@ def run_pipeline(
             json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+        bump("inject")
         write_injected(tex_path, figures, status, charts=charts)
 
         shutil.copy2(tex_path, out / tex_path.name)
@@ -134,24 +197,28 @@ def run_pipeline(
                 shutil.rmtree(dest)
             shutil.copytree(figs_dir, dest)
 
+        bump("latex")
         artifacts = render_tex(
             tex_path,
             out_dir=out,
             formats=formats,
             extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
             log_dir=logs,
+            project_root=root,
+            on_format=lambda fmt: bump("docx" if fmt == "docx" else "latex"),
         )
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
+        meta["stage"] = "ok"
+        meta.pop("stage_detail", None)
     except Exception as exc:
         meta["status"] = "error"
+        meta["stage"] = "error"
         meta["error"] = str(exc)
         meta["traceback"] = traceback.format_exc()
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
-        payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
-        (out / "meta.json").write_text(payload, encoding="utf-8")
+        _write_meta(meta, out, logs)
         raise PipelineError(
             str(exc),
             run_id=run_id,
@@ -161,9 +228,7 @@ def run_pipeline(
         ) from exc
     finally:
         if meta.get("status") != "error":
-            payload = json.dumps(meta, ensure_ascii=False, indent=2)
-            (logs / "meta.json").write_text(payload, encoding="utf-8")
-            (out / "meta.json").write_text(payload, encoding="utf-8")
+            _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
 

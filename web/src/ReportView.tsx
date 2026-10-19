@@ -1,4 +1,13 @@
-/** Liber-style in-chat report: title, prose, tables, figure PNGs. */
+/** Liber Print Desk — in-chat report: title, prose, tables, figure PNGs + chart edit. */
+
+import { useCallback, useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  ChartEditSheet,
+  type ChartEditDraft,
+  type ChartEditRequest,
+  type PaletteInfo,
+} from "./ChartEditSheet";
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }
@@ -15,6 +24,7 @@ export type PreviewBlock =
       kind: string;
       caption?: string;
       url?: string;
+      chartType?: string;
     };
 
 export type ReportPreview = {
@@ -30,7 +40,40 @@ type Props = {
   runId?: string;
   stats?: string;
   warnings?: string[];
+  palettes?: PaletteInfo[];
+  catalogTypes?: string[];
+  defaultPalette?: string;
+  editingFigureId?: string | null;
+  /** Durable error for the open sheet (not only while busy). */
+  editError?: string | null;
+  editErrorFigureId?: string | null;
+  /** Pulse download links after a successful chart edit. */
+  downloadsPulse?: boolean;
+  /** Resolve true on success so the sheet can close. */
+  onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
+  onEditCancel?: () => void;
 };
+
+function looksNumeric(s: string): boolean {
+  const t = (s || "").trim().replace(/\s/g, "").replace(",", ".");
+  if (!t) return false;
+  return /^-?\d+(\.\d+)?%?$/.test(t) || /^-?\d{1,3}([. ]\d{3})+(,\d+)?%?$/.test(t);
+}
+
+function colIsNumeric(headers: string[], rows: string[][], ci: number): boolean {
+  let n = 0;
+  let total = 0;
+  for (const row of rows) {
+    const cell = row[ci];
+    if (cell == null || !String(cell).trim()) continue;
+    total += 1;
+    if (looksNumeric(String(cell))) n += 1;
+  }
+  if (total === 0) return false;
+  if (n / total >= 0.6) return true;
+  const h = (headers[ci] || "").toLowerCase();
+  return /\d|%|год|года|шт|руб|млн|тыс|доля|рост/.test(h) && n / total >= 0.35;
+}
 
 export function ReportView({
   preview,
@@ -38,13 +81,56 @@ export function ReportView({
   runId,
   stats,
   warnings,
+  palettes = [],
+  catalogTypes = [],
+  defaultPalette = "editorial",
+  editingFigureId = null,
+  editError = null,
+  editErrorFigureId = null,
+  downloadsPulse = false,
+  onEditFigure,
+  onEditCancel,
 }: Props) {
   const blocks = preview.blocks || [];
   let figN = 0;
   let tabN = 0;
+  const [lightbox, setLightbox] = useState<{
+    url: string;
+    caption: string;
+  } | null>(null);
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ChartEditDraft | null>(null);
+  const lbTitle = useId();
 
+  const closeSheet = useCallback(() => {
+    setSheetFor(null);
+    setDraft(null);
+    onEditCancel?.();
+  }, [onEditCancel]);
+
+  const closeLb = useCallback(() => setLightbox(null), []);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeLb();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [lightbox, closeLb]);
+
+  useEffect(() => {
+    if (editingFigureId) setSheetFor(editingFigureId);
+  }, [editingFigureId]);
   return (
     <article className="report">
+      <div className="report-rail" aria-hidden />
+
       {(stats || (warnings && warnings.length > 0) || runId) && (
         <header className="report-meta">
           {runId && <span className="report-run">run {runId}</span>}
@@ -62,18 +148,29 @@ export function ReportView({
       )}
 
       <div className="report-body">
+        {blocks.length === 0 && (
+          <p className="report-p muted">Тело отчёта пустое — откройте PDF.</p>
+        )}
         {blocks.map((b, i) => {
+          const delayStyle = {
+            animationDelay: `${Math.min(i * 0.045, 0.55)}s`,
+          } as const;
+
           if (b.type === "heading") {
             const Tag = b.level >= 2 ? "h3" : "h2";
             return (
-              <Tag key={i} className={`report-h report-h${b.level}`}>
+              <Tag
+                key={i}
+                className={`report-h report-h${b.level} report-block`}
+                style={delayStyle}
+              >
                 {b.text}
               </Tag>
             );
           }
           if (b.type === "paragraph") {
             return (
-              <p key={i} className="report-p">
+              <p key={i} className="report-p report-block" style={delayStyle}>
                 {b.text}
               </p>
             );
@@ -81,8 +178,15 @@ export function ReportView({
           if (b.type === "table") {
             tabN += 1;
             const n = tabN;
+            const numericCols = (b.headers || []).map((_, ci) =>
+              colIsNumeric(b.headers, b.rows, ci),
+            );
             return (
-              <figure key={i} className="report-table-wrap">
+              <figure
+                key={i}
+                className="report-table-wrap report-block"
+                style={delayStyle}
+              >
                 {b.caption ? (
                   <figcaption className="report-caption">
                     Таблица {n}: {b.caption}
@@ -97,7 +201,12 @@ export function ReportView({
                     <thead>
                       <tr>
                         {b.headers.map((h, hi) => (
-                          <th key={hi}>{h}</th>
+                          <th
+                            key={hi}
+                            className={numericCols[hi] ? "num" : undefined}
+                          >
+                            {h}
+                          </th>
                         ))}
                       </tr>
                     </thead>
@@ -105,7 +214,12 @@ export function ReportView({
                       {b.rows.map((row, ri) => (
                         <tr key={ri}>
                           {row.map((cell, ci) => (
-                            <td key={ci}>{cell}</td>
+                            <td
+                              key={ci}
+                              className={numericCols[ci] ? "num" : undefined}
+                            >
+                              {cell}
+                            </td>
                           ))}
                         </tr>
                       ))}
@@ -118,23 +232,136 @@ export function ReportView({
           if (b.type === "figure") {
             figN += 1;
             const n = figN;
-            const label =
-              b.kind === "chart" ? "Рис." : "Илл.";
+            const label = b.kind === "chart" ? "Рис." : "Илл.";
+            const caption = b.caption
+              ? `${label} ${n}: ${b.caption}`
+              : `${label} ${n}`;
+            const isChart = b.kind === "chart";
+            const isEditing = editingFigureId === b.id;
+            const sheetOpen = sheetFor === b.id;
+            const sheetError =
+              sheetOpen && editErrorFigureId === b.id ? editError : null;
+            const intent =
+              sheetOpen && draft && !isEditing ? draft : null;
             return (
-              <figure key={i} className="report-fig">
-                {b.url ? (
-                  <a href={b.url} target="_blank" rel="noreferrer" className="report-fig-link">
-                    <img src={b.url} alt={b.caption || b.id} loading="lazy" />
-                  </a>
-                ) : (
-                  <div className="report-fig-missing">
-                    {b.id} — изображение недоступно
-                  </div>
-                )}
-                <figcaption className="report-caption">
-                  {label} {n}
-                  {b.caption ? `: ${b.caption}` : ""}
+              <figure
+                key={i}
+                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen ? " is-tuning" : ""}`}
+                style={delayStyle}
+              >
+                <div className="report-fig-frame">
+                  {b.url ? (
+                    <button
+                      type="button"
+                      className="report-fig-link"
+                      onClick={() =>
+                        setLightbox({ url: b.url!, caption })
+                      }
+                      aria-label={`Открыть ${caption}`}
+                      disabled={isEditing}
+                    >
+                      <img src={b.url} alt={b.caption || b.id} loading="lazy" />
+                    </button>
+                  ) : (
+                    <div className="report-fig-missing">
+                      {b.id} — изображение недоступно
+                    </div>
+                  )}
+                  {intent && (
+                    <div
+                      className="report-fig-intent"
+                      style={
+                        intent.wash
+                          ? {
+                              background: `linear-gradient(135deg, ${intent.wash}33, transparent 65%)`,
+                            }
+                          : undefined
+                      }
+                      aria-hidden
+                    >
+                      <span className="report-fig-intent-badge">
+                        будет: {intent.chartType}
+                        {intent.paletteLabel
+                          ? ` · ${intent.paletteLabel}`
+                          : ""}
+                      </span>
+                      <span className="report-fig-intent-note">
+                        после сохранения
+                      </span>
+                    </div>
+                  )}
+                  {isChart && onEditFigure && !isEditing && (
+                    <button
+                      type="button"
+                      className={`report-fig-edit${sheetOpen ? " is-open" : ""}`}
+                      disabled={Boolean(editingFigureId)}
+                      aria-expanded={sheetOpen}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (sheetOpen) closeSheet();
+                        else {
+                          setDraft(null);
+                          setSheetFor(b.id);
+                        }
+                      }}
+                    >
+                      {sheetOpen ? "Закрыть" : "Изменить"}
+                    </button>
+                  )}
+                  {isEditing && (
+                    <div className="report-fig-busy" aria-live="polite">
+                      <div className="fig-press" aria-hidden>
+                        <div className="fig-press-sheet">
+                          <i className="fig-press-bar" style={{ width: "72%" }} />
+                          <i className="fig-press-bar" style={{ width: "88%" }} />
+                          <i className="fig-press-bar short" style={{ width: "54%" }} />
+                          <div className="fig-press-plot">
+                            <span />
+                            <span />
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                        </div>
+                        <div className="fig-press-roller" />
+                      </div>
+                      <p className="fig-press-label">Пересобираю рисунок на столе…</p>
+                      <p className="fig-press-hint">тип · палитра · PDF</p>
+                    </div>
+                  )}
+                </div>
+
+                <figcaption className="report-caption report-fig-cap">
+                  {caption}
+                  {b.chartType ? (
+                    <span className="report-fig-type">{b.chartType}</span>
+                  ) : null}
                 </figcaption>
+
+                {isChart && sheetOpen && onEditFigure && (
+                  <ChartEditSheet
+                    open
+                    figureId={b.id}
+                    caption={b.caption || caption}
+                    palettes={palettes}
+                    catalogTypes={catalogTypes}
+                    initialPalette={defaultPalette}
+                    initialType={b.chartType || ""}
+                    busy={isEditing}
+                    error={sheetError}
+                    onDraftChange={setDraft}
+                    onCancel={() => {
+                      if (!editingFigureId) closeSheet();
+                    }}
+                    onSubmit={(req) => {
+                      void (async () => {
+                        const ok = await onEditFigure(req);
+                        if (ok) closeSheet();
+                      })();
+                    }}
+                  />
+                )}
               </figure>
             );
           }
@@ -143,19 +370,71 @@ export function ReportView({
       </div>
 
       {downloads && (downloads.pdf || downloads.docx) && (
-        <footer className="report-actions downloads">
+        <footer
+          className={`report-actions downloads${downloadsPulse ? " is-pulse" : ""}`}
+        >
           {downloads.pdf && (
             <a href={downloads.pdf} download>
-              PDF
+              Скачать PDF
             </a>
           )}
           {downloads.docx && (
             <a className="secondary" href={downloads.docx} download>
-              DOCX
+              Скачать DOCX
             </a>
           )}
         </footer>
       )}
+
+      {lightbox &&
+        createPortal(
+          <div
+            className="report-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={lbTitle}
+            onClick={closeLb}
+          >
+            <div
+              className="report-lightbox-sheet"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="report-lightbox-close"
+                onClick={closeLb}
+                aria-label="Закрыть"
+              >
+                ×
+              </button>
+              <img src={lightbox.url} alt={lightbox.caption} />
+              <p id={lbTitle} className="report-lightbox-cap">
+                {lightbox.caption}
+              </p>
+            </div>
+          </div>,
+          document.body,
+        )}
     </article>
+  );
+}
+
+/** Soft “typesetting on the desk” while the pipeline runs. */
+export function ReportPending({ label = "Набираю отчёт на столе…" }: { label?: string }) {
+  return (
+    <div className="report-pending" role="status" aria-live="polite">
+      <div className="report-pending-mark" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </div>
+      <p className="report-pending-label">{label}</p>
+      <div className="report-pending-lines" aria-hidden>
+        <i style={{ width: "92%" }} />
+        <i style={{ width: "78%" }} />
+        <i style={{ width: "86%" }} />
+        <i style={{ width: "64%" }} />
+      </div>
+    </div>
   );
 }

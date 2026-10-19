@@ -202,11 +202,12 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                     timeout=timeout_ms,
                 )
                 # Poll until canvas has ink — READY can still beat first paint.
+                # Under matrix load 2.5s was too short (grouped_bar → painted=0).
                 deadline = timeout_ms
                 step = 50
                 last_err: Exception | None = None
                 waited = 0
-                while waited <= min(deadline, 2500):
+                while waited <= deadline:
                     try:
                         _assert_chart_visible(page)
                         last_err = None
@@ -242,6 +243,7 @@ def generate_all_charts(
     *,
     work_root: Path | None = None,
     max_charts: int | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Render charts into figures_dir/<id>.png. Soft-fail per chart."""
     status: dict[str, Any] = {}
@@ -252,6 +254,8 @@ def generate_all_charts(
     root = work_root or (figures_dir.parent / "chart_work")
     for chart in charts[:limit]:
         cid = chart["id"]
+        if on_progress:
+            on_progress(cid)
         dest = figures_dir / f"{cid}.png"
         cdir = root / cid
         try:

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 from case3.tex_preamble import (
     TexStructureError,
@@ -129,6 +130,20 @@ def prepare_tex_source(tex_path: Path) -> str:
     return hardened
 
 
+def _reference_docx(project_root: Path | None) -> Path | None:
+    """Liber print-style Word template, if present."""
+    roots: list[Path] = []
+    if project_root is not None:
+        roots.append(project_root.resolve())
+    # case3/render.py → src/case3 → src → repo
+    roots.append(Path(__file__).resolve().parents[2])
+    for root in roots:
+        cand = root / "assets" / "docx" / "reference.docx"
+        if cand.is_file():
+            return cand
+    return None
+
+
 def render_tex(
     tex_path: Path,
     *,
@@ -136,6 +151,9 @@ def render_tex(
     formats: set[str],
     extra_dirs: list[Path] | None = None,
     log_dir: Path | None = None,
+    force: bool = False,
+    project_root: Path | None = None,
+    on_format: Callable[[str], None] | None = None,
 ) -> dict[str, Path]:
     ensure_image()
     tex_path = tex_path.resolve()
@@ -143,6 +161,7 @@ def render_tex(
     stem = tex_path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
     results: dict[str, Path] = {}
+    ref_docx = _reference_docx(project_root)
 
     with tempfile.TemporaryDirectory(prefix="case3-") as tmp:
         work = Path(tmp)
@@ -154,17 +173,28 @@ def render_tex(
                 if dest.exists():
                     shutil.rmtree(dest)
                 shutil.copytree(d, dest)
+        if ref_docx is not None:
+            shutil.copy2(ref_docx, work / "reference.docx")
 
         # PDF is the primary, reliable artifact.
         if "pdf" in formats:
+            if on_format:
+                on_format("pdf")
             try:
-                _docker_run(
-                    work,
+                latexmk_cmd = [
                     "latexmk",
                     "-xelatex",
                     "-interaction=nonstopmode",
                     "-synctex=1",
-                    tex_path.name,
+                ]
+                # Chart edits keep the same .tex + same PNG paths — force
+                # re-read figures so the last restyle lands in the PDF.
+                if force:
+                    latexmk_cmd.append("-g")
+                latexmk_cmd.append(tex_path.name)
+                _docker_run(
+                    work,
+                    *latexmk_cmd,
                 )
             except RenderError as exc:
                 saved = _save_tex_logs(work, stem, log_dir)
@@ -180,22 +210,30 @@ def render_tex(
             results["pdf"] = pdf_dst
             log.info("wrote %s", pdf_dst)
 
-        # DOCX is best-effort from the same .tex (+ extracted media for PNGs).
+        # DOCX via pandoc + optional Liber reference.docx styles.
         if "docx" in formats:
+            if on_format:
+                on_format("docx")
             media_dir = "docx_media"
-            try:
-                _docker_run(
-                    work,
-                    "pandoc",
-                    tex_path.name,
-                    "-f",
-                    "latex",
-                    "-t",
-                    "docx",
+            pandoc_cmd = [
+                "pandoc",
+                tex_path.name,
+                "-f",
+                "latex",
+                "-t",
+                "docx",
+            ]
+            if (work / "reference.docx").is_file():
+                pandoc_cmd.extend(["--reference-doc=reference.docx"])
+            pandoc_cmd.extend(
+                [
                     f"--extract-media=./{media_dir}",
                     "-o",
                     f"{stem}.docx",
-                )
+                ]
+            )
+            try:
+                _docker_run(work, *pandoc_cmd)
             except RenderError as exc:
                 raise RenderError(str(exc), log_path=None) from exc
             docx_src = work / f"{stem}.docx"
@@ -210,6 +248,10 @@ def render_tex(
                 if media_dst.exists():
                     shutil.rmtree(media_dst)
                 shutil.copytree(media_src, media_dst)
-            log.info("wrote %s (DOCX is secondary to PDF)", docx_dst)
+            log.info(
+                "wrote %s%s",
+                docx_dst,
+                " (reference.docx)" if ref_docx else " (pandoc default)",
+            )
 
     return results

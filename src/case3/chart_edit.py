@@ -1,0 +1,221 @@
+"""Per-chart restyle for an existing run: palette remap ± LLM style → PNG → docs."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from pathlib import Path
+from typing import Any
+
+from case3.chart_html import ChartHtmlError, sanitize_chart_html
+from case3.chart_style import apply_palette_to_html, intent_palette_lines, normalize_palette_id
+from case3.charts import render_chart_png
+from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.render import RenderError, render_tex
+
+log = logging.getLogger("case3.chart_edit")
+
+_FENCE = re.compile(r"```(?:html|javascript|js)?\s*([\s\S]*?)```", re.I)
+
+
+class ChartEditError(RuntimeError):
+    pass
+
+
+def _extract_html_fragment(raw: str) -> str:
+    text = (raw or "").strip()
+    m = _FENCE.search(text)
+    if m:
+        text = m.group(1).strip()
+    # Prefer from first <canvas or bare new Chart
+    for marker in ("<canvas", "<div", "new Chart"):
+        i = text.lower().find(marker.lower() if marker != "new Chart" else "new chart")
+        if marker == "new Chart":
+            i = text.find("new Chart")
+            if i < 0:
+                i = text.lower().find("new chart")
+        if i >= 0:
+            text = text[i:]
+            break
+    return text.strip()
+
+
+def rewrite_chart_html_with_llm(
+    html: str,
+    *,
+    palette_id: str,
+    style_notes: str,
+    chart_type: str = "",
+    target_type: str = "",
+    llm: LLMClient | None = None,
+) -> str:
+    """Ask the model to restyle one Chart.js fragment without changing data."""
+    client = llm or LLMClient(LLMConfig.from_env())
+    palette_bits = "\n".join(intent_palette_lines(palette_id, style_notes))
+    want = (target_type or chart_type or "").strip()
+    type_rule = (
+        f"- Chart.js type / our catalog type MUST be: {want} "
+        f"(map grouped_bar/stacked_bar → type:'bar' with datasets; "
+        f"donut → doughnut; horizontal_bar → indexAxis:'y'; kpi → HTML cards if needed)."
+        if want
+        else "- Keep chart type unless the user explicitly asks to change it."
+    )
+    system = (
+        "You restyle ONE offline Chart.js HTML fragment for a print report.\n"
+        "Rules:\n"
+        "- Return ONLY the HTML fragment: <canvas>…</canvas><script>new Chart(…)</script>\n"
+        "- Keep EVERY data array, label string, and dataset length EXACTLY as given.\n"
+        f"{type_rule}\n"
+        "- Colors must follow the palette lines in the user message.\n"
+        "- Set options.responsive:false, animation:false, maintainAspectRatio:false.\n"
+        "- No remote URLs, no markdown, no explanation."
+    )
+    user = (
+        f"Палитра / стиль:\n{palette_bits}\n\n"
+        f"Тип сейчас: {chart_type or 'unknown'}\n"
+        f"Новый тип: {want or '(без смены)'}\n"
+        f"Пожелание: {(style_notes or '').strip() or '(тип/палитра)'}\n\n"
+        f"Текущий HTML:\n{html}"
+    )
+    raw = client.complete(system=system, user_text=user, reasoning="off")
+    frag = _extract_html_fragment(raw)
+    if not frag:
+        raise ChartEditError("LLM returned empty chart HTML")
+    return sanitize_chart_html(frag)
+
+
+def edit_chart_in_run(
+    out_dir: Path,
+    chart_id: str,
+    *,
+    palette: str | None = None,
+    style: str | None = None,
+    chart_type: str | None = None,
+    formats: set[str] | None = None,
+    llm: LLMClient | None = None,
+) -> dict[str, Any]:
+    """Update one chart PNG + figures.json and rebuild PDF/DOCX in out_dir."""
+    out_dir = out_dir.resolve()
+    fj_path = out_dir / "figures.json"
+    if not fj_path.is_file():
+        raise ChartEditError("figures.json missing")
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartEditError(f"figures.json unreadable: {exc}") from exc
+
+    charts = list(fj.get("charts") or [])
+    idx = next((i for i, c in enumerate(charts) if isinstance(c, dict) and c.get("id") == chart_id), -1)
+    if idx < 0:
+        raise ChartEditError(f"chart {chart_id!r} not found")
+    chart = dict(charts[idx])
+    html = str(chart.get("html") or "").strip()
+    if not html:
+        raise ChartEditError(f"chart {chart_id!r} has no html")
+
+    palette_id = normalize_palette_id(palette or "editorial")
+    style_notes = (style or "").strip()
+    current_type = str(chart.get("type") or "").strip()
+    want_type = (chart_type or "").strip() or current_type
+    type_changed = bool(want_type) and want_type != current_type
+    modes: list[str] = []
+
+    new_html = html
+    need_llm = bool(style_notes) or type_changed
+    if need_llm:
+        modes.append("llm_style")
+        if type_changed:
+            modes.append("type_change")
+        try:
+            new_html = rewrite_chart_html_with_llm(
+                html,
+                palette_id=palette_id,
+                style_notes=style_notes
+                or (f"смени тип графика на {want_type}" if type_changed else ""),
+                chart_type=current_type,
+                target_type=want_type,
+                llm=llm,
+            )
+        except (LLMError, LLMConfigError, ChartHtmlError, ChartEditError) as exc:
+            raise ChartEditError(f"style rewrite failed: {exc}") from exc
+        # Enforce palette after LLM (model may ignore)
+        if palette_id != "auto":
+            new_html = apply_palette_to_html(new_html, palette_id)
+            modes.append("local_palette")
+            new_html = sanitize_chart_html(new_html)
+    else:
+        if palette_id == "auto":
+            raise ChartEditError("укажите палитру, тип или текст «как изменить»")
+        modes.append("local_palette")
+        new_html = sanitize_chart_html(apply_palette_to_html(html, palette_id))
+
+    # Commit figures.json only after PNG succeeds (avoid HTML/PNG drift).
+    chart["html"] = new_html
+    if want_type:
+        chart["type"] = want_type
+    charts[idx] = chart
+    fj["charts"] = charts
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    dest = figs_dir / f"{chart_id}.png"
+    work = out_dir / "chart_work" / chart_id
+    bak: bytes | None = dest.read_bytes() if dest.is_file() else None
+    try:
+        render_chart_png(chart, dest, work_dir=work)
+    except Exception as exc:  # noqa: BLE001
+        if bak is not None:
+            dest.write_bytes(bak)
+        raise ChartEditError(f"chart render failed: {exc}") from exc
+    fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # meta media_status
+    meta_path = out_dir / "meta.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+    media = dict(meta.get("media_status") or {})
+    media[chart_id] = {"ok": True, "path": str(dest), "kind": "chart"}
+    meta["media_status"] = media
+    meta["chart_edit_last"] = {
+        "id": chart_id,
+        "palette": palette_id,
+        "style": style_notes,
+        "chart_type": want_type,
+        "modes": modes,
+        "ts": int(time.time()),
+    }
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    fmt = formats or {"pdf", "docx"}
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        raise ChartEditError("no .tex in run")
+    try:
+        artifacts = render_tex(
+            texs[0],
+            out_dir=out_dir,
+            formats=fmt,
+            extra_dirs=[figs_dir],
+            log_dir=out_dir / "logs",
+            force=True,
+            # out_dir is runs/out/<run_id> → parents[2] = repo root
+            project_root=out_dir.resolve().parents[2],
+        )
+    except RenderError as exc:
+        raise ChartEditError(f"document rebuild failed: {exc}") from exc
+
+    v = int(dest.stat().st_mtime)
+    return {
+        "chart_id": chart_id,
+        "mode": "+".join(modes),
+        "media_status": media,
+        "artifacts": {k: str(p) for k, p in artifacts.items()},
+        "version": v,
+        "palette": palette_id,
+        "style": style_notes,
+    }

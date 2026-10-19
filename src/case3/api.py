@@ -11,18 +11,20 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
 
+from case3.chart_edit import ChartEditError, edit_chart_in_run
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
 from case3.envfile import load_dotenv
-from case3.generate import max_images_from_env
+from case3.generate import max_images_from_env, resolve_text_file
 from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
-from case3.pipeline import PipelineError, run_pipeline
+from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
 from case3.tex_preview import build_report_preview
 
@@ -229,8 +231,101 @@ def chart_types() -> dict[str, Any]:
     return {"types": sorted(CHART_TYPES), "palettes": palette_public()}
 
 
+def _run_result_payload(
+    run_id: str,
+    out_dir: Path,
+    meta: dict[str, Any],
+    *,
+    intent: str | None = None,
+    max_charts: int | None = None,
+    max_images: int | None = None,
+) -> dict[str, Any]:
+    files: dict[str, str] = {}
+    for art in out_dir.iterdir():
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            files[art.suffix.lower().lstrip(".")] = f"/api/runs/{run_id}/files/{art.name}"
+
+    media = meta.get("media_status") or {}
+    if not isinstance(media, dict):
+        media = {}
+    chart_ids = set(meta.get("charts_planned") or [])
+    fig_ids = set(meta.get("figures_planned") or [])
+    charts_ok = sum(
+        1 for cid in chart_ids if isinstance(media.get(cid), dict) and media[cid].get("ok")
+    )
+    figs_ok = sum(
+        1 for fid in fig_ids if isinstance(media.get(fid), dict) and media[fid].get("ok")
+    )
+    mc = int(max_charts if max_charts is not None else meta.get("max_charts") or 0)
+    mi = int(max_images if max_images is not None else meta.get("max_images") or 0)
+    return {
+        "run_id": run_id,
+        "status": meta.get("status", "ok"),
+        "stage": meta.get("stage"),
+        "stage_detail": meta.get("stage_detail"),
+        "intent": intent if intent is not None else meta.get("intent"),
+        "max_charts": mc,
+        "max_images": mi,
+        "figures_planned": meta.get("figures_planned") or [],
+        "charts_planned": meta.get("charts_planned") or [],
+        "media_status": media,
+        "charts_ok": charts_ok,
+        "figures_ok": figs_ok,
+        "files": files,
+        "downloads": files,
+        "previews": _media_previews(run_id, out_dir, media),
+        "preview": _build_preview_payload(run_id, out_dir, media),
+        "error": meta.get("error"),
+        "warnings": _warnings(meta, max_images=mi),
+    }
+
+
+def _bg_run_pipeline(
+    src_path: Path,
+    *,
+    run_id: str,
+    formats: set[str],
+    dry_run: bool,
+    intent: str,
+    max_images: int,
+    max_charts: int,
+) -> None:
+    try:
+        run_pipeline(
+            src_path,
+            project_root=ROOT,
+            formats=formats,
+            dry_run=dry_run,
+            intent=intent,
+            max_images=max_images,
+            max_charts=max_charts,
+            run_id=run_id,
+        )
+    except PipelineError:
+        # meta already written with status=error
+        log.exception("background pipeline failed run_id=%s", run_id)
+    except Exception:  # noqa: BLE001
+        log.exception("background pipeline crashed run_id=%s", run_id)
+        out = ROOT / "runs" / "out" / run_id
+        logs = ROOT / "runs" / "logs" / run_id
+        meta_path = out / "meta.json"
+        meta: dict[str, Any] = {}
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                meta = {"run_id": run_id}
+        meta.update({"status": "error", "stage": "error", "error": "pipeline crashed"})
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        logs.mkdir(parents=True, exist_ok=True)
+        out.mkdir(parents=True, exist_ok=True)
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+        (out / "meta.json").write_text(payload, encoding="utf-8")
+
+
 @app.post("/api/run")
 async def api_run(
+    background_tasks: BackgroundTasks,
     source: UploadFile | None = File(None),
     source_text: str | None = Form(None),
     intent: str = Form(""),
@@ -246,7 +341,7 @@ async def api_run(
     forbid_images: str = Form("false"),
     formats: str = Form("both"),
     dry_run: str = Form("false"),
-) -> dict[str, Any]:
+) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
     no_images = _as_bool(forbid_images)
     is_dry = _as_bool(dry_run)
@@ -303,13 +398,30 @@ async def api_run(
     else:
         raise HTTPException(400, detail="provide source file or source_text")
 
-    try:
-        # Playwright sync API cannot run inside FastAPI's asyncio loop.
-        out_dir = await asyncio.to_thread(
+    # Reserve run_id + write meta stage=queued so Liber can poll immediately.
+    run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=ROOT)
+    meta0 = {
+        "run_id": run_id,
+        "source": str(resolve_text_file(src_path)),
+        "intent": full_intent,
+        "formats": sorted(fmt_set),
+        "dry_run": is_dry,
+        "max_images": max_images,
+        "max_charts": max_charts,
+        "status": "running",
+        "stage": "queued",
+    }
+    payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
+    (logs_dir / "meta.json").write_text(payload0, encoding="utf-8")
+    (out_dir / "meta.json").write_text(payload0, encoding="utf-8")
+
+    async def _spawn() -> None:
+        # Keep the asyncio loop free; Playwright/LLM run in a worker thread.
+        await asyncio.to_thread(
             partial(
-                run_pipeline,
+                _bg_run_pipeline,
                 src_path,
-                project_root=ROOT,
+                run_id=run_id,
                 formats=fmt_set,
                 dry_run=is_dry,
                 intent=full_intent,
@@ -317,68 +429,66 @@ async def api_run(
                 max_charts=max_charts,
             )
         )
-    except PipelineError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": str(exc),
-                "run_id": exc.run_id,
-                "max_charts": (exc.meta or {}).get("max_charts"),
-                "max_images": (exc.meta or {}).get("max_images"),
-                "dry_run": (exc.meta or {}).get("dry_run"),
-                "hint": "logs: runs\\logs\\"
-                + exc.run_id
-                + " — then scripts\\push-debug.cmd",
-            },
-        ) from exc
-    except (LLMConfigError, LLMError, ParseError, RenderError, FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        log.exception("api run failed")
-        raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
 
-    run_id = out_dir.name
+    background_tasks.add_task(_spawn)
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "run_id": run_id,
+            "status": "started",
+            "stage": "queued",
+            "max_charts": max_charts,
+            "max_images": max_images,
+        },
+    )
+
+
+@app.get("/api/runs/{run_id}/status")
+def get_run_status(run_id: str) -> dict[str, Any]:
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)):
+        raise HTTPException(404, detail="run not found")
     meta_path = out_dir / "meta.json"
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
+    if not meta_path.is_file():
+        logs_meta = ROOT / "runs" / "logs" / run_id / "meta.json"
+        if logs_meta.is_file():
+            meta_path = logs_meta
+        else:
+            raise HTTPException(404, detail="run not found")
+    try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
 
-    files: dict[str, str] = {}
-    for art in out_dir.iterdir():
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            files[art.suffix.lower().lstrip(".")] = f"/api/runs/{run_id}/files/{art.name}"
-
-    media = meta.get("media_status") or {}
-    chart_ids = set(meta.get("charts_planned") or [])
-    fig_ids = set(meta.get("figures_planned") or [])
-    charts_ok = sum(
-        1 for cid in chart_ids if isinstance(media.get(cid), dict) and media[cid].get("ok")
-    )
-    figs_ok = sum(
-        1 for fid in fig_ids if isinstance(media.get(fid), dict) and media[fid].get("ok")
-    )
-
-    previews = _media_previews(run_id, out_dir, media)
-    preview = _build_preview_payload(run_id, out_dir, media)
-
-    return {
-        "run_id": run_id,
-        "status": meta.get("status", "ok"),
-        "intent": full_intent,
-        "max_charts": max_charts,
-        "max_images": max_images,
-        "figures_planned": meta.get("figures_planned") or [],
-        "charts_planned": meta.get("charts_planned") or [],
-        "media_status": media,
-        "charts_ok": charts_ok,
-        "figures_ok": figs_ok,
-        "files": files,
-        "downloads": files,
-        "previews": previews,
-        "preview": preview,
-        "error": meta.get("error"),
-        "warnings": _warnings(meta, max_images=max_images),
-    }
+    status = meta.get("status") or "running"
+    if status == "running":
+        return {
+            "run_id": run_id,
+            "status": "running",
+            "stage": meta.get("stage") or "queued",
+            "stage_detail": meta.get("stage_detail"),
+            "max_charts": meta.get("max_charts"),
+            "max_images": meta.get("max_images"),
+        }
+    if status == "error":
+        return {
+            "run_id": run_id,
+            "status": "error",
+            "stage": "error",
+            "error": meta.get("error") or "pipeline failed",
+            "message": meta.get("error") or "pipeline failed",
+            "hint": f"logs: runs/logs/{run_id}",
+            "max_charts": meta.get("max_charts"),
+            "max_images": meta.get("max_images"),
+        }
+    # ok (or unknown → treat as result payload if out exists)
+    if not out_dir.is_dir():
+        out_dir = ROOT / "runs" / "out" / run_id
+    return _run_result_payload(run_id, out_dir, meta)
 
 
 def _media_previews(
@@ -458,6 +568,96 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
             meta = {}
     media = meta.get("media_status") or {}
     return _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
+
+
+class ChartEditBody(BaseModel):
+    palette: str | None = Field(default="editorial")
+    style: str | None = Field(default="")
+    chart_type: str | None = Field(default="")
+    formats: str = Field(default="both")
+
+
+@app.post("/api/runs/{run_id}/charts/{chart_id}/edit")
+async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
+    """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    if not _FILE_OK.match(chart_id):
+        raise HTTPException(400, detail="invalid chart_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
+        raise HTTPException(404, detail="run not found")
+
+    fmt_raw = (body.formats or "both").strip().lower()
+    if fmt_raw == "both":
+        fmt_set = {"pdf", "docx"}
+    elif fmt_raw in {"pdf", "docx"}:
+        fmt_set = {fmt_raw}
+    else:
+        raise HTTPException(400, detail="formats must be pdf|docx|both")
+
+    palette = normalize_palette_id(body.palette)
+    style = (body.style or "").strip()
+    chart_type = (body.chart_type or "").strip()
+    if chart_type and chart_type not in CHART_TYPES:
+        raise HTTPException(400, detail=f"unknown chart_type: {chart_type}")
+    if palette == "auto" and not style and not chart_type:
+        raise HTTPException(400, detail="укажите палитру, тип или текст «как изменить»")
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_chart_in_run,
+                out_dir,
+                chart_id,
+                palette=palette,
+                style=style or None,
+                chart_type=chart_type or None,
+                formats=fmt_set,
+            )
+        )
+    except ChartEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except (LLMError, LLMConfigError) as exc:
+        raise HTTPException(502, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    media = result.get("media_status") or {}
+    preview = _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
+    v = int(result.get("version") or 0)
+    # Cache-bust figure URLs in preview blocks
+    for block in preview.get("blocks") or []:
+        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
+            url = str(block["url"])
+            if "cht_" in url or chart_id in url:
+                sep = "&" if "?" in url else "?"
+                block["url"] = f"{url}{sep}v={v}"
+
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
+
+    return {
+        "run_id": run_id,
+        "chart_id": chart_id,
+        "status": "ok",
+        "mode": result.get("mode"),
+        "palette": result.get("palette"),
+        "style": result.get("style"),
+        "media_status": media,
+        "downloads": files,
+        "preview": preview,
+        "preview_figure": {
+            "id": chart_id,
+            "kind": "chart",
+            "url": f"/api/runs/{run_id}/figures/{chart_id}.png?v={v}",
+        },
+        "warnings": [],
+    }
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:

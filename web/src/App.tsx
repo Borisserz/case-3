@@ -7,7 +7,12 @@ import {
   type DragEvent,
 } from "react";
 import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
-import { ReportView, type ReportPreview } from "./ReportView";
+import type { ChartEditRequest } from "./ChartEditSheet";
+import {
+  ReportPending,
+  ReportView,
+  type ReportPreview,
+} from "./ReportView";
 
 const FALLBACK_TYPES = [
   "bar",
@@ -55,13 +60,40 @@ type RunResult = {
   charts_planned: string[];
   figures_planned: string[];
   warnings: string[];
+  media_status?: Record<string, unknown>;
   error?: string;
   detail?: string;
 };
 
 type Msg =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "bot"; text: string; result?: RunResult; pending?: boolean; error?: string };
+  | {
+      id: string;
+      role: "bot";
+      text: string;
+      result?: RunResult;
+      pending?: boolean;
+      pendingStage?: string;
+      error?: string;
+    };
+
+const STAGE_LABELS: Record<string, string> = {
+  queued: "В очереди…",
+  llm: "Думаю над структурой…",
+  charts: "Рисую графики…",
+  images: "Готовлю иллюстрации…",
+  inject: "Вставляю рисунки в текст…",
+  latex: "Собираю PDF…",
+  docx: "Собираю DOCX…",
+  ok: "Готово",
+  error: "Ошибка",
+};
+
+function stageLabel(stage?: string, detail?: string | null): string {
+  if (detail && stage === "charts") return `Рисую ${detail}…`;
+  if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
+  return "Генерирую документ…";
+}
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -87,8 +119,24 @@ export default function App() {
   const [chat, setChat] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
+  const [editBusy, setEditBusy] = useState<{
+    msgId: string;
+    figureId: string;
+  } | null>(null);
+  /** Keeps fail message until success / cancel / new submit. */
+  const [editError, setEditError] = useState<{
+    msgId: string;
+    figureId: string;
+    message: string;
+  } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [downloadsPulseMsgId, setDownloadsPulseMsgId] = useState<string | null>(
+    null,
+  );
+  const [hasStoredReport, setHasStoredReport] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const editLock = useRef(false);
 
   const catalog = useMemo(() => {
     const fromApi = health?.chart_types?.filter(Boolean);
@@ -140,6 +188,114 @@ export default function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("liber-last-report");
+      if (!raw) {
+        setHasStoredReport(false);
+        return;
+      }
+      const result = JSON.parse(raw) as RunResult;
+      setHasStoredReport(Boolean(result?.preview?.blocks?.length));
+    } catch {
+      setHasStoredReport(false);
+    }
+  }, [msgs]);
+
+  async function editFigure(
+    msgId: string,
+    runId: string,
+    req: ChartEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: req.figureId });
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(req.figureId)}/edit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            palette: req.palette,
+            style: req.styleNotes,
+            chart_type: req.chartType,
+            formats: "both",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(
+          typeof detail === "string"
+            ? detail
+            : data.error || res.statusText || "edit failed",
+        );
+      }
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const next = {
+            ...msg,
+            text: `Обновлено · ${req.figureId}`,
+            result: {
+              ...msg.result,
+              preview: data.preview ?? msg.result.preview,
+              downloads: data.downloads ?? msg.result.downloads,
+              warnings: data.warnings ?? msg.result.warnings,
+              media_status: data.media_status ?? msg.result.media_status,
+            },
+          };
+          try {
+            sessionStorage.setItem(
+              "liber-last-report",
+              JSON.stringify(next.result),
+            );
+          } catch {
+            /* quota */
+          }
+          return next;
+        }),
+      );
+      setToast("Отчёт обновлён");
+      setDownloadsPulseMsgId(msgId);
+      window.setTimeout(() => setToast(null), 2800);
+      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: req.figureId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  function restoreLastReport() {
+    try {
+      const raw = sessionStorage.getItem("liber-last-report");
+      if (!raw) return;
+      const result = JSON.parse(raw) as RunResult;
+      if (!result?.preview?.blocks?.length) return;
+      setMsgs([
+        {
+          id: uid(),
+          role: "bot",
+          text: `Готово · run ${result.run_id}`,
+          result,
+        },
+      ]);
+    } catch {
+      /* ignore */
+    }
+  }
 
   const canSend = useMemo(() => {
     const hasSource = Boolean(file) || sourceText.trim().length > 0;
@@ -238,7 +394,91 @@ export default function App() {
         }
         throw new Error(msg);
       }
-      const result = data as RunResult;
+
+      let result = data as RunResult;
+
+      // 202 async job: poll until ok/error
+      if (res.status === 202 || data.status === "started" || data.status === "running") {
+        const runId = data.run_id as string;
+        if (!runId) throw new Error("server did not return run_id");
+        setMsgs((m) =>
+          m.map((msg) =>
+            msg.id === pendingId
+              ? {
+                  ...msg,
+                  text: stageLabel(data.stage || "queued"),
+                  pending: true,
+                  pendingStage: data.stage || "queued",
+                }
+              : msg,
+          ),
+        );
+        const pollStarted = Date.now();
+        const pollDeadlineMs = 20 * 60 * 1000;
+        let soft404 = 0;
+        for (;;) {
+          if (Date.now() - pollStarted > pollDeadlineMs) {
+            throw new Error(
+              `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
+            );
+          }
+          await new Promise((r) => setTimeout(r, 400));
+          const st = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/status`,
+          );
+          const body = await st.json().catch(() => ({}));
+          if (st.status === 404) {
+            soft404 += 1;
+            if (soft404 > 8) {
+              throw new Error(`run ${runId} не найден (status 404)`);
+            }
+            continue;
+          }
+          soft404 = 0;
+          if (!st.ok) {
+            throw new Error(
+              typeof body.detail === "string"
+                ? body.detail
+                : body.error || st.statusText,
+            );
+          }
+          const stage = body.stage as string | undefined;
+          const detail = (body.stage_detail as string | null) || null;
+          if (body.status === "running" || body.status === "started") {
+            setMsgs((m) =>
+              m.map((msg) =>
+                msg.id === pendingId
+                  ? {
+                      ...msg,
+                      text: stageLabel(stage || "queued", detail),
+                      pending: true,
+                      pendingStage: stage,
+                    }
+                  : msg,
+              ),
+            );
+            continue;
+          }
+          if (body.status === "error") {
+            throw new Error(
+              [body.error || body.message, runId ? `run ${runId}` : null]
+                .filter(Boolean)
+                .join(" · "),
+            );
+          }
+          result = body as RunResult;
+          break;
+        }
+      }
+
+      try {
+        if (result.preview?.blocks?.length) {
+          sessionStorage.setItem("liber-last-report", JSON.stringify(result));
+          setHasStoredReport(true);
+        }
+      } catch {
+        /* quota */
+      }
       setMsgs((m) =>
         m.map((msg) =>
           msg.id === pendingId
@@ -278,10 +518,15 @@ export default function App() {
 
   return (
     <div className="app">
+      {toast && (
+        <div className="liber-toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
       <aside className="panel">
         <header className="brand-block">
-          <p className="eyebrow">документ · студия</p>
-          <h1 className="brand">case-3</h1>
+          <p className="eyebrow">печатный стол</p>
+          <h1 className="brand">Liber</h1>
           <p className="tagline">
             Текст и цифры → отчёт с графиками в PDF и DOCX
           </p>
@@ -536,6 +781,15 @@ export default function App() {
                   <li>Назови документ, выбери палитру и типы</li>
                   <li>Напиши Intent и нажми «Собрать»</li>
                 </ol>
+                {hasStoredReport && (
+                  <button
+                    type="button"
+                    className="empty-restore"
+                    onClick={restoreLastReport}
+                  >
+                    Открыть последний отчёт
+                  </button>
+                )}
               </div>
             )}
             {msgs.map((m) => {
@@ -556,16 +810,31 @@ export default function App() {
                     runId={m.result.run_id}
                     stats={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
                     warnings={m.result.warnings}
+                    palettes={palettes}
+                    catalogTypes={catalog}
+                    defaultPalette={chartPalette === "auto" ? "editorial" : chartPalette}
+                    editingFigureId={
+                      editBusy?.msgId === m.id ? editBusy.figureId : null
+                    }
+                    editError={
+                      editError?.msgId === m.id ? editError.message : null
+                    }
+                    editErrorFigureId={
+                      editError?.msgId === m.id ? editError.figureId : null
+                    }
+                    downloadsPulse={downloadsPulseMsgId === m.id}
+                    onEditCancel={() => {
+                      if (editError?.msgId === m.id) setEditError(null);
+                    }}
+                    onEditFigure={(req) =>
+                      editFigure(m.id, m.result!.run_id, req)
+                    }
                   />
+                ) : m.role === "bot" && m.pending ? (
+                  <ReportPending label={m.text || undefined} />
                 ) : (
                   <>
-                    <div
-                      className={`msg-body${
-                        m.role === "bot" && m.pending ? " pending" : ""
-                      }`}
-                    >
-                      {m.text}
-                    </div>
+                    <div className="msg-body">{m.text}</div>
                     {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
                     {m.role === "bot" && m.result && (
                       <>
