@@ -30,7 +30,13 @@ scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run
 scripts\run.cmd notes.txt -p "сделай отчёт" --format both
 ```
 
-Результат: `runs\out\<run_id>\`
+**Smoke (готовые Source в `fixtures\smoke\`):**
+
+```cmd
+scripts\smoke.cmd
+```
+
+Каждый файл → `run --format both`. Результат: `runs\out\<run_id>\`
 
 ## Env (`.env`)
 

@@ -337,6 +337,8 @@ async def api_run(
         1 for fid in fig_ids if isinstance(media.get(fid), dict) and media[fid].get("ok")
     )
 
+    previews = _media_previews(run_id, out_dir, media)
+
     return {
         "run_id": run_id,
         "status": meta.get("status", "ok"),
@@ -350,9 +352,36 @@ async def api_run(
         "figures_ok": figs_ok,
         "files": files,
         "downloads": files,
+        "previews": previews,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=max_images),
     }
+
+
+def _media_previews(
+    run_id: str, out_dir: Path, media: dict[str, Any]
+) -> list[dict[str, str]]:
+    """PNG thumbnails that succeeded (charts / Kandinsky) under out/figures/."""
+    figs = out_dir / "figures"
+    if not figs.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    for png in sorted(figs.glob("*.png")):
+        mid = png.stem
+        st = media.get(mid) if isinstance(media.get(mid), dict) else {}
+        if st and not st.get("ok"):
+            continue
+        if not png.is_file():
+            continue
+        kind = str(st.get("kind") or ("chart" if mid.startswith("cht_") else "figure"))
+        out.append(
+            {
+                "id": mid,
+                "kind": kind,
+                "url": f"/api/runs/{run_id}/figures/{png.name}",
+            }
+        )
+    return out
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
@@ -388,17 +417,33 @@ def datetime_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-@app.get("/api/runs/{run_id}/files/{name}")
-def download_file(run_id: str, name: str) -> FileResponse:
-    if not _RUN_ID_OK.match(run_id) or not _FILE_OK.match(name):
-        raise HTTPException(400, detail="invalid path")
-    if ".." in name or "/" in name or "\\" in name:
-        raise HTTPException(400, detail="invalid filename")
-    path = (ROOT / "runs" / "out" / run_id / name).resolve()
+def _safe_run_file(run_id: str, *parts: str) -> Path:
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    for part in parts:
+        if not _FILE_OK.match(part) or ".." in part or "/" in part or "\\" in part:
+            raise HTTPException(400, detail="invalid path")
+    path = (ROOT / "runs" / "out" / run_id).joinpath(*parts).resolve()
     out_root = (ROOT / "runs" / "out").resolve()
     if not str(path).startswith(str(out_root)) or not path.is_file():
         raise HTTPException(404, detail="file not found")
+    return path
+
+
+@app.get("/api/runs/{run_id}/files/{name}")
+def download_file(run_id: str, name: str) -> FileResponse:
+    path = _safe_run_file(run_id, name)
     media = "application/pdf" if path.suffix.lower() == ".pdf" else "application/octet-stream"
     if path.suffix.lower() == ".docx":
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif path.suffix.lower() == ".png":
+        media = "image/png"
     return FileResponse(path, media_type=media, filename=path.name)
+
+
+@app.get("/api/runs/{run_id}/figures/{name}")
+def download_figure(run_id: str, name: str) -> FileResponse:
+    if not name.lower().endswith(".png"):
+        raise HTTPException(400, detail="only PNG figures")
+    path = _safe_run_file(run_id, "figures", name)
+    return FileResponse(path, media_type="image/png", filename=path.name)

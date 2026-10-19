@@ -36,10 +36,17 @@ type Health = {
   chart_palettes?: PaletteInfo[];
 };
 
+type MediaPreview = {
+  id: string;
+  kind: string;
+  url: string;
+};
+
 type RunResult = {
   run_id: string;
   status: string;
   downloads: Record<string, string>;
+  previews?: MediaPreview[];
   charts_ok: number;
   figures_ok: number;
   charts_planned: string[];
@@ -527,6 +534,23 @@ export default function App() {
                         </a>
                       )}
                     </div>
+                    {m.result.previews && m.result.previews.length > 0 && (
+                      <div className="previews">
+                        {m.result.previews.map((p) => (
+                          <a
+                            key={p.id}
+                            className="preview"
+                            href={p.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`${p.kind} ${p.id}`}
+                          >
+                            <img src={p.url} alt={`${p.kind} ${p.id}`} />
+                            <span>{p.id}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

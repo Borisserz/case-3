@@ -234,8 +234,8 @@ Never emit non-catalog `type`.
 4. Escape in prose: `\%`, `\_`, `\&`, `\#`.
 5. Tables with `booktabs` when Intent/Source need them; if Intent says no tables — prose only.
    **Fit A4 text width:** for 3+ columns or long cell text use
-   `\begin{tabularx}{\textwidth}{l X X}` (or `p{0.28\textwidth}`), optionally `\small`.
-   Never `landscape`, never wide `\begin{tabular}{lll}` that overflows the page.
+   `\begin{tabularx}{\textwidth}{lXX}` (first column `l`/`c`/`r`, remaining `X`), or `p{…}`.
+   Never `landscape`. Never wide `\begin{tabular}{lll}` — the pipeline may rewrite it, but prefer `tabularx` yourself (see gold `02_table.tex`).
 6. **Never** write `\includegraphics` yourself. Slots only — **alone on their own line**,
    **not** wrapped in `\begin{figure}` (the pipeline wraps successful PNGs):
 

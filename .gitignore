@@ -8,7 +8,6 @@ __pycache__/
 dist/
 build/
 .local-tests/
-tests/
 
 # all run artifacts under one tree
 runs/work/
