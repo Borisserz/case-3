@@ -1,10 +1,11 @@
-"""Ensure XeLaTeX documents have the packages case-3 actually needs."""
+"""Ensure XeLaTeX documents have the packages and report style we need."""
 
 from __future__ import annotations
 
 import re
 
 # Order matches prompt/system_tex.md — inject after \\documentclass if missing.
+# hyperref stays last among these; style packages before it.
 REQUIRED_PACKAGES = (
     "fontspec",
     "polyglossia",
@@ -14,19 +15,49 @@ REQUIRED_PACKAGES = (
     "longtable",
     "float",
     "graphicx",
+    "setspace",
+    "microtype",
+    "titlesec",
+    "fancyhdr",
+    "caption",
     "hyperref",
 )
 
 # Match \documentclass[...]{name} even when the next token is on the same line.
 _DOCCLASS = re.compile(r"(\\documentclass(?:\[[^\]]*\])?\{[^}]+\})")
 _GEOMETRY = re.compile(r"\\geometry\{[^}]*\}")
-_A4_GEOMETRY = r"\geometry{a4paper,margin=2.5cm}"
+_A4_GEOMETRY = r"\geometry{a4paper,margin=2.2cm}"
+_BEGIN_DOC = re.compile(r"\\begin\{document\}")
 
 # Plain l/c/r tabulars with ≥3 columns overflow A4 — promote to tabularx.
 _TABULAR_BLOCK = re.compile(
     r"\\begin\{tabular\}\{([^}]*)\}([\s\S]*?)\\end\{tabular\}",
     re.M,
 )
+
+_BRAND = re.compile(r"case[\s\-]?3", re.I)
+
+# Injected once before \begin{document} if fancyhdr style missing.
+REPORT_STYLE_BLOCK = r"""
+% --- report style: typography + running header ---
+\setstretch{1.15}
+\captionsetup{font=small,labelfont=bf,skip=6pt,justification=centering}
+\titleformat{\section}{\large\bfseries\raggedright}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\raggedright}{\thesubsection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.35ex plus .2ex}{0.75ex plus .1ex}
+\titlespacing*{\subsection}{0pt}{1.05ex plus .15ex}{0.45ex plus .05ex}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape\leftmark}
+\fancyhead[R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyhead[R]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+"""
 
 
 class TexStructureError(ValueError):
@@ -61,6 +92,36 @@ def harden_wide_tables(tex: str) -> str:
         )
 
     return _TABULAR_BLOCK.sub(_repl, tex)
+
+
+def scrub_project_branding(tex: str) -> str:
+    """Remove project codename from title/author (must not appear in PDF)."""
+
+    def _author(m: re.Match[str]) -> str:
+        return r"\author{}" if _BRAND.search(m.group(1) or "") else m.group(0)
+
+    def _title(m: re.Match[str]) -> str:
+        body = m.group(1) or ""
+        if not _BRAND.search(body):
+            return m.group(0)
+        cleaned = _BRAND.sub("", body)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" -:|")
+        return r"\title{" + (cleaned or "Отчёт") + "}"
+
+    out = re.sub(r"\\author\{([^{}]*)\}", _author, tex)
+    out = re.sub(r"\\title\{([^{}]*)\}", _title, out)
+    return out
+
+
+def ensure_report_style(tex: str) -> str:
+    """Add typography + fancyhdr block once before \\begin{document}."""
+    if r"\pagestyle{fancy}" in tex and r"\setstretch{" in tex:
+        return tex
+    m = _BEGIN_DOC.search(tex)
+    if not m:
+        return tex
+    block = REPORT_STYLE_BLOCK.strip() + "\n\n"
+    return tex[: m.start()] + block + tex[m.start() :]
 
 
 def assert_tex_structure(tex: str) -> None:
@@ -107,7 +168,7 @@ def _ensure_a4_documentclass(tex: str) -> str:
 
 
 def ensure_a4_layout(tex: str) -> str:
-    """Pin page to A4 portrait with 2.5 cm margins."""
+    """Pin page to A4 portrait with comfortable margins."""
     out = _ensure_a4_documentclass(tex)
     if _GEOMETRY.search(out):
         # callable repl — avoid re.sub treating \g in \geometry as a group
@@ -122,18 +183,18 @@ def ensure_a4_layout(tex: str) -> str:
 
 
 def ensure_document_preamble(tex: str) -> str:
-    """Insert missing required packages + force A4 geometry + widen-safe tables."""
-    m = _DOCCLASS.search(tex)
-    if not m:
-        return harden_wide_tables(ensure_a4_layout(tex))
-    missing = [p for p in REQUIRED_PACKAGES if rf"\usepackage{{{p}}}" not in tex]
-    out = tex
-    if missing:
-        block = "".join(rf"\usepackage{{{p}}}" + "\n" for p in missing)
-        insert_at = m.end()
-        # Always break after \documentclass so packages are not glued on the same line.
-        out = out[:insert_at] + "\n" + block + out[insert_at:].lstrip("\n")
-    return harden_wide_tables(ensure_a4_layout(out))
+    """Packages + A4 + report style + branding scrub + widen-safe tables."""
+    out = scrub_project_branding(tex)
+    m = _DOCCLASS.search(out)
+    if m:
+        missing = [p for p in REQUIRED_PACKAGES if rf"\usepackage{{{p}}}" not in out]
+        if missing:
+            block = "".join(rf"\usepackage{{{p}}}" + "\n" for p in missing)
+            insert_at = m.end()
+            out = out[:insert_at] + "\n" + block + out[insert_at:].lstrip("\n")
+    out = ensure_a4_layout(out)
+    out = ensure_report_style(out)
+    return harden_wide_tables(out)
 
 
 def strip_orphan_slots(tex: str) -> str:

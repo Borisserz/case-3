@@ -15,13 +15,18 @@ _MIN_PREAMBLE = r"""\documentclass[a4paper,12pt]{article}
 \usepackage{longtable}
 \usepackage{float}
 \usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{caption}
 \usepackage{hyperref}
 \setdefaultlanguage{russian}
 \setotherlanguage{english}
 \setmainfont{DejaVu Serif}
 \setsansfont{DejaVu Sans}
 \setmonofont{DejaVu Sans Mono}
-\geometry{a4paper,margin=2.5cm}
+\geometry{a4paper,margin=2.2cm}
 """
 
 
