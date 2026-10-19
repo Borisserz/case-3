@@ -113,6 +113,39 @@ def scrub_project_branding(tex: str) -> str:
     return out
 
 
+_CYRILLIC_FONTS = r"""
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+""".strip()
+
+
+def ensure_cyrillic_fonts(tex: str) -> str:
+    """XeLaTeX without \\setmainfont falls back to Latin Modern → blank Cyrillic."""
+    if r"\setmainfont{" in (tex or ""):
+        return tex
+    m = _BEGIN_DOC.search(tex or "")
+    if not m:
+        return tex
+    # Prefer right after polyglossia / fontspec if present.
+    insert_at = m.start()
+    for anchor in (
+        r"\usepackage{polyglossia}",
+        r"\usepackage{fontspec}",
+        r"\documentclass",
+    ):
+        idx = tex.find(anchor)
+        if idx >= 0:
+            # after end of that line
+            nl = tex.find("\n", idx)
+            insert_at = (nl + 1) if nl >= 0 else idx + len(anchor)
+            break
+    block = _CYRILLIC_FONTS + "\n"
+    return tex[:insert_at] + block + tex[insert_at:]
+
+
 def ensure_report_style(tex: str) -> str:
     """Add typography + fancyhdr block once before \\begin{document}."""
     if r"\pagestyle{fancy}" in tex and r"\setstretch{" in tex:
@@ -183,7 +216,7 @@ def ensure_a4_layout(tex: str) -> str:
 
 
 def ensure_document_preamble(tex: str) -> str:
-    """Packages + A4 + report style + branding scrub + widen-safe tables."""
+    """Packages + Cyrillic fonts + A4 + report style + branding scrub + tables."""
     out = scrub_project_branding(tex)
     m = _DOCCLASS.search(out)
     if m:
@@ -192,6 +225,7 @@ def ensure_document_preamble(tex: str) -> str:
             block = "".join(rf"\usepackage{{{p}}}" + "\n" for p in missing)
             insert_at = m.end()
             out = out[:insert_at] + "\n" + block + out[insert_at:].lstrip("\n")
+    out = ensure_cyrillic_fonts(out)
     out = ensure_a4_layout(out)
     out = ensure_report_style(out)
     return harden_wide_tables(out)

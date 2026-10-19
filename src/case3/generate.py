@@ -164,8 +164,10 @@ def merge_continuation(raw: str, cont: str) -> str:
     ):
         return extra
 
-    # Take the richer JSON + keep base TeX (even preamble-only) for repair.
+    # Prefer the longer JSON blob (continuation often truncates harder).
     json_part = e_json or b_json
+    if e_json and b_json and len(b_json) > len(e_json) * 1.2:
+        json_part = b_json
     if b_tex and r"\begin{document}" in b_tex:
         tex_part = b_tex
     elif e_tex and r"\begin{document}" in e_tex:
@@ -179,7 +181,11 @@ def merge_continuation(raw: str, cont: str) -> str:
     if tex_part:
         chunks.append("```latex\n" + tex_part.strip() + "\n```")
     if chunks:
-        return "\n\n".join(chunks)
+        merged = "\n\n".join(chunks)
+        # Never shrink below the original truncated reply (salvage needs it).
+        if len(merged) + 64 < len(base):
+            return base + ("\n\n" + extra if extra else "")
+        return merged
 
     # JSON-only truncation: do NOT close an open ```json fence — salvage needs
     # the unbroken stream to finish chart objects across the continuation.
@@ -223,6 +229,95 @@ def tex_body_is_sparse(tex: str) -> bool:
     return letters < 40
 
 
+def _is_md_table_sep(line: str) -> bool:
+    s = (line or "").strip()
+    return bool(s) and "-" in s and bool(re.match(r"^\|?[\s\-:|]+\|?$", s))
+
+
+def _source_lines_to_tex(source: str) -> list[str]:
+    """Turn Source (plain / light Markdown) into TeX body lines — not raw dumps."""
+    text = (source or "").replace("\r\n", "\n").strip()
+    drop_re = re.compile(
+        r"(?i)^(понял вас|ниже представлен|вот текст|конечно[,.]?|"
+        r"ниже данны|скопируй|для построения график).*"
+    )
+    lines_out: list[str] = []
+    i = 0
+    raw_lines = text.split("\n")
+    title: str | None = None
+    while i < len(raw_lines):
+        stripped = raw_lines[i].strip()
+        if not stripped or stripped in {"***", "---"}:
+            i += 1
+            continue
+        if drop_re.match(stripped):
+            i += 1
+            continue
+        if stripped.startswith("|") and i + 1 < len(raw_lines) and _is_md_table_sep(
+            raw_lines[i + 1]
+        ):
+            rows: list[list[str]] = []
+            while i < len(raw_lines) and raw_lines[i].strip().startswith("|"):
+                row = raw_lines[i].strip()
+                i += 1
+                if _is_md_table_sep(row):
+                    continue
+                cells = [c.strip() for c in row.strip("|").split("|")]
+                rows.append(cells)
+            if rows:
+                ncol = max(len(r) for r in rows)
+                spec = "l" + ("X" * max(0, ncol - 1))
+                lines_out.append(rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}")
+                lines_out.append(r"\toprule")
+                for ri, row in enumerate(rows[:16]):
+                    cells = [escape_tex_text(c) for c in (row + [""] * ncol)[:ncol]]
+                    lines_out.append(" & ".join(cells) + r" \\")
+                    if ri == 0:
+                        lines_out.append(r"\midrule")
+                lines_out.append(r"\bottomrule")
+                lines_out.append(r"\end{tabularx}")
+                lines_out.append("")
+            continue
+        m_h = re.match(r"^(#{1,3})\s+(.+)$", stripped)
+        if m_h:
+            level = len(m_h.group(1))
+            heading = escape_tex_text(m_h.group(2).strip())
+            if level == 1 and title is None:
+                title = heading
+            elif level <= 2:
+                lines_out.append(rf"\section{{{heading}}}")
+                lines_out.append("")
+            else:
+                lines_out.append(rf"\subsection{{{heading}}}")
+                lines_out.append("")
+            i += 1
+            continue
+        chunk = [stripped]
+        i += 1
+        while i < len(raw_lines):
+            nxt = raw_lines[i].strip()
+            if not nxt or nxt.startswith("#") or nxt.startswith("|") or nxt in {
+                "***",
+                "---",
+            }:
+                break
+            chunk.append(nxt)
+            i += 1
+        para = " ".join(chunk)
+        para = re.sub(r"\*\*(.+?)\*\*", r"«\1»", para)
+        para = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"«\1»", para)
+        lines_out.append(escape_tex_text(para))
+        lines_out.append("")
+        if len(lines_out) > 80:
+            break
+
+    if not lines_out:
+        lines_out = [escape_tex_text(text[:2000] or "(исходный текст пуст)")]
+    if title:
+        lines_out.insert(0, f"%CASE3_TITLE:{title}")
+    return lines_out[:100]
+
+
 def fill_sparse_tex_with_source(
     tex: str,
     source: str,
@@ -231,25 +326,20 @@ def fill_sparse_tex_with_source(
     figure_ids: list[str],
 ) -> str:
     """Replace an empty body with Source prose + media slots (keeps preamble)."""
-    raw_src = (source or "").strip()
-    paras = [p.strip() for p in re.split(r"\n\s*\n", raw_src) if p.strip()]
-    if not paras and raw_src:
-        paras = [ln.strip() for ln in raw_src.splitlines() if ln.strip()]
-    paras = paras[:12]
-    if not paras:
-        paras = ["(исходный текст пуст)"]
+    body_lines = _source_lines_to_tex(source)
+    title = "Отчёт"
+    if body_lines and body_lines[0].startswith("%CASE3_TITLE:"):
+        title = body_lines[0].split(":", 1)[1].strip() or title
+        body_lines = body_lines[1:]
 
-    escaped = [escape_tex_text(p) for p in paras]
-    mid = max(1, len(escaped) // 2)
-
+    # Split prose around media slots.
+    mid = max(1, len(body_lines) // 2)
     parts: list[str] = [
         r"\begin{document}",
         r"\maketitle",
         "",
-        r"\section{Исходные данные}",
-        "",
     ]
-    parts.extend(escaped[:mid])
+    parts.extend(body_lines[:mid])
     parts.append("")
     if figure_ids or chart_ids:
         parts.append(r"\section{Иллюстрации}")
@@ -260,23 +350,36 @@ def fill_sparse_tex_with_source(
     for cid in chart_ids:
         parts.append(f"%CASE3_CHART:{cid}%")
         parts.append("")
-    if escaped[mid:]:
-        parts.append(r"\section{Дополнительные сведения}")
-        parts.append("")
-        parts.extend(escaped[mid:])
+    if body_lines[mid:]:
+        parts.extend(body_lines[mid:])
         parts.append("")
     parts.append(r"\end{document}")
 
     new_body = "\n".join(parts) + "\n"
-    if re.search(r"\\begin\{document\}[\s\S]*\\end\{document\}", tex or ""):
+    out = tex or ""
+    # Keep / set title in preamble
+    if r"\title{" in out:
+        out = re.sub(
+            r"\\title\{[^{}]*\}",
+            lambda _m: r"\title{" + title + "}",
+            out,
+            count=1,
+        )
+    else:
+        out = out.replace(
+            r"\begin{document}",
+            r"\title{" + title + "}\n\\author{}\n\\date{\\today}\n\\begin{document}",
+            1,
+        )
+
+    if re.search(r"\\begin\{document\}[\s\S]*\\end\{document\}", out):
         return re.sub(
             r"\\begin\{document\}[\s\S]*\\end\{document\}\s*",
             lambda _m: new_body,
-            tex,
+            out,
             count=1,
         )
-    # preamble-only / broken: append body
-    return (tex or "").rstrip() + "\n" + new_body
+    return out.rstrip() + "\n" + new_body
 
 
 def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> str:

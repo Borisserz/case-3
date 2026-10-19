@@ -19,6 +19,8 @@ Hi
     assert r"\pagestyle{fancy}" in out
     assert r"\setstretch{1.15}" in out
     assert r"margin=2.2cm" in out
+    assert r"\setmainfont{DejaVu Serif}" in out
+    assert r"\setdefaultlanguage{russian}" in out
 
 
 def test_scrub_author_case3() -> None:

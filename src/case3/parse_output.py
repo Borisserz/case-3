@@ -359,9 +359,10 @@ def parse_model_output(
         # Last resort: valid JSON charts but unusable TeX → minimal document.
         if early_charts or early_figs:
             log.warning("extract_tex failed (%s) — building minimal doc from JSON ids", exc)
+            from case3.tex_utils import _MIN_PREAMBLE
+
             tex = finish_preamble_only_tex(
-                "\\documentclass[a4paper,12pt]{article}\n"
-                "\\usepackage{graphicx}\n\\usepackage{float}\n\\usepackage{hyperref}\n",
+                _MIN_PREAMBLE.rstrip() + "\n",
                 chart_ids=early_charts,
                 figure_ids=early_figs,
             )
