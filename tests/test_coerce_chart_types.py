@@ -72,3 +72,51 @@ def test_coerce_kpi_replaces_line_with_kpi_markup() -> None:
     assert out[0]["type"] == "kpi"
     assert 'class="kpi"' in out[0]["html"] or "class='kpi'" in out[0]["html"]
     assert "45" in out[0]["html"]
+
+
+def test_coerce_kpi_when_type_already_kpi_but_canvas() -> None:
+    """Model often labels type=kpi while emitting a bar canvas — must rebuild cards."""
+    from case3.chart_types_coerce import ensure_all_charts_match_types
+
+    charts = [
+        {
+            "id": "cht_01",
+            "type": "kpi",
+            "caption": "Выручка 152 млн",
+            "html": (
+                "<canvas id=\"c1\" width=\"1100\" height=\"560\"></canvas>"
+                "<script>new Chart(document.getElementById('c1'),"
+                "{type:'bar',data:{labels:['Q1'],datasets:[{data:[152]}]},"
+                "options:{animation:false}});</script>"
+            ),
+        }
+    ]
+    # Preferred path
+    out = coerce_chart_types(charts, preferred=["kpi"])
+    assert out[0]["type"] == "kpi"
+    assert 'class="kpi"' in out[0]["html"]
+    assert "<canvas" not in out[0]["html"]
+    assert "152" in out[0]["html"]
+    # Auto path (type already kpi)
+    out2 = ensure_all_charts_match_types(charts)
+    assert out2[0]["type"] == "kpi"
+    assert 'class="kpi"' in out2[0]["html"]
+    assert "<canvas" not in out2[0]["html"]
+
+
+def test_coerce_donut_when_type_matches_but_js_is_bar() -> None:
+    charts = [
+        {
+            "id": "cht_01",
+            "type": "donut",
+            "caption": "Доли",
+            "html": (
+                "<canvas id=\"c1\"></canvas><script>new Chart(c,"
+                "{type:'bar',data:{labels:['a'],datasets:[{data:[1]}]},"
+                "options:{}});</script>"
+            ),
+        }
+    ]
+    out = coerce_chart_types(charts, preferred=["donut"])
+    assert out[0]["type"] == "donut"
+    assert "doughnut" in out[0]["html"]

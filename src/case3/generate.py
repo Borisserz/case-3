@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from case3.chart_html import CHART_TYPES
-from case3.chart_types_coerce import coerce_chart_types
+from case3.chart_types_coerce import coerce_chart_types, ensure_all_charts_match_types
 from case3.charts import max_charts_from_env
 from case3.gold_select import format_gold_appendix, select_gold
 from case3.llm_client import LLMClient, LLMConfig, LLMError
@@ -677,6 +677,9 @@ def generate_document(
     preferred = preferred_types_from_intent(intent_text)
     if preferred:
         charts = coerce_chart_types(charts, preferred)
+    else:
+        # Auto mode: still fix type=kpi + canvas-bar etc.
+        charts = ensure_all_charts_match_types(charts)
 
     forced_title = doc_title_from_intent(intent_text)
     if forced_title:

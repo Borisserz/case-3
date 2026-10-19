@@ -11,6 +11,7 @@ from typing import Any
 
 from case3.chart_html import ChartHtmlError, sanitize_chart_html
 from case3.chart_style import apply_palette_to_html, intent_palette_lines, normalize_palette_id
+from case3.chart_types_coerce import apply_type_to_chart
 from case3.charts import render_chart_png
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.render import RenderError, render_tex
@@ -123,8 +124,19 @@ def edit_chart_in_run(
     modes: list[str] = []
 
     new_html = html
-    need_llm = bool(style_notes) or type_changed
-    if need_llm:
+    # KPI is HTML cards, not Chart.js — never ask the LLM for a <canvas> kpi.
+    if want_type == "kpi":
+        modes.append("local_kpi")
+        if type_changed:
+            modes.append("type_change")
+        chart["type"] = "kpi"
+        chart["html"] = html
+        chart = apply_type_to_chart(chart, "kpi")
+        new_html = str(chart.get("html") or "")
+        if palette_id != "auto" and not style_notes:
+            # KPI markup has no Chart.js colors; palette is a no-op on cards.
+            modes.append("local_palette")
+    elif bool(style_notes) or type_changed:
         modes.append("llm_style")
         if type_changed:
             modes.append("type_change")
@@ -145,6 +157,12 @@ def edit_chart_in_run(
             new_html = apply_palette_to_html(new_html, palette_id)
             modes.append("local_palette")
             new_html = sanitize_chart_html(new_html)
+        # Deterministic type lock after LLM (model often keeps type:'bar').
+        if want_type:
+            chart["html"] = new_html
+            chart["type"] = want_type
+            chart = apply_type_to_chart(chart, want_type)
+            new_html = str(chart.get("html") or "")
     else:
         if palette_id == "auto":
             raise ChartEditError("укажите палитру, тип или текст «как изменить»")
@@ -155,6 +173,9 @@ def edit_chart_in_run(
     chart["html"] = new_html
     if want_type:
         chart["type"] = want_type
+        chart = apply_type_to_chart(chart, want_type)
+        new_html = str(chart.get("html") or "")
+        chart["html"] = new_html
     charts[idx] = chart
     fj["charts"] = charts
     figs_dir = out_dir / "figures"
