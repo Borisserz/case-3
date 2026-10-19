@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
 from case3.chart_html import CHART_TYPES
+from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
 from case3.envfile import load_dotenv
 from case3.generate import max_images_from_env
@@ -75,11 +76,14 @@ def build_intent_from_ui(
     forbid_images: bool,
     chart_hints: str = "",
     chart_auto: bool = False,
+    chart_palette: str = "editorial",
+    chart_style: str = "",
 ) -> str:
     """Compose Intent from chat + UI controls.
 
     chart_auto / empty chart_types → model picks type from CHART_TYPES by Source.
     chart_hints → free-text wishes (pie, «воронка»…); model maps to whitelist or skips.
+    chart_palette / chart_style → color preset + optional look notes.
     max_* are ceilings, not quotas.
     """
     parts: list[str] = []
@@ -90,6 +94,7 @@ def build_intent_from_ui(
     hints = (chart_hints or "").strip()
     clean = [t for t in chart_types if t in CHART_TYPES]
     auto = bool(chart_auto) or (not clean and not hints)
+    palette = normalize_palette_id(chart_palette)
 
     if forbid_charts or max_charts <= 0:
         req.append("- без графиков и диаграмм")
@@ -106,14 +111,18 @@ def build_intent_from_ui(
         req.append(
             "- при 2+ графиках — РАЗНЫЕ типы (например line+donut или bar+horizontal_bar)"
         )
+        req.extend(intent_palette_lines(palette, chart_style))
         req.append(
             "- caption на русском, конкретный (что сравниваем); "
-            "html с сочной editorial-палитрой #E85D04/#2A9D8F/#0F3D3E/#E9C46A; "
             "canvas 1100×560; без фиолетового нейрослопа"
         )
         req.append(
             "- слот %CASE3_CHART:id% один на строке, БЕЗ обёртки \\begin{figure}; "
             "числа только из Source"
+        )
+        req.append(
+            "- вёрстка: A4 portrait; широкие таблицы — tabularx{\\textwidth}{…} "
+            "или колонки p{…}/X, не landscape и не tabular{lll} с длинным текстом"
         )
         if auto and not hints:
             req.append(
@@ -123,7 +132,7 @@ def build_intent_from_ui(
         elif clean:
             req.append("- предпочитай типы: " + ", ".join(clean))
         if hints:
-            req.append(f"- пожелания по виду: {hints} (сведи к whitelist или пропусти)")
+            req.append(f"- пожелания по виду/типу: {hints} (сведи к whitelist или пропусти)")
     if forbid_images or max_images <= 0:
         req.append("- без картинок и иллюстраций Kandinsky")
     else:
@@ -196,12 +205,13 @@ def health() -> dict[str, Any]:
             "max_images": max_images_from_env(),
         },
         "chart_types": sorted(CHART_TYPES),
+        "chart_palettes": palette_public(),
     }
 
 
 @app.get("/api/chart-types")
 def chart_types() -> dict[str, Any]:
-    return {"types": sorted(CHART_TYPES)}
+    return {"types": sorted(CHART_TYPES), "palettes": palette_public()}
 
 
 @app.post("/api/run")
@@ -214,6 +224,8 @@ async def api_run(
     chart_types: str = Form(""),
     chart_hints: str = Form(""),
     chart_auto: str = Form("false"),
+    chart_palette: str = Form("editorial"),
+    chart_style: str = Form(""),
     forbid_charts: str = Form("false"),
     forbid_images: str = Form("false"),
     formats: str = Form("both"),
@@ -240,6 +252,8 @@ async def api_run(
         forbid_images=no_images,
         chart_hints=chart_hints or "",
         chart_auto=is_auto,
+        chart_palette=chart_palette or "editorial",
+        chart_style=chart_style or "",
     )
 
     fmt_raw = (formats or "both").strip().lower()

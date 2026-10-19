@@ -19,6 +19,12 @@ const FALLBACK_TYPES = [
   "scatter",
 ] as const;
 
+type PaletteInfo = {
+  id: string;
+  label: string;
+  swatches: string[];
+};
+
 type Health = {
   ok: boolean;
   docker_ok: boolean;
@@ -27,6 +33,7 @@ type Health = {
   kandinsky_configured: boolean;
   docker_error?: string | null;
   chart_types?: string[];
+  chart_palettes?: PaletteInfo[];
 };
 
 type RunResult = {
@@ -59,6 +66,8 @@ export default function App() {
   const [chartAuto, setChartAuto] = useState(true);
   const [types, setTypes] = useState<string[]>([]);
   const [chartHints, setChartHints] = useState("");
+  const [chartPalette, setChartPalette] = useState("editorial");
+  const [chartStyle, setChartStyle] = useState("");
   const [maxCharts, setMaxCharts] = useState(2);
   const [maxImages, setMaxImages] = useState(0);
   const [forbidCharts, setForbidCharts] = useState(false);
@@ -73,6 +82,17 @@ export default function App() {
   const catalog = useMemo(() => {
     const fromApi = health?.chart_types?.filter(Boolean);
     return fromApi && fromApi.length > 0 ? fromApi : [...FALLBACK_TYPES];
+  }, [health]);
+
+  const palettes = useMemo<PaletteInfo[]>(() => {
+    if (health?.chart_palettes?.length) return health.chart_palettes;
+    return [
+      { id: "auto", label: "Auto", swatches: ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"] },
+      { id: "editorial", label: "Editorial", swatches: ["#0F3D3E", "#E85D04", "#2A9D8F", "#E9C46A"] },
+      { id: "ocean", label: "Ocean", swatches: ["#023E8A", "#0077B6", "#00B4D8", "#48CAE4"] },
+      { id: "sunset", label: "Sunset", swatches: ["#6D2E46", "#D62828", "#F77F00", "#FCBF49"] },
+      { id: "mono", label: "Mono", swatches: ["#111827", "#374151", "#6B7280", "#9CA3AF"] },
+    ];
   }, [health]);
 
   useEffect(() => {
@@ -133,10 +153,11 @@ export default function App() {
 
   function chartsLabel(): string {
     if (forbidCharts) return "графики: выкл";
-    const bits = [`≤${maxCharts}`];
+    const bits = [`≤${maxCharts}`, `палитра:${chartPalette}`];
     if (chartAuto) bits.push("на усмотрение модели");
     else if (types.length) bits.push(types.join(", "));
-    if (chartHints.trim()) bits.push(`пожелания: ${chartHints.trim()}`);
+    if (chartHints.trim()) bits.push(`тип: ${chartHints.trim()}`);
+    if (chartStyle.trim()) bits.push(`стиль: ${chartStyle.trim()}`);
     return `графики: ${bits.join(" · ")}`;
   }
 
@@ -173,6 +194,8 @@ export default function App() {
     fd.append("chart_types", chartAuto ? "" : types.join(","));
     fd.append("chart_hints", chartHints.trim());
     fd.append("chart_auto", String(chartAuto));
+    fd.append("chart_palette", chartPalette);
+    fd.append("chart_style", chartStyle.trim());
     fd.append("forbid_charts", String(forbidCharts));
     fd.append("forbid_images", String(forbidImages));
     fd.append("formats", "both");
@@ -310,6 +333,37 @@ export default function App() {
         <p className="hint">
           Модель сведёт к Chart.js-каталогу или пропустит график. Бюджет — потолок, не план.
         </p>
+
+        <label className="field">Палитра графиков</label>
+        <div className="chips palettes">
+          {palettes.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`chip palette${chartPalette === p.id ? " on" : ""}`}
+              disabled={forbidCharts}
+              onClick={() => setChartPalette(p.id)}
+              title={p.label}
+            >
+              <span className="swatches" aria-hidden>
+                {p.swatches.slice(0, 4).map((c) => (
+                  <i key={c} style={{ background: c }} />
+                ))}
+              </span>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="field">Стиль / нюансы</label>
+        <input
+          type="text"
+          placeholder="напр. без сетки, толще линии, легенда снизу…"
+          value={chartStyle}
+          disabled={forbidCharts}
+          onChange={(e) => setChartStyle(e.target.value)}
+        />
+        <p className="hint">Цвета — из палитры выше; поле уточняет оформление Chart.js.</p>
 
         <div className="row">
           <div>

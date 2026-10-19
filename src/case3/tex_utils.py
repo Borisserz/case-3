@@ -11,6 +11,7 @@ _MIN_PREAMBLE = r"""\documentclass[a4paper,12pt]{article}
 \usepackage{polyglossia}
 \usepackage{geometry}
 \usepackage{booktabs}
+\usepackage{tabularx}
 \usepackage{longtable}
 \usepackage{float}
 \usepackage{graphicx}
@@ -20,7 +21,7 @@ _MIN_PREAMBLE = r"""\documentclass[a4paper,12pt]{article}
 \setmainfont{DejaVu Serif}
 \setsansfont{DejaVu Sans}
 \setmonofont{DejaVu Sans Mono}
-\geometry{margin=2.5cm}
+\geometry{a4paper,margin=2.5cm}
 """
 
 
