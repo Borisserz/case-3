@@ -209,6 +209,7 @@ def health() -> dict[str, Any]:
 
     vision = bool(os.environ.get("VISION_API_BASE_URL", "").strip())
     images_ok = image_api_configured()
+    image_base = (os.environ.get("IMAGE_API_BASE_URL") or os.environ.get("KANDINSKY_API_BASE_URL") or "").strip()
     return {
         "ok": docker_ok and vision,
         "docker_image": IMAGE,
@@ -217,6 +218,8 @@ def health() -> dict[str, Any]:
         "playwright_ok": playwright_ok,
         "vision_configured": vision,
         "image_api_configured": images_ok,
+        # so Windows desk can verify .env without opening the file
+        "image_api_base_url": image_base or None,
         # alias for Liber UI that still reads kandinsky_configured
         "kandinsky_configured": images_ok,
         "defaults": {

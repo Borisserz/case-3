@@ -227,6 +227,20 @@ def _join_api_path(base_url: str, path: str) -> str:
     return urllib.parse.urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
 
 
+def _rewrite_loopback_url(url: str, api_base: str) -> str:
+    """Map http://127.0.0.1/... from the GPU box to IMAGE_API_BASE_URL host."""
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+        return url
+    api = urllib.parse.urlparse(api_base if "://" in api_base else f"http://{api_base}")
+    if not api.netloc:
+        return url
+    return urllib.parse.urlunparse(
+        (api.scheme or parsed.scheme or "http", api.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+
+
 def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> None:
     """Decode FastAPI `str` (or dict) image response into dest PNG."""
     # JSON object wrappers
@@ -264,10 +278,14 @@ def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> Non
 
     # Absolute or relative URL / path (join with Image API base)
     if s.startswith("http://") or s.startswith("https://"):
-        _download_url(s, dest, cfg=cfg)
+        url = _rewrite_loopback_url(s, cfg.base_url) if cfg.base_url else s
+        log.info("image download %s", url)
+        _download_url(url, dest, cfg=cfg)
         return
     if cfg.base_url and (s.startswith("/") or _looks_like_image_path(s)):
-        _download_url(_join_api_path(cfg.base_url, s), dest, cfg=cfg)
+        url = _join_api_path(cfg.base_url, s)
+        log.info("image download %s (from path %r)", url, s)
+        _download_url(url, dest, cfg=cfg)
         return
 
     # raw base64 (with optional whitespace/newlines)
@@ -305,11 +323,17 @@ def generate_png(cfg: ImageApiConfig, prompt: str, dest: Path) -> None:
     body = {"prompt": (prompt or "").strip(), **_knobs(cfg)}
     if not body["prompt"]:
         raise RuntimeError("empty image prompt")
-    with httpx.Client(timeout=cfg.timeout_s) as client:
-        resp = client.post(cfg.generate_url, json=body, headers=_headers(cfg))
-        resp.raise_for_status()
-        payload = _parse_http_body(resp)
-    decode_image_string(payload, cfg=cfg, dest=dest)
+    url = cfg.generate_url
+    log.info("image POST %s prompt_len=%d", url, len(body["prompt"]))
+    try:
+        with httpx.Client(timeout=cfg.timeout_s) as client:
+            resp = client.post(url, json=body, headers=_headers(cfg))
+            resp.raise_for_status()
+            payload = _parse_http_body(resp)
+        decode_image_string(payload, cfg=cfg, dest=dest)
+    except Exception as exc:
+        # Surface target URL — WinError 10061 usually means IMAGE_API_BASE_URL down/wrong
+        raise RuntimeError(f"Image API {url}: {exc}") from exc
 
 
 def edit_png(

@@ -74,3 +74,27 @@ def test_parse_http_body_raw_png() -> None:
 def test_decode_invalid_string_mentions_snippet(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="not base64"):
         decode_image_string("кот-не-картинка", cfg=_cfg(), dest=tmp_path / "e.png")
+
+
+def test_rewrite_loopback_url_to_api_base(tmp_path: Path) -> None:
+    """Office API often returns http://127.0.0.1:8000/... — must hit IMAGE_API host."""
+    from case3.image_api import _rewrite_loopback_url
+
+    assert (
+        _rewrite_loopback_url(
+            "http://127.0.0.1:8000/outputs/a.png",
+            "http://192.168.4.101:8000",
+        )
+        == "http://192.168.4.101:8000/outputs/a.png"
+    )
+    dest = tmp_path / "f.png"
+
+    def _fake_download(url: str, dest_path: Path, *, cfg: ImageApiConfig) -> None:
+        assert url == "http://192.168.4.101:8000/outputs/a.png"
+        dest_path.write_bytes(_PNG)
+
+    with patch("case3.image_api._download_url", side_effect=_fake_download):
+        decode_image_string(
+            "http://127.0.0.1:8000/outputs/a.png", cfg=_cfg(), dest=dest
+        )
+    assert dest.read_bytes().startswith(b"\x89PNG")
