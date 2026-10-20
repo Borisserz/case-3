@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Literal
 
 from case3.image_api import ImageApiConfig, edit_png, generate_png
 from case3.render import RenderError, render_tex
+from case3.tex_safe import escape_tex_text
 
 log = logging.getLogger("case3.figure_edit")
 
@@ -20,12 +22,37 @@ class FigureEditError(RuntimeError):
     pass
 
 
+def patch_figure_caption_in_tex(tex: str, figure_id: str, caption: str) -> str:
+    """Replace \\caption{…} for a figure identified by \\label{fig:ID}."""
+    caption = (caption or "").strip()
+    if not caption or not figure_id:
+        return tex
+    esc = escape_tex_text(caption)
+    fid = re.escape(figure_id)
+    # caption immediately before \label{fig:id}
+    pat = re.compile(
+        rf"(\\caption\{{)([^{{}}]*)(\}}\s*\\label\{{fig:{fid}\}})"
+    )
+    if pat.search(tex):
+        return pat.sub(rf"\g<1>{esc}\g<3>", tex, count=1)
+    # caption after includegraphics{…/id.png}
+    pat2 = re.compile(
+        rf"(\\includegraphics(?:\[[^\]]*\])?\{{(?:figures/)?{fid}\.png\}}\s*"
+        rf"\\caption\{{)([^{{}}]*)(\}})",
+        re.S,
+    )
+    if pat2.search(tex):
+        return pat2.sub(rf"\g<1>{esc}\g<3>", tex, count=1)
+    return tex
+
+
 def edit_figure_in_run(
     out_dir: Path,
     figure_id: str,
     *,
     mode: EditMode,
     prompt: str,
+    caption: str | None = None,
     formats: set[str] | None = None,
     cfg: ImageApiConfig | None = None,
 ) -> dict[str, Any]:
@@ -40,6 +67,8 @@ def edit_figure_in_run(
         raise FigureEditError("mode must be generate|edit")
     if figure_id.startswith("cht_"):
         raise FigureEditError("это график — используйте правку charts, не figures")
+
+    caption_new = (caption or "").strip()
 
     figs_dir = out_dir / "figures"
     dest = figs_dir / f"{figure_id}.png"
@@ -64,6 +93,10 @@ def edit_figure_in_run(
     bak: bytes | None = dest.read_bytes() if dest.is_file() else None
     meta_path = out_dir / "meta.json"
     meta_bak: str | None = meta_path.read_text(encoding="utf-8") if meta_path.is_file() else None
+    texs = sorted(out_dir.glob("*.tex"))
+    tex_bak: str | None = None
+    if texs and texs[0].is_file():
+        tex_bak = texs[0].read_text(encoding="utf-8")
 
     try:
         if mode == "generate":
@@ -86,9 +119,20 @@ def edit_figure_in_run(
     if idx >= 0:
         fig = dict(figures[idx])
         fig["prompt"] = prompt
+        if caption_new:
+            fig["caption"] = caption_new
         figures[idx] = fig
         fj["figures"] = figures
         fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+    elif caption_new or prompt:
+        # figure missing from json — still ok for PNG-only runs
+        pass
+
+    if caption_new and texs:
+        patched = patch_figure_caption_in_tex(
+            texs[0].read_text(encoding="utf-8"), figure_id, caption_new
+        )
+        texs[0].write_text(patched, encoding="utf-8")
 
     meta: dict[str, Any] = {}
     if meta_path.is_file():
@@ -103,12 +147,12 @@ def edit_figure_in_run(
         "id": figure_id,
         "mode": mode,
         "prompt": prompt[:500],
+        "caption": (caption_new or "")[:300] or None,
         "ts": int(time.time()),
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     fmt = formats or {"pdf", "docx"}
-    texs = sorted(out_dir.glob("*.tex"))
     if not texs:
         raise FigureEditError("no .tex in run")
     try:
@@ -128,6 +172,8 @@ def edit_figure_in_run(
             fj_path.write_text(fj_bak, encoding="utf-8")
         if meta_bak is not None:
             meta_path.write_text(meta_bak, encoding="utf-8")
+        if tex_bak is not None:
+            texs[0].write_text(tex_bak, encoding="utf-8")
         raise FigureEditError(f"document rebuild failed: {exc}") from exc
 
     v = int(dest.stat().st_mtime)
@@ -135,6 +181,7 @@ def edit_figure_in_run(
         "figure_id": figure_id,
         "mode": mode,
         "prompt": prompt,
+        "caption": caption_new or None,
         "media_status": media,
         "artifacts": {k: str(p) for k, p in artifacts.items()},
         "version": v,

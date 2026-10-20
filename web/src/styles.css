@@ -1647,158 +1647,127 @@ button.send:disabled {
   border-color: var(--primary);
 }
 
-/* —— Image edit modal —— */
-.img-edit-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem;
-  background: color-mix(in srgb, var(--ink) 45%, transparent);
-  backdrop-filter: blur(4px);
-  animation: liber-toast-in 0.2s ease-out;
+/* —— Image edit sheet (same shell as chart-edit) —— */
+.img-edit-sheet {
+  background:
+    radial-gradient(ellipse 80% 40% at 100% 0%, rgba(200, 220, 240, 0.45), transparent 55%),
+    var(--sheet);
 }
 
-.img-edit-modal {
-  width: min(440px, 100%);
-  max-height: min(92vh, 720px);
-  overflow: auto;
-  padding: 1.15rem 1.2rem 1.25rem;
-  border-radius: 16px;
-  background: var(--sheet);
-  border: 1px solid var(--rule);
-  box-shadow: 0 24px 48px color-mix(in srgb, var(--ink) 28%, transparent);
-}
-
-.img-edit-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
-}
-
-.img-edit-eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.img-edit-title {
-  margin: 0.2rem 0 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
-.img-edit-x {
-  border: none;
-  background: transparent;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--muted);
-}
-
-.img-edit-preview {
-  margin-bottom: 0.85rem;
+.img-edit-preview-inline {
+  margin: 0 0 0.85rem;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--rule);
-  max-height: 160px;
+  max-height: 140px;
+  background: var(--paper);
 }
 
-.img-edit-preview img {
+.img-edit-preview-inline img {
   display: block;
   width: 100%;
-  height: 160px;
+  height: 140px;
   object-fit: cover;
 }
 
 .img-edit-modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
+  margin-top: 0.35rem;
 }
 
-.img-edit-mode {
-  text-align: left;
-  padding: 0.65rem 0.7rem;
-  border-radius: 10px;
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.86rem;
-  color: var(--ink);
-}
-
-.img-edit-mode span {
+.img-edit-textarea {
   display: block;
-  margin-top: 0.25rem;
-  font-weight: 400;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.img-edit-mode.on {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--rule));
-  background: color-mix(in srgb, var(--secondary) 70%, var(--sheet));
-}
-
-.img-edit-modal textarea {
   width: 100%;
   resize: vertical;
-  margin-bottom: 0.65rem;
+  min-height: 4.5rem;
+  margin-top: 0.25rem;
   padding: 0.65rem 0.75rem;
   border-radius: 10px;
   border: 1px solid var(--rule);
   font: inherit;
-  background: var(--sheet);
+  background: var(--paper);
   color: var(--ink);
 }
 
-.img-edit-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
+.img-edit-textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 1px;
 }
 
-.img-edit-hint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--muted);
+/* Photo regen animation */
+.fig-photo-spin {
+  width: min(160px, 55%);
+  aspect-ratio: 4 / 3;
 }
 
-.img-edit-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+.fig-photo-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--rule));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--secondary) 80%, var(--sheet)),
+      var(--sheet) 55%,
+      color-mix(in srgb, var(--primary) 12%, var(--sheet))
+    );
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: fig-photo-pulse 1.6s ease-in-out infinite;
 }
 
-.img-edit-apply {
-  border: none;
-  border-radius: 999px;
-  padding: 0.55rem 1.1rem;
-  font-weight: 600;
-  background: var(--primary);
-  color: var(--sheet);
-  cursor: pointer;
+.fig-photo-shutter {
+  position: absolute;
+  inset: 18% 14%;
+  border-radius: 6px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--rule));
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  animation: fig-shutter 1.45s ease-in-out infinite;
 }
 
-.img-edit-apply:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.fig-photo-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ink) 18%, transparent) 0.6px,
+    transparent 0.7px
+  );
+  background-size: 4px 4px;
+  animation: fig-grain 0.9s steps(2) infinite;
 }
 
-.img-edit-cancel {
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  padding: 0.55rem 1rem;
-  background: transparent;
-  cursor: pointer;
-  color: var(--ink);
+@keyframes fig-photo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: saturate(1);
+  }
+  50% {
+    transform: scale(1.02);
+    filter: saturate(1.15);
+  }
+}
+
+@keyframes fig-shutter {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scaleY(1);
+  }
+  45% {
+    opacity: 0.15;
+    transform: scaleY(0.08);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes fig-grain {
+  to {
+    transform: translate(1px, -1px);
+  }
 }

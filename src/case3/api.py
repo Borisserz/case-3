@@ -587,6 +587,7 @@ class FigureEditBody(BaseModel):
 
     mode: str = Field(default="generate")
     prompt: str = Field(default="")
+    caption: str | None = Field(default=None)
     formats: str = Field(default="both")
 
 
@@ -702,6 +703,8 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
     else:
         raise HTTPException(400, detail="formats must be pdf|docx|both")
 
+    caption = (body.caption or "").strip() or None
+
     try:
         result = await asyncio.to_thread(
             partial(
@@ -710,6 +713,7 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
                 figure_id,
                 mode=mode,  # type: ignore[arg-type]
                 prompt=prompt,
+                caption=caption,
                 formats=fmt_set,
             )
         )
@@ -740,6 +744,7 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
         "status": "ok",
         "mode": result.get("mode"),
         "prompt": result.get("prompt"),
+        "caption": result.get("caption"),
         "media_status": media,
         "downloads": files,
         "preview": preview,

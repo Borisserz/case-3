@@ -346,22 +346,37 @@ export function ReportView({
                     </button>
                   )}
                   {isEditing && (
-                    <div className="report-fig-busy" aria-live="polite">
-                      <div className="fig-press" aria-hidden>
-                        <div className="fig-press-sheet">
-                          <i className="fig-press-bar" style={{ width: "72%" }} />
-                          <i className="fig-press-bar" style={{ width: "88%" }} />
-                          <i className="fig-press-bar short" style={{ width: "54%" }} />
-                          <div className="fig-press-plot">
-                            <span />
-                            <span />
-                            <span />
-                            <span />
-                            <span />
+                    <div
+                      className={`report-fig-busy${isPhoto ? " is-photo" : ""}`}
+                      aria-live="polite"
+                    >
+                      {isPhoto ? (
+                        <div className="fig-photo-spin" aria-hidden>
+                          <div className="fig-photo-frame">
+                            <div className="fig-photo-shutter" />
+                            <div className="fig-photo-grain" />
                           </div>
                         </div>
-                        <div className="fig-press-roller" />
-                      </div>
+                      ) : (
+                        <div className="fig-press" aria-hidden>
+                          <div className="fig-press-sheet">
+                            <i className="fig-press-bar" style={{ width: "72%" }} />
+                            <i className="fig-press-bar" style={{ width: "88%" }} />
+                            <i
+                              className="fig-press-bar short"
+                              style={{ width: "54%" }}
+                            />
+                            <div className="fig-press-plot">
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                          </div>
+                          <div className="fig-press-roller" />
+                        </div>
+                      )}
                       <p className="fig-press-label">
                         {isPhoto
                           ? "Генерирую фото на столе…"

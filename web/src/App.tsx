@@ -137,6 +137,8 @@ export default function App() {
   );
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const stickBottom = useRef(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const editLock = useRef(false);
 
@@ -197,6 +199,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickBottom.current = gap < 96;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    // Don't yank the chat while the user is reading earlier messages.
+    if (!stickBottom.current) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
 
@@ -307,6 +322,7 @@ export default function App() {
           body: JSON.stringify({
             mode: req.mode,
             prompt: req.prompt,
+            caption: req.caption,
             formats: "both",
           }),
         },
@@ -865,7 +881,7 @@ export default function App() {
             </span>
           </div>
 
-          <div className="messages">
+          <div className="messages" ref={messagesRef}>
             {msgs.length === 0 && (
               <div className="empty">
                 <h2>Собери отчёт на столе</h2>

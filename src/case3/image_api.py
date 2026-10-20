@@ -342,7 +342,11 @@ def edit_png(
     source_png: Path,
     dest: Path,
 ) -> None:
-    """POST /edit — multipart prompt + image file."""
+    """POST /edit — office FastAPI expects multipart; prefer base64 form field.
+
+    Swagger ``image: array[string]`` → form field ``image`` = base64 (not file).
+    Fallback: UploadFile-style multipart, then ``images`` plural.
+    """
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     if not source_png.is_file():
@@ -351,18 +355,43 @@ def edit_png(
     if not prompt:
         raise RuntimeError("empty edit prompt")
     png_bytes = source_png.read_bytes()
-    data = {"prompt": prompt, **{k: str(v) for k, v in _knobs(cfg).items()}}
-    files = {"image": (source_png.name, png_bytes, "image/png")}
+    knobs = {k: str(v) for k, v in _knobs(cfg).items()}
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    url = cfg.edit_url
+    log.info("image POST %s (edit) prompt_len=%d", url, len(prompt))
+    errors: list[str] = []
+
+    def _try_decode(resp: httpx.Response, label: str) -> bool:
+        try:
+            resp.raise_for_status()
+            payload = _parse_http_body(resp)
+            decode_image_string(payload, cfg=cfg, dest=dest)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            snip = (resp.text or "")[:120].replace("\n", " ")
+            errors.append(f"{label}: {exc} body={snip!r}")
+            log.warning("image edit attempt failed (%s): %s", label, exc)
+            return False
+
     with httpx.Client(timeout=cfg.timeout_s) as client:
-        resp = client.post(cfg.edit_url, data=data, files=files, headers=_headers(cfg))
-        # Some wrappers expect image as repeated form field of base64 strings
-        if resp.status_code >= 400:
-            b64 = base64.b64encode(png_bytes).decode("ascii")
-            data2 = {**data, "image": b64}
-            resp = client.post(cfg.edit_url, data=data2, headers=_headers(cfg))
-        resp.raise_for_status()
-        payload = _parse_http_body(resp)
-    decode_image_string(payload, cfg=cfg, dest=dest)
+        # 1) form field image=<base64> (matches List[str] Form)
+        data1 = {"prompt": prompt, "image": b64, **knobs}
+        if _try_decode(client.post(url, data=data1, headers=_headers(cfg)), "form-b64"):
+            return
+        # 2) UploadFile under image=
+        data2 = {"prompt": prompt, **knobs}
+        files2 = {"image": (source_png.name, png_bytes, "image/png")}
+        if _try_decode(
+            client.post(url, data=data2, files=files2, headers=_headers(cfg)),
+            "multipart-file",
+        ):
+            return
+        # 3) plural images=
+        data3 = {"prompt": prompt, "images": b64, **knobs}
+        if _try_decode(client.post(url, data=data3, headers=_headers(cfg)), "form-images"):
+            return
+
+    raise RuntimeError(f"Image API {url} edit failed: " + " | ".join(errors[:3]))
 
 
 def generate_all_figures(
