@@ -212,11 +212,26 @@ def _download_url(url: str, dest: Path, *, cfg: ImageApiConfig) -> None:
     _write_image_bytes(dest, data)
 
 
+def _looks_like_image_path(s: str) -> bool:
+    """Relative paths from office wrappers: outputs/foo.png (not base64)."""
+    low = s.lower()
+    if any(low.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif")):
+        return True
+    if "/" in s and not s.startswith("data:"):
+        # path-ish: slash + dotted filename (`.` is not in the base64 alphabet)
+        return "." in s.rsplit("/", 1)[-1]
+    return False
+
+
+def _join_api_path(base_url: str, path: str) -> str:
+    return urllib.parse.urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+
 def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> None:
     """Decode FastAPI `str` (or dict) image response into dest PNG."""
     # JSON object wrappers
     if isinstance(payload, dict):
-        for key in ("b64_json", "image", "data", "result", "png", "content"):
+        for key in ("b64_json", "image", "data", "result", "png", "content", "url", "path"):
             if key in payload:
                 return decode_image_string(payload[key], cfg=cfg, dest=dest)
         raise RuntimeError(f"unexpected image object keys: {list(payload)[:8]}")
@@ -228,10 +243,13 @@ def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> Non
             return
         payload = raw.decode("utf-8", errors="replace")
 
+    if isinstance(payload, list) and payload:
+        return decode_image_string(payload[0], cfg=cfg, dest=dest)
+
     if not isinstance(payload, str):
         raise RuntimeError(f"unexpected image payload type: {type(payload).__name__}")
 
-    s = payload.strip()
+    s = payload.strip().strip('"').strip("'")
     if not s:
         raise RuntimeError("empty image string")
 
@@ -244,12 +262,12 @@ def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> Non
         _write_image_bytes(dest, base64.b64decode(b64))
         return
 
-    # Absolute or relative URL (join with Image API base)
+    # Absolute or relative URL / path (join with Image API base)
     if s.startswith("http://") or s.startswith("https://"):
         _download_url(s, dest, cfg=cfg)
         return
-    if s.startswith("/") and cfg.base_url:
-        _download_url(urllib.parse.urljoin(cfg.base_url.rstrip("/") + "/", s.lstrip("/")), cfg=cfg, dest=dest)
+    if cfg.base_url and (s.startswith("/") or _looks_like_image_path(s)):
+        _download_url(_join_api_path(cfg.base_url, s), dest, cfg=cfg)
         return
 
     # raw base64 (with optional whitespace/newlines)
@@ -257,16 +275,22 @@ def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> Non
     try:
         data = base64.b64decode(compact, validate=False)
     except Exception as exc:
-        raise RuntimeError("image string is not base64/data-URL/URL") from exc
+        snip = s[:80].replace("\n", " ")
+        raise RuntimeError(
+            f"image string is not base64/data-URL/URL (got {snip!r})"
+        ) from exc
     if len(data) < 32:
         raise RuntimeError("decoded image too small")
     _write_image_bytes(dest, data)
 
 
 def _parse_http_body(resp: httpx.Response) -> Any:
-    text = resp.text
     ctype = (resp.headers.get("content-type") or "").lower()
-    if "application/json" in ctype or text[:1] in "{\"[":
+    raw = resp.content or b""
+    if "image/" in ctype or _is_png(raw) or _is_jpeg(raw):
+        return raw
+    text = raw.decode("utf-8", errors="replace") if raw else (resp.text or "")
+    if "application/json" in ctype or (text[:1] in "{\"[") :
         try:
             return json.loads(text)
         except json.JSONDecodeError:

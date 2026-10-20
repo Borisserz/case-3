@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from case3.image_api import ImageApiConfig, decode_image_string
+import pytest
+
+from case3.image_api import ImageApiConfig, _parse_http_body, decode_image_string
 
 # 1x1 PNG
 _PNG = base64.b64decode(
@@ -45,3 +48,29 @@ def test_decode_json_string_wrapper(tmp_path: Path) -> None:
     # FastAPI Response[str] often arrives already unquoted via json.loads
     decode_image_string({"image": base64.b64encode(_PNG).decode()}, cfg=_cfg(), dest=dest)
     assert dest.is_file()
+
+
+def test_decode_relative_path_without_leading_slash(tmp_path: Path) -> None:
+    """Office wrappers often return 'outputs/foo.png' (not base64, not absolute URL)."""
+    dest = tmp_path / "d.png"
+
+    def _fake_download(url: str, dest_path: Path, *, cfg: ImageApiConfig) -> None:
+        assert url == "http://192.168.4.101:8000/outputs/foo.png"
+        dest_path.write_bytes(_PNG)
+
+    with patch("case3.image_api._download_url", side_effect=_fake_download):
+        decode_image_string("outputs/foo.png", cfg=_cfg(), dest=dest)
+    assert dest.read_bytes().startswith(b"\x89PNG")
+
+
+def test_parse_http_body_raw_png() -> None:
+    resp = MagicMock()
+    resp.headers = {"content-type": "image/png"}
+    resp.content = _PNG
+    resp.text = "should-not-use"
+    assert _parse_http_body(resp) == _PNG
+
+
+def test_decode_invalid_string_mentions_snippet(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="not base64"):
+        decode_image_string("кот-не-картинка", cfg=_cfg(), dest=tmp_path / "e.png")
