@@ -408,6 +408,9 @@ def generate_all_figures(
         return status
     for fig in figures[: cfg.max_images]:
         fid = fig["id"]
+        # Liber-attached uploads are already on disk — do not call /generate.
+        if str(fig.get("source") or "") == "upload":
+            continue
         if on_progress:
             on_progress(fid)
         dest = figures_dir / f"{fid}.png"

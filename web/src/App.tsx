@@ -101,6 +101,44 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function ComposerPhotoChips({
+  files,
+  busy,
+  onRemove,
+}: {
+  files: File[];
+  busy: boolean;
+  onRemove: (index: number) => void;
+}) {
+  const urls = useMemo(
+    () => files.map((f) => URL.createObjectURL(f)),
+    [files],
+  );
+  useEffect(() => {
+    return () => {
+      for (const u of urls) URL.revokeObjectURL(u);
+    };
+  }, [urls]);
+  return (
+    <div className="composer-photos" aria-label="Прикреплённые фото">
+      {files.map((p, i) => (
+        <div key={`${p.name}-${i}-${p.size}`} className="composer-photo-chip">
+          <img src={urls[i]} alt="" />
+          <button
+            type="button"
+            className="composer-photo-x"
+            aria-label="Убрать фото"
+            disabled={busy}
+            onClick={() => onRemove(i)}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -119,6 +157,9 @@ export default function App() {
   const [forbidImages, setForbidImages] = useState(true);
   const [dryRun, setDryRun] = useState(false);
   const [chat, setChat] = useState("");
+  /** Liber-attached photos for document slots or chat-only /edit */
+  const [attachPhotos, setAttachPhotos] = useState<File[]>([]);
+  const [photoMode, setPhotoMode] = useState<"document" | "edit">("document");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [editBusy, setEditBusy] = useState<{
@@ -140,6 +181,7 @@ export default function App() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
   const fileRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
   const editLock = useRef(false);
 
   const catalog = useMemo(() => {
@@ -401,9 +443,13 @@ export default function App() {
   }
 
   const canSend = useMemo(() => {
+    if (busy) return false;
+    if (photoMode === "edit") {
+      return attachPhotos.length > 0 && chat.trim().length > 0;
+    }
     const hasSource = Boolean(file) || sourceText.trim().length > 0;
-    return hasSource && !busy;
-  }, [file, sourceText, busy]);
+    return hasSource;
+  }, [file, sourceText, busy, photoMode, attachPhotos, chat]);
 
   const onDrop = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -439,14 +485,33 @@ export default function App() {
     if (!canSend) return;
     const intentText =
       chat.trim() ||
-      "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.";
+      (photoMode === "edit"
+        ? ""
+        : "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.");
+    if (photoMode === "edit" && !intentText) return;
+
     const userLabel = [
       intentText,
-      docTitle.trim() ? `название: ${docTitle.trim()}` : null,
-      chartsLabel(),
-      forbidImages ? "картинки: выкл" : `картинки: ≤${maxImages}`,
-      dryRun ? "dry-run" : null,
-      file ? `файл: ${file.name}` : "текст из поля Source",
+      photoMode === "edit" ? "режим: только правка фото" : null,
+      attachPhotos.length
+        ? `фото: ${attachPhotos.map((f) => f.name).join(", ")}`
+        : null,
+      photoMode === "document"
+        ? docTitle.trim()
+          ? `название: ${docTitle.trim()}`
+          : null
+        : null,
+      photoMode === "document" ? chartsLabel() : null,
+      photoMode === "document"
+        ? forbidImages && !attachPhotos.length
+          ? "картинки: выкл"
+          : `картинки: ≤${Math.max(maxImages, attachPhotos.length)}`
+        : null,
+      photoMode === "document"
+        ? file
+          ? `файл: ${file.name}`
+          : "текст из поля Source"
+        : null,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -455,27 +520,51 @@ export default function App() {
     setMsgs((m) => [
       ...m,
       { id: uid(), role: "user", text: userLabel },
-      { id: pendingId, role: "bot", text: "Генерирую документ…", pending: true },
+      {
+        id: pendingId,
+        role: "bot",
+        text:
+          photoMode === "edit" ? "Править фото…" : "Генерирую документ…",
+        pending: true,
+      },
     ]);
     setBusy(true);
     setChat("");
+    const photosSnapshot = [...attachPhotos];
+    setAttachPhotos([]);
 
     const fd = new FormData();
-    if (file) fd.append("source", file);
-    else fd.append("source_text", sourceText);
-    fd.append("intent", intentText);
-    fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
-    fd.append("max_images", String(forbidImages ? 0 : maxImages));
-    fd.append("chart_types", chartAuto ? "" : types.join(","));
-    fd.append("chart_hints", chartHints.trim());
-    fd.append("chart_auto", String(chartAuto));
-    fd.append("chart_palette", chartPalette);
-    fd.append("chart_style", chartStyle.trim());
-    fd.append("doc_title", docTitle.trim().slice(0, 200));
-    fd.append("forbid_charts", String(forbidCharts));
-    fd.append("forbid_images", String(forbidImages));
-    fd.append("formats", "both");
-    fd.append("dry_run", String(dryRun));
+    fd.append("photo_mode", photoMode);
+    for (const p of photosSnapshot) fd.append("photos", p);
+    if (photoMode === "edit") {
+      fd.append("intent", intentText);
+    } else {
+      if (file) fd.append("source", file);
+      else fd.append("source_text", sourceText);
+      fd.append("intent", intentText);
+      fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
+      fd.append(
+        "max_images",
+        String(
+          forbidImages && !photosSnapshot.length
+            ? 0
+            : Math.max(maxImages, photosSnapshot.length),
+        ),
+      );
+      fd.append("chart_types", chartAuto ? "" : types.join(","));
+      fd.append("chart_hints", chartHints.trim());
+      fd.append("chart_auto", String(chartAuto));
+      fd.append("chart_palette", chartPalette);
+      fd.append("chart_style", chartStyle.trim());
+      fd.append("doc_title", docTitle.trim().slice(0, 200));
+      fd.append("forbid_charts", String(forbidCharts));
+      fd.append(
+        "forbid_images",
+        String(forbidImages && photosSnapshot.length === 0),
+      );
+      fd.append("formats", "both");
+      fd.append("dry_run", String(dryRun));
+    }
 
     try {
       const res = await fetch("/api/run", { method: "POST", body: fd });
@@ -496,6 +585,26 @@ export default function App() {
           msg = data.error || res.statusText;
         }
         throw new Error(msg);
+      }
+
+      // Sync photo-edit response (no poll)
+      if (data.mode === "photo_edit" && data.status === "ok") {
+        const result = data as RunResult;
+        setMsgs((m) =>
+          m.map((msg) =>
+            msg.id === pendingId
+              ? {
+                  ...msg,
+                  text: data.caption || "Фото изменено",
+                  pending: false,
+                  result,
+                }
+              : msg,
+          ),
+        );
+        setToast("Фото изменено");
+        window.setTimeout(() => setToast(null), 2800);
+        return;
       }
 
       let result = data as RunResult;
@@ -1001,23 +1110,86 @@ export default function App() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="composer">
-            <input
-              type="text"
-              placeholder="Intent: с таблицами, короткий отчёт…"
-              value={chat}
-              disabled={busy}
-              onChange={(e) => setChat(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
+          <div className="composer-wrap">
+            {attachPhotos.length > 0 && (
+              <ComposerPhotoChips
+                files={attachPhotos}
+                busy={busy}
+                onRemove={(i) =>
+                  setAttachPhotos((list) => list.filter((_, j) => j !== i))
                 }
-              }}
-            />
-            <button className="send" type="button" disabled={!canSend} onClick={() => void send()}>
-              {busy ? "…" : "Собрать"}
-            </button>
+              />
+            )}
+            <div className="composer-modes" role="group" aria-label="Режим фото">
+              <button
+                type="button"
+                className={`chip${photoMode === "document" ? " on" : ""}`}
+                disabled={busy}
+                onClick={() => setPhotoMode("document")}
+              >
+                В отчёт
+              </button>
+              <button
+                type="button"
+                className={`chip${photoMode === "edit" ? " on" : ""}`}
+                disabled={busy}
+                onClick={() => setPhotoMode("edit")}
+                title="Нужны фото + текст правки; Source не обязателен"
+              >
+                Только правка
+              </button>
+            </div>
+            <div className="composer">
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const list = Array.from(e.target.files || []);
+                  e.target.value = "";
+                  if (!list.length) return;
+                  setAttachPhotos((prev) => [...prev, ...list].slice(0, 2));
+                  if (forbidImages) setForbidImages(false);
+                  if (maxImages < 1) setMaxImages(Math.max(2, list.length));
+                }}
+              />
+              <button
+                type="button"
+                className="composer-attach"
+                disabled={busy || attachPhotos.length >= 2}
+                title="Прикрепить фото (до 2)"
+                onClick={() => photoRef.current?.click()}
+              >
+                📎
+              </button>
+              <input
+                type="text"
+                placeholder={
+                  photoMode === "edit"
+                    ? "Что изменить на фото (EN или коротко по-русски)…"
+                    : "Intent: с таблицами, короткий отчёт…"
+                }
+                value={chat}
+                disabled={busy}
+                onChange={(e) => setChat(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <button
+                className="send"
+                type="button"
+                disabled={!canSend}
+                onClick={() => void send()}
+              >
+                {busy ? "…" : photoMode === "edit" ? "Править" : "Собрать"}
+              </button>
+            </div>
           </div>
         </div>
       </main>

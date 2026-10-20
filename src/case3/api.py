@@ -23,12 +23,13 @@ from case3.charts import max_charts_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.generate import max_images_from_env, resolve_text_file
-from case3.image_api import image_api_configured
+from case3.image_api import ImageApiConfig, edit_png, image_api_configured
 from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
 from case3.tex_preview import build_report_preview
+from case3.user_photos import UserPhotoError, save_user_photos
 
 log = logging.getLogger("case3.api")
 
@@ -294,6 +295,7 @@ def _bg_run_pipeline(
     intent: str,
     max_images: int,
     max_charts: int,
+    user_figures: list[dict[str, Any]] | None = None,
 ) -> None:
     try:
         run_pipeline(
@@ -305,6 +307,7 @@ def _bg_run_pipeline(
             max_images=max_images,
             max_charts=max_charts,
             run_id=run_id,
+            user_figures=user_figures,
         )
     except PipelineError:
         # meta already written with status=error
@@ -328,6 +331,99 @@ def _bg_run_pipeline(
         (out / "meta.json").write_text(payload, encoding="utf-8")
 
 
+async def _quick_photo_edit(
+    fig: dict[str, Any],
+    *,
+    prompt: str,
+    caption: str,
+) -> JSONResponse:
+    """Img2img one attached photo → chat preview (no TeX/PDF)."""
+    cfg = ImageApiConfig.from_env()
+    if not cfg.base_url:
+        raise HTTPException(400, detail="IMAGE_API_BASE_URL пуст")
+    src = Path(str(fig.get("path") or ""))
+    if not src.is_file():
+        raise HTTPException(400, detail="upload missing on disk")
+    stamp = datetime_stamp()
+    run_id = f"photo_edit_{stamp}"
+    out = ROOT / "runs" / "out" / run_id
+    figs = out / "figures"
+    figs.mkdir(parents=True, exist_ok=True)
+    dest = figs / "edited.png"
+    try:
+        await asyncio.to_thread(edit_png, cfg, prompt, src, dest)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, detail=f"image edit failed: {exc}") from exc
+    v = int(dest.stat().st_mtime)
+    meta = {
+        "run_id": run_id,
+        "status": "ok",
+        "stage": "ok",
+        "mode": "photo_edit",
+        "prompt": prompt[:500],
+        "caption": caption,
+    }
+    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "ok",
+            "mode": "photo_edit",
+            "prompt": prompt,
+            "caption": caption,
+            "preview_figure": {
+                "id": "edited",
+                "kind": "figure",
+                "url": f"/api/runs/{run_id}/figures/edited.png?v={v}",
+                "caption": caption,
+            },
+            "downloads": {},
+            "preview": {
+                "title": caption,
+                "blocks": [
+                    {
+                        "type": "figure",
+                        "id": "edited",
+                        "kind": "figure",
+                        "url": f"/api/runs/{run_id}/figures/edited.png?v={v}",
+                        "caption": caption,
+                    }
+                ],
+            },
+            "figures_ok": 1,
+            "figures_planned": ["edited"],
+            "charts_ok": 0,
+            "charts_planned": [],
+            "warnings": [],
+        }
+    )
+
+
+@app.post("/api/photo/edit")
+async def api_photo_edit(
+    image: UploadFile = File(...),
+    prompt: str = Form(...),
+    caption: str = Form(""),
+) -> JSONResponse:
+    """Standalone chat-only img2img (same as photo_mode=edit on /api/run)."""
+    upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    raw = await image.read()
+    try:
+        figs = save_user_photos(
+            upload_dir,
+            [(image.filename or "photo.png", raw)],
+            captions=[caption] if caption.strip() else None,
+        )
+    except UserPhotoError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    return await _quick_photo_edit(
+        figs[0],
+        prompt=(prompt or "").strip(),
+        caption=(caption or figs[0].get("caption") or "Правка фото"),
+    )
+
+
 @app.post("/api/run")
 async def api_run(
     background_tasks: BackgroundTasks,
@@ -346,11 +442,18 @@ async def api_run(
     forbid_images: str = Form("false"),
     formats: str = Form("both"),
     dry_run: str = Form("false"),
+    photo_mode: str = Form("document"),
+    photos: list[UploadFile] | None = File(None),
+    photo_captions: str = Form(""),
 ) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
     no_images = _as_bool(forbid_images)
     is_dry = _as_bool(dry_run)
     is_auto = _as_bool(chart_auto)
+    mode = (photo_mode or "document").strip().lower()
+    if mode not in {"document", "edit"}:
+        raise HTTPException(400, detail="photo_mode must be document|edit")
+
     if max_charts is None:
         max_charts = max_charts_from_env()
     if max_images is None:
@@ -361,6 +464,39 @@ async def api_run(
         max_images = 0
     max_charts = max(0, min(int(max_charts), 8))
     max_images = max(0, min(int(max_images), 8))
+
+    # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
+    upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    photo_files = list(photos or [])
+    cap_list = [c.strip() for c in (photo_captions or "").split("\n") if c.strip()]
+    user_figures: list[dict[str, Any]] = []
+    if photo_files:
+        blobs: list[tuple[str, bytes]] = []
+        for uf in photo_files[:2]:
+            raw = await uf.read()
+            blobs.append((uf.filename or "photo.png", raw))
+        try:
+            user_figures = save_user_photos(upload_dir, blobs, captions=cap_list)
+        except UserPhotoError as exc:
+            raise HTTPException(400, detail=str(exc)) from exc
+        # Attached photos force image budget on
+        max_images = max(max_images, len(user_figures))
+        no_images = False
+
+    # Chat-only edit: one photo + prompt → /edit → preview message (no full report)
+    if mode == "edit":
+        if not user_figures:
+            raise HTTPException(400, detail="прикрепи фото для режима «Только правка»")
+        prompt = (intent or "").strip()
+        if not prompt:
+            raise HTTPException(400, detail="нужен текст: что изменить на фото")
+        return await _quick_photo_edit(
+            user_figures[0],
+            prompt=prompt,
+            caption=(cap_list[0] if cap_list else user_figures[0].get("caption") or "Правка фото"),
+        )
 
     types = [] if is_auto else _parse_chart_types(chart_types)
     full_intent = build_intent_from_ui(
@@ -376,6 +512,16 @@ async def api_run(
         chart_style=chart_style or "",
         doc_title=(doc_title or "").strip()[:200],
     )
+    if user_figures:
+        ids = ", ".join(f["id"] for f in user_figures)
+        caps = "; ".join(f"{f['id']}: {f['caption']}" for f in user_figures)
+        full_intent = (
+            full_intent
+            + "\n\nЗагруженные фото пользователя (уже есть PNG, не вызывай генерацию для них):\n"
+            + f"- слоты {ids} — обязательно вставь %CASE3_FIG:id% в документ\n"
+            + f"- подписи: {caps}\n"
+            + "- дополнительные fig_* через Image API только если остался бюджет картинок"
+        )
 
     fmt_raw = (formats or "both").strip().lower()
     if fmt_raw == "both":
@@ -385,9 +531,6 @@ async def api_run(
     else:
         raise HTTPException(400, detail="formats must be pdf|docx|both")
 
-    # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
-    upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
-    upload_dir.mkdir(parents=True, exist_ok=True)
     src_path = upload_dir / "source.txt"
 
     if source is not None and source.filename:
@@ -413,6 +556,7 @@ async def api_run(
         "dry_run": is_dry,
         "max_images": max_images,
         "max_charts": max_charts,
+        "user_figures": [f.get("id") for f in user_figures],
         "status": "running",
         "stage": "queued",
     }
@@ -432,6 +576,7 @@ async def api_run(
                 intent=full_intent,
                 max_images=max_images,
                 max_charts=max_charts,
+                user_figures=user_figures,
             )
         )
 

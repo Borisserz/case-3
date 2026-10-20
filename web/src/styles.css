@@ -1548,13 +1548,89 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 1.05rem 0.85rem;
+  border-top: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--secondary) 18%, var(--sheet));
+}
+
+.composer-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.composer-photo-chip {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.composer-photo-chip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-photo-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.composer-attach {
+  flex-shrink: 0;
+  width: 2.45rem;
+  height: 2.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  cursor: pointer;
+  font-size: 1.05rem;
+  touch-action: manipulation;
+}
+
+.composer-attach:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--secondary);
+}
+
+.composer-attach:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .composer {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 0.55rem;
-  padding: 0.85rem 1.15rem 1rem;
-  border-top: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--paper) 70%, var(--sheet));
+  align-items: center;
+  padding: 0;
+  border-top: none;
+  background: transparent;
 }
 
 .composer input[type="text"] {

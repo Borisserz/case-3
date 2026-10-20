@@ -9,14 +9,18 @@ import traceback
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable  # Any used by user_figures metas
 
 from case3.charts import generate_all_charts, max_charts_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
 from case3.image_api import ImageApiConfig, generate_all_figures
 from case3.render import render_tex
-
+from case3.user_photos import (
+    ensure_user_slots_in_tex,
+    materialize_user_figures,
+    merge_user_figures,
+)
 log = logging.getLogger("case3.pipeline")
 
 
@@ -95,6 +99,7 @@ def run_pipeline(
     max_charts: int | None = None,
     run_id: str | None = None,
     on_stage: Callable[[str, str | None], None] | None = None,
+    user_figures: list[dict[str, Any]] | None = None,
 ) -> Path:
     formats = formats or {"pdf"}
     root = project_root.resolve()
@@ -108,7 +113,11 @@ def run_pipeline(
 
     images_budget = max_images_from_env() if max_images is None else max(0, int(max_images))
     charts_budget = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
-
+    user_figs = list(user_figures or [])
+    # Uploads always need figure budget even if UI had «без фото» half-checked
+    if user_figs:
+        images_budget = max(images_budget, len(user_figs))
+        images_budget = min(images_budget, 8)
     handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root_logger = logging.getLogger("case3")
@@ -123,6 +132,7 @@ def run_pipeline(
         "dry_run": dry_run,
         "max_images": images_budget,
         "max_charts": charts_budget,
+        "user_figures": [f.get("id") for f in user_figs],
         "started_at": stamp,
         "status": "running",
         "stage": "queued",
@@ -137,15 +147,33 @@ def run_pipeline(
     try:
         bump("llm")
         tex_path = work / f"{stem}.tex"
+        # Reserve slots for uploads so the LLM plans fewer generated photos.
+        llm_image_budget = max(0, images_budget - len(user_figs))
         _, figures, charts = generate_document(
             text_path,
             out_tex=tex_path,
             intent=intent,
             gold_dir=root / "prompt" / "gold",
             dry_run=dry_run,
-            max_images=images_budget,
+            max_images=llm_image_budget,
             max_charts=charts_budget,
         )
+        figures = merge_user_figures(figures, user_figs, max_images=images_budget)
+        raw_tex = tex_path.read_text(encoding="utf-8")
+        tex_path.write_text(ensure_user_slots_in_tex(raw_tex, user_figs), encoding="utf-8")
+        # Persist merged figures.json for Liber edit / preview
+        fj_path = work / "figures.json"
+        if fj_path.is_file():
+            try:
+                fj = json.loads(fj_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                fj = {}
+        else:
+            fj = {}
+        fj["figures"] = figures
+        fj["charts"] = charts
+        fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+
         meta["figures_planned"] = [f["id"] for f in figures]
         meta["charts_planned"] = [c["id"] for c in charts]
         _write_meta(meta, out, logs)
@@ -155,11 +183,17 @@ def run_pipeline(
 
         if figures and not dry_run and images_budget > 0:
             bump("images")
+            status.update(materialize_user_figures(figures, figs_dir))
+            need_api = [
+                f
+                for f in figures
+                if str(f.get("source") or "") != "upload"
+            ]
             cfg = ImageApiConfig.from_env()
             cfg = replace(cfg, max_images=images_budget)
-            if not cfg.base_url:
+            if need_api and not cfg.base_url:
                 log.warning("figures planned but IMAGE_API_BASE_URL empty — strip slots")
-            else:
+            elif need_api:
 
                 def _img_progress(fid: str) -> None:
                     bump("images", fid)
