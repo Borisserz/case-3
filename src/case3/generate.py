@@ -84,10 +84,9 @@ def _repo_root() -> Path:
 
 
 def max_images_from_env() -> int:
-    try:
-        return max(0, int(os.environ.get("KANDINSKY_MAX_IMAGES", "0") or "0"))
-    except ValueError:
-        return 0
+    from case3.image_api import max_images_from_env as _img_max
+
+    return _img_max()
 
 
 def load_system_prompt(*, max_images: int, max_charts: int) -> str:
@@ -127,12 +126,12 @@ def build_user_prompt(
         intent.strip() or DEFAULT_INTENT,
         "",
         "## Limits",
-        f"- max_images (Kandinsky slots): {max_images}",
+        f"- max_images (photo slots via Image API /generate): {max_images}",
         f"- CASE3_MAX_CHARTS (HTML→PNG budget): {max_charts}",
         "- Output order (mandatory): ```json FIRST (figures+charts), then ```latex full document.",
         "- Finish BOTH fences — never stop mid-table. Prefer short prose; ≤2 charts if Source is long.",
         "- If max_charts≥1 and Source has numbers → include charts with variety of types.",
-        "- Chart colors: follow Intent palette hexes; captions RU; Kandinsky prompts EN.",
+        "- Chart colors: follow Intent palette hexes; captions RU; photo prompts EN (sharp, high quality).",
         "- Page: A4 portrait; wide tables → tabularx{\\textwidth}{…} (no landscape overflow).",
         "- Never write case-3/case3 in \\title/\\author/body; topical title; \\author{} if unknown.",
         "- Keep the shared preamble (setspace/fancyhdr/caption); do not invent a different class.",

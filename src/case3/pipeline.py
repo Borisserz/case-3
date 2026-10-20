@@ -14,7 +14,7 @@ from typing import Any, Callable
 from case3.charts import generate_all_charts, max_charts_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
-from case3.kandinsky import KandinskyConfig, generate_all_figures
+from case3.image_api import ImageApiConfig, generate_all_figures
 from case3.render import render_tex
 
 log = logging.getLogger("case3.pipeline")
@@ -155,12 +155,23 @@ def run_pipeline(
 
         if figures and not dry_run and images_budget > 0:
             bump("images")
-            cfg = KandinskyConfig.from_env()
+            cfg = ImageApiConfig.from_env()
             cfg = replace(cfg, max_images=images_budget)
             if not cfg.base_url:
-                log.warning("figures planned but KANDINSKY_API_BASE_URL empty — strip slots")
+                log.warning("figures planned but IMAGE_API_BASE_URL empty — strip slots")
             else:
-                status.update(generate_all_figures(figures, figs_dir, cfg=cfg))
+
+                def _img_progress(fid: str) -> None:
+                    bump("images", fid)
+
+                status.update(
+                    generate_all_figures(
+                        figures,
+                        figs_dir,
+                        cfg=cfg,
+                        on_progress=_img_progress,
+                    )
+                )
 
         if charts and not dry_run and charts_budget > 0:
             bump("charts")

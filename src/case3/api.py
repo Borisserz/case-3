@@ -21,7 +21,9 @@ from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
 from case3.envfile import load_dotenv
+from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.generate import max_images_from_env, resolve_text_file
+from case3.image_api import image_api_configured
 from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
@@ -151,15 +153,16 @@ def build_intent_from_ui(
         if hints:
             req.append(f"- пожелания по виду/типу: {hints} (сведи к whitelist или пропусти)")
     if forbid_images or max_images <= 0:
-        req.append("- без картинок и иллюстраций Kandinsky")
+        req.append("- без фото/иллюстраций (figures: [])")
     else:
         req.append(
-            f"- до {max_images} Kandinsky figures: только конкретная сцена/объект из Source"
+            f"- до {max_images} фото/иллюстраций (figures): сцена/объект из Source "
+            "или явная просьба в Intent («сгенерируй фото…»)"
         )
         req.append(
-            "- figures[].caption — русская подпись к рисунку; "
-            "figures[].prompt — English, visual, no Cyrillic/watermark/tiny text; "
-            "не дублируй числами то, что уже в charts"
+            "- figures[].caption — русская подпись; "
+            "figures[].prompt — English, photorealistic, detailed lighting/subject, "
+            "no Cyrillic/watermark/tiny text; не дублируй числами charts"
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()
@@ -205,10 +208,7 @@ def health() -> dict[str, Any]:
         log.info("playwright check failed: %s", exc)
 
     vision = bool(os.environ.get("VISION_API_BASE_URL", "").strip())
-    kandinsky = bool(
-        os.environ.get("KANDINSKY_API_BASE_URL", "").strip()
-        or os.environ.get("IMAGE_API_BASE_URL", "").strip()
-    )
+    images_ok = image_api_configured()
     return {
         "ok": docker_ok and vision,
         "docker_image": IMAGE,
@@ -216,7 +216,9 @@ def health() -> dict[str, Any]:
         "docker_error": docker_err,
         "playwright_ok": playwright_ok,
         "vision_configured": vision,
-        "kandinsky_configured": kandinsky,
+        "image_api_configured": images_ok,
+        # alias for Liber UI that still reads kandinsky_configured
+        "kandinsky_configured": images_ok,
         "defaults": {
             "max_charts": max_charts_from_env(),
             "max_images": max_images_from_env(),
@@ -577,6 +579,14 @@ class ChartEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
+class FigureEditBody(BaseModel):
+    """mode=generate → POST /generate; mode=edit → POST /edit with current PNG."""
+
+    mode: str = Field(default="generate")
+    prompt: str = Field(default="")
+    formats: str = Field(default="both")
+
+
 @app.post("/api/runs/{run_id}/charts/{chart_id}/edit")
 async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
     """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
@@ -660,13 +670,92 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
     }
 
 
+@app.post("/api/runs/{run_id}/figures/{figure_id}/edit")
+async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> dict[str, Any]:
+    """Regenerate (generate) or img2img-edit one photo; rebuild PDF/DOCX."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    if not _FILE_OK.match(figure_id):
+        raise HTTPException(400, detail="invalid figure_id")
+    if figure_id.startswith("cht_"):
+        raise HTTPException(400, detail="use /charts/{id}/edit for charts")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
+        raise HTTPException(404, detail="run not found")
+
+    mode = (body.mode or "generate").strip().lower()
+    if mode not in {"generate", "edit"}:
+        raise HTTPException(400, detail="mode must be generate|edit")
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(400, detail="prompt required")
+
+    fmt_raw = (body.formats or "both").strip().lower()
+    if fmt_raw == "both":
+        fmt_set = {"pdf", "docx"}
+    elif fmt_raw in {"pdf", "docx"}:
+        fmt_set = {fmt_raw}
+    else:
+        raise HTTPException(400, detail="formats must be pdf|docx|both")
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_figure_in_run,
+                out_dir,
+                figure_id,
+                mode=mode,  # type: ignore[arg-type]
+                prompt=prompt,
+                formats=fmt_set,
+            )
+        )
+    except FigureEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    media = result.get("media_status") or {}
+    preview = _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
+    v = int(result.get("version") or 0)
+    for block in preview.get("blocks") or []:
+        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
+            url = str(block["url"])
+            if figure_id in url:
+                sep = "&" if "?" in url else "?"
+                block["url"] = f"{url}{sep}v={v}"
+
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
+
+    return {
+        "run_id": run_id,
+        "figure_id": figure_id,
+        "status": "ok",
+        "mode": result.get("mode"),
+        "prompt": result.get("prompt"),
+        "media_status": media,
+        "downloads": files,
+        "preview": preview,
+        "preview_figure": {
+            "id": figure_id,
+            "kind": "figure",
+            "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
+        },
+        "warnings": [],
+    }
+
+
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
     warnings: list[str] = []
     planned = meta.get("figures_planned") or []
     media = meta.get("media_status") or {}
     if planned and max_images > 0:
-        if not os.environ.get("KANDINSKY_API_BASE_URL", "").strip():
-            warnings.append("Kandinsky API URL empty — figure slots stripped")
+        if not image_api_configured():
+            warnings.append("IMAGE_API_BASE_URL empty — figure slots stripped")
         else:
             failed = [
                 fid

@@ -8,6 +8,10 @@ import {
   type ChartEditRequest,
   type PaletteInfo,
 } from "./ChartEditSheet";
+import {
+  ImageEditModal,
+  type ImageEditRequest,
+} from "./ImageEditModal";
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }
@@ -51,6 +55,7 @@ type Props = {
   downloadsPulse?: boolean;
   /** Resolve true on success so the sheet can close. */
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
+  onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
 };
 
@@ -89,6 +94,7 @@ export function ReportView({
   editErrorFigureId = null,
   downloadsPulse = false,
   onEditFigure,
+  onEditImage,
   onEditCancel,
 }: Props) {
   const blocks = preview.blocks || [];
@@ -99,12 +105,18 @@ export function ReportView({
     caption: string;
   } | null>(null);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [imageFor, setImageFor] = useState<string | null>(null);
   const [draft, setDraft] = useState<ChartEditDraft | null>(null);
   const lbTitle = useId();
 
   const closeSheet = useCallback(() => {
     setSheetFor(null);
     setDraft(null);
+    onEditCancel?.();
+  }, [onEditCancel]);
+
+  const closeImage = useCallback(() => {
+    setImageFor(null);
     onEditCancel?.();
   }, [onEditCancel]);
 
@@ -237,10 +249,14 @@ export function ReportView({
               ? `${label} ${n}: ${b.caption}`
               : `${label} ${n}`;
             const isChart = b.kind === "chart";
+            const isPhoto = !isChart;
             const isEditing = editingFigureId === b.id;
             const sheetOpen = sheetFor === b.id;
+            const imageOpen = imageFor === b.id;
             const sheetError =
-              sheetOpen && editErrorFigureId === b.id ? editError : null;
+              (sheetOpen || imageOpen) && editErrorFigureId === b.id
+                ? editError
+                : null;
             const intent =
               sheetOpen && draft && !isEditing ? draft : null;
             return (
@@ -301,12 +317,32 @@ export function ReportView({
                         e.stopPropagation();
                         if (sheetOpen) closeSheet();
                         else {
+                          setImageFor(null);
                           setDraft(null);
                           setSheetFor(b.id);
                         }
                       }}
                     >
                       {sheetOpen ? "Закрыть" : "Изменить"}
+                    </button>
+                  )}
+                  {isPhoto && onEditImage && !isEditing && (
+                    <button
+                      type="button"
+                      className={`report-fig-edit${imageOpen ? " is-open" : ""}`}
+                      disabled={Boolean(editingFigureId)}
+                      aria-expanded={imageOpen}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (imageOpen) closeImage();
+                        else {
+                          setSheetFor(null);
+                          setImageFor(b.id);
+                        }
+                      }}
+                    >
+                      {imageOpen ? "Закрыть" : "Изменить"}
                     </button>
                   )}
                   {isEditing && (
@@ -326,8 +362,14 @@ export function ReportView({
                         </div>
                         <div className="fig-press-roller" />
                       </div>
-                      <p className="fig-press-label">Пересобираю рисунок на столе…</p>
-                      <p className="fig-press-hint">тип · палитра · PDF</p>
+                      <p className="fig-press-label">
+                        {isPhoto
+                          ? "Генерирую фото на столе…"
+                          : "Пересобираю рисунок на столе…"}
+                      </p>
+                      <p className="fig-press-hint">
+                        {isPhoto ? "Image API · PDF" : "тип · палитра · PDF"}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -358,6 +400,25 @@ export function ReportView({
                       void (async () => {
                         const ok = await onEditFigure(req);
                         if (ok) closeSheet();
+                      })();
+                    }}
+                  />
+                )}
+                {isPhoto && imageOpen && onEditImage && (
+                  <ImageEditModal
+                    open
+                    figureId={b.id}
+                    caption={b.caption || caption}
+                    previewUrl={b.url}
+                    busy={isEditing}
+                    error={sheetError}
+                    onCancel={() => {
+                      if (!editingFigureId) closeImage();
+                    }}
+                    onSubmit={(req) => {
+                      void (async () => {
+                        const ok = await onEditImage(req);
+                        if (ok) closeImage();
                       })();
                     }}
                   />

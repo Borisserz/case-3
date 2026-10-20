@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
 import type { ChartEditRequest } from "./ChartEditSheet";
+import type { ImageEditRequest } from "./ImageEditModal";
 import {
   ReportPending,
   ReportView,
@@ -38,6 +39,7 @@ type Health = {
   playwright_ok: boolean;
   vision_configured: boolean;
   kandinsky_configured: boolean;
+  image_api_configured?: boolean;
   docker_error?: string | null;
   chart_types?: string[];
   chart_palettes?: PaletteInfo[];
@@ -166,7 +168,16 @@ export default function App() {
         setHealth(data);
         const d = data?.defaults;
         if (d && typeof d.max_charts === "number") setMaxCharts(d.max_charts);
-        if (d && typeof d.max_images === "number") setMaxImages(d.max_images);
+        if (d && typeof d.max_images === "number") {
+          setMaxImages(d.max_images);
+          // Office Image API ready → allow photos by default when budget > 0
+          if (
+            d.max_images > 0 &&
+            (data.image_api_configured || data.kandinsky_configured)
+          ) {
+            setForbidImages(false);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -261,6 +272,82 @@ export default function App() {
         }),
       );
       setToast("Отчёт обновлён");
+      setDownloadsPulseMsgId(msgId);
+      window.setTimeout(() => setToast(null), 2800);
+      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: req.figureId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function editImage(
+    msgId: string,
+    runId: string,
+    req: ImageEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: req.figureId });
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/figures/${encodeURIComponent(req.figureId)}/edit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: req.mode,
+            prompt: req.prompt,
+            formats: "both",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(
+          typeof detail === "string"
+            ? detail
+            : data.error || res.statusText || "image edit failed",
+        );
+      }
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const next = {
+            ...msg,
+            text: `Фото обновлено · ${req.figureId}`,
+            result: {
+              ...msg.result,
+              preview: data.preview ?? msg.result.preview,
+              downloads: data.downloads ?? msg.result.downloads,
+              warnings: data.warnings ?? msg.result.warnings,
+              media_status: data.media_status ?? msg.result.media_status,
+            },
+          };
+          try {
+            sessionStorage.setItem(
+              "liber-last-report",
+              JSON.stringify(next.result),
+            );
+          } catch {
+            /* quota */
+          }
+          return next;
+        }),
+      );
+      setToast(
+        req.mode === "edit" ? "Фото изменено" : "Фото сгенерировано заново",
+      );
       setDownloadsPulseMsgId(msgId);
       window.setTimeout(() => setToast(null), 2800);
       window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
@@ -510,7 +597,9 @@ export default function App() {
         health.vision_configured ? "Vision" : null,
         health.docker_ok ? "Docker" : null,
         health.playwright_ok ? "Playwright" : null,
-        health.kandinsky_configured ? "Kandinsky" : null,
+        health.image_api_configured || health.kandinsky_configured
+          ? "Image API"
+          : null,
       ]
         .filter(Boolean)
         .join(" · ") || "сервисы не готовы"
@@ -706,7 +795,7 @@ export default function App() {
               checked={forbidImages}
               onChange={(e) => setForbidImages(e.target.checked)}
             />
-            Без картинок Kandinsky
+            Без фото (Image API)
           </label>
           <label className="check">
             <input
@@ -743,9 +832,17 @@ export default function App() {
                   </span>
                 </div>
                 <div className="health-row">
-                  <span>Kandinsky</span>
-                  <span className={`val${health.kandinsky_configured ? "" : " bad"}`}>
-                    {health.kandinsky_configured ? "ok" : "нет URL"}
+                  <span>Image API</span>
+                  <span
+                    className={`val${
+                      health.image_api_configured || health.kandinsky_configured
+                        ? ""
+                        : " bad"
+                    }`}
+                  >
+                    {health.image_api_configured || health.kandinsky_configured
+                      ? "ok"
+                      : "нет URL"}
                   </span>
                 </div>
               </div>
@@ -828,6 +925,9 @@ export default function App() {
                     }}
                     onEditFigure={(req) =>
                       editFigure(m.id, m.result!.run_id, req)
+                    }
+                    onEditImage={(req) =>
+                      editImage(m.id, m.result!.run_id, req)
                     }
                   />
                 ) : m.role === "bot" && m.pending ? (

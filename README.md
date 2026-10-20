@@ -1,8 +1,9 @@
 # case-3
 
-**Файл + Intent** → Qwen (LaTeX + HTML-графики + Kandinsky) → PDF/DOCX (Docker TeX).
+**Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
-DOCX стилизуется через `assets/docx/reference.docx` (pandoc `--reference-doc`), не «как получится» из дефолта.
+Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
+DOCX: `assets/docx/reference.docx` (pandoc `--reference-doc`).
 
 ## Запуск на Windows (из корня `case-3\`)
 
@@ -12,7 +13,7 @@ scripts\setup.cmd
 ```
 
 Правь `.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
-(картинки: `KANDINSKY_MAX_IMAGES=0` если Kandinsky нет)  
+(фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, перезапуск `api.cmd`.
 
 **Сайт — два окна cmd:**
@@ -47,7 +48,8 @@ scripts\smoke.cmd
 |--|--|
 | `VISION_API_BASE_URL` | Qwen |
 | `CASE3_MAX_CHARTS` | потолок графиков (0 = off) |
-| `KANDINSKY_MAX_IMAGES` | потолок картинок (0 = off) |
+| `IMAGE_API_BASE_URL` | офисный Image API (`/generate`, `/edit`) |
+| `IMAGE_MAX_IMAGES` | потолок фото (0 = off) |
 | `CASE3_IMAGE` | `case-3:tex` |
 
 ## Если сломалось
