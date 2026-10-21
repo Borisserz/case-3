@@ -8,6 +8,8 @@ import {
   type ChartEditRequest,
   type PaletteInfo,
 } from "./ChartEditSheet";
+import { ChartCard } from "./ChartCard";
+import { ChartLivePane } from "./ChartLivePane";
 import {
   ImageEditModal,
   type ImageEditRequest,
@@ -20,7 +22,12 @@ const PdfFirstPage = lazy(() =>
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
+  | { type: "paragraph"; text: string; html?: string }
+  | {
+      type: "list";
+      ordered?: boolean;
+      items: { text: string; html?: string }[];
+    }
   | {
       type: "table";
       caption?: string;
@@ -34,6 +41,10 @@ export type PreviewBlock =
       caption?: string;
       url?: string;
       chartType?: string;
+      /** C10: 1-based PDF page hint from TeX breaks. */
+      pdfPage?: number;
+      insight?: string;
+      highlights?: { label: string; value: string; pct?: string }[];
     };
 
 export type ReportPreview = {
@@ -58,11 +69,29 @@ type Props = {
   editErrorFigureId?: string | null;
   /** Pulse download links after a successful chart edit. */
   downloadsPulse?: boolean;
+  /** Embed PDF slider (false when PDF lives in Artifact rail). */
+  showPdf?: boolean;
+  /** Footer download links (false when Export lives in rail header). */
+  showDownloads?: boolean;
+  /** Jump figure → PDF tab (rail). figureIndex is 1-based; pdfPage from TeX when known. */
+  onJumpToPdf?: (info: {
+    id: string;
+    figureIndex: number;
+    pdfPage?: number;
+  }) => void;
+  /** C3: open PDF tab when preview body is empty. */
+  onOpenPdf?: () => void;
   /** Resolve true on success so the sheet can close. */
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
 };
+
+function bustFromUrl(url?: string): string {
+  if (!url) return "";
+  const m = /[?&]v=([^&]+)/.exec(url);
+  return m?.[1] || "";
+}
 
 function looksNumeric(s: string): boolean {
   const t = (s || "").trim().replace(/\s/g, "").replace(",", ".");
@@ -98,6 +127,10 @@ export function ReportView({
   editError = null,
   editErrorFigureId = null,
   downloadsPulse = false,
+  showPdf = true,
+  showDownloads = true,
+  onJumpToPdf,
+  onOpenPdf,
   onEditFigure,
   onEditImage,
   onEditCancel,
@@ -105,6 +138,7 @@ export function ReportView({
   const blocks = preview.blocks || [];
   let figN = 0;
   let tabN = 0;
+  let headN = 0;
   const [lightbox, setLightbox] = useState<{
     url: string;
     caption: string;
@@ -166,7 +200,26 @@ export function ReportView({
 
       <div className="report-body">
         {blocks.length === 0 && (
-          <p className="report-p muted">Тело отчёта пустое — откройте PDF.</p>
+          <div
+            className={`report-empty-warn${downloads?.pdf ? " has-pdf" : ""}`}
+            role="status"
+          >
+            <p className="report-p muted" style={{ margin: 0 }}>
+              Превью пустое
+              {downloads?.pdf
+                ? " — PDF есть. Откройте вкладку PDF (истина печати)."
+                : " — тело отчёта не разобралось."}
+            </p>
+            {downloads?.pdf && onOpenPdf ? (
+              <button
+                type="button"
+                className="report-empty-warn-btn"
+                onClick={onOpenPdf}
+              >
+                Открыть PDF
+              </button>
+            ) : null}
+          </div>
         )}
         {blocks.map((b, i) => {
           const delayStyle = {
@@ -174,10 +227,12 @@ export function ReportView({
           } as const;
 
           if (b.type === "heading") {
+            headN += 1;
             const Tag = b.level >= 2 ? "h3" : "h2";
             return (
               <Tag
                 key={i}
+                id={`rail-h-${headN}`}
                 className={`report-h report-h${b.level} report-block`}
                 style={delayStyle}
               >
@@ -186,10 +241,41 @@ export function ReportView({
             );
           }
           if (b.type === "paragraph") {
+            if (b.html) {
+              return (
+                <p
+                  key={i}
+                  className="report-p report-block"
+                  style={delayStyle}
+                  dangerouslySetInnerHTML={{ __html: b.html }}
+                />
+              );
+            }
             return (
               <p key={i} className="report-p report-block" style={delayStyle}>
                 {b.text}
               </p>
+            );
+          }
+          if (b.type === "list") {
+            const Tag = b.ordered ? "ol" : "ul";
+            return (
+              <Tag
+                key={i}
+                className={`report-list report-block${b.ordered ? " is-ol" : ""}`}
+                style={delayStyle}
+              >
+                {(b.items || []).map((it, j) =>
+                  it.html ? (
+                    <li
+                      key={j}
+                      dangerouslySetInnerHTML={{ __html: it.html }}
+                    />
+                  ) : (
+                    <li key={j}>{it.text}</li>
+                  ),
+                )}
+              </Tag>
             );
           }
           if (b.type === "table") {
@@ -264,21 +350,39 @@ export function ReportView({
                 : null;
             const intent =
               sheetOpen && draft && !isEditing ? draft : null;
-            return (
-              <figure
-                key={i}
-                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen ? " is-tuning" : ""}`}
-                style={delayStyle}
-              >
+            const jumpPdf = () => {
+              onJumpToPdf?.({
+                id: b.id,
+                figureIndex: n,
+                pdfPage: b.pdfPage,
+              });
+            };
+            const figInner = (
+              <>
                 <div className="report-fig-frame">
-                  {b.url ? (
+                  {isChart && runId ? (
+                    <ChartLivePane
+                      runId={runId}
+                      chartId={b.id}
+                      caption={b.caption || caption}
+                      fallbackUrl={b.url}
+                      version={bustFromUrl(b.url)}
+                      disabled={isEditing}
+                      onJumpToPdf={onJumpToPdf ? jumpPdf : undefined}
+                    />
+                  ) : b.url ? (
                     <button
                       type="button"
                       className="report-fig-link"
-                      onClick={() =>
-                        setLightbox({ url: b.url!, caption })
+                      onClick={() => {
+                        if (onJumpToPdf) jumpPdf();
+                        else setLightbox({ url: b.url!, caption });
+                      }}
+                      aria-label={
+                        onJumpToPdf
+                          ? `Показать ${caption} в PDF`
+                          : `Открыть ${caption}`
                       }
-                      aria-label={`Открыть ${caption}`}
                       disabled={isEditing}
                     >
                       <img src={b.url} alt={b.caption || b.id} loading="lazy" />
@@ -311,11 +415,40 @@ export function ReportView({
                       </span>
                     </div>
                   )}
+                  {onJumpToPdf && !isEditing && (
+                    <button
+                      type="button"
+                      className="report-fig-pdf"
+                      title="Показать в вкладке PDF"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        jumpPdf();
+                      }}
+                    >
+                      в PDF
+                      {b.pdfPage ? ` · с.${b.pdfPage}` : ""}
+                    </button>
+                  )}
+                  {isPhoto && b.url && !isEditing && (
+                    <button
+                      type="button"
+                      className="report-fig-zoom"
+                      title="Увеличить"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setLightbox({ url: b.url!, caption });
+                      }}
+                    >
+                      ↗
+                    </button>
+                  )}
                   {isChart && onEditFigure && !isEditing && (
                     <button
                       type="button"
                       className={`report-fig-edit${sheetOpen ? " is-open" : ""}`}
-                      disabled={Boolean(editingFigureId)}
+                      disabled={false}
                       aria-expanded={sheetOpen}
                       onClick={(e) => {
                         e.preventDefault();
@@ -335,7 +468,7 @@ export function ReportView({
                     <button
                       type="button"
                       className={`report-fig-edit${imageOpen ? " is-open" : ""}`}
-                      disabled={Boolean(editingFigureId)}
+                      disabled={false}
                       aria-expanded={imageOpen}
                       onClick={(e) => {
                         e.preventDefault();
@@ -395,8 +528,34 @@ export function ReportView({
                 </div>
 
                 <figcaption
-                  className="report-caption report-fig-cap"
-                  title={b.chartType ? `Тип: ${b.chartType}` : undefined}
+                  className={`report-caption report-fig-cap${onJumpToPdf ? " is-jump" : ""}`}
+                  title={
+                    b.chartType
+                      ? `Тип: ${b.chartType}${onJumpToPdf ? " · клик → PDF" : ""}`
+                      : onJumpToPdf
+                        ? "Клик → страница PDF"
+                        : undefined
+                  }
+                  onClick={
+                    onJumpToPdf && !isEditing
+                      ? (e) => {
+                          e.preventDefault();
+                          jumpPdf();
+                        }
+                      : undefined
+                  }
+                  role={onJumpToPdf ? "link" : undefined}
+                  tabIndex={onJumpToPdf ? 0 : undefined}
+                  onKeyDown={
+                    onJumpToPdf
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            jumpPdf();
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {caption}
                 </figcaption>
@@ -405,6 +564,7 @@ export function ReportView({
                   <ChartEditSheet
                     open
                     figureId={b.id}
+                    runId={runId}
                     caption={b.caption || caption}
                     palettes={palettes}
                     catalogTypes={catalogTypes}
@@ -443,6 +603,25 @@ export function ReportView({
                     }}
                   />
                 )}
+              </>
+            );
+            return (
+              <figure
+                key={i}
+                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen ? " is-tuning" : ""}`}
+                style={delayStyle}
+              >
+                {isChart ? (
+                  <ChartCard
+                    insight={b.insight}
+                    highlights={b.highlights}
+                    chartType={b.chartType}
+                  >
+                    {figInner}
+                  </ChartCard>
+                ) : (
+                  figInner
+                )}
               </figure>
             );
           }
@@ -450,13 +629,15 @@ export function ReportView({
         })}
       </div>
 
-      {downloads?.pdf ? (
+      {showPdf && downloads?.pdf ? (
         <Suspense fallback={<p className="report-pdf-cap">Загружаю стр. 1 PDF…</p>}>
           <PdfFirstPage key={downloads.pdf} url={downloads.pdf} />
         </Suspense>
       ) : null}
 
-      {downloads && (downloads.pdf || downloads.docx) && (
+      {showDownloads &&
+        downloads &&
+        (downloads.pdf || downloads.docx) && (
         <footer
           className={`report-actions downloads${downloadsPulse ? " is-pulse" : ""}`}
         >

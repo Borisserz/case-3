@@ -7,7 +7,11 @@ import re
 from typing import Any
 
 from case3.chart_html import CHART_TYPES
-from case3.chart_style import apply_palette_to_html, normalize_palette_id
+from case3.chart_style import (
+    apply_kpi_palette_vars,
+    apply_palette_to_html,
+    normalize_palette_id,
+)
 
 log = logging.getLogger("case3.charts")
 
@@ -207,20 +211,169 @@ def harden_chart_html(html: str, chart_type: str) -> str:
     return out
 
 
+def _fmt_slice_num(n: float) -> str:
+    if abs(n - round(n)) < 1e-9:
+        return str(int(round(n)))
+    return f"{n:.1f}".rstrip("0").rstrip(".")
+
+
+def _parse_donut_slices(
+    html: str,
+) -> list[tuple[str, float, str]] | None:
+    """Pull labels / values / colors from a doughnut Chart.js fragment."""
+    if not re.search(r"""type\s*:\s*['"]doughnut['"]""", html or "", flags=re.I):
+        return None
+    labels_m = re.search(r"labels\s*:\s*\[([^\]]*)\]", html or "")
+    data_m = re.search(r"data\s*:\s*\[([^\]]*)\]", html or "")
+    colors_m = re.search(r"backgroundColor\s*:\s*\[([^\]]*)\]", html or "", flags=re.I)
+    if not labels_m or not data_m:
+        return None
+    labels = re.findall(r"""['"]([^'"]+)['"]""", labels_m.group(1))
+    values = [float(x) for x in re.findall(r"-?[\d.]+", data_m.group(1))]
+    colors: list[str] = []
+    if colors_m:
+        colors = re.findall(
+            r"""['"](#[0-9a-fA-F]{3,8}|rgba?\([^)'"]+\))['"]""",
+            colors_m.group(1),
+            flags=re.I,
+        )
+    n = min(len(labels), len(values))
+    if n < 2:
+        return None
+    while len(colors) < n:
+        colors.append("#6A7160")
+    return list(zip(labels[:n], values[:n], colors[:n]))
+
+
+def _unwrap_donut_layout(html: str) -> str:
+    """Strip a prior enhance wrap so palette/LLM edits can rebuild layout."""
+    src = html or ""
+    if not re.search(r"donut-layout", src, flags=re.I):
+        return src
+    src = re.sub(
+        r'<div\s+class=["\']donut-center["\'][\s\S]*?</div>',
+        "",
+        src,
+        flags=re.I,
+    )
+    src = re.sub(
+        r'<ul\s+class=["\']valued-legend["\'][\s\S]*?</ul>',
+        "",
+        src,
+        flags=re.I,
+    )
+    src = re.sub(r"</?div[^>]*\bdonut-viz\b[^>]*>", "", src, flags=re.I)
+    src = re.sub(r"</?div[^>]*\bdonut-layout\b[^>]*>", "", src, flags=re.I)
+    # Only unwrap outer chart-card when it was the donut shell (avoid nested cards).
+    src = re.sub(
+        r'<div\s+class=["\'][^"\']*\bchart-card\b[^"\']*["\']\s*>',
+        "",
+        src,
+        count=1,
+        flags=re.I,
+    )
+    src = re.sub(r"</div>\s*$", "", src.strip(), count=1)
+    return src.strip()
+
+
+def enhance_donut_html(html: str) -> str:
+    """Wrap doughnut fragment with center % + valued HTML legend when parseable.
+
+    No Chart.js plugins — CSS overlay + list. Rebuilds after unwrap so palette /
+    LLM edits keep Mary layout. If JS is too exotic to parse, returns html
+    unchanged (prompt recipes still emit the structure).
+    """
+    src = _unwrap_donut_layout(html or "")
+    if not src.strip():
+        return src
+    slices = _parse_donut_slices(src)
+    if not slices:
+        return src
+
+    total = sum(v for _, v, _ in slices) or 1.0
+    focus_i = max(range(len(slices)), key=lambda i: slices[i][1])
+    focus_label, focus_val, _ = slices[focus_i]
+    focus_pct = int(round(100.0 * focus_val / total))
+
+    rows: list[str] = []
+    for label, val, color in slices:
+        pct = int(round(100.0 * val / total))
+        rows.append(
+            '<li class="valued-legend__row">'
+            f'<span class="valued-legend__swatch" style="background:{color}"></span>'
+            f'<span class="valued-legend__label">{label}</span>'
+            f'<span class="valued-legend__pct">{pct}%</span>'
+            f'<span class="valued-legend__abs">{_fmt_slice_num(val)}</span>'
+            "</li>"
+        )
+    legend = '<ul class="valued-legend">' + "".join(rows) + "</ul>"
+    center = (
+        '<div class="donut-center">'
+        f'<div class="pct">{focus_pct}%</div>'
+        f'<div class="lbl">{focus_label}</div>'
+        "</div>"
+    )
+
+    # Split first canvas (or leading markup) from trailing script(s).
+    script_m = re.search(r"(<script\b)", src, flags=re.I)
+    if script_m:
+        head = src[: script_m.start()]
+        tail = src[script_m.start() :]
+    else:
+        head, tail = src, ""
+
+    # Prefer HTML legend over Chart.js legend to avoid double keys.
+    if re.search(r"legend\s*:\s*\{[^}]*display\s*:", tail):
+        # Already has display — force false without duplicating the key.
+        tail = re.sub(
+            r"(legend\s*:\s*\{[^}]*?display\s*:\s*)[^,}\s]+",
+            r"\1false",
+            tail,
+            count=1,
+        )
+    elif re.search(r"legend\s*:\s*\{", tail):
+        tail = re.sub(
+            r"legend\s*:\s*\{",
+            "legend:{display:false,",
+            tail,
+            count=1,
+        )
+    else:
+        tail = re.sub(
+            r"plugins\s*:\s*\{",
+            "plugins:{legend:{display:false},",
+            tail,
+            count=1,
+        )
+
+    wrapped = (
+        '<div class="chart-card donut-layout">'
+        f'<div class="donut-viz">{center}{head.strip()}</div>'
+        f"{legend}{tail}"
+        "</div>"
+    )
+    return wrapped
+
+
 def polish_charts(
     charts: list[dict[str, Any]],
     *,
     palette_id: str = "auto",
 ) -> list[dict[str, Any]]:
-    """Apply intent palette (if set) then geometry harden per chart type."""
+    """Apply intent palette (if set), donut layout enhance, then geometry harden."""
     pid = normalize_palette_id(palette_id)
     out: list[dict[str, Any]] = []
     for chart in charts:
         c = dict(chart)
         ctype = str(c.get("type") or "").strip()
         html = str(c.get("html") or "")
-        if html and ctype != "kpi" and pid != "auto":
+        if html and pid != "auto" and ctype != "kpi":
             html = apply_palette_to_html(html, pid)
+        if html and ctype == "donut":
+            html = enhance_donut_html(html)
+        # CSS vars after layout wrap so #mount{--kpi-*} sits outside .donut-layout.
+        if html and pid != "auto":
+            html = apply_kpi_palette_vars(html, pid)
         if html:
             html = harden_chart_html(html, ctype)
         c["html"] = html

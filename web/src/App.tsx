@@ -7,14 +7,38 @@ import {
   type DragEvent,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  ArtifactRail,
+  type ActiveArtifact,
+  type ArtifactTab,
+} from "./ArtifactRail";
+import { ArtifactCard } from "./ArtifactCard";
+import { ContextPlaque } from "./ContextPlaque";
 import type { ChartEditRequest } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
+import { EmptyState } from "./EmptyState";
+import {
+  IconCopy,
+  IconLiberMark,
+  IconPaperclip,
+  IconSend,
+} from "./icons";
 import {
   ReportPending,
-  ReportView,
   type ReportPreview,
 } from "./ReportView";
+import {
+  loadHistory,
+  loadHistoryPayload,
+  pushHistory,
+  saveRunPayload,
+} from "./reportHistory";
 import { SettingsModal } from "./SettingsModal";
+import { Sidebar, type HistoryItem } from "./Sidebar";
+import { ThinkingBar } from "./ThinkingBar";
+import { loadRailWidth } from "./railWidth";
+
+const LONG_TEXT_CHARS = 400;
 
 const DEFAULT_INTENT =
   "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.";
@@ -71,8 +95,24 @@ type RunResult = {
   detail?: string;
 };
 
+type SourceAttachment = {
+  title: string;
+  text: string;
+  fileName?: string;
+};
+
 type Msg =
-  | { id: string; role: "user"; text: string; tags?: string }
+  | {
+      id: string;
+      role: "user";
+      text: string;
+      /** @deprecated prefer chips — kept for session history */
+      tags?: string;
+      /** C6: settings as chips under collapsed Intent. */
+      chips?: string[];
+      /** Pasted / attached source shown as doc plaque on the bubble. */
+      attachment?: SourceAttachment;
+    }
   | {
       id: string;
       role: "bot";
@@ -83,22 +123,6 @@ type Msg =
       pendingDetail?: string | null;
       error?: string;
     };
-
-/** Classic gear — readable at 16–18px */
-function SettingsIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden fill="none">
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.75" />
-      <path
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-      />
-    </svg>
-  );
-}
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "В очереди…",
@@ -120,6 +144,38 @@ function stageLabel(stage?: string, detail?: string | null): string {
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function readTextFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Не удалось прочитать файл"));
+    reader.readAsText(file);
+  });
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function reportThumb(result: RunResult): string | null {
+  const blocks = result.preview?.blocks;
+  if (blocks) {
+    for (const b of blocks) {
+      if (b.type === "figure" && b.url) return b.url;
+    }
+  }
+  return result.previews?.[0]?.url ?? null;
+}
+
+function reportTitle(result: RunResult): string {
+  const t = result.preview?.title?.trim();
+  if (t) return t;
+  return `Отчёт · ${result.run_id}`;
 }
 
 function ComposerPhotoChips({
@@ -179,7 +235,8 @@ export default function App() {
   const [chat, setChat] = useState("");
   /** Liber-attached photos for document slots or chat-only /edit */
   const [attachPhotos, setAttachPhotos] = useState<File[]>([]);
-  const [photoMode, setPhotoMode] = useState<"document" | "edit">("document");
+  /** Photo-edit mode UI parked; keep document pipeline. */
+  const [photoMode] = useState<"document" | "edit">("document");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [editBusy, setEditBusy] = useState<{
@@ -198,6 +255,21 @@ export default function App() {
   );
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
+  const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(
+    null,
+  );
+  /** Text of attached .txt/.md for Source tab / plaque. */
+  const [sourceDraft, setSourceDraft] = useState<{
+    title: string;
+    text: string;
+    fileName?: string;
+  } | null>(null);
+  const [plaqueDismissed, setPlaqueDismissed] = useState(false);
+  const [narrowRail, setNarrowRail] = useState(false);
+  const [railWidthPct, setRailWidthPct] = useState(() => loadRailWidth());
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -217,11 +289,11 @@ export default function App() {
     if (health?.chart_palettes?.length) return health.chart_palettes;
     return [
       { id: "auto", label: "Auto", swatches: ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"] },
-      { id: "atelier", label: "Atelier", swatches: ["#2C3A14", "#3F5210", "#6B7F2A", "#D5DEC0"] },
-      { id: "editorial", label: "Editorial", swatches: ["#0F3D3E", "#E85D04", "#2A9D8F", "#E9C46A"] },
-      { id: "ocean", label: "Ocean", swatches: ["#023E8A", "#0077B6", "#00B4D8", "#48CAE4"] },
-      { id: "sunset", label: "Sunset", swatches: ["#6D2E46", "#D62828", "#F77F00", "#FCBF49"] },
-      { id: "mono", label: "Mono", swatches: ["#111827", "#374151", "#6B7280", "#9CA3AF"] },
+      { id: "atelier", label: "Atelier", swatches: ["#3F5210", "#5A6E28", "#8A9A5C", "#D5E0BE"] },
+      { id: "editorial", label: "Editorial", swatches: ["#1A4A4B", "#E07A3D", "#3AA99A", "#E9C46A"] },
+      { id: "ocean", label: "Ocean", swatches: ["#0A4A8A", "#1A7FB8", "#3DB8D4", "#90D8EC"] },
+      { id: "sunset", label: "Sunset", swatches: ["#7A3A52", "#D64545", "#F08A30", "#F5C96A"] },
+      { id: "mono", label: "Mono", swatches: ["#1F2937", "#4B5563", "#9CA3AF", "#E5E7EB"] },
     ];
   }, [health]);
 
@@ -303,6 +375,100 @@ export default function App() {
       setHasStoredReport(false);
     }
   }, [msgs]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 899px)");
+    const sync = () => setNarrowRail(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // Visual QA: http://127.0.0.1:5173/?preview=artifact
+  useEffect(() => {
+    if (!/preview=artifact/.test(window.location.search)) return;
+    const id = "preview-artifact";
+    const result: RunResult = {
+      run_id: "source_20261021T082640Z",
+      status: "ok",
+      downloads: {
+        pdf: "/api/runs/source_20261021T082640Z/files/source.pdf",
+        docx: "/api/runs/source_20261021T082640Z/files/source.docx",
+      },
+      preview: {
+        title: "Northstar Labs — демо",
+        blocks: [
+          { type: "heading", level: 1, text: "Итоги квартала" },
+          {
+            type: "paragraph",
+            text: "Рост ускоряется, качество растёт вместе с ним. Это демо Artifact rail.",
+          },
+          { type: "heading", level: 2, text: "Ключевые метрики" },
+          {
+            type: "table",
+            caption: "KPI",
+            headers: ["Метрика", "Q2", "Q3"],
+            rows: [
+              ["Выручка", "12.4", "14.1"],
+              ["NPS", "42", "51"],
+            ],
+          },
+          { type: "heading", level: 2, text: "График" },
+          {
+            type: "figure",
+            id: "cht_01",
+            kind: "chart",
+            caption: "Распределение бюджета по категориям, %",
+            // Real run artifacts (live Chart.js + PDF jump)
+            url: "/api/runs/source_20261021T082640Z/figures/cht_01.png",
+            chartType: "donut",
+            pdfPage: 1,
+          },
+          { type: "heading", level: 2, text: "Выводы" },
+          {
+            type: "paragraph",
+            text: "Качество растёт вместе с объёмом — смотрите TOC и кнопку PDF на рисунке.",
+          },
+        ],
+      },
+      charts_ok: 1,
+      figures_ok: 0,
+      charts_planned: ["cht_01"],
+      figures_planned: [],
+      warnings: [],
+    };
+    setMsgs([
+      {
+        id: "preview-user",
+        role: "user",
+        text:
+          "Собери отчёт по демо: таблица KPI, один line-график, спокойная палитра atelier, без лишней воды и без выдуманных цифр — только Source.",
+        chips: ["демо", "палитра: atelier", "графики: ≤2"],
+        attachment: {
+          title: "northstar_demo.md",
+          text: "# Source\n\nДемонстрационный файл для вкладки Source.\n",
+          fileName: "northstar_demo.md",
+        },
+      },
+      {
+        id,
+        role: "bot",
+        text: "Отчёт готов",
+        result,
+      },
+    ]);
+    setSourceDraft({
+      title: "northstar_demo.md",
+      text: "# Source\n\nДемонстрационный файл для вкладки Source.\n",
+      fileName: "northstar_demo.md",
+    });
+    setActiveArtifact({
+      kind: "report",
+      msgId: id,
+      tab: "preview",
+      title: reportTitle(result),
+    });
+  }, []);
 
   // Visual QA: http://127.0.0.1:5173/?preview=flow
   useEffect(() => {
@@ -388,18 +554,14 @@ export default function App() {
               ...msg.result,
               preview: data.preview ?? msg.result.preview,
               downloads: data.downloads ?? msg.result.downloads,
-              warnings: data.warnings ?? msg.result.warnings,
+              warnings:
+                Array.isArray(data.warnings) && data.warnings.length
+                  ? data.warnings
+                  : msg.result.warnings,
               media_status: data.media_status ?? msg.result.media_status,
             },
           };
-          try {
-            sessionStorage.setItem(
-              "liber-last-report",
-              JSON.stringify(next.result),
-            );
-          } catch {
-            /* quota */
-          }
+          if (next.result) rememberRun(next.result);
           return next;
         }),
       );
@@ -463,18 +625,14 @@ export default function App() {
               ...msg.result,
               preview: data.preview ?? msg.result.preview,
               downloads: data.downloads ?? msg.result.downloads,
-              warnings: data.warnings ?? msg.result.warnings,
+              warnings:
+                Array.isArray(data.warnings) && data.warnings.length
+                  ? data.warnings
+                  : msg.result.warnings,
               media_status: data.media_status ?? msg.result.media_status,
             },
           };
-          try {
-            sessionStorage.setItem(
-              "liber-last-report",
-              JSON.stringify(next.result),
-            );
-          } catch {
-            /* quota */
-          }
+          if (next.result) rememberRun(next.result);
           return next;
         }),
       );
@@ -498,23 +656,123 @@ export default function App() {
     }
   }
 
+  function openReportArtifact(msgId: string, result: RunResult, tab?: ArtifactTab) {
+    const preferPdf = Boolean(result.downloads?.pdf);
+    const preferPreview = Boolean(result.preview?.blocks?.length);
+    const nextTab: ArtifactTab =
+      tab ??
+      (preferPdf ? "pdf" : preferPreview ? "preview" : "source");
+    setActiveArtifact({
+      kind: "report",
+      msgId,
+      tab: nextTab,
+      title: reportTitle(result),
+    });
+  }
+
+  function openSourceArtifact(draft: {
+    title: string;
+    text: string;
+    fileName?: string;
+  }) {
+    setActiveArtifact({
+      kind: "source",
+      tab: "source",
+      title: draft.title,
+      text: draft.text,
+      fileName: draft.fileName,
+    });
+  }
+
+  function openIntentArtifact(text: string) {
+    setActiveArtifact({
+      kind: "intent",
+      tab: "source",
+      title: "Текст запроса",
+      text,
+    });
+  }
+
+  function closeArtifact() {
+    setActiveArtifact(null);
+  }
+
+  function setArtifactTab(tab: ArtifactTab) {
+    setActiveArtifact((prev) => {
+      if (!prev) return prev;
+      if (prev.kind === "report") return { ...prev, tab };
+      // source / intent only expose the Source tab
+      return { ...prev, tab: "source" };
+    });
+  }
+
   function restoreLastReport() {
     try {
       const raw = sessionStorage.getItem("liber-last-report");
       if (!raw) return;
       const result = JSON.parse(raw) as RunResult;
       if (!result?.preview?.blocks?.length) return;
+      const id = uid();
       setMsgs([
         {
-          id: uid(),
+          id,
           role: "bot",
-          text: `Готово · run ${result.run_id}`,
+          text: "Отчёт готов",
           result,
         },
       ]);
+      openReportArtifact(id, result);
     } catch {
       /* ignore */
     }
+  }
+
+  function startNewReport() {
+    setMsgs([]);
+    setChat("");
+    setFile(null);
+    setSourceDraft(null);
+    setAttachPhotos([]);
+    setActiveArtifact(null);
+    setPlaqueDismissed(false);
+    setEditError(null);
+    setHistoryOpen(false);
+    chatRef.current?.focus();
+  }
+
+  function openHistoryItem(item: HistoryItem) {
+    if (busy) return;
+    const stored = loadHistoryPayload(item.runId);
+    if (!stored?.preview?.blocks?.length) {
+      setToast("Отчёт недоступен в этой сессии");
+      window.setTimeout(() => setToast(null), 2800);
+      return;
+    }
+    const result = stored as RunResult;
+    const id = uid();
+    setMsgs([
+      {
+        id,
+        role: "bot",
+        text: "Отчёт готов",
+        result,
+      },
+    ]);
+    openReportArtifact(id, result);
+    setHistoryOpen(false);
+  }
+
+  function rememberRun(result: RunResult) {
+    saveRunPayload(result);
+    const title = reportTitle(result);
+    setHistory(
+      pushHistory({
+        id: result.run_id,
+        title,
+        runId: result.run_id,
+        savedAt: Date.now(),
+      }),
+    );
   }
 
   const canSend = useMemo(() => {
@@ -522,14 +780,61 @@ export default function App() {
     if (photoMode === "edit") {
       return attachPhotos.length > 0 && chat.trim().length > 0;
     }
-    return Boolean(file) || chat.trim().length > 0;
-  }, [file, busy, photoMode, attachPhotos, chat]);
+    return Boolean(file) || Boolean(sourceDraft?.text) || chat.trim().length > 0;
+  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft]);
+
+  const capturePastedSource = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (trimmed.length <= LONG_TEXT_CHARS) return false;
+    const draft = {
+      title: "Текст",
+      text: trimmed,
+    };
+    setFile(null);
+    setSourceDraft(draft);
+    setPlaqueDismissed(false);
+    setActiveArtifact({
+      kind: "source",
+      tab: "source",
+      title: draft.title,
+      text: draft.text,
+    });
+    return true;
+  }, []);
 
   const ingestFiles = useCallback((list: FileList | File[]) => {
     const arr = Array.from(list);
     for (const f of arr) {
-      if (/\.(txt|md)$/i.test(f.name) || f.type === "text/plain" || f.type === "text/markdown") {
+      if (
+        /\.(txt|md)$/i.test(f.name) ||
+        f.type === "text/plain" ||
+        f.type === "text/markdown"
+      ) {
         setFile(f);
+        setPlaqueDismissed(false);
+        void (async () => {
+          try {
+            const text = await readTextFile(f);
+            const draft = {
+              title: f.name,
+              text,
+              fileName: f.name,
+            };
+            setSourceDraft(draft);
+            setActiveArtifact({
+              kind: "source",
+              tab: "source",
+              title: draft.title,
+              text: draft.text,
+              fileName: draft.fileName,
+            });
+          } catch (err) {
+            setToast(
+              err instanceof Error ? err.message : "Не удалось прочитать файл",
+            );
+            window.setTimeout(() => setToast(null), 2800);
+          }
+        })();
         continue;
       }
       if (/^image\//.test(f.type) || /\.(png|jpe?g)$/i.test(f.name)) {
@@ -585,63 +890,82 @@ export default function App() {
     setTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   }
 
-  function chartsLabel(): string {
-    if (forbidCharts) return "графики: выкл";
-    const bits = [`≤${maxCharts}`, `палитра:${chartPalette}`];
-    if (chartAuto) bits.push("на усмотрение модели");
-    else if (types.length) bits.push(types.join(", "));
-    if (chartHints.trim()) bits.push(`тип: ${chartHints.trim()}`);
-    if (chartStyle.trim()) bits.push(`стиль: ${chartStyle.trim()}`);
-    return `графики: ${bits.join(" · ")}`;
-  }
-
   async function send() {
     if (!canSend) return;
     const chatTrim = chat.trim();
+    const draftSnap = sourceDraft;
+    const hasSource = Boolean(file) || Boolean(draftSnap?.text);
     const intentText =
       photoMode === "edit"
         ? chatTrim
-        : file
+        : hasSource
           ? chatTrim || DEFAULT_INTENT
           : chatTrim;
     if (photoMode === "edit" && !intentText) return;
-    if (photoMode === "document" && !file && !chatTrim) return;
+    if (photoMode === "document" && !hasSource && !chatTrim) return;
 
+    const attachment: SourceAttachment | undefined = draftSnap?.text
+      ? {
+          title: draftSnap.title,
+          text: draftSnap.text,
+          fileName: draftSnap.fileName,
+        }
+      : undefined;
     const userBody =
       photoMode === "edit"
         ? intentText
-        : file
+        : chatTrim
           ? chatTrim
-            ? chatTrim
-            : `Файл: ${file.name}`
-          : chatTrim;
-    const userTags = [
+          : attachment
+            ? "Собрать отчёт"
+            : file
+              ? `Файл: ${file.name}`
+              : chatTrim;
+    const userChips = [
       photoMode === "edit" ? "только правка фото" : null,
       attachPhotos.length
-        ? `фото: ${attachPhotos.map((f) => f.name).join(", ")}`
+        ? `фото ×${attachPhotos.length}`
         : null,
       photoMode === "document" && docTitle.trim()
-        ? `название: ${docTitle.trim()}`
+        ? `«${docTitle.trim().slice(0, 24)}${docTitle.trim().length > 24 ? "…" : ""}»`
         : null,
-      photoMode === "document" ? chartsLabel() : null,
+      photoMode === "document" && forbidCharts
+        ? "без графиков"
+        : photoMode === "document"
+          ? chartPalette === "auto"
+            ? "палитра: Auto"
+            : `палитра: ${chartPalette}`
+          : null,
+      photoMode === "document" && !forbidCharts
+        ? `≤${maxCharts} гр.`
+        : null,
+      photoMode === "document" && !forbidCharts && !chartAuto && types.length
+        ? types.slice(0, 3).join("+")
+        : null,
+      photoMode === "document" && !forbidCharts && chartHints.trim()
+        ? `тип: ${chartHints.trim().slice(0, 28)}`
+        : null,
+      photoMode === "document" && !forbidCharts && chartStyle.trim()
+        ? `стиль: ${chartStyle.trim().slice(0, 28)}`
+        : null,
       photoMode === "document"
         ? forbidImages && !attachPhotos.length
-          ? "картинки: выкл"
-          : `картинки: ≤${Math.max(maxImages, attachPhotos.length)}`
+          ? "без фото"
+          : `≤${Math.max(maxImages, attachPhotos.length)} фото`
         : null,
-      photoMode === "document"
-        ? file
-          ? `файл: ${file.name}`
-          : null
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+      dryRun ? "dry-run" : null,
+    ].filter((x): x is string => Boolean(x));
 
     const pendingId = uid();
     setMsgs((m) => [
       ...m,
-      { id: uid(), role: "user", text: userBody, tags: userTags || undefined },
+      {
+        id: uid(),
+        role: "user",
+        text: userBody,
+        chips: userChips.length ? userChips : undefined,
+        attachment,
+      },
       {
         id: pendingId,
         role: "bot",
@@ -657,6 +981,13 @@ export default function App() {
     if (chatRef.current) chatRef.current.style.height = "44px";
     const photosSnapshot = [...attachPhotos];
     setAttachPhotos([]);
+    // Paste-source consumed; keep attached File for re-send until user clears.
+    if (!file && draftSnap) {
+      setSourceDraft(null);
+      setActiveArtifact((a) =>
+        a?.kind === "source" || a?.kind === "intent" ? null : a,
+      );
+    }
 
     const fd = new FormData();
     fd.append("photo_mode", photoMode);
@@ -666,6 +997,9 @@ export default function App() {
     } else {
       if (file) {
         fd.append("source", file);
+        fd.append("intent", intentText);
+      } else if (draftSnap?.text) {
+        fd.append("source_text", draftSnap.text);
         fd.append("intent", intentText);
       } else {
         // Chat-only: same text is Source + Intent
@@ -817,7 +1151,7 @@ export default function App() {
 
       try {
         if (result.preview?.blocks?.length) {
-          sessionStorage.setItem("liber-last-report", JSON.stringify(result));
+          rememberRun(result);
           setHasStoredReport(true);
         }
       } catch {
@@ -829,12 +1163,15 @@ export default function App() {
             ? {
                 id: pendingId,
                 role: "bot",
-                text: `Готово · run ${result.run_id}`,
+                text: "Отчёт готов",
                 result,
               }
             : msg,
         ),
       );
+      if (result.preview?.blocks?.length || result.downloads?.pdf) {
+        openReportArtifact(pendingId, result);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setMsgs((m) =>
@@ -866,9 +1203,46 @@ export default function App() {
     health?.vision_configured && health?.docker_ok && health?.playwright_ok,
   );
 
+  const plaqueDraft = sourceDraft
+    ? {
+        title: sourceDraft.title,
+        subtitle: file
+          ? formatBytes(file.size)
+          : `${sourceDraft.text.length} символов`,
+      }
+    : null;
+  const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
+
+  const railOpen = Boolean(activeArtifact);
+  const pendingBot = msgs.find((m) => m.role === "bot" && m.pending);
+  const thinkingLabel =
+    pendingBot && pendingBot.role === "bot"
+      ? stageLabel(pendingBot.pendingStage, pendingBot.pendingDetail)
+      : undefined;
+  const activeReportMsg =
+    activeArtifact?.kind === "report"
+      ? msgs.find(
+          (m) =>
+            m.id === activeArtifact.msgId && m.role === "bot" && m.result,
+        )
+      : null;
+  const activeReport =
+    activeReportMsg && activeReportMsg.role === "bot" && activeReportMsg.result
+      ? activeReportMsg.result
+      : null;
+
+  const railSourceText =
+    activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
+      ? activeArtifact.text
+      : sourceDraft?.text ?? null;
+  const railSourceTitle =
+    activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
+      ? activeArtifact.title
+      : sourceDraft?.title ?? null;
+
   return (
     <div
-      className={`app chat-app${drag ? " is-drag" : ""}`}
+      className={`app chat-app${drag ? " is-drag" : ""}${railOpen ? " has-rail" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDrag(true);
@@ -884,317 +1258,406 @@ export default function App() {
         </div>
       )}
 
-      <header className="topbar">
-        <div className="topbar-brand">
-          <p className="eyebrow">
-            atelier · печатный стол
-            <span
-              className={`topbar-live${healthReady ? " ok" : health ? " warn" : ""}`}
-              title={paradeHint}
-            >
-              <span className="health-dot" aria-hidden />
-              {healthReady ? "готово" : health ? "сервисы" : "…"}
-            </span>
-          </p>
-          <h1 className="brand">Liber</h1>
-        </div>
-        <button
-          type="button"
-          className="topbar-settings"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Настройки отчёта"
-          title="Палитра, типы графиков, лимиты"
-        >
-          <SettingsIcon size={17} />
-          <span>Настройки</span>
-        </button>
-      </header>
+      <div className="app-shell">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((c) => !c)}
+          healthReady={healthReady}
+          healthLabel={healthReady ? "готово" : health ? "сервисы" : "…"}
+          healthHint={paradeHint}
+          history={history}
+          historyOpen={historyOpen}
+          onHistoryOpen={setHistoryOpen}
+          onNew={startNewReport}
+          onOpenHistory={openHistoryItem}
+          onSettings={() => setSettingsOpen(true)}
+          busy={busy}
+        />
 
+        <div className="shell-column">
       <main className="main chat-main">
-        <div className="desk chat-desk">
-          <div className="messages" ref={messagesRef}>
-            <AnimatePresence mode="popLayout">
-              {msgs.length === 0 && (
-                <motion.div
-                  className="empty"
-                  key="empty"
-                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <p className="empty-kicker">печатный стол</p>
-                  <h2>Напиши или прикрепи .txt</h2>
-                  <p>
-                    Как в чате: запрос с цифрами — или файл + короткая просьба.
-                    Отчёт с графиками появится здесь; PDF и DOCX — внизу карточки.
-                  </p>
-                  <ol>
-                    <li>Вставь текст или перетащи .txt / .md</li>
-                    <li>При желании открой ⚙ — палитра и лимиты</li>
-                    <li>Нажми «Собрать»</li>
-                  </ol>
-                  {hasStoredReport && (
-                    <button
-                      type="button"
-                      className="empty-restore"
-                      onClick={restoreLastReport}
-                    >
-                      Открыть последний отчёт
-                    </button>
-                  )}
-                </motion.div>
-              )}
-              {msgs.map((m, mi) => {
-                const hasReport =
-                  m.role === "bot" &&
-                  m.result?.preview &&
-                  (m.result.preview.blocks?.length ?? 0) > 0;
-                return (
-                  <motion.div
-                    key={m.id}
-                    className={`msg ${m.role}${hasReport ? " has-report" : ""}`}
-                    layout={!reduceMotion}
-                    initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.4,
-                      delay: Math.min(mi * 0.04, 0.24),
-                      ease: [0.22, 1, 0.36, 1],
+        <div className={`desk-split${railOpen && !narrowRail ? " is-open" : ""}`}>
+          <div className="desk chat-desk">
+            <div className="messages" ref={messagesRef}>
+              <AnimatePresence mode="popLayout">
+                {msgs.length === 0 &&
+                  !/preview=artifact/.test(window.location.search) && (
+                  <EmptyState
+                    hasStoredReport={hasStoredReport}
+                    onRestore={restoreLastReport}
+                    onPrompt={(text) => {
+                      setChat(text);
+                      window.setTimeout(() => chatRef.current?.focus(), 0);
                     }}
-                  >
-                    <div className="meta">
-                      {m.role === "user" ? "запрос" : "отчёт"}
-                    </div>
-                    {m.role === "user" ? (
-                      <>
-                        <div className="msg-body msg-pre">{m.text}</div>
-                        {m.tags ? (
-                          <p className="msg-tags">{m.tags}</p>
-                        ) : null}
-                      </>
-                    ) : m.role === "bot" && hasReport && m.result?.preview ? (
-                      <ReportView
-                        preview={m.result.preview}
-                        downloads={m.result.downloads}
-                        runId={m.result.run_id}
-                        stats={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
-                        warnings={m.result.warnings}
-                        palettes={palettes}
-                        catalogTypes={catalog}
-                        defaultPalette={
-                          chartPalette === "auto" ? "atelier" : chartPalette
-                        }
-                        editingFigureId={
-                          editBusy?.msgId === m.id ? editBusy.figureId : null
-                        }
-                        editError={
-                          editError?.msgId === m.id ? editError.message : null
-                        }
-                        editErrorFigureId={
-                          editError?.msgId === m.id ? editError.figureId : null
-                        }
-                        downloadsPulse={downloadsPulseMsgId === m.id}
-                        onEditCancel={() => {
-                          if (editError?.msgId === m.id) setEditError(null);
-                        }}
-                        onEditFigure={(req) =>
-                          editFigure(m.id, m.result!.run_id, req)
-                        }
-                        onEditImage={(req) =>
-                          editImage(m.id, m.result!.run_id, req)
-                        }
-                      />
-                    ) : m.role === "bot" && m.pending ? (
-                      <ReportPending
-                        label={m.text || undefined}
-                        stage={m.pendingStage || "queued"}
-                        detail={m.pendingDetail}
-                      />
-                    ) : (
-                      <>
-                        <div className="msg-body">{m.text}</div>
-                        {m.role === "bot" && m.error && (
-                          <p className="err">{m.error}</p>
-                        )}
-                        {m.role === "bot" && m.result && (
-                          <>
-                            <p className="stats">
-                              charts {m.result.charts_ok}/
-                              {m.result.charts_planned?.length || 0}
-                              {" · "}
-                              figures {m.result.figures_ok}/
-                              {m.result.figures_planned?.length || 0}
-                            </p>
-                            {m.result.warnings?.length > 0 && (
-                              <div className="warns">
-                                {m.result.warnings.join(" · ")}
-                              </div>
-                            )}
-                            <div className="downloads">
-                              {m.result.downloads?.pdf && (
-                                <a href={m.result.downloads.pdf} download>
-                                  PDF
-                                </a>
-                              )}
-                              {m.result.downloads?.docx && (
-                                <a
-                                  className="secondary"
-                                  href={m.result.downloads.docx}
-                                  download
-                                >
-                                  DOCX
-                                </a>
-                              )}
-                            </div>
-                            {m.result.previews && m.result.previews.length > 0 && (
-                              <div className="previews">
-                                {m.result.previews.map((p) => (
-                                  <a
-                                    key={p.id}
-                                    className="preview"
-                                    href={p.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={`${p.kind} ${p.id}`}
-                                  >
-                                    <img
-                                      src={p.url}
-                                      alt={`${p.kind} ${p.id}`}
-                                    />
-                                    <span>{p.id}</span>
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-            <div ref={bottomRef} />
-          </div>
-
-          <div className="composer-wrap">
-            {(file || attachPhotos.length > 0) && (
-              <div className="composer-attach-row">
-                {file && (
-                  <div className="composer-file-chip">
-                    <span className="composer-file-name" title={file.name}>
-                      {file.name}
-                    </span>
-                    <button
-                      type="button"
-                      className="composer-photo-x"
-                      aria-label="Убрать файл"
-                      disabled={busy}
-                      onClick={() => setFile(null)}
-                    >
-                      ×
-                    </button>
-                  </div>
+                  />
                 )}
-                {attachPhotos.length > 0 && (
+                {msgs.map((m, mi) => {
+                  const hasArtifact =
+                    m.role === "bot" &&
+                    Boolean(
+                      m.result?.preview?.blocks?.length ||
+                        m.result?.downloads?.pdf,
+                    );
+                  const userLong =
+                    m.role === "user" &&
+                    !m.attachment &&
+                    m.text.length > LONG_TEXT_CHARS;
+                  const userCollapseIntent =
+                    m.role === "user" &&
+                    m.text.length > 140 &&
+                    !m.attachment;
+                  const userChips =
+                    m.role === "user"
+                      ? m.chips?.length
+                        ? m.chips
+                        : m.tags
+                          ? m.tags.split(/\s*·\s*/).filter(Boolean)
+                          : []
+                      : [];
+                  return (
+                    <motion.div
+                      key={m.id}
+                      className={`msg ${m.role}${hasArtifact ? " has-artifact" : ""}`}
+                      layout={!reduceMotion}
+                      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.4,
+                        delay: Math.min(mi * 0.04, 0.24),
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
+                    >
+                      {m.role === "user" ? (
+                        <>
+                          {m.attachment ? (
+                            <div className="msg-attach-row">
+                              <ContextPlaque
+                                title={m.attachment.title}
+                                subtitle={`${m.attachment.text.length} символов`}
+                                onOpen={() =>
+                                  openSourceArtifact(m.attachment!)
+                                }
+                              />
+                            </div>
+                          ) : null}
+                          {userLong ? (
+                            <button
+                              type="button"
+                              className="msg-body msg-plaque-trigger"
+                              onClick={() => openIntentArtifact(m.text)}
+                            >
+                              Intent · {m.text.length} символов — открыть
+                            </button>
+                          ) : userCollapseIntent ? (
+                            <details className="msg-intent-fold">
+                              <summary className="msg-intent-summary">
+                                <span className="msg-intent-label">Intent</span>
+                                <span className="msg-intent-preview">
+                                  {m.text.slice(0, 72).trim()}
+                                  {m.text.length > 72 ? "…" : ""}
+                                </span>
+                              </summary>
+                              <div className="msg-body msg-pre">{m.text}</div>
+                            </details>
+                          ) : (
+                            <div className="msg-body msg-pre">{m.text}</div>
+                          )}
+                          {userChips.length ? (
+                            <ul className="msg-chips" aria-label="Настройки запроса">
+                              {userChips.map((chip) => (
+                                <li key={chip} className="msg-chip">
+                                  {chip}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : m.role === "bot" && hasArtifact && m.result ? (
+                        <div className="msg-row">
+                          <span className="msg-avatar">
+                            <IconLiberMark size={28} />
+                          </span>
+                          <div>
+                          <div className="msg-body">{m.text || "Отчёт готов"}</div>
+                          <ArtifactCard
+                            title={reportTitle(m.result)}
+                            subtitle={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
+                            thumbUrl={reportThumb(m.result)}
+                            pdfUrl={m.result.downloads?.pdf}
+                            downloads={m.result.downloads}
+                            pulse={downloadsPulseMsgId === m.id}
+                            updated={downloadsPulseMsgId === m.id}
+                            onView={() => openReportArtifact(m.id, m.result!)}
+                          />
+                          {m.result.warnings?.length ? (
+                            <div className="warns">
+                              {m.result.warnings.join(" · ")}
+                            </div>
+                          ) : null}
+                          <div className="msg-actions">
+                            <button
+                              type="button"
+                              className="msg-action"
+                              title="Копировать"
+                              aria-label="Копировать текст"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(
+                                  m.text || "Отчёт готов",
+                                );
+                              }}
+                            >
+                              <IconCopy size={14} />
+                            </button>
+                          </div>
+                          </div>
+                        </div>
+                      ) : m.role === "bot" && m.pending ? (
+                        <div className="msg-row">
+                          <span className="msg-avatar">
+                            <IconLiberMark size={28} />
+                          </span>
+                          <ReportPending
+                            label={m.text || undefined}
+                            stage={m.pendingStage || "queued"}
+                            detail={m.pendingDetail}
+                          />
+                        </div>
+                      ) : (
+                        <div className="msg-row">
+                          <span className="msg-avatar">
+                            <IconLiberMark size={28} />
+                          </span>
+                          <div>
+                          <div className="msg-body">{m.text}</div>
+                          {m.role === "bot" && m.error && (
+                            <p className="err">{m.error}</p>
+                          )}
+                          {m.role === "bot" && m.result && (
+                            <>
+                              <p className="stats">
+                                charts {m.result.charts_ok}/
+                                {m.result.charts_planned?.length || 0}
+                                {" · "}
+                                figures {m.result.figures_ok}/
+                                {m.result.figures_planned?.length || 0}
+                              </p>
+                              {(m.result.downloads?.pdf ||
+                                m.result.downloads?.docx) && (
+                                <ArtifactCard
+                                  title={reportTitle(m.result)}
+                                  subtitle="Файлы готовы"
+                                  thumbUrl={reportThumb(m.result)}
+                                  pdfUrl={m.result.downloads?.pdf}
+                                  downloads={m.result.downloads}
+                                  pulse={downloadsPulseMsgId === m.id}
+                                  updated={downloadsPulseMsgId === m.id}
+                                  onView={() =>
+                                    openReportArtifact(m.id, m.result!)
+                                  }
+                                />
+                              )}
+                            </>
+                          )}
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+              <div ref={bottomRef} />
+            </div>
+
+            <div className="composer-wrap">
+              <ThinkingBar active={busy} label={thinkingLabel} />
+              {attachPhotos.length > 0 && (
+                <div className="composer-attach-row">
                   <ComposerPhotoChips
                     files={attachPhotos}
                     busy={busy}
                     onRemove={(i) =>
-                      setAttachPhotos((list) => list.filter((_, j) => j !== i))
+                      setAttachPhotos((list) =>
+                        list.filter((_, j) => j !== i),
+                      )
                     }
                   />
-                )}
-              </div>
-            )}
-            <div className="composer-modes" role="group" aria-label="Режим">
-              <button
-                type="button"
-                className={`chip${photoMode === "document" ? " on" : ""}`}
-                disabled={busy}
-                onClick={() => setPhotoMode("document")}
-              >
-                В отчёт
-              </button>
-              <button
-                type="button"
-                className={`chip${photoMode === "edit" ? " on" : ""}`}
-                disabled={busy}
-                onClick={() => setPhotoMode("edit")}
-                title="Фото + текст правки"
-              >
-                Только правка
-              </button>
-            </div>
-            <p className="composer-summary" title={settingsSummary}>
-              {settingsSummary}
-            </p>
-            <div className="composer">
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
-                multiple
-                hidden
-                onChange={(e) => {
-                  const list = e.target.files;
-                  e.target.value = "";
-                  if (list?.length) ingestFiles(list);
-                }}
-              />
-              <input ref={photoRef} type="file" accept="image/*" multiple hidden />
-              <button
-                type="button"
-                className="composer-attach"
-                disabled={busy}
-                title="Прикрепить .txt / .md или фото"
-                onClick={() => fileRef.current?.click()}
-              >
-                📎
-              </button>
-              <button
-                type="button"
-                className="composer-attach composer-gear"
-                disabled={busy}
-                title="Настройки: палитра, типы, лимиты"
-                aria-label="Настройки отчёта"
-                onClick={() => setSettingsOpen(true)}
-              >
-                <SettingsIcon size={16} />
-              </button>
-              <textarea
-                ref={chatRef}
-                className="composer-input"
-                rows={1}
-                placeholder={
-                  photoMode === "edit"
-                    ? "Что изменить на фото…"
-                    : file
-                      ? "Что сделать с файлом (можно пусто)…"
-                      : "Напиши отчёт с цифрами или прикрепи .txt…"
-                }
-                value={chat}
-                disabled={busy}
-                onChange={(e) => setChat(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
+                </div>
+              )}
+              {showPlaque && plaqueDraft ? (
+                <ContextPlaque
+                  title={plaqueDraft.title}
+                  subtitle={plaqueDraft.subtitle}
+                  disabled={busy}
+                  onOpen={() => {
+                    if (sourceDraft) openSourceArtifact(sourceDraft);
+                  }}
+                  onDismiss={() => {
+                    setPlaqueDismissed(true);
+                    setSourceDraft(null);
+                    setFile(null);
+                    setActiveArtifact((a) =>
+                      a?.kind === "source" || a?.kind === "intent" ? null : a,
+                    );
+                  }}
+                />
+              ) : null}
+              <p className="composer-summary" title={settingsSummary}>
+                {settingsSummary}
+              </p>
+              <div className="composer">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    const list = e.target.files;
+                    e.target.value = "";
+                    if (list?.length) ingestFiles(list);
+                  }}
+                />
+                <input
+                  ref={photoRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                />
+                <button
+                  type="button"
+                  className="composer-attach"
+                  disabled={busy}
+                  title="Прикрепить .txt / .md или фото"
+                  aria-label="Прикрепить файл"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <IconPaperclip size={18} />
+                </button>
+                <textarea
+                  ref={chatRef}
+                  className="composer-input"
+                  rows={1}
+                  placeholder={
+                    sourceDraft || file
+                      ? "Спросить Liber…"
+                      : "Опишите отчёт или вставьте Source…"
                   }
-                }}
-              />
-              <button
-                className="send"
-                type="button"
-                disabled={!canSend}
-                onClick={() => void send()}
-              >
-                {busy ? "…" : photoMode === "edit" ? "Править" : "Собрать"}
-              </button>
+                  value={chat}
+                  disabled={busy}
+                  onChange={(e) => setChat(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData("text/plain");
+                    if (capturePastedSource(pasted)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                />
+                <button
+                  className="send"
+                  type="button"
+                  disabled={!canSend}
+                  onClick={() => void send()}
+                  aria-label="Собрать отчёт"
+                  title="Собрать"
+                >
+                  {busy ? "…" : <IconSend size={16} />}
+                </button>
+              </div>
             </div>
           </div>
+
+          <AnimatePresence>
+            {railOpen && activeArtifact && (
+              <ArtifactRail
+                key="artifact-rail"
+                artifact={activeArtifact}
+                report={
+                  activeReport
+                    ? {
+                        preview: activeReport.preview,
+                        downloads: activeReport.downloads,
+                        runId: activeReport.run_id,
+                        stats: `charts ${activeReport.charts_ok}/${activeReport.charts_planned?.length || 0} · figures ${activeReport.figures_ok}/${activeReport.figures_planned?.length || 0}`,
+                        warnings: activeReport.warnings,
+                      }
+                    : null
+                }
+                sourceText={railSourceText}
+                sourceTitle={railSourceTitle}
+                palettes={palettes}
+                catalogTypes={catalog}
+                defaultPalette={
+                  chartPalette === "auto" ? "atelier" : chartPalette
+                }
+                editingFigureId={
+                  activeArtifact.kind === "report" &&
+                  editBusy?.msgId === activeArtifact.msgId
+                    ? editBusy.figureId
+                    : null
+                }
+                editError={
+                  activeArtifact.kind === "report" &&
+                  editError?.msgId === activeArtifact.msgId
+                    ? editError.message
+                    : null
+                }
+                editErrorFigureId={
+                  activeArtifact.kind === "report" &&
+                  editError?.msgId === activeArtifact.msgId
+                    ? editError.figureId
+                    : null
+                }
+                downloadsPulse={
+                  activeArtifact.kind === "report" &&
+                  downloadsPulseMsgId === activeArtifact.msgId
+                }
+                narrow={narrowRail}
+                widthPct={railWidthPct}
+                onWidthChange={setRailWidthPct}
+                onTab={setArtifactTab}
+                onClose={closeArtifact}
+                onEditCancel={() => {
+                  if (
+                    activeArtifact.kind === "report" &&
+                    editError?.msgId === activeArtifact.msgId
+                  ) {
+                    setEditError(null);
+                  }
+                }}
+                onEditFigure={
+                  activeArtifact.kind === "report" && activeReport
+                    ? (req) =>
+                        editFigure(
+                          activeArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+                onEditImage={
+                  activeArtifact.kind === "report" && activeReport
+                    ? (req) =>
+                        editImage(
+                          activeArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+              />
+            )}
+          </AnimatePresence>
         </div>
       </main>
+        </div>
+      </div>
 
       <SettingsModal
         open={settingsOpen}

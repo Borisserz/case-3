@@ -87,30 +87,32 @@ the type yourself under auto.
 
 Aim for a **print magazine / annual-report** chart: juicy saturated inks, crisp edges, calm whitespace.
 **One palette per document.** If Intent lists hex/rgba (UI palette preset) → use **those exact colors** in `charts[].html`.
-If Intent says AUTO palette → pick **one** of: editorial / ocean / sunset / mono (below) and stick to it.
+If Intent says AUTO palette → pick **one** of: editorial / ocean / sunset / mono / **atelier** and stick to it.
 
-**Fallback editorial ink set** (when Intent does not name another palette):
+**Fallback editorial ink set** (when Intent does not name another palette) — soft ladder:
 
 | Role | Hex | Notes |
 |------|-----|--------|
-| Ink / primary | `#0F3D3E` | deep teal-ink |
-| Accent A | `#E85D04` | vivid coral-orange |
-| Accent B | `#2A9D8F` | rich teal |
-| Accent C | `#E9C46A` | warm gold |
-| Accent D | `#264653` | slate-teal |
-| Muted | `#94A3B8` | grid / secondary only |
-| Area fill | `rgba(42,157,143,0.18)` | soft, not neon glow |
+| Ink / primary | `#1A4A4B` | soft teal-ink |
+| Accent A | `#D97845` | soft coral |
+| Accent B | `#4AADA0` | soft teal |
+| Accent C | `#D9C07A` | warm gold |
+| Accent D | `#3D5C60` | slate-teal |
+| Muted | `#9AA8B5` | grid / secondary only |
+| Area fill | `rgba(74,173,160,0.16)` | soft, not neon glow |
 
-Other named presets (if Intent picks them): **ocean** `#023E8A/#0077B6/#00B4D8/#48CAE4`; **sunset** `#6D2E46/#D62828/#F77F00/#FCBF49`; **mono** `#111827/#374151/#6B7280/#9CA3AF`.
+Other named presets: **ocean** `#1A5F9E/#2B8FC4/#4DB8D4/#7CCFDF`; **sunset** `#7A4058/#D65A5A/#E8954A/#E8C070`; **mono** `#2A2F38/#3D4450/#5C6570/#8B939E`; **atelier** (soft-green Liber) `#3F5210/#5A6E28/#7A8F45/#A8B87A`.
 Honor free-text style notes in Intent (legend on/off, thicker lines, minimal grid) without inventing new hues.
+Numbers in charts/KPI/legend — **only from Source** (no invented %).
 
 **Do:**
 
-- Solid fills for bars/donut slices (full opacity or ~0.92) — look **juicy**, not washed-out pastel.
+- Solid fills for bars/donut slices (full opacity or ~0.92) — soft saturated, not washed-out pastel.
 - Bars: `borderRadius: 6`, slight `borderWidth: 0`, category colors from the table above.
 - Lines: `borderWidth: 3`, `tension: 0.2–0.3`, `pointRadius: 4`, `pointHoverRadius: 5`; optional soft fill under one series.
-- Donut: `cutout: '58%'`, legend `position: 'bottom'`, saturated slice colors, no gray-on-gray.
-- Grid: light (`rgba(15,61,62,0.08)`), **no** heavy frames; hide top/right spines if using scales.
+- Donut: `cutout: '60%'`, prefer `.donut-layout` + HTML `.valued-legend` (host CSS) over Chart.js legend; center `%` + short label.
+- Stacked / answer cards: optional `.chart-kpi-header` (eyebrow + big value + context) above the viz — values from Source.
+- Grid: light (`rgba(26,74,75,0.08)`), **no** heavy frames; hide top/right spines if using scales.
 - Typography via Chart defaults is fine; keep labels short.
 
 **Don’t (AI-slop tells):**
@@ -127,7 +129,7 @@ Honor free-text style notes in Intent (legend on/off, thicker lines, minimal gri
 ```html
 <canvas id="c1" width="1100" height="560"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#E85D04','#2A9D8F'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.08)'},ticks:{maxTicksLimit:6}},x:{grid:{display:false}}},animation:false}});
+new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#D97845','#4AADA0'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(26,74,75,0.08)'},ticks:{maxTicksLimit:6}},x:{grid:{display:false}}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
@@ -137,39 +139,57 @@ window.__CASE3_CHART_READY=true;
 ```html
 <canvas id="c1" width="1100" height="560"></canvas>
 <script>
-new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#0F3D3E',backgroundColor:'rgba(42,157,143,0.18)',fill:true,tension:0.28,borderWidth:3,pointRadius:4,pointBackgroundColor:'#E85D04'}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.08)'}},x:{grid:{display:false}}},animation:false}});
+new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#1A4A4B',backgroundColor:'rgba(74,173,160,0.16)',fill:true,tension:0.28,borderWidth:3,pointRadius:4,pointBackgroundColor:'#D97845'}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,grid:{color:'rgba(26,74,75,0.08)'}},x:{grid:{display:false}}},animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
 
-**donut** (Chart.js type `doughnut`)
+**donut** (Chart.js type `doughnut`) — center % + valued legend (host CSS hooks)
 
 ```html
-<canvas id="c1" width="1100" height="560"></canvas>
+<div class="chart-card donut-layout">
+  <div class="donut-viz">
+    <div class="donut-center"><div class="pct">50%</div><div class="lbl">A</div></div>
+    <canvas id="c1" width="520" height="520"></canvas>
+  </div>
+  <ul class="valued-legend">
+    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#D97845"></span><span class="valued-legend__label">A</span><span class="valued-legend__pct">50%</span><span class="valued-legend__abs">50</span></li>
+    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#4AADA0"></span><span class="valued-legend__label">B</span><span class="valued-legend__pct">30%</span><span class="valued-legend__abs">30</span></li>
+    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#D9C07A"></span><span class="valued-legend__label">C</span><span class="valued-legend__pct">20%</span><span class="valued-legend__abs">20</span></li>
+  </ul>
+</div>
 <script>
-new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B','C'],datasets:[{data:[50,30,20],backgroundColor:['#E85D04','#2A9D8F','#E9C46A'],borderWidth:2,borderColor:'#ffffff'}]},options:{plugins:{legend:{position:'bottom'}},cutout:'58%',animation:false}});
+new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B','C'],datasets:[{data:[50,30,20],backgroundColor:['#D97845','#4AADA0','#D9C07A'],borderWidth:2,borderColor:'#ffffff'}]},options:{plugins:{legend:{display:false}},cutout:'60%',animation:false}});
 window.__CASE3_CHART_READY=true;
 </script>
 ```
 
 **horizontal_bar** — `type:'bar'`, `indexAxis:'y'`, same ink colors, `borderRadius:6`.
 
-**grouped_bar** — datasets in `#E85D04` / `#2A9D8F` / `#264653` (not purple).
+**grouped_bar** — datasets in `#D97845` / `#4AADA0` / `#3D5C60` (not purple).
 
-**stacked_bar** — stacked scales + ink palette.
+**stacked_bar** — stacked scales + ink palette; optional header:
 
-**area** — line + `fill:true` with `rgba(42,157,143,0.18)`.
+```html
+<div class="chart-card">
+  <div class="chart-kpi-header"><div class="eyebrow">Итого</div><div class="big">152</div><div class="context">за период · из Source</div></div>
+  <canvas id="c1" width="1100" height="480"></canvas>
+</div>
+<script>/* stacked bar Chart.js… animation:false; __CASE3_CHART_READY */</script>
+```
 
-**scatter** — points `#E85D04` / `#0F3D3E`, clear axis titles in options if helpful.
+**area** — line + `fill:true` with `rgba(74,173,160,0.16)`.
 
-**kpi**
+**scatter** — points `#D97845` / `#1A4A4B`, clear axis titles in options if helpful.
+
+**kpi** (HTML cards; host `.kpi` uses CSS vars from palette — do not hardcode orange)
 
 ```html
 <div class="kpi"><div class="value">28</div><div class="label">Клиенты 2025</div></div>
 <script>window.__CASE3_CHART_READY=true;</script>
 ```
 
-Host frame loads Chart.js offline, sets DPR for sharpness, disables animation. Still set `__CASE3_CHART_READY`.
+Host frame loads Chart.js offline, sets DPR for sharpness, disables animation. Still set `__CASE3_CHART_READY`. No Chart.js plugins.
 
 # When to add charts / figures
 
@@ -183,6 +203,7 @@ But if the ceiling is **≥ 1** and Source **has usable numbers**, you **should*
 3. Every plotted value is from Source (only simple % / differences allowed).
 4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains.
 5. `caption`: Russian, specific («Клиенты по годам», not «График 1»).
+6. Optional chat card meta (numbers **only from Source**): `insight` (1 short Russian sentence) and `highlights: [{label, value, pct?}]` for the top categories — never invent figures.
 
 If Intent **forbids** charts → `"charts": []`, no slots.  
 If Intent **asks** for a chart / names types → honor (map wishes to whitelist).  

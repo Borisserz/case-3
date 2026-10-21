@@ -1,0 +1,16 @@
+---
+description: case-3 project memory — read before non-trivial work
+alwaysApply: true
+---
+
+# case-3 memory
+
+Before non-trivial changes in this repo:
+
+1. Read `docs/MEMORY.md` (map of L1/L2/L3).
+2. Read `AGENTS.md` for product constraints.
+3. Open the relevant KI card under `.agents/knowledge/` and ADR under `docs/adr/`.
+4. Feature specs/plans live in `docs/superpowers/`.
+
+Do not invent pipeline stages, env vars, or chart types — verify in code or KI.
+Persist decisions that outlive the chat into ADR/KI, not only the conversation.

@@ -14,7 +14,7 @@ def test_apply_palette_replaces_hex_with_ocean_inks() -> None:
         "</script>"
     )
     out = apply_palette_to_html(html, "ocean")
-    assert "#023E8A" in out or "#0077B6" in out
+    assert "#1A5F9E" in out.upper() or "#2B8FC4" in out.upper()
     assert "data:[1]" in out
     assert "labels:['A']" in out
     assert "#E85D04" not in out
@@ -33,8 +33,8 @@ def test_atelier_palette_is_soft_olive_mono() -> None:
     )
     out = apply_palette_to_html(html, "atelier")
     up = out.upper()
-    assert "#2C3A14" in up
-    assert "#6B7F2A" in up or "#A8B87A" in up
+    assert "#3F5210" in up
+    assert "#7A8F45" in up or "#A8B87A" in up or "#5A6E28" in up
     assert "#111111" not in up
 
 
@@ -48,5 +48,5 @@ def test_atelier_keeps_white_borders_and_readable_labels() -> None:
     out = apply_palette_to_html(html, "atelier")
     up = out.upper()
     assert "#FFFFFF" in up
-    assert "#5A614C" in up
+    assert "#6A7160" in up
     assert "#333333" not in up

@@ -13,19 +13,171 @@
       padding: 28px 36px;
       box-sizing: border-box;
       font-family: "Segoe UI", "DejaVu Sans", sans-serif;
-      color: #0F3D3E;
+      color: var(--chart-ink, #1A4A4B);
+      /* Soft defaults; polish may override via #mount { --kpi-value:… } */
+      --kpi-value: var(--chart-accent, #5A6E28);
+      --kpi-label: var(--chart-muted, #6A7160);
+      --kpi-ink: var(--chart-ink, #3F5210);
+      --chart-ink: #3F5210;
+      --chart-accent: #5A6E28;
+      --chart-muted: #6A7160;
     }
     canvas { max-width: 100%; display: block; margin: 0 auto; }
+
+    /* Premium card shell (LLM / coerce may wrap fragments) */
+    .chart-card {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      width: 100%;
+    }
+    .chart-kpi-header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 0 4px 8px;
+    }
+    .chart-kpi-header .eyebrow {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--chart-muted, #6A7160);
+    }
+    .chart-kpi-header .big {
+      font-size: 42px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      color: var(--kpi-value, var(--chart-accent, #5A6E28));
+    }
+    .chart-kpi-header .context {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--kpi-label, var(--chart-muted, #6A7160));
+      margin-top: 2px;
+    }
+
+    /* Donut: viz | valued legend */
+    .donut-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);
+      gap: 28px 36px;
+      align-items: center;
+      width: 100%;
+    }
+    .donut-viz {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 320px;
+    }
+    .donut-viz canvas {
+      margin: 0 auto;
+      max-width: 100%;
+    }
+    .donut-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      text-align: center;
+      z-index: 1;
+    }
+    .donut-center .pct {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--kpi-ink, var(--chart-ink, #3F5210));
+    }
+    .donut-center .lbl {
+      margin-top: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--kpi-label, var(--chart-muted, #6A7160));
+      max-width: 140px;
+    }
+
+    .valued-legend {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .valued-legend li,
+    .valued-legend__row {
+      display: grid;
+      grid-template-columns: 14px minmax(0, 1fr) auto auto;
+      gap: 10px 14px;
+      align-items: center;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--chart-ink, #1A4A4B);
+    }
+    .valued-legend__swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .valued-legend__label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .valued-legend__pct {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      color: var(--kpi-ink, var(--chart-ink, #3F5210));
+      min-width: 3.2em;
+      text-align: right;
+    }
+    .valued-legend__abs {
+      font-variant-numeric: tabular-nums;
+      color: var(--chart-muted, #6A7160);
+      min-width: 3em;
+      text-align: right;
+    }
+
+    /* Soft KPI cards — ink from CSS vars (palette polish sets them) */
     .kpi {
-      display: flex; flex-direction: column; justify-content: center;
-      min-height: 520px; text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 420px;
+      text-align: center;
+      gap: 12px;
     }
     .kpi .value {
-      font-size: 88px; font-weight: 700; color: #E85D04;
-      letter-spacing: -0.03em; line-height: 1;
+      font-size: 88px;
+      font-weight: 700;
+      color: var(--kpi-value, var(--chart-accent, #5A6E28));
+      letter-spacing: -0.03em;
+      line-height: 1;
     }
     .kpi .label {
-      font-size: 22px; color: #264653; margin-top: 16px; font-weight: 600;
+      font-size: 22px;
+      color: var(--kpi-label, var(--chart-muted, #3D5C60));
+      margin-top: 8px;
+      font-weight: 600;
+    }
+    .kpi-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      justify-content: center;
+      align-items: stretch;
+    }
+    .kpi-row .kpi {
+      min-height: 280px;
+      flex: 1 1 200px;
     }
   </style>
   <script src="{{CHART_JS}}"></script>
@@ -38,7 +190,7 @@
       Chart.defaults.font.family = '"Segoe UI", "DejaVu Sans", sans-serif';
       Chart.defaults.font.size = 15;
       Chart.defaults.font.weight = "500";
-      Chart.defaults.color = "#264653";
+      Chart.defaults.color = "#3D5C60";
       Chart.defaults.plugins.legend.labels.boxWidth = 14;
       Chart.defaults.plugins.legend.labels.padding = 18;
       Chart.defaults.plugins.legend.labels.usePointStyle = true;
@@ -47,7 +199,7 @@
       Chart.defaults.elements.line.borderWidth = 3;
       Chart.defaults.elements.point.radius = 4;
       Chart.defaults.elements.point.hoverRadius = 5;
-      Chart.defaults.scale.grid.color = "rgba(15,61,62,0.08)";
+      Chart.defaults.scale.grid.color = "rgba(26,74,75,0.08)";
       Chart.defaults.scale.grid.drawBorder = false;
     }
   </script>

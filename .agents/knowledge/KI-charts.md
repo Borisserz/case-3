@@ -1,0 +1,26 @@
+# KI: Charts
+
+## What
+LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit restyles.
+
+## Entry
+- Gen: `charts.generate_all_charts` after coerce/`polish_charts`
+- Edit: `POST /api/runs/{id}/charts/{cid}/edit` → `chart_edit.edit_chart_in_run`
+- Types: `chart_html.CHART_TYPES`; coerce: `chart_types_coerce.py`
+- Palette: `chart_style.apply_palette_to_html` + `palette_from_intent`
+
+## Invariants
+- Whitelist types only; donut = Chart.js `doughnut`; hbar = `indexAxis:'y'`
+- KPI = HTML cards, not canvas
+- Frame CSP + abort non-file routes in Playwright
+- After gen: polish palette + harden hbar geometry/fill
+
+## Gotchas
+- Type change often triggers LLM even when coerce enough (UX roadmap G3)
+- KPI palette via CSS vars (`apply_kpi_palette_vars`) — frame `.kpi` uses `--kpi-value`, not hardcoded orange
+- Donut premium: `enhance_donut_html` after polish when labels/data parseable; else prompt `.donut-layout` recipe
+- Tall `#mount` min-height removed — don't bring back 600px empty band
+- Edit rebuilds full PDF/DOCX by default
+
+## See
+ADR-0002 · `prompt/system_tex.md` chart recipes · tests `test_harden_horizontal_bar`, `test_coerce_*`

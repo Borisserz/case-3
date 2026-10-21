@@ -143,49 +143,51 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
     out = _RGBA.sub(_sub_rgba, out)
     return out
 
-# Concrete ink sets (no purple/indigo slop).
+
+# Soft luminance ladders (Mary-inspired). No purple/indigo slop.
+# atelier = Liber soft-green primary.
 _PALETTES: dict[str, dict[str, Any]] = {
     "editorial": {
         "label": "Editorial",
-        "primary": "#0F3D3E",
-        "accents": ["#E85D04", "#2A9D8F", "#E9C46A", "#264653"],
-        "muted": "#94A3B8",
-        "area": "rgba(42,157,143,0.18)",
-        "grid": "rgba(15,61,62,0.08)",
+        "primary": "#1A4A4B",
+        "accents": ["#D97845", "#4AADA0", "#D9C07A", "#3D5C60"],
+        "muted": "#9AA8B5",
+        "area": "rgba(74,173,160,0.16)",
+        "grid": "rgba(26,74,75,0.08)",
     },
     "ocean": {
         "label": "Ocean",
-        "primary": "#023E8A",
-        "accents": ["#0077B6", "#00B4D8", "#48CAE4", "#90E0EF"],
-        "muted": "#8B9AAB",
-        "area": "rgba(0,180,216,0.18)",
-        "grid": "rgba(2,62,138,0.10)",
+        "primary": "#1A5F9E",
+        "accents": ["#2B8FC4", "#4DB8D4", "#7CCFDF", "#A8E0EC"],
+        "muted": "#8FA0B0",
+        "area": "rgba(77,184,212,0.16)",
+        "grid": "rgba(26,95,158,0.09)",
     },
     "sunset": {
         "label": "Sunset",
-        "primary": "#6D2E46",
-        "accents": ["#D62828", "#F77F00", "#FCBF49", "#003049"],
-        "muted": "#A3A3A3",
-        "area": "rgba(247,127,0,0.16)",
-        "grid": "rgba(109,46,70,0.10)",
+        "primary": "#7A4058",
+        "accents": ["#D65A5A", "#E8954A", "#E8C070", "#4A6070"],
+        "muted": "#A8A0A0",
+        "area": "rgba(232,149,74,0.15)",
+        "grid": "rgba(122,64,88,0.09)",
     },
     "mono": {
         "label": "Mono",
-        "primary": "#111827",
-        "accents": ["#111827", "#374151", "#6B7280", "#9CA3AF"],
+        "primary": "#2A2F38",
+        "accents": ["#3D4450", "#5C6570", "#8B939E", "#B0B6BE"],
         "muted": "#9CA3AF",
-        "area": "rgba(17,24,39,0.12)",
-        "grid": "rgba(17,24,39,0.08)",
+        "area": "rgba(42,47,56,0.10)",
+        "grid": "rgba(42,47,56,0.07)",
     },
-    # Soft olive→mist mono (Mary-like stacked luxury, Liber hues — no purple).
+    # Soft olive→mist mono (Liber hues — no purple).
     "atelier": {
         "label": "Atelier",
-        "primary": "#2C3A14",
-        "accents": ["#3F5210", "#6B7F2A", "#A8B87A", "#D5DEC0"],
-        # Axis/legend ink — keep readable on cream paper (not dusty sage).
-        "muted": "#5A614C",
-        "area": "rgba(107,127,42,0.18)",
-        "grid": "rgba(44,58,20,0.09)",
+        "primary": "#3F5210",
+        "accents": ["#5A6E28", "#7A8F45", "#A8B87A", "#D5DEC0"],
+        # Axis/legend ink — readable on cream paper.
+        "muted": "#6A7160",
+        "area": "rgba(122,143,69,0.16)",
+        "grid": "rgba(63,82,16,0.08)",
     },
 }
 
@@ -195,6 +197,42 @@ def normalize_palette_id(raw: str | None) -> str:
     if key in PALETTE_IDS:
         return key
     return "editorial"
+
+
+def palette_css_vars(palette_id: str) -> str:
+    """CSS custom properties for frame KPI / card chrome (inject into fragment)."""
+    pid = normalize_palette_id(palette_id)
+    if pid == "auto" or pid not in _PALETTES:
+        return ""
+    p = _PALETTES[pid]
+    primary = str(p["primary"])
+    accents = list(p["accents"])
+    value = accents[0] if accents else primary
+    label = str(p.get("muted") or primary)
+    ink = primary
+    muted = str(p.get("muted") or "#94A3B8")
+    return (
+        f"--chart-ink:{ink};--chart-accent:{value};--chart-muted:{muted};"
+        f"--kpi-value:{value};--kpi-label:{label};--kpi-ink:{ink};"
+    )
+
+
+def apply_kpi_palette_vars(html: str, palette_id: str) -> str:
+    """Inject palette CSS vars so host ``.kpi`` / cards pick soft ink (not fixed orange)."""
+    pid = normalize_palette_id(palette_id)
+    vars_decl = palette_css_vars(pid)
+    if not vars_decl or not (html or "").strip():
+        return html
+    # Replace prior inject; keep one block.
+    cleaned = re.sub(
+        r'<style\s+id=["\']case3-palette["\'][^>]*>.*?</style>\s*',
+        "",
+        html,
+        count=1,
+        flags=re.I | re.S,
+    )
+    block = f'<style id="case3-palette">#mount{{{vars_decl}}}</style>'
+    return block + cleaned
 
 
 # Intent line: "- палитра графиков: Atelier (atelier) — …" or "… AUTO — …"
@@ -218,7 +256,7 @@ def palette_public() -> list[dict[str, Any]]:
         {
             "id": "auto",
             "label": "Auto",
-            "swatches": ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"],
+            "swatches": ["#3F5210", "#D97845", "#1A5F9E", "#E8954A"],
         }
     ]
     for pid in ("editorial", "ocean", "sunset", "mono", "atelier"):

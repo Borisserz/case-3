@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from case3.chart_edit import ChartEditError, edit_chart_in_run
+from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
@@ -196,7 +196,9 @@ def health() -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
 
-        from case3.charts import _run_sync_playwright
+        from case3.charts import _prefer_stable_playwright_browsers, _run_sync_playwright
+
+        _prefer_stable_playwright_browsers()
 
         def _probe() -> None:
             with sync_playwright() as p:
@@ -723,7 +725,36 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             meta = {}
     media = meta.get("media_status") or {}
-    return _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
+    preview = _build_preview_payload(
+        run_id, out_dir, media if isinstance(media, dict) else {}
+    )
+    # Cache-bust figure URLs (edit responses already add ?v=; GET must too).
+    bust = 0
+    figs = out_dir / "figures"
+    if figs.is_dir():
+        for p in figs.glob("*.png"):
+            try:
+                bust = max(bust, int(p.stat().st_mtime))
+            except OSError:
+                continue
+    if not bust:
+        try:
+            bust = int((meta.get("chart_edit_last") or {}).get("ts") or 0)
+        except (TypeError, ValueError):
+            bust = 0
+    if bust:
+        for block in preview.get("blocks") or []:
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "figure"
+                and block.get("url")
+            ):
+                url = str(block["url"])
+                if "v=" in url:
+                    continue
+                sep = "&" if "?" in url else "?"
+                block["url"] = f"{url}{sep}v={bust}"
+    return preview
 
 
 class ChartEditBody(BaseModel):
@@ -731,6 +762,13 @@ class ChartEditBody(BaseModel):
     style: str | None = Field(default="")
     chart_type: str | None = Field(default="")
     formats: str = Field(default="both")
+
+
+class ChartPreviewBody(BaseModel):
+    """Local live preview (palette + type coerce). Style notes deferred to Apply."""
+
+    palette: str | None = Field(default="atelier")
+    chart_type: str | None = Field(default="")
 
 
 class FigureEditBody(BaseModel):
@@ -742,17 +780,66 @@ class FigureEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
-@app.post("/api/runs/{run_id}/charts/{chart_id}/edit")
-async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
-    """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
+def _resolve_run_dir(run_id: str) -> Path:
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    if not _FILE_OK.match(chart_id):
-        raise HTTPException(400, detail="invalid chart_id")
     out_dir = (ROOT / "runs" / "out" / run_id).resolve()
     out_root = (ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
         raise HTTPException(404, detail="run not found")
+    return out_dir
+
+
+@app.get("/api/runs/{run_id}/charts/{chart_id}")
+def get_run_chart(run_id: str, chart_id: str) -> dict[str, Any]:
+    """Chart fragment + meta for Liber live Chart.js (G9/G12)."""
+    if not _FILE_OK.match(chart_id):
+        raise HTTPException(400, detail="invalid chart_id")
+    out_dir = _resolve_run_dir(run_id)
+    fj = _load_figures_json(out_dir)
+    charts = fj.get("charts") or []
+    chart = next(
+        (c for c in charts if isinstance(c, dict) and c.get("id") == chart_id),
+        None,
+    )
+    if not chart:
+        raise HTTPException(404, detail="chart not found")
+    html = str(chart.get("html") or "").strip()
+    if not html:
+        raise HTTPException(404, detail="chart html missing")
+    return {
+        "id": chart_id,
+        "type": str(chart.get("type") or "").strip(),
+        "caption": str(chart.get("caption") or "").strip(),
+        "html": html,
+    }
+
+
+@app.post("/api/runs/{run_id}/charts/{chart_id}/preview")
+def preview_run_chart(
+    run_id: str, chart_id: str, body: ChartPreviewBody
+) -> dict[str, Any]:
+    """Local palette/type preview — no PNG/PDF write (Apply still commits)."""
+    if not _FILE_OK.match(chart_id):
+        raise HTTPException(400, detail="invalid chart_id")
+    out_dir = _resolve_run_dir(run_id)
+    try:
+        return preview_chart_html(
+            out_dir,
+            chart_id,
+            palette=body.palette,
+            chart_type=body.chart_type,
+        )
+    except ChartEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/charts/{chart_id}/edit")
+async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
+    """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
+    if not _FILE_OK.match(chart_id):
+        raise HTTPException(400, detail="invalid chart_id")
+    out_dir = _resolve_run_dir(run_id)
 
     fmt_raw = (body.formats or "both").strip().lower()
     if fmt_raw == "both":

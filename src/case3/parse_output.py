@@ -261,15 +261,34 @@ def _parse_charts_list(raw_charts: Any, *, max_charts: int) -> list[dict[str, An
         except ChartHtmlError as exc:
             log.warning("drop chart %s: bad html (%s)", cid, exc)
             continue
-        charts.append(
-            {
-                "id": cid,
-                "type": ctype,
-                "caption": str(item.get("caption", "")).strip() or cid,
-                "html": html,
-                "width": sanitize_width(str(item.get("width", "")) or None),
-            }
-        )
+        entry: dict[str, Any] = {
+            "id": cid,
+            "type": ctype,
+            "caption": str(item.get("caption", "")).strip() or cid,
+            "html": html,
+            "width": sanitize_width(str(item.get("width", "")) or None),
+        }
+        insight = str(item.get("insight", "") or "").strip()
+        if insight:
+            entry["insight"] = insight[:400]
+        raw_hl = item.get("highlights")
+        if isinstance(raw_hl, list):
+            highlights: list[dict[str, str]] = []
+            for h in raw_hl[:8]:
+                if not isinstance(h, dict):
+                    continue
+                label = str(h.get("label", "")).strip()
+                value = str(h.get("value", "")).strip()
+                if not label or not value:
+                    continue
+                row: dict[str, str] = {"label": label[:80], "value": value[:40]}
+                pct = str(h.get("pct", "") or "").strip()
+                if pct:
+                    row["pct"] = pct[:16]
+                highlights.append(row)
+            if highlights:
+                entry["highlights"] = highlights
+        charts.append(entry)
         if len(charts) >= max_charts:
             break
     return charts

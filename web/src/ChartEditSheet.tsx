@@ -1,7 +1,8 @@
-/** Liber desk: tune one chart — type chips, palette, notes. Applies only on save. */
+/** Liber desk: tune one chart — type chips, palette, notes. Live preview before Apply (G9). */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
+import { LiveChart } from "./LiveChart";
 
 export type PaletteInfo = {
   id: string;
@@ -26,6 +27,7 @@ export type ChartEditDraft = {
 type Props = {
   open: boolean;
   figureId: string;
+  runId?: string;
   caption?: string;
   palettes: PaletteInfo[];
   catalogTypes: string[];
@@ -41,6 +43,7 @@ type Props = {
 export function ChartEditSheet({
   open,
   figureId,
+  runId,
   caption,
   palettes,
   catalogTypes,
@@ -57,6 +60,10 @@ export function ChartEditSheet({
   const [palette, setPalette] = useState(initialPalette);
   const [chartType, setChartType] = useState(initialType || types[0] || "bar");
   const [styleNotes, setStyleNotes] = useState("");
+  const [liveHtml, setLiveHtml] = useState<string | null>(null);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const previewSeq = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +78,8 @@ export function ChartEditSheet({
         : types[0] || "bar";
     setChartType(t);
     setStyleNotes("");
+    setLiveHtml(null);
+    setLiveErr(null);
   }, [open, figureId, initialPalette, initialType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -83,6 +92,43 @@ export function ChartEditSheet({
       wash: info?.swatches?.[0],
     });
   }, [open, palette, chartType, onDraftChange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // G9: debounce local preview (palette + type) — style notes wait for Apply
+  useEffect(() => {
+    if (!open || !runId || !figureId) return;
+    const seq = ++previewSeq.current;
+    setLiveLoading(true);
+    setLiveErr(null);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(figureId)}/preview`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ palette, chart_type: chartType }),
+            },
+          );
+          if (seq !== previewSeq.current) return;
+          if (!r.ok) {
+            const detail = await r.text();
+            throw new Error(detail.slice(0, 180) || `preview ${r.status}`);
+          }
+          const data = (await r.json()) as { html?: string };
+          if (seq !== previewSeq.current) return;
+          setLiveHtml(data.html || null);
+          setLiveErr(null);
+        } catch (e) {
+          if (seq !== previewSeq.current) return;
+          setLiveErr(e instanceof Error ? e.message : "Превью недоступно");
+        } finally {
+          if (seq === previewSeq.current) setLiveLoading(false);
+        }
+      })();
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [open, runId, figureId, palette, chartType]);
 
   if (!open) return null;
 
@@ -116,6 +162,40 @@ export function ChartEditSheet({
           ×
         </button>
       </header>
+
+      <section className="chart-edit-live" aria-live="polite">
+        <div className="chart-edit-labelrow">
+          <label className="field">Превью до сохранения</label>
+          {liveLoading ? (
+            <span className="chart-edit-badge">обновляю…</span>
+          ) : dirtyType || dirtyPalette ? (
+            <span className="chart-edit-badge">черновик</span>
+          ) : null}
+        </div>
+        {liveHtml ? (
+          <LiveChart
+            html={liveHtml}
+            title={`Превью ${caption || figureId}`}
+            compact
+            showBadge
+          />
+        ) : (
+          <div className="chart-edit-live-fallback">
+            {liveErr
+              ? `Превью: ${liveErr}`
+              : liveLoading
+                ? "Строю live Chart.js…"
+                : runId
+                  ? "Жду превью…"
+                  : "Нет runId — превью недоступно"}
+          </div>
+        )}
+        {styleNotes.trim() ? (
+          <p className="chart-edit-live-note">
+            Текст «как изменить» применится только при сохранении (LLM).
+          </p>
+        ) : null}
+      </section>
 
       <section className="chart-edit-block">
         <div className="chart-edit-labelrow">
@@ -189,8 +269,8 @@ export function ChartEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Пока виден текущий рисунок. Тип, палитра и текст применятся после
-          «Сохранить в отчёт» — обновятся PNG и PDF/DOCX.
+          Live выше — черновик. «Сохранить в отчёт» пересоберёт PNG и PDF/DOCX
+          (PDF остаётся истиной печати).
         </p>
         <div className="chart-edit-actions">
           <button

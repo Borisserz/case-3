@@ -10,9 +10,17 @@ from pathlib import Path
 from typing import Any
 
 from case3.chart_html import ChartHtmlError, sanitize_chart_html
-from case3.chart_style import apply_palette_to_html, intent_palette_lines, normalize_palette_id
-from case3.chart_types_coerce import harden_chart_html
-from case3.chart_types_coerce import apply_type_to_chart
+from case3.chart_style import (
+    apply_kpi_palette_vars,
+    apply_palette_to_html,
+    intent_palette_lines,
+    normalize_palette_id,
+)
+from case3.chart_types_coerce import (
+    apply_type_to_chart,
+    enhance_donut_html,
+    harden_chart_html,
+)
 from case3.charts import render_chart_png
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.render import RenderError, render_tex
@@ -88,6 +96,118 @@ def rewrite_chart_html_with_llm(
     return sanitize_chart_html(frag)
 
 
+def _load_chart_from_run(out_dir: Path, chart_id: str) -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Return (figures_json, chart_dict, index). Raises ChartEditError."""
+    out_dir = out_dir.resolve()
+    fj_path = out_dir / "figures.json"
+    if not fj_path.is_file():
+        raise ChartEditError("figures.json missing")
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartEditError(f"figures.json unreadable: {exc}") from exc
+
+    charts = list(fj.get("charts") or [])
+    idx = next(
+        (i for i, c in enumerate(charts) if isinstance(c, dict) and c.get("id") == chart_id),
+        -1,
+    )
+    if idx < 0:
+        raise ChartEditError(f"chart {chart_id!r} not found")
+    chart = dict(charts[idx])
+    html = str(chart.get("html") or "").strip()
+    if not html:
+        raise ChartEditError(f"chart {chart_id!r} has no html")
+    return fj, chart, idx
+
+
+def _local_restyle_html(
+    chart: dict[str, Any],
+    *,
+    palette_id: str,
+    want_type: str,
+) -> tuple[str, str, list[str]]:
+    """Palette + type coerce only (no LLM). Returns (html, final_type, modes)."""
+    html = str(chart.get("html") or "").strip()
+    current_type = str(chart.get("type") or "").strip()
+    want = (want_type or current_type or "").strip()
+    type_changed = bool(want) and want != current_type
+    modes: list[str] = []
+    work = dict(chart)
+    new_html = html
+
+    if want == "kpi":
+        modes.append("local_kpi")
+        if type_changed:
+            modes.append("type_change")
+            modes.append("local_type")
+        work["type"] = "kpi"
+        work["html"] = html
+        work = apply_type_to_chart(work, "kpi")
+        new_html = str(work.get("html") or "")
+        if palette_id != "auto":
+            new_html = apply_kpi_palette_vars(new_html, palette_id)
+            modes.append("local_palette")
+    else:
+        if type_changed and want:
+            modes.append("type_change")
+            modes.append("local_type")
+            work["html"] = html
+            work["type"] = want
+            work = apply_type_to_chart(work, want)
+            new_html = str(work.get("html") or "")
+        if palette_id != "auto":
+            modes.append("local_palette")
+            new_html = sanitize_chart_html(apply_palette_to_html(new_html, palette_id))
+        elif not type_changed:
+            raise ChartEditError("укажите палитру или тип для превью")
+
+    if want:
+        work["type"] = want
+        work["html"] = new_html
+        work = apply_type_to_chart(work, want)
+        new_html = str(work.get("html") or "")
+    final_type = str(work.get("type") or want or current_type)
+    if final_type == "donut" and new_html:
+        new_html = enhance_donut_html(new_html)
+        modes.append("donut_enhance")
+    if new_html and palette_id != "auto":
+        new_html = apply_kpi_palette_vars(new_html, palette_id)
+    if new_html:
+        new_html = harden_chart_html(new_html, final_type)
+    return new_html, final_type, modes
+
+
+def preview_chart_html(
+    out_dir: Path,
+    chart_id: str,
+    *,
+    palette: str | None = None,
+    chart_type: str | None = None,
+) -> dict[str, Any]:
+    """Local-only restyle for Liber live preview (no LLM, no disk write).
+
+    Style notes from the edit sheet are deferred until Apply — they need the LLM.
+    """
+    _fj, chart, _idx = _load_chart_from_run(out_dir, chart_id)
+    palette_id = normalize_palette_id(palette or "atelier")
+    current_type = str(chart.get("type") or "").strip()
+    want_type = (chart_type or "").strip() or current_type
+    new_html, final_type, modes = _local_restyle_html(
+        chart, palette_id=palette_id, want_type=want_type
+    )
+    return {
+        "chart_id": chart_id,
+        "id": chart_id,
+        "type": final_type,
+        "palette": palette_id,
+        "html": new_html,
+        "modes": modes,
+        "caption": str(chart.get("caption") or "").strip(),
+        "style_deferred": True,
+    }
+
+
 def edit_chart_in_run(
     out_dir: Path,
     chart_id: str,
@@ -100,22 +220,9 @@ def edit_chart_in_run(
 ) -> dict[str, Any]:
     """Update one chart PNG + figures.json and rebuild PDF/DOCX in out_dir."""
     out_dir = out_dir.resolve()
-    fj_path = out_dir / "figures.json"
-    if not fj_path.is_file():
-        raise ChartEditError("figures.json missing")
-    try:
-        fj = json.loads(fj_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ChartEditError(f"figures.json unreadable: {exc}") from exc
-
+    fj, chart, idx = _load_chart_from_run(out_dir, chart_id)
     charts = list(fj.get("charts") or [])
-    idx = next((i for i, c in enumerate(charts) if isinstance(c, dict) and c.get("id") == chart_id), -1)
-    if idx < 0:
-        raise ChartEditError(f"chart {chart_id!r} not found")
-    chart = dict(charts[idx])
     html = str(chart.get("html") or "").strip()
-    if not html:
-        raise ChartEditError(f"chart {chart_id!r} has no html")
 
     palette_id = normalize_palette_id(palette or "editorial")
     style_notes = (style or "").strip()
@@ -134,8 +241,9 @@ def edit_chart_in_run(
         chart["html"] = html
         chart = apply_type_to_chart(chart, "kpi")
         new_html = str(chart.get("html") or "")
-        if palette_id != "auto" and not style_notes:
-            # KPI markup has no Chart.js colors; palette is a no-op on cards.
+        if palette_id != "auto":
+            # KPI cards use CSS vars from palette (frame .kpi / --kpi-value).
+            new_html = apply_kpi_palette_vars(new_html, palette_id)
             modes.append("local_palette")
     elif bool(style_notes) or type_changed:
         modes.append("llm_style")
@@ -171,15 +279,22 @@ def edit_chart_in_run(
         new_html = sanitize_chart_html(apply_palette_to_html(html, palette_id))
 
     # Commit figures.json only after PNG succeeds (avoid HTML/PNG drift).
-    chart["html"] = new_html
     if want_type:
         chart["type"] = want_type
+        chart["html"] = new_html
         chart = apply_type_to_chart(chart, want_type)
         new_html = str(chart.get("html") or "")
-        chart["html"] = new_html
-    else:
-        new_html = harden_chart_html(new_html, str(chart.get("type") or ""))
-        chart["html"] = new_html
+    final_type = str(chart.get("type") or want_type or current_type)
+    # Re-apply Mary donut shell after LLM/palette (edit used to drop legend).
+    if final_type == "donut" and new_html:
+        new_html = enhance_donut_html(new_html)
+        modes.append("donut_enhance")
+    if new_html and palette_id != "auto":
+        new_html = apply_kpi_palette_vars(new_html, palette_id)
+    if new_html:
+        new_html = harden_chart_html(new_html, final_type)
+    chart["html"] = new_html
+    chart["type"] = final_type
     charts[idx] = chart
     fj["charts"] = charts
     figs_dir = out_dir / "figures"
@@ -193,6 +308,7 @@ def edit_chart_in_run(
         if bak is not None:
             dest.write_bytes(bak)
         raise ChartEditError(f"chart render failed: {exc}") from exc
+    fj_path = out_dir / "figures.json"
     fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # meta media_status

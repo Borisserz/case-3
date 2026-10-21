@@ -2,7 +2,8 @@
 name: Liber UX polish roadmap
 overview: "Расширенный backlog по графикам, чату и оформлению PDF/DOCX, с фазами под Windows + Qwen + Image API. Стартовая стратегия — баланс: быстрые S-фиксы, затем M из каждого блока, live-preview графиков в конце."
 saved: 2026-10-20
-status: parked
+status: active
+# Progress 2026-10-21: done C1 C2 C3 G11 D1 D2 (soft-premium sprint)
 ---
 
 # Liber: графики · чат · документы — план улучшений
@@ -44,7 +45,7 @@ flowchart LR
 | G8 | Умный дефолт типа по данным (месяцы→line/bar) | S–M | Меньше странных hbar |
 | G9 | Live preview (iframe Chart.js / мини-PNG) до Apply | L | Главный UX-win |
 | G10 | Сильные type-transforms (donut↔bar datasets) | L | Надёжная смена типа |
-| G11 | Per-figure lock (не блокировать все «Изменить») | M | Мульти-графики |
+| G11 | Per-figure lock (не блокировать все «Изменить») | M | **done** 2026-10-21 |
 | G12 | Tooltip/значения: live Chart.js в чате (не только PNG) | L | Наведение на данные |
 
 ---
@@ -53,9 +54,9 @@ flowchart LR
 
 | # | Идея | Effort | Зачем |
 |---|------|--------|-------|
-| C1 | Списки `itemize`/`enumerate` → блоки `<ul>`/`<ol>` | S | Сейчас сплющиваются в prose |
-| C2 | `\textbf`/`\textit` → strong/em в превью | S | Акценты живы в PDF, мертвы в чате |
-| C3 | Пустой preview + есть PDF → явный warning | S | Не «тело пустое» молча |
+| C1 | Списки `itemize`/`enumerate` → блоки `<ul>`/`<ol>` | S | **done** 2026-10-21 |
+| C2 | `\textbf`/`\textit` → strong/em в превью | S | **done** 2026-10-21 |
+| C3 | Пустой preview + есть PDF → явный warning | S | **done** 2026-10-21 |
 | C4 | `\subsubsection` + longtable / bare tabularx | M | Плотнее паритет с TeX |
 | C5 | Nested `\caption{…}` parser | M | Не терять подписи |
 | C6 | User bubble: свернуть Intent, чипы настроек | M | Читаемый запрос |
@@ -72,8 +73,8 @@ flowchart LR
 
 | # | Идея | Effort | Зачем |
 |---|------|--------|-------|
-| D1 | `reference.docx`: Heading3, List, Quote; шрифт = Liberation/DejaVu (не Times) | S | Убрать тройной раскол шрифтов |
-| D2 | Caption grammar «Рис.» / «Таблица» + captionsetup | S | Единый язык |
+| D1 | `reference.docx`: Heading3, List, Quote; шрифт = Liberation/DejaVu (не Times) | S | **done** 2026-10-21 |
+| D2 | Caption grammar «Рис.» / «Таблица» + captionsetup | S | **done** 2026-10-21 |
 | D3 | Титул-шаблон: title + пустой author + дата | S | Меньше хаоса модели |
 | D4 | REPORT_STYLE: rule под title, float spacing | M | Liber-print look |
 | D5 | Post-pandoc table polish (header row, numeric align) | M | DOCX таблицы |

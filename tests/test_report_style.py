@@ -23,6 +23,8 @@ Hi
     assert r"\setmainfont{DejaVu Serif}" in out
     assert r"\setdefaultlanguage{russian}" in out
     assert r"\setlength{\headheight}{15pt}" in out
+    assert r"\captionsetup[figure]{name={Рис.}}" in out
+    assert r"\captionsetup[table]{name={Таблица}}" in out
 
 
 def test_ensure_adds_xcolor_before_definecolor_ink() -> None:

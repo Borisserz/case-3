@@ -1,4 +1,4 @@
-/** In-chat PDF page slider (pdf.js). Left/right through all pages. */
+/** PDF page slider (pdf.js). Supports controlled page for figure→PDF jump. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
@@ -9,9 +9,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 type Props = {
   url: string;
+  /** Jump to this page when it changes (1-based). */
+  page?: number;
+  onPageChange?: (page: number, pageCount: number) => void;
 };
 
-export function PdfFirstPage({ url }: Props) {
+export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
@@ -19,13 +22,16 @@ export function PdfFirstPage({ url }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  const renderGen = useRef(0);
 
   const renderPage = useCallback(async (doc: PDFDocumentProxy, n: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const gen = ++renderGen.current;
     setDrawing(true);
     try {
       const pdfPage = await doc.getPage(n);
+      if (gen !== renderGen.current) return;
       const base = pdfPage.getViewport({ scale: 1 });
       const maxW = Math.min(720, canvas.parentElement?.clientWidth || 720);
       const scale = maxW / base.width;
@@ -35,10 +41,11 @@ export function PdfFirstPage({ url }: Props) {
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
       await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+      if (gen !== renderGen.current) return;
       setReady(true);
       setErr(null);
     } finally {
-      setDrawing(false);
+      if (gen === renderGen.current) setDrawing(false);
     }
   }, []);
 
@@ -55,14 +62,21 @@ export function PdfFirstPage({ url }: Props) {
 
     (async () => {
       try {
-        const doc = await pdfjs.getDocument({ url, withCredentials: false }).promise;
+        const doc = await pdfjs
+          .getDocument({ url, withCredentials: false })
+          .promise;
         if (cancelled) {
           void doc.destroy();
           return;
         }
         docRef.current = doc;
         setPageCount(doc.numPages);
-        setPage(1);
+        const start =
+          pageProp && pageProp >= 1
+            ? Math.min(pageProp, doc.numPages)
+            : 1;
+        setPage(start);
+        onPageChange?.(start, doc.numPages);
       } catch (e) {
         if (!cancelled) {
           setErr(e instanceof Error ? e.message : "PDF preview failed");
@@ -76,7 +90,14 @@ export function PdfFirstPage({ url }: Props) {
       docRef.current = null;
       if (d) void d.destroy();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only on url
   }, [url]);
+
+  useEffect(() => {
+    if (pageProp == null || pageCount < 1) return;
+    const next = Math.min(pageCount, Math.max(1, pageProp));
+    setPage((p) => (p === next ? p : next));
+  }, [pageProp, pageCount]);
 
   useEffect(() => {
     const doc = docRef.current;
@@ -100,10 +121,12 @@ export function PdfFirstPage({ url }: Props) {
     (delta: number) => {
       setPage((p) => {
         if (pageCount < 1) return p;
-        return Math.min(pageCount, Math.max(1, p + delta));
+        const next = Math.min(pageCount, Math.max(1, p + delta));
+        onPageChange?.(next, pageCount);
+        return next;
       });
     },
-    [pageCount],
+    [pageCount, onPageChange],
   );
 
   useEffect(() => {
@@ -135,6 +158,18 @@ export function PdfFirstPage({ url }: Props) {
   return (
     <figure className={`report-pdf-page${ready ? " is-ready" : ""}`}>
       <div className="report-pdf-stage">
+        {!ready && !err && (
+          <div className="pdf-skeleton" aria-hidden>
+            <div className="pdf-skeleton-shine" />
+            <div className="pdf-skeleton-lines">
+              <i style={{ width: "48%" }} />
+              <i style={{ width: "92%" }} />
+              <i style={{ width: "78%" }} />
+              <i style={{ width: "86%" }} />
+              <i style={{ width: "64%" }} />
+            </div>
+          </div>
+        )}
         {multi && (
           <button
             type="button"
@@ -148,6 +183,7 @@ export function PdfFirstPage({ url }: Props) {
         )}
         <canvas
           ref={canvasRef}
+          className={ready ? "is-shown" : "is-hidden"}
           aria-label={`Страница ${page} из ${pageCount || "…"} PDF`}
         />
         {multi && (

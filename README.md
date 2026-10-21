@@ -2,6 +2,8 @@
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
+**Память проекта (агенты и люди):** [`docs/MEMORY.md`](docs/MEMORY.md) · [`AGENTS.md`](AGENTS.md)
+
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
 DOCX: `assets/docx/reference.docx` (pandoc `--reference-doc`).
 

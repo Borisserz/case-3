@@ -51,10 +51,12 @@ def test_build_report_preview_attaches_urls_and_captions() -> None:
     figs = [b for b in preview["blocks"] if b["type"] == "figure"]
     assert figs[0]["url"] == "/api/runs/demo_run/figures/cht_01.png"
     assert figs[0]["kind"] == "chart"
+    assert figs[0].get("pdfPage") == 1
     # empty TeX caption filled from figures.json
     fig01 = next(b for b in figs if b["id"] == "fig_01")
     assert fig01["caption"] == "Схема из JSON"
     assert fig01["kind"] == "image"
+    assert fig01.get("pdfPage") == 1
 
 
 def test_failed_media_omits_url() -> None:
@@ -67,3 +69,52 @@ def test_failed_media_omits_url() -> None:
     )
     fig = next(b for b in preview["blocks"] if b.get("id") == "cht_01")
     assert not fig.get("url")
+
+
+def test_preview_preserves_bold_and_italic() -> None:
+    """C2: \\textbf / \\textit survive as HTML strong/em in paragraph blocks."""
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\title{T}
+\section{S}
+Текст с \textbf{важной} и \textit{курсивной} деталью.
+\end{document}
+"""
+    data = tex_to_preview_blocks(tex)
+    paras = [b for b in data["blocks"] if b["type"] == "paragraph"]
+    assert paras, "expected a paragraph"
+    html = paras[0].get("html") or ""
+    assert "<strong>" in html and "важной" in html
+    assert "<em>" in html and "курсивной" in html
+    # plain text still available without tags
+    assert "важной" in paras[0]["text"]
+    assert "<strong>" not in paras[0]["text"]
+
+
+def test_preview_extracts_itemize_and_enumerate() -> None:
+    """C1: itemize/enumerate → list blocks with items."""
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\section{Итоги}
+\begin{itemize}
+\item Первый пункт с \textbf{акцентом}
+\item Второй
+\end{itemize}
+\begin{enumerate}
+\item Шаг один
+\item Шаг два
+\end{enumerate}
+\end{document}
+"""
+    data = tex_to_preview_blocks(tex)
+    lists = [b for b in data["blocks"] if b["type"] == "list"]
+    assert len(lists) >= 2
+    ul = next(b for b in lists if not b.get("ordered"))
+    ol = next(b for b in lists if b.get("ordered"))
+    assert len(ul["items"]) == 2
+    assert "Первый" in ul["items"][0]["text"]
+    assert "<strong>" in (ul["items"][0].get("html") or "")
+    assert len(ol["items"]) == 2
+    assert "Шаг один" in ol["items"][0]["text"]

@@ -51,6 +51,8 @@ REPORT_STYLE_BLOCK = r"""
 \setstretch{1.15}
 \setlength{\headheight}{15pt}
 \captionsetup{font=small,labelfont=bf,skip=6pt,justification=centering}
+\captionsetup[figure]{name={Рис.}}
+\captionsetup[table]{name={Таблица}}
 """ + _SAFE_TITLEFORMAT + r"""
 \pagestyle{fancy}
 \fancyhf{}
@@ -386,12 +388,43 @@ def ensure_headheight(tex: str) -> str:
     return head + body
 
 
+def ensure_russian_captions(tex: str) -> str:
+    """D2: figure/table labels «Рис.» / «Таблица» (idempotent)."""
+    out = tex or ""
+    if r"name={Рис.}" not in out and r"name={Рис}" not in out:
+        # After generic captionsetup or before \begin{document}.
+        needle = r"\captionsetup{font=small,labelfont=bf,skip=6pt,justification=centering}"
+        insert = (
+            needle
+            + "\n\\captionsetup[figure]{name={Рис.}}\n"
+            + "\\captionsetup[table]{name={Таблица}}"
+        )
+        if needle in out:
+            out = out.replace(needle, insert, 1)
+        else:
+            parts = _split_preamble(out)
+            if parts:
+                head, body = parts
+                out = (
+                    head.rstrip()
+                    + "\n\\captionsetup[figure]{name={Рис.}}\n"
+                    + "\\captionsetup[table]{name={Таблица}}\n"
+                    + body
+                )
+    elif r"name={Таблица}" not in out:
+        parts = _split_preamble(out)
+        if parts:
+            head, body = parts
+            out = head.rstrip() + "\n\\captionsetup[table]{name={Таблица}}\n" + body
+    return out
+
+
 def ensure_report_style(tex: str) -> str:
     """Typography + fancyhdr; always sanitize titlesec even if fancy already set."""
     out = sanitize_titleformat(tex)
     out = ensure_headheight(out)
     if r"\pagestyle{fancy}" in out and r"\setstretch{" in out:
-        return out
+        return ensure_russian_captions(out)
     parts = _split_preamble(out)
     if not parts:
         return out
@@ -418,9 +451,11 @@ def ensure_report_style(tex: str) -> str:
 }"""
             )
         if not extra:
-            return out
-        return head.rstrip() + "\n" + "\n".join(extra) + "\n" + body
-    return head + block + body
+            return ensure_russian_captions(out)
+        return ensure_russian_captions(
+            head.rstrip() + "\n" + "\n".join(extra) + "\n" + body
+        )
+    return ensure_russian_captions(head + block + body)
 
 def assert_tex_structure(tex: str) -> None:
     if r"\documentclass" not in tex:
