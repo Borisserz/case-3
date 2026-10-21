@@ -25,6 +25,15 @@ Hi
     assert r"\setlength{\headheight}{15pt}" in out
     assert r"\captionsetup[figure]{name={Рис.}}" in out
     assert r"\captionsetup[table]{name={Таблица}}" in out
+    # D4 Liber print chrome
+    assert r"\renewcommand{\maketitle}" in out or r"\CaseThreeMaketitle" in out
+    assert r"\rule{\textwidth}{0.35pt}" in out
+    assert r"\setlength{\textfloatsep}" in out
+    assert r"\setlength{\floatsep}" in out
+    # Chrome 2.0 — section air + list/par rhythm
+    assert r"\titlespacing*{\section}{0pt}{1.8ex" in out
+    assert r"\setlength{\parskip}" in out
+    assert r"\setlength{\itemsep}" in out
 
 
 def test_ensure_adds_xcolor_before_definecolor_ink() -> None:
@@ -67,6 +76,24 @@ def test_ensure_strips_color_from_titleformat() -> None:
     assert r"\color{black}" not in out
     assert r"\titleformat{\section}{\large\bfseries\raggedright}" in out
     assert r"\setlength{\headheight}{15pt}" in out
+
+
+def test_liber_print_chrome_idempotent() -> None:
+    """Re-hardening must not stack title-rule wrappers (pipeline may call twice)."""
+    raw = r"""\documentclass[a4paper,12pt]{article}
+\usepackage{fontspec}
+\begin{document}
+\maketitle
+Hi
+\end{document}
+"""
+    once = ensure_document_preamble(raw)
+    twice = ensure_document_preamble(once)
+    assert once.count("% --- Liber print chrome") == 1
+    assert twice.count("% --- Liber print chrome") == 1
+    assert once.count(r"\renewcommand{\maketitle}") == 1
+    assert twice.count(r"\renewcommand{\maketitle}") == 1
+    assert r"\rule{\textwidth}{0.35pt}" in twice
 
 
 def test_scrub_author_case3() -> None:

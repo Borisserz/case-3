@@ -75,12 +75,12 @@ flowchart LR
 |---|------|--------|-------|
 | D1 | `reference.docx`: Heading3, List, Quote; шрифт = Liberation/DejaVu (не Times) | S | **done** 2026-10-21 |
 | D2 | Caption grammar «Рис.» / «Таблица» + captionsetup | S | **done** 2026-10-21 |
-| D3 | Титул-шаблон: title + пустой author + дата | S | Меньше хаоса модели |
-| D4 | REPORT_STYLE: rule под title, float spacing | M | Liber-print look |
-| D5 | Post-pandoc table polish (header row, numeric align) | M | DOCX таблицы |
-| D6 | Prompt: списки/emphasis first-class | M | Кормит и чат, и PDF |
-| D7 | Лимиты высоты/ширины графиков на A4 | M | Не раздувать страницу |
-| D8 | DOCX header ≈ fancyhdr | M | Паритет шапки |
+| D3 | Титул-шаблон: title + пустой author + дата | S | **done** 2026-10-21 (model auto-title if Settings empty) |
+| D4 | REPORT_STYLE: rule под title, float spacing | M | **done** 2026-10-21 |
+| D5 | Post-pandoc table polish (header row, numeric align) | M | **done** 2026-10-21 |
+| D6 | Prompt: списки/emphasis first-class | M | **done** 2026-10-21 |
+| D7 | Лимиты высоты/ширины графиков на A4 | M | **done** 2026-10-21 |
+| D8 | DOCX header ≈ fancyhdr | M | **done** 2026-10-21 (footer PAGE + margins in reference) |
 | D9 | 2 стиля отчёта (Liber / строгий) в Settings | M–L | Выбор вида |
 | D10 | Shared design tokens (палитра UI=charts=print) | L | Единый бренд |
 | D11 | Visual regression PDF pages на fixtures | L | Не ломать вёрстку |

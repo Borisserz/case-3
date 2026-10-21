@@ -144,50 +144,50 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
     return out
 
 
-# Soft luminance ladders (Mary-inspired). No purple/indigo slop.
-# atelier = Liber soft-green primary.
+# Vivid luminance ladders (print ≈ Liber preview). No purple/indigo slop.
+# atelier = Liber olive primary, punchier than soft-premium mist.
 _PALETTES: dict[str, dict[str, Any]] = {
     "editorial": {
         "label": "Editorial",
-        "primary": "#1A4A4B",
-        "accents": ["#D97845", "#4AADA0", "#D9C07A", "#3D5C60"],
-        "muted": "#9AA8B5",
-        "area": "rgba(74,173,160,0.16)",
-        "grid": "rgba(26,74,75,0.08)",
+        "primary": "#0F3D3E",
+        "accents": ["#F07A3A", "#2EC4B6", "#E8B84A", "#3D5C60"],
+        "muted": "#8A9AAB",
+        "area": "rgba(46,196,182,0.34)",
+        "grid": "rgba(15,61,62,0.10)",
     },
     "ocean": {
         "label": "Ocean",
-        "primary": "#1A5F9E",
-        "accents": ["#2B8FC4", "#4DB8D4", "#7CCFDF", "#A8E0EC"],
-        "muted": "#8FA0B0",
-        "area": "rgba(77,184,212,0.16)",
-        "grid": "rgba(26,95,158,0.09)",
+        "primary": "#0B4F8C",
+        "accents": ["#1E8AD4", "#2EC4E0", "#5ED4F0", "#9AE8F5"],
+        "muted": "#7A90A8",
+        "area": "rgba(46,196,224,0.34)",
+        "grid": "rgba(11,79,140,0.10)",
     },
     "sunset": {
         "label": "Sunset",
-        "primary": "#7A4058",
-        "accents": ["#D65A5A", "#E8954A", "#E8C070", "#4A6070"],
-        "muted": "#A8A0A0",
-        "area": "rgba(232,149,74,0.15)",
-        "grid": "rgba(122,64,88,0.09)",
+        "primary": "#8B2E4A",
+        "accents": ["#F04545", "#FF8C2A", "#F0C040", "#4A6070"],
+        "muted": "#A09090",
+        "area": "rgba(255,140,42,0.34)",
+        "grid": "rgba(139,46,74,0.10)",
     },
     "mono": {
         "label": "Mono",
-        "primary": "#2A2F38",
-        "accents": ["#3D4450", "#5C6570", "#8B939E", "#B0B6BE"],
+        "primary": "#1A1F28",
+        "accents": ["#3A4250", "#5C6570", "#8B939E", "#B0B6BE"],
         "muted": "#9CA3AF",
-        "area": "rgba(42,47,56,0.10)",
-        "grid": "rgba(42,47,56,0.07)",
+        "area": "rgba(26,31,40,0.18)",
+        "grid": "rgba(26,31,40,0.09)",
     },
-    # Soft olive→mist mono (Liber hues — no purple).
+    # Punchy olive→chartreuse mist (Liber hues — no purple).
     "atelier": {
         "label": "Atelier",
-        "primary": "#3F5210",
-        "accents": ["#5A6E28", "#7A8F45", "#A8B87A", "#D5DEC0"],
+        "primary": "#2E4208",
+        "accents": ["#4F6B14", "#7A9A28", "#B8D45A", "#D5DEC0"],
         # Axis/legend ink — readable on cream paper.
         "muted": "#6A7160",
-        "area": "rgba(122,143,69,0.16)",
-        "grid": "rgba(63,82,16,0.08)",
+        "area": "rgba(122,154,40,0.34)",
+        "grid": "rgba(46,66,8,0.10)",
     },
 }
 
@@ -256,7 +256,7 @@ def palette_public() -> list[dict[str, Any]]:
         {
             "id": "auto",
             "label": "Auto",
-            "swatches": ["#3F5210", "#D97845", "#1A5F9E", "#E8954A"],
+            "swatches": ["#2E4208", "#F07A3A", "#0B4F8C", "#FF8C2A"],
         }
     ]
     for pid in ("editorial", "ocean", "sunset", "mono", "atelier"):

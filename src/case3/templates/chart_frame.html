@@ -13,13 +13,13 @@
       padding: 28px 36px;
       box-sizing: border-box;
       font-family: "Segoe UI", "DejaVu Sans", sans-serif;
-      color: var(--chart-ink, #1A4A4B);
-      /* Soft defaults; polish may override via #mount { --kpi-value:… } */
-      --kpi-value: var(--chart-accent, #5A6E28);
+      color: var(--chart-ink, #0F3D3E);
+      /* Vivid defaults; polish may override via #mount { --kpi-value:… } */
+      --kpi-value: var(--chart-accent, #4F6B14);
       --kpi-label: var(--chart-muted, #6A7160);
-      --kpi-ink: var(--chart-ink, #3F5210);
-      --chart-ink: #3F5210;
-      --chart-accent: #5A6E28;
+      --kpi-ink: var(--chart-ink, #2E4208);
+      --chart-ink: #2E4208;
+      --chart-accent: #4F6B14;
       --chart-muted: #6A7160;
     }
     canvas { max-width: 100%; display: block; margin: 0 auto; }
@@ -58,11 +58,12 @@
       margin-top: 2px;
     }
 
-    /* Donut: viz | valued legend */
+    /* Donut: square viz | valued legend filling the right */
+    .chart-card.donut-layout,
     .donut-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);
-      gap: 28px 36px;
+      grid-template-columns: 520px minmax(320px, 1fr);
+      gap: 28px 40px;
       align-items: center;
       width: 100%;
     }
@@ -71,10 +72,16 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 320px;
+      width: 520px;
+      height: 520px;
+      max-width: 100%;
+      flex-shrink: 0;
     }
     .donut-viz canvas {
       margin: 0 auto;
+      /* Match bitmap attrs — CSS stretch of non-square buffer = oval */
+      width: 520px;
+      height: 520px;
       max-width: 100%;
     }
     .donut-center {
@@ -106,24 +113,24 @@
     .valued-legend {
       list-style: none;
       margin: 0;
-      padding: 0;
+      padding: 4px 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
     }
     .valued-legend li,
     .valued-legend__row {
       display: grid;
-      grid-template-columns: 14px minmax(0, 1fr) auto auto;
-      gap: 10px 14px;
+      grid-template-columns: 16px minmax(0, 1fr) auto auto;
+      gap: 12px 16px;
       align-items: center;
-      font-size: 15px;
+      font-size: 18px;
       font-weight: 500;
-      color: var(--chart-ink, #1A4A4B);
+      color: var(--chart-ink, #0F3D3E);
     }
     .valued-legend__swatch {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
       border-radius: 999px;
       flex-shrink: 0;
     }
@@ -188,11 +195,12 @@
       Chart.defaults.maintainAspectRatio = false;
       Chart.defaults.devicePixelRatio = Math.max(2, window.devicePixelRatio || 2);
       Chart.defaults.font.family = '"Segoe UI", "DejaVu Sans", sans-serif';
-      Chart.defaults.font.size = 15;
+      Chart.defaults.font.size = 17;
       Chart.defaults.font.weight = "500";
       Chart.defaults.color = "#3D5C60";
-      Chart.defaults.plugins.legend.labels.boxWidth = 14;
-      Chart.defaults.plugins.legend.labels.padding = 18;
+      Chart.defaults.plugins.legend.labels.boxWidth = 16;
+      Chart.defaults.plugins.legend.labels.padding = 20;
+      Chart.defaults.plugins.legend.labels.font = { size: 16, weight: "500" };
       Chart.defaults.plugins.legend.labels.usePointStyle = true;
       Chart.defaults.elements.bar.borderRadius = 6;
       Chart.defaults.elements.bar.borderSkipped = false;

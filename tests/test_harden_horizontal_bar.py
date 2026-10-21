@@ -47,7 +47,7 @@ def test_harden_horizontal_bar_denser_bars() -> None:
 def test_palette_from_intent_atelier() -> None:
     intent = (
         "Требования UI:\n"
-        "- палитра графиков: Atelier (atelier) — ink #3F5210, accents #5A6E28\n"
+        "- палитра графиков: Atelier (atelier) — ink #2E4208, accents #4F6B14\n"
     )
     assert palette_from_intent(intent) == "atelier"
 
@@ -69,7 +69,7 @@ def test_polish_charts_applies_palette_then_harden() -> None:
     out = polish_charts(charts, palette_id="atelier")
     html = out[0]["html"]
     up = html.upper()
-    assert "#3F5210" in up or "#5A6E28" in up or "#7A8F45" in up
+    assert "#2E4208" in up or "#4F6B14" in up or "#7A9A28" in up
     assert "#023E8A" not in up
     m = re.search(r'height="(\d+)"', html)
     assert m and int(m.group(1)) < 560
@@ -77,8 +77,9 @@ def test_polish_charts_applies_palette_then_harden() -> None:
     assert "0.18" not in html or "backgroundColor:'#" in html
 
 
-def test_apply_palette_alone_keeps_low_alpha_problem() -> None:
-    """Document why harden must run after palette remap."""
+def test_apply_palette_alone_keeps_translucent_area() -> None:
+    """Palette remap → vivid area α≈0.34; harden still solidifies bar fills."""
     remapped = apply_palette_to_html(_HBAR, "atelier")
-    # Soft area/grid remap keeps low alpha — still ghostly without harden.
-    assert re.search(r"rgba\([^)]*,\s*0\.(1|2)\d*\)", remapped)
+    assert "0.34" in remapped
+    # Not yet solid hex fill — polish = palette then harden.
+    assert not re.search(r"backgroundColor\s*:\s*'#2E4208'", remapped, re.I)

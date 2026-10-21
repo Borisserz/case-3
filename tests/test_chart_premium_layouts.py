@@ -14,15 +14,15 @@ from case3.chart_style import (
 from case3.chart_types_coerce import enhance_donut_html, polish_charts
 
 
-def test_palettes_are_softer_ladders() -> None:
-    """Named presets keep IDs; atelier stays soft-green; accents are mid soft."""
+def test_palettes_are_vivid_olive_ladders() -> None:
+    """Named presets keep IDs; atelier stays olive (vivid 2026-10-21); no purple."""
     assert set(_PALETTES) == {"editorial", "ocean", "sunset", "mono", "atelier"}
     at = _PALETTES["atelier"]
-    assert at["primary"].upper() in {"#3F5210", "#2C3A14", "#3A4A1C"}
-    # Soft green family — not purple / not neon coral primary
+    assert at["primary"].upper() == "#2E4208"
+    assert "0.34" in str(at["area"])
+    # Olive family — green channel dominates; not purple / not neon coral primary
     r, g, b = int(at["primary"][1:3], 16), int(at["primary"][3:5], 16), int(at["primary"][5:7], 16)
     assert g > r and g > b
-    # Soften: no ultra-dark #023E8A / #111827 as ocean/mono primary
     assert _PALETTES["ocean"]["primary"].upper() != "#023E8A"
     assert _PALETTES["mono"]["primary"].upper() != "#111827"
 
@@ -120,6 +120,14 @@ def test_enhance_donut_adds_center_and_valued_legend() -> None:
 def test_enhance_donut_idempotent() -> None:
     once = enhance_donut_html(_DONUT)
     twice = enhance_donut_html(once)
+    assert twice.count("donut-center") == 1
+    assert twice.count('class="lbl"') == once.count('class="lbl"')
+    # No orphan lbl left of canvas from broken unwrap
+    assert re.search(
+        r'donut-center[\s\S]*?</div>\s*<canvas',
+        twice,
+        flags=re.I,
+    )
     assert twice.count("donut-layout") == 1
     assert "51%" in twice
 

@@ -195,10 +195,35 @@ def _solidify_pale_bar_fill(html: str) -> str:
     )
 
 
+_MAX_CANVAS_H = 560  # D7: tall canvases waste A4 vertical space
+
+
+def _clamp_canvas_height(html: str, *, max_h: int = _MAX_CANVAS_H) -> str:
+    def _cap(m: re.Match[str]) -> str:
+        try:
+            h = int(m.group(2))
+        except ValueError:
+            return m.group(0)
+        if h <= max_h:
+            return m.group(0)
+        return f'{m.group(1)}{max_h}{m.group(3)}'
+
+    return re.sub(
+        r'(<canvas\b[^>]*\bheight=")(\d+)(")',
+        _cap,
+        html or "",
+        count=1,
+        flags=re.I,
+    )
+
+
 def harden_chart_html(html: str, chart_type: str) -> str:
     """Fix sparse / washed-out Chart.js HTML for known types (esp. horizontal_bar)."""
     want = (chart_type or "").strip()
     out = html or ""
+    # D7: clamp over-tall print canvases (hbar has its own denser height).
+    if want != "horizontal_bar" and out:
+        out = _clamp_canvas_height(out)
     if want == "horizontal_bar" and out:
         n = _count_labels(out)
         h = max(300, min(420, 88 + n * 52))
@@ -277,8 +302,19 @@ def _unwrap_donut_layout(html: str) -> str:
     src = html or ""
     if not re.search(r"donut-layout", src, flags=re.I):
         return src
+    # Nested .pct/.lbl — non-greedy </div> would stop at the first child.
     src = re.sub(
-        r'<div\s+class=["\']donut-center["\'][\s\S]*?</div>',
+        r'<div\s+class=["\']donut-center["\']\s*>\s*'
+        r'<div\s+class=["\']pct["\']\s*>[\s\S]*?</div>\s*'
+        r'<div\s+class=["\']lbl["\']\s*>[\s\S]*?</div>\s*'
+        r"</div>",
+        "",
+        src,
+        flags=re.I,
+    )
+    # Orphan leftovers from older broken unwraps
+    src = re.sub(
+        r'<div\s+class=["\']lbl["\']\s*>[\s\S]*?</div>\s*',
         "",
         src,
         flags=re.I,
@@ -341,13 +377,17 @@ def enhance_donut_html(html: str) -> str:
         "</div>"
     )
 
-    # Split first canvas (or leading markup) from trailing script(s).
+    # Canvas + scripts only — ignore leftover unwrap junk around them.
     script_m = re.search(r"(<script\b)", src, flags=re.I)
-    if script_m:
-        head = src[: script_m.start()]
-        tail = src[script_m.start() :]
-    else:
-        head, tail = src, ""
+    tail = src[script_m.start() :] if script_m else ""
+    canvas_m = re.search(
+        r"<canvas\b[^>]*>\s*</canvas>|<canvas\b[^>]*/?>",
+        src,
+        flags=re.I,
+    )
+    if not canvas_m:
+        return html or src
+    head = canvas_m.group(0)
 
     # Prefer HTML legend over Chart.js legend to avoid double keys.
     if re.search(r"legend\s*:\s*\{[^}]*display\s*:", tail):
@@ -373,13 +413,30 @@ def enhance_donut_html(html: str) -> str:
             count=1,
         )
 
+    # Print frame uses responsive:false — canvas width/height attrs ARE the
+    # bitmap. LLM often emits 1100×560 → oval donut + empty right gutter.
+    head_sq = _force_square_canvas(head.strip(), size=520)
+
     wrapped = (
         '<div class="chart-card donut-layout">'
-        f'<div class="donut-viz">{center}{head.strip()}</div>'
+        f'<div class="donut-viz">{center}{head_sq}</div>'
         f"{legend}{tail}"
         "</div>"
     )
     return wrapped
+
+
+def _force_square_canvas(html: str, *, size: int = 520) -> str:
+    """Set first <canvas> to a square bitmap (print Chart.js defaults)."""
+
+    def _repl(m: re.Match[str]) -> str:
+        attrs = m.group(1) or ""
+        attrs = re.sub(r"\s*width\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = re.sub(r"\s*height\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = attrs.rstrip()
+        return f'<canvas{attrs} width="{size}" height="{size}">'
+
+    return re.sub(r"<canvas(\s[^>]*)?>", _repl, html or "", count=1, flags=re.I)
 
 
 def polish_charts(
@@ -388,7 +445,12 @@ def polish_charts(
     palette_id: str = "auto",
 ) -> list[dict[str, Any]]:
     """Apply intent palette (if set), donut layout enhance, then geometry harden."""
+    from case3.tex_safe import multi_chart_max_frac, sanitize_width
+
     pid = normalize_palette_id(palette_id)
+    dense = len(charts or []) >= 2
+    max_w = multi_chart_max_frac() if dense else None
+    default_w = r"0.82\textwidth" if dense else r"0.85\textwidth"
     out: list[dict[str, Any]] = []
     for chart in charts:
         c = dict(chart)
@@ -404,6 +466,11 @@ def polish_charts(
         if html:
             html = harden_chart_html(html, ctype)
         c["html"] = html
+        c["width"] = sanitize_width(
+            str(c.get("width") or "") or None,
+            default=default_w,
+            max_frac=max_w,
+        )
         out.append(c)
     return out
 

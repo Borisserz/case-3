@@ -7,7 +7,9 @@ LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit resty
 - Gen: `charts.generate_all_charts` after coerce/`polish_charts`
 - Edit: `POST /api/runs/{id}/charts/{cid}/edit` → `chart_edit.edit_chart_in_run`
 - Types: `chart_html.CHART_TYPES`; coerce: `chart_types_coerce.py`
-- Palette: `chart_style.apply_palette_to_html` + `palette_from_intent`
+- Palette: `chart_style.apply_palette_to_html` + `palette_from_intent` (vivid ladders 2026-10-21; area α≈0.34)
+- Print legend: `.valued-legend` ≥18px in `chart_frame.html`; D7 width ≤0.92`\textwidth`, canvas h≤560
+- Multi-chart (≥2): polish clamps width to 0.82; donut legend col `minmax(320px,1fr)`
 
 ## Invariants
 - Whitelist types only; donut = Chart.js `doughnut`; hbar = `indexAxis:'y'`

@@ -241,6 +241,10 @@ def render_tex(
                 raise RenderError("pandoc did not produce DOCX")
             docx_dst = out_dir / f"{stem}.docx"
             shutil.copy2(docx_src, docx_dst)
+            # D5: bold header row + numeric align (soft-fail if no python-docx).
+            from case3.docx_polish import try_polish_docx
+
+            polished = try_polish_docx(docx_dst)
             results["docx"] = docx_dst
             media_src = work / media_dir
             if media_src.is_dir() and any(media_src.rglob("*")):
@@ -249,9 +253,10 @@ def render_tex(
                     shutil.rmtree(media_dst)
                 shutil.copytree(media_src, media_dst)
             log.info(
-                "wrote %s%s",
+                "wrote %s%s%s",
                 docx_dst,
                 " (reference.docx)" if ref_docx else " (pandoc default)",
+                " +polish" if polished else "",
             )
 
     return results

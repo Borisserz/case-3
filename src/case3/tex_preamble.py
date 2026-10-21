@@ -39,10 +39,32 @@ _TABULAR_BLOCK = re.compile(
 _BRAND = re.compile(r"case[\s\-]?3", re.I)
 
 # Safe titlesec — no \color (needs xcolor) and numbered sections.
+# Chrome 2.0: slightly more air before/after section headings.
 _SAFE_TITLEFORMAT = r"""\titleformat{\section}{\large\bfseries\raggedright}{\thesection.}{0.6em}{}
 \titleformat{\subsection}{\normalsize\bfseries\raggedright}{\thesubsection.}{0.5em}{}
-\titlespacing*{\section}{0pt}{1.35ex plus .2ex}{0.75ex plus .1ex}
-\titlespacing*{\subsection}{0pt}{1.05ex plus .15ex}{0.45ex plus .05ex}
+\titlespacing*{\section}{0pt}{1.8ex plus .3ex}{0.9ex plus .15ex}
+\titlespacing*{\subsection}{0pt}{1.25ex plus .2ex}{0.55ex plus .08ex}
+"""
+
+# D4 + chrome 2.0: title rule, float air, modest par/list rhythm.
+_LIBER_PRINT_CHROME = r"""
+% --- Liber print chrome (D4) ---
+\setlength{\textfloatsep}{16pt plus 2pt minus 2pt}
+\setlength{\floatsep}{14pt plus 2pt minus 2pt}
+\setlength{\intextsep}{14pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{8pt}
+\setlength{\belowcaptionskip}{4pt}
+\setlength{\parskip}{0.35em plus 0.1em minus 0.05em}
+\setlength{\itemsep}{0.28em}
+\setlength{\parsep}{0.2em}
+\setlength{\topsep}{0.45em}
+\let\CaseThreeMaketitle\maketitle
+\renewcommand{\maketitle}{%
+  \CaseThreeMaketitle
+  \vspace{-0.55em}%
+  \noindent\rule{\textwidth}{0.35pt}%
+  \vspace{1.05em}%
+}
 """
 
 # Injected once before \begin{document} if fancyhdr style missing.
@@ -53,7 +75,7 @@ REPORT_STYLE_BLOCK = r"""
 \captionsetup{font=small,labelfont=bf,skip=6pt,justification=centering}
 \captionsetup[figure]{name={Рис.}}
 \captionsetup[table]{name={Таблица}}
-""" + _SAFE_TITLEFORMAT + r"""
+""" + _SAFE_TITLEFORMAT + _LIBER_PRINT_CHROME + r"""
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\footnotesize\itshape\leftmark}
@@ -419,12 +441,28 @@ def ensure_russian_captions(tex: str) -> str:
     return out
 
 
+def ensure_liber_print_chrome(tex: str) -> str:
+    """D4: title rule + float spacing even when fancyhdr already present."""
+    out = tex or ""
+    if r"\CaseThreeMaketitle" in out and r"\setlength{\textfloatsep}" in out:
+        return out
+    parts = _split_preamble(out)
+    if not parts:
+        return out
+    head, body = parts
+    chrome = _LIBER_PRINT_CHROME.strip() + "\n"
+    # Drop a prior partial inject (rule without let, or vice versa).
+    if r"\CaseThreeMaketitle" in head:
+        return out
+    return head.rstrip() + "\n" + chrome + "\n" + body
+
+
 def ensure_report_style(tex: str) -> str:
     """Typography + fancyhdr; always sanitize titlesec even if fancy already set."""
     out = sanitize_titleformat(tex)
     out = ensure_headheight(out)
     if r"\pagestyle{fancy}" in out and r"\setstretch{" in out:
-        return ensure_russian_captions(out)
+        return ensure_liber_print_chrome(ensure_russian_captions(out))
     parts = _split_preamble(out)
     if not parts:
         return out
@@ -451,11 +489,13 @@ def ensure_report_style(tex: str) -> str:
 }"""
             )
         if not extra:
-            return ensure_russian_captions(out)
-        return ensure_russian_captions(
-            head.rstrip() + "\n" + "\n".join(extra) + "\n" + body
+            return ensure_liber_print_chrome(ensure_russian_captions(out))
+        return ensure_liber_print_chrome(
+            ensure_russian_captions(
+                head.rstrip() + "\n" + "\n".join(extra) + "\n" + body
+            )
         )
-    return ensure_russian_captions(head + block + body)
+    return ensure_liber_print_chrome(ensure_russian_captions(head + block + body))
 
 def assert_tex_structure(tex: str) -> None:
     if r"\documentclass" not in tex:
@@ -592,7 +632,10 @@ def ensure_document_preamble(tex: str) -> str:
     out = fix_tabularx_end_mismatch(out)
     out = repair_tabularx_row_breaks(out)
     out = harden_wide_tables(out)
-    return harden_tabularx_colcount(out)
+    out = harden_tabularx_colcount(out)
+    from case3.tex_tables import harden_table_rules
+
+    return harden_table_rules(out)
 
 
 def strip_orphan_slots(tex: str) -> str:

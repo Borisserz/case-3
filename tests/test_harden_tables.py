@@ -1,12 +1,14 @@
-"""Wide tabular → tabularx rewriting."""
+"""Wide tabular → tabularx rewriting + rule cleanup."""
 
 from __future__ import annotations
 
 from case3.tex_preamble import (
+    ensure_document_preamble,
     ensure_font_aliases,
     harden_tabularx_colcount,
     harden_wide_tables,
 )
+from case3.tex_tables import harden_table_rules
 
 
 def test_three_l_columns_become_tabularx() -> None:
@@ -71,3 +73,41 @@ def test_dejavu_mono_aliased() -> None:
     assert r"DejaVu Sans Mono" in ensure_font_aliases(
         r"\setmonofont{DejaVu Mono}"
     )
+
+
+def test_harden_table_rules_collapses_double_hline() -> None:
+    src = r"""
+\begin{tabular}{ll}
+\hline\hline
+A & B \\
+\hline\hline
+1 & 2 \\
+\hline\hline
+\end{tabular}
+"""
+    out = harden_table_rules(src)
+    assert r"\hline\hline" not in out.replace(" ", "")
+    assert out.count(r"\hline") >= 2
+    assert "A & B" in out
+
+
+def test_harden_table_rules_strips_hline_after_toprule() -> None:
+    src = r"\toprule\hline A & B \\\bottomrule"
+    out = harden_table_rules(src)
+    assert r"\toprule\hline" not in out.replace("\n", "")
+    assert r"\toprule" in out
+
+
+def test_ensure_document_preamble_runs_table_rule_harden() -> None:
+    raw = r"""\documentclass[a4paper,12pt]{article}
+\usepackage{fontspec}
+\begin{document}
+\begin{tabular}{ll}
+\hline\hline
+A & 1 \\
+\hline\hline
+\end{tabular}
+\end{document}
+"""
+    out = ensure_document_preamble(raw)
+    assert r"\hline\hline" not in out.replace(" ", "")
