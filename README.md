@@ -23,6 +23,8 @@ scripts\api.cmd
 scripts\web.cmd
 ```
 
+После `git pull` в `web\`: `npm install` (нужен `pdfjs-dist` для превью 1-й стр. PDF в чате).
+
 - UI: http://127.0.0.1:5173  (прокси `/api` → `:8000`)
 - API: http://127.0.0.1:8000/docs · health: `/api/health`
 - Сборка в Liber идёт с прогрессом (`POST /api/run` → poll `/status`); `api.cmd` **без** `--reload` (иначе рвёт длинные job). Dev-reload: `set CASE3_RELOAD=1` перед `api.cmd`.

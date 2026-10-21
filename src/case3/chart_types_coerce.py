@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from case3.chart_html import CHART_TYPES
+from case3.chart_style import apply_palette_to_html, normalize_palette_id
 
 log = logging.getLogger("case3.charts")
 
@@ -132,6 +133,101 @@ def _kpi_html_from_chart(chart: dict[str, Any]) -> str:
     )
 
 
+def _count_labels(html: str) -> int:
+    m = re.search(r"labels\s*:\s*\[([^\]]*)\]", html or "")
+    if not m:
+        return 4
+    n = len(re.findall(r"""['"]([^'"]+)['"]""", m.group(1)))
+    return max(1, n)
+
+
+def _solidify_pale_bar_fill(html: str) -> str:
+    """Turn ghostly rgba(…,0.18) bar fills into readable solid / mid-alpha ink."""
+
+    def _bump(m: re.Match[str]) -> str:
+        r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            alpha = float(m.group(4))
+        except ValueError:
+            alpha = 1.0
+        if alpha >= 0.45:
+            return m.group(0)
+        return f"backgroundColor:'#{r:02X}{g:02X}{b:02X}'"
+
+    # Only touch scalar backgroundColor (not arrays of segment colors).
+    return re.sub(
+        r"backgroundColor\s*:\s*'rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*([0-9.]+)\s*\)'",
+        _bump,
+        html or "",
+        count=1,
+        flags=re.I,
+    )
+
+
+def harden_chart_html(html: str, chart_type: str) -> str:
+    """Fix sparse / washed-out Chart.js HTML for known types (esp. horizontal_bar)."""
+    want = (chart_type or "").strip()
+    out = html or ""
+    if want == "horizontal_bar" and out:
+        n = _count_labels(out)
+        h = max(300, min(420, 88 + n * 52))
+        out = re.sub(
+            r'(<canvas\b[^>]*\bheight=")(\d+)(")',
+            rf"\g<1>{h}\3",
+            out,
+            count=1,
+            flags=re.I,
+        )
+        if re.search(r"barPercentage\s*:", out):
+            out = re.sub(r"barPercentage\s*:\s*[\d.]+", "barPercentage:0.78", out, count=1)
+        else:
+            out = re.sub(
+                r"(datasets\s*:\s*\[\s*\{)",
+                r"\1barPercentage:0.78,categoryPercentage:0.88,",
+                out,
+                count=1,
+            )
+        if re.search(r"categoryPercentage\s*:", out):
+            out = re.sub(
+                r"categoryPercentage\s*:\s*[\d.]+",
+                "categoryPercentage:0.88",
+                out,
+                count=1,
+            )
+        if "borderRadius" not in out:
+            out = re.sub(
+                r"(datasets\s*:\s*\[\s*\{)",
+                r"\1borderRadius:6,",
+                out,
+                count=1,
+            )
+        out = _solidify_pale_bar_fill(out)
+    elif want in {"bar", "grouped_bar"} and out:
+        out = _solidify_pale_bar_fill(out)
+    return out
+
+
+def polish_charts(
+    charts: list[dict[str, Any]],
+    *,
+    palette_id: str = "auto",
+) -> list[dict[str, Any]]:
+    """Apply intent palette (if set) then geometry harden per chart type."""
+    pid = normalize_palette_id(palette_id)
+    out: list[dict[str, Any]] = []
+    for chart in charts:
+        c = dict(chart)
+        ctype = str(c.get("type") or "").strip()
+        html = str(c.get("html") or "")
+        if html and ctype != "kpi" and pid != "auto":
+            html = apply_palette_to_html(html, pid)
+        if html:
+            html = harden_chart_html(html, ctype)
+        c["html"] = html
+        out.append(c)
+    return out
+
+
 def apply_type_to_chart(chart: dict[str, Any], want: str) -> dict[str, Any]:
     """Force catalog type + matching HTML onto one chart dict."""
     if want not in CHART_TYPES:
@@ -161,6 +257,7 @@ def apply_type_to_chart(chart: dict[str, Any], want: str) -> dict[str, Any]:
             want,
         )
     c["type"] = want
+    c["html"] = harden_chart_html(str(c.get("html") or ""), want)
     return c
 
 

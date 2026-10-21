@@ -276,20 +276,32 @@ def decode_image_string(payload: Any, *, cfg: ImageApiConfig, dest: Path) -> Non
         _write_image_bytes(dest, base64.b64decode(b64))
         return
 
-    # Absolute or relative URL / path (join with Image API base)
+    # Absolute URL
     if s.startswith("http://") or s.startswith("https://"):
         url = _rewrite_loopback_url(s, cfg.base_url) if cfg.base_url else s
         log.info("image download %s", url)
         _download_url(url, dest, cfg=cfg)
         return
-    if cfg.base_url and (s.startswith("/") or _looks_like_image_path(s)):
+
+    # raw base64 BEFORE path heuristics — JPEG b64 often starts with "/9j/"
+    # which would otherwise be mistaken for a site-relative path.
+    compact = "".join(s.split())
+    if len(compact) >= 64:
+        try:
+            data = base64.b64decode(compact, validate=False)
+        except Exception:
+            data = b""
+        if len(data) >= 32 and (_is_png(data) or _is_jpeg(data)):
+            _write_image_bytes(dest, data)
+            return
+
+    # Relative URL / path (join with Image API base) — short refs only
+    if cfg.base_url and len(s) < 512 and (s.startswith("/") or _looks_like_image_path(s)):
         url = _join_api_path(cfg.base_url, s)
-        log.info("image download %s (from path %r)", url, s)
+        log.info("image download %s (from path %r)", url, s[:120])
         _download_url(url, dest, cfg=cfg)
         return
 
-    # raw base64 (with optional whitespace/newlines)
-    compact = "".join(s.split())
     try:
         data = base64.b64decode(compact, validate=False)
     except Exception as exc:
@@ -336,6 +348,31 @@ def generate_png(cfg: ImageApiConfig, prompt: str, dest: Path) -> None:
         raise RuntimeError(f"Image API {url}: {exc}") from exc
 
 
+def _png_bytes_max_side(png_bytes: bytes, max_side: int = 512) -> bytes:
+    """Downscale for CF Flux.2 Klein refs (≤512²). No-op if already small / no Pillow."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image  # type: ignore
+    except ImportError:
+        return png_bytes
+    im = Image.open(BytesIO(png_bytes))
+    w, h = im.size
+    if max(w, h) <= max_side:
+        if im.format == "PNG":
+            return png_bytes
+        buf = BytesIO()
+        im.save(buf, format="PNG")
+        return buf.getvalue()
+    scale = max_side / float(max(w, h))
+    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+    im = im.convert("RGBA") if im.mode not in ("RGB", "RGBA") else im
+    im = im.resize((nw, nh), Image.Resampling.LANCZOS)
+    buf = BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def edit_png(
     cfg: ImageApiConfig,
     prompt: str,
@@ -354,7 +391,7 @@ def edit_png(
     prompt = (prompt or "").strip()
     if not prompt:
         raise RuntimeError("empty edit prompt")
-    png_bytes = source_png.read_bytes()
+    png_bytes = _png_bytes_max_side(source_png.read_bytes(), 512)
     knobs = {k: str(v) for k, v in _knobs(cfg).items()}
     b64 = base64.b64encode(png_bytes).decode("ascii")
     url = cfg.edit_url
@@ -406,11 +443,15 @@ def generate_all_figures(
     status: dict[str, Any] = {}
     if cfg.max_images <= 0 or not cfg.base_url:
         return status
-    for fig in figures[: cfg.max_images]:
+    # Uploads already live on disk — only /generate for API-planned slots.
+    # Do not slice the mixed list by max_images (uploads would steal the budget).
+    upload_n = sum(1 for f in figures if str(f.get("source") or "") == "upload")
+    api_budget = max(0, int(cfg.max_images) - upload_n)
+    api_figs = [
+        f for f in figures if str(f.get("source") or "") != "upload"
+    ][:api_budget]
+    for fig in api_figs:
         fid = fig["id"]
-        # Liber-attached uploads are already on disk — do not call /generate.
-        if str(fig.get("source") or "") == "upload":
-            continue
         if on_progress:
             on_progress(fid)
         dest = figures_dir / f"{fid}.png"

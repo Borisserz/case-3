@@ -20,6 +20,7 @@ _MIN_PREAMBLE = r"""\documentclass[a4paper,12pt]{article}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
 \usepackage{caption}
+\usepackage{xcolor}
 \usepackage{hyperref}
 \setdefaultlanguage{russian}
 \setotherlanguage{english}

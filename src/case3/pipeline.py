@@ -193,6 +193,14 @@ def run_pipeline(
             cfg = replace(cfg, max_images=images_budget)
             if need_api and not cfg.base_url:
                 log.warning("figures planned but IMAGE_API_BASE_URL empty — strip slots")
+                for f in need_api:
+                    fid = str(f.get("id") or "")
+                    if fid:
+                        status[fid] = {
+                            "ok": False,
+                            "error": "IMAGE_API_BASE_URL empty",
+                            "kind": "figure",
+                        }
             elif need_api:
 
                 def _img_progress(fid: str) -> None:

@@ -9,13 +9,13 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-const INK = "#191919";
-const OLIVE = "#485c11";
+const INK = "#14161a";
+const OLIVE = "#3f5210";
 const MOSS = "#6b7f2a";
-const CREAM = "#dfecc6";
-const PAPER = "#f7f6f2";
-const ACCENT = "#c45c26";
-const MUTED = "#9a9a8a";
+const CREAM = "#e4edd0";
+const PAPER = "#f4f1ea";
+const ACCENT = "#b8a36a";
+const MUTED = "#8a9178";
 
 export type ChartTypeId =
   | "area"

@@ -11,6 +11,7 @@ from typing import Any
 
 from case3.chart_html import ChartHtmlError, sanitize_chart_html
 from case3.chart_style import apply_palette_to_html, intent_palette_lines, normalize_palette_id
+from case3.chart_types_coerce import harden_chart_html
 from case3.chart_types_coerce import apply_type_to_chart
 from case3.charts import render_chart_png
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
@@ -175,6 +176,9 @@ def edit_chart_in_run(
         chart["type"] = want_type
         chart = apply_type_to_chart(chart, want_type)
         new_html = str(chart.get("html") or "")
+        chart["html"] = new_html
+    else:
+        new_html = harden_chart_html(new_html, str(chart.get("type") or ""))
         chart["html"] = new_html
     charts[idx] = chart
     fj["charts"] = charts

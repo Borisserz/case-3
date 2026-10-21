@@ -2,7 +2,7 @@
 name = "case-3"
 version = "0.4.0"
 description = "Text → Qwen LaTeX + HTML charts → PDF/DOCX via Docker"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
   "playwright>=1.40",
   "fastapi>=0.110",

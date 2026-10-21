@@ -44,7 +44,7 @@ export function ChartEditSheet({
   caption,
   palettes,
   catalogTypes,
-  initialPalette = "editorial",
+  initialPalette = "atelier",
   initialType = "",
   busy,
   error,
@@ -63,7 +63,7 @@ export function ChartEditSheet({
     setPalette(
       usable.some((p) => p.id === initialPalette)
         ? initialPalette
-        : usable[0]?.id || "editorial",
+        : usable[0]?.id || "atelier",
     );
     const t =
       initialType && types.includes(initialType)

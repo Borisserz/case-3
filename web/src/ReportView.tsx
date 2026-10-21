@@ -1,6 +1,6 @@
 /** Liber Print Desk — in-chat report: title, prose, tables, figure PNGs + chart edit. */
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChartEditSheet,
@@ -12,6 +12,11 @@ import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
+import { PipelineFlow } from "./PipelineFlow";
+
+const PdfFirstPage = lazy(() =>
+  import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
+);
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }
@@ -88,7 +93,7 @@ export function ReportView({
   warnings,
   palettes = [],
   catalogTypes = [],
-  defaultPalette = "editorial",
+  defaultPalette = "atelier",
   editingFigureId = null,
   editError = null,
   editErrorFigureId = null,
@@ -389,11 +394,11 @@ export function ReportView({
                   )}
                 </div>
 
-                <figcaption className="report-caption report-fig-cap">
+                <figcaption
+                  className="report-caption report-fig-cap"
+                  title={b.chartType ? `Тип: ${b.chartType}` : undefined}
+                >
                   {caption}
-                  {b.chartType ? (
-                    <span className="report-fig-type">{b.chartType}</span>
-                  ) : null}
                 </figcaption>
 
                 {isChart && sheetOpen && onEditFigure && (
@@ -445,6 +450,12 @@ export function ReportView({
         })}
       </div>
 
+      {downloads?.pdf ? (
+        <Suspense fallback={<p className="report-pdf-cap">Загружаю стр. 1 PDF…</p>}>
+          <PdfFirstPage key={downloads.pdf} url={downloads.pdf} />
+        </Suspense>
+      ) : null}
+
       {downloads && (downloads.pdf || downloads.docx) && (
         <footer
           className={`report-actions downloads${downloadsPulse ? " is-pulse" : ""}`}
@@ -495,20 +506,22 @@ export function ReportView({
   );
 }
 
-/** Soft “typesetting on the desk” while the pipeline runs. */
-export function ReportPending({ label = "Набираю отчёт на столе…" }: { label?: string }) {
+/** Soft atelier node-flow while the pipeline runs. */
+export function ReportPending({
+  label = "Набираю отчёт на столе…",
+  stage,
+  detail,
+}: {
+  label?: string;
+  stage?: string | null;
+  detail?: string | null;
+}) {
   return (
-    <div className="report-pending" role="status" aria-live="polite">
-      <div className="report-pending-mark" aria-hidden>
-        <span />
-        <span />
-        <span />
-      </div>
-      <p className="report-pending-label">{label}</p>
+    <div className="report-pending">
+      <PipelineFlow stage={stage} label={label} detail={detail} />
       <div className="report-pending-lines" aria-hidden>
         <i style={{ width: "92%" }} />
         <i style={{ width: "78%" }} />
-        <i style={{ width: "86%" }} />
         <i style={{ width: "64%" }} />
       </div>
     </div>

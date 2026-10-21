@@ -20,6 +20,7 @@ REQUIRED_PACKAGES = (
     "titlesec",
     "fancyhdr",
     "caption",
+    "xcolor",  # before hyperref; LLM often emits \definecolor / \color
     "hyperref",
 )
 
@@ -37,15 +38,20 @@ _TABULAR_BLOCK = re.compile(
 
 _BRAND = re.compile(r"case[\s\-]?3", re.I)
 
+# Safe titlesec — no \color (needs xcolor) and numbered sections.
+_SAFE_TITLEFORMAT = r"""\titleformat{\section}{\large\bfseries\raggedright}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\raggedright}{\thesubsection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.35ex plus .2ex}{0.75ex plus .1ex}
+\titlespacing*{\subsection}{0pt}{1.05ex plus .15ex}{0.45ex plus .05ex}
+"""
+
 # Injected once before \begin{document} if fancyhdr style missing.
 REPORT_STYLE_BLOCK = r"""
 % --- report style: typography + running header ---
 \setstretch{1.15}
+\setlength{\headheight}{15pt}
 \captionsetup{font=small,labelfont=bf,skip=6pt,justification=centering}
-\titleformat{\section}{\large\bfseries\raggedright}{\thesection.}{0.6em}{}
-\titleformat{\subsection}{\normalsize\bfseries\raggedright}{\thesubsection.}{0.5em}{}
-\titlespacing*{\section}{0pt}{1.35ex plus .2ex}{0.75ex plus .1ex}
-\titlespacing*{\subsection}{0pt}{1.05ex plus .15ex}{0.45ex plus .05ex}
+""" + _SAFE_TITLEFORMAT + r"""
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\footnotesize\itshape\leftmark}
@@ -58,6 +64,17 @@ REPORT_STYLE_BLOCK = r"""
   \renewcommand{\headrulewidth}{0pt}%
 }
 """
+
+# Drop LLM titleformat/titlespacing for section/subsection (often broken).
+_TITLEFORMAT_BLOCK = re.compile(
+    r"\\titleformat\{\\(?:sub)?section\}[\s\S]*?"
+    r"(?=\\titleformat\{|\\titlespacing|\\pagestyle|\\begin\{document\}|\\setcounter|\\captionsetup|\\onehalfspacing|\\setstretch|\\setlength|\\fancy|\\renewcommand|\\fancypagestyle|\\hypersetup|\\definecolor|%)",
+    re.M,
+)
+_TITLESPACING_BLOCK = re.compile(
+    r"\\titlespacing\*?\{\\(?:sub)?section\}(?:\{[^{}]*\}){3}\s*",
+    re.M,
+)
 
 
 class TexStructureError(ValueError):
@@ -217,6 +234,67 @@ def fix_tabularx_end_mismatch(tex: str) -> str:
     return "".join(parts)
 
 
+_RULE_LINE = re.compile(
+    r"^\\(?:toprule|midrule|bottomrule|hline)\b",
+)
+
+
+def _repair_tabular_body_rows(body: str) -> str:
+    """Join cell-per-line bodies (``Excel &\\nBSD &\\n...\\\\``) into rows."""
+    lines = (body or "").splitlines()
+    # Trigger only when the model put one cell per line ending with &.
+    amp_ends = sum(
+        1
+        for ln in lines
+        if re.search(r"&\s*$", ln.strip())
+        and not re.search(r"\\\\\s*$", ln.strip())
+    )
+    if amp_ends < 3:
+        return body
+
+    out: list[str] = []
+    cells: list[str] = []
+
+    def _flush() -> None:
+        nonlocal cells
+        if not cells:
+            return
+        out.append(" & ".join(cells) + r" \\")
+        cells = []
+
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if _RULE_LINE.match(s):
+            _flush()
+            out.append(s)
+            continue
+        row_end = bool(re.search(r"\\\\\s*$", s))
+        s = re.sub(r"\\\\\s*$", "", s).strip()
+        parts = [p.strip() for p in s.split("&")]
+        if parts and parts[-1] == "":
+            parts = parts[:-1]
+        cells.extend(parts)
+        if row_end:
+            _flush()
+    _flush()
+    return ("\n".join(out) + "\n") if out else body
+
+
+def repair_tabularx_row_breaks(tex: str) -> str:
+    """Fix tabularx bodies where each cell sits on its own line ending with ``&``."""
+
+    def _repl(m: re.Match[str]) -> str:
+        spec, body = m.group(1), m.group(2)
+        fixed = _repair_tabular_body_rows(body)
+        if fixed and not fixed.startswith("\n"):
+            fixed = "\n" + fixed
+        return rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}" + fixed + r"\end{tabularx}"
+
+    return _TABULARX_BLOCK.sub(_repl, tex or "")
+
+
 def scrub_project_branding(tex: str) -> str:
     """Remove project codename from title/author (must not appear in PDF)."""
 
@@ -269,16 +347,80 @@ def ensure_cyrillic_fonts(tex: str) -> str:
     return tex[:insert_at] + block + tex[insert_at:]
 
 
-def ensure_report_style(tex: str) -> str:
-    """Add typography + fancyhdr block once before \\begin{document}."""
-    if r"\pagestyle{fancy}" in tex and r"\setstretch{" in tex:
-        return tex
-    m = _BEGIN_DOC.search(tex)
+def _split_preamble(tex: str) -> tuple[str, str] | None:
+    m = _BEGIN_DOC.search(tex or "")
     if not m:
-        return tex
-    block = REPORT_STYLE_BLOCK.strip() + "\n\n"
-    return tex[: m.start()] + block + tex[m.start() :]
+        return None
+    return tex[: m.start()], tex[m.start() :]
 
+
+def sanitize_titleformat(tex: str) -> str:
+    """Replace LLM \\titleformat / \\titlespacing with a safe numbered style.
+
+    Models often emit ``\\color{black}`` inside titleformat (needs xcolor) and
+    empty number args that make titlesec fail with «Entered in horizontal mode».
+    """
+    parts = _split_preamble(tex)
+    if not parts:
+        return tex
+    head, body = parts
+    head = _TITLEFORMAT_BLOCK.sub("", head)
+    head = _TITLESPACING_BLOCK.sub("", head)
+    # Any leftover color switches in the preamble (not body prose).
+    head = re.sub(r"\\color\{[^}]+\}", "", head)
+    if r"\titleformat{\section}" not in head:
+        # Insert safe block just before \begin{document} side (end of head).
+        head = head.rstrip() + "\n" + _SAFE_TITLEFORMAT.strip() + "\n"
+    return head + body
+
+
+def ensure_headheight(tex: str) -> str:
+    """fancyhdr warns when \\headheight < ~14.5pt — pin 15pt once."""
+    if r"\setlength{\headheight}" in (tex or ""):
+        return tex
+    parts = _split_preamble(tex)
+    if not parts:
+        return tex
+    head, body = parts
+    head = head.rstrip() + "\n\\setlength{\\headheight}{15pt}\n"
+    return head + body
+
+
+def ensure_report_style(tex: str) -> str:
+    """Typography + fancyhdr; always sanitize titlesec even if fancy already set."""
+    out = sanitize_titleformat(tex)
+    out = ensure_headheight(out)
+    if r"\pagestyle{fancy}" in out and r"\setstretch{" in out:
+        return out
+    parts = _split_preamble(out)
+    if not parts:
+        return out
+    head, body = parts
+    block = REPORT_STYLE_BLOCK.strip() + "\n\n"
+    # Avoid duplicating titleformat we just injected.
+    if r"\titleformat{\section}" in head:
+        # Inject stretch/fancyhdr pieces only.
+        extra = []
+        if r"\setstretch{" not in head:
+            extra.append(r"\setstretch{1.15}")
+        if r"\pagestyle{fancy}" not in head:
+            extra.append(
+                r"""\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape\leftmark}
+\fancyhead[R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyhead[R]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}"""
+            )
+        if not extra:
+            return out
+        return head.rstrip() + "\n" + "\n".join(extra) + "\n" + body
+    return head + block + body
 
 def assert_tex_structure(tex: str) -> None:
     if r"\documentclass" not in tex:
@@ -366,6 +508,31 @@ def _replace_preamble(tex: str, new_preamble: str) -> str:
     return new_preamble.rstrip() + "\n" + body.lstrip()
 
 
+def order_definecolor_before_hypersetup(tex: str) -> str:
+    """Move \\definecolor{…} blocks above \\hypersetup that references them."""
+    parts = _split_preamble(tex)
+    if not parts:
+        return tex
+    head, body = parts
+    defines = re.findall(r"\\definecolor\{[^}]+\}\{[^}]+\}\{[^}]+\}\s*", head)
+    if not defines or r"\hypersetup" not in head:
+        return tex
+    head_wo = re.sub(r"\\definecolor\{[^}]+\}\{[^}]+\}\{[^}]+\}\s*", "", head)
+    # Insert defines right after last \usepackage{xcolor} (or before first hypersetup).
+    anchor = r"\usepackage{xcolor}"
+    if anchor in head_wo:
+        idx = head_wo.index(anchor) + len(anchor)
+        nl = head_wo.find("\n", idx)
+        at = (nl + 1) if nl >= 0 else idx
+    else:
+        at = head_wo.index(r"\hypersetup")
+    block = "".join(defines)
+    if not block.endswith("\n"):
+        block += "\n"
+    head_wo = head_wo[:at] + block + head_wo[at:]
+    return head_wo + body
+
+
 def ensure_document_preamble(tex: str) -> str:
     """Packages + Cyrillic fonts + A4 + report style + branding scrub + tables."""
     from case3.tex_utils import _MIN_PREAMBLE
@@ -385,8 +552,10 @@ def ensure_document_preamble(tex: str) -> str:
     out = ensure_font_aliases(out)
     out = ensure_a4_layout(out)
     out = ensure_report_style(out)
+    out = order_definecolor_before_hypersetup(out)
     out = fix_tabularx_colspec_junk(out)
     out = fix_tabularx_end_mismatch(out)
+    out = repair_tabularx_row_breaks(out)
     out = harden_wide_tables(out)
     return harden_tabularx_colcount(out)
 

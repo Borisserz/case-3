@@ -82,7 +82,7 @@ def build_intent_from_ui(
     forbid_images: bool,
     chart_hints: str = "",
     chart_auto: bool = False,
-    chart_palette: str = "editorial",
+    chart_palette: str = "atelier",
     chart_style: str = "",
     doc_title: str = "",
 ) -> str:
@@ -435,7 +435,7 @@ async def api_run(
     chart_types: str = Form(""),
     chart_hints: str = Form(""),
     chart_auto: str = Form("false"),
-    chart_palette: str = Form("editorial"),
+    chart_palette: str = Form("atelier"),
     chart_style: str = Form(""),
     doc_title: str = Form(""),
     forbid_charts: str = Form("false"),
@@ -443,7 +443,7 @@ async def api_run(
     formats: str = Form("both"),
     dry_run: str = Form("false"),
     photo_mode: str = Form("document"),
-    photos: list[UploadFile] | None = File(None),
+    photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
 ) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
@@ -469,7 +469,13 @@ async def api_run(
     upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    photo_files = list(photos or [])
+    # FastAPI may pass a single UploadFile when the client sends one file.
+    if isinstance(photos, list):
+        photo_files = list(photos)
+    elif photos is None:
+        photo_files = []
+    else:
+        photo_files = [photos]
     cap_list = [c.strip() for c in (photo_captions or "").split("\n") if c.strip()]
     user_figures: list[dict[str, Any]] = []
     if photo_files:
@@ -508,7 +514,7 @@ async def api_run(
         forbid_images=no_images,
         chart_hints=chart_hints or "",
         chart_auto=is_auto,
-        chart_palette=chart_palette or "editorial",
+        chart_palette=chart_palette or "atelier",
         chart_style=chart_style or "",
         doc_title=(doc_title or "").strip()[:200],
     )
@@ -721,7 +727,7 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
 
 
 class ChartEditBody(BaseModel):
-    palette: str | None = Field(default="editorial")
+    palette: str | None = Field(default="atelier")
     style: str | None = Field(default="")
     chart_type: str | None = Field(default="")
     formats: str = Field(default="both")

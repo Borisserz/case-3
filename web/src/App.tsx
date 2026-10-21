@@ -6,7 +6,7 @@ import {
   useState,
   type DragEvent,
 } from "react";
-import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ChartEditRequest } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
 import {
@@ -14,6 +14,10 @@ import {
   ReportView,
   type ReportPreview,
 } from "./ReportView";
+import { SettingsModal } from "./SettingsModal";
+
+const DEFAULT_INTENT =
+  "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.";
 
 const FALLBACK_TYPES = [
   "bar",
@@ -68,7 +72,7 @@ type RunResult = {
 };
 
 type Msg =
-  | { id: string; role: "user"; text: string }
+  | { id: string; role: "user"; text: string; tags?: string }
   | {
       id: string;
       role: "bot";
@@ -76,8 +80,25 @@ type Msg =
       result?: RunResult;
       pending?: boolean;
       pendingStage?: string;
+      pendingDetail?: string | null;
       error?: string;
     };
+
+/** Classic gear — readable at 16–18px */
+function SettingsIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden fill="none">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+      />
+    </svg>
+  );
+}
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "В очереди…",
@@ -142,13 +163,12 @@ function ComposerPhotoChips({
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [sourceText, setSourceText] = useState("");
   const [drag, setDrag] = useState(false);
   /** true = model picks type from catalog by Source context */
   const [chartAuto, setChartAuto] = useState(true);
   const [types, setTypes] = useState<string[]>([]);
   const [chartHints, setChartHints] = useState("");
-  const [chartPalette, setChartPalette] = useState("editorial");
+  const [chartPalette, setChartPalette] = useState("atelier");
   const [chartStyle, setChartStyle] = useState("");
   const [docTitle, setDocTitle] = useState("");
   const [maxCharts, setMaxCharts] = useState(2);
@@ -177,6 +197,8 @@ export default function App() {
     null,
   );
   const [hasStoredReport, setHasStoredReport] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
@@ -189,10 +211,13 @@ export default function App() {
     return fromApi && fromApi.length > 0 ? fromApi : [...FALLBACK_TYPES];
   }, [health]);
 
+  const reduceMotion = useReducedMotion();
+
   const palettes = useMemo<PaletteInfo[]>(() => {
     if (health?.chart_palettes?.length) return health.chart_palettes;
     return [
       { id: "auto", label: "Auto", swatches: ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"] },
+      { id: "atelier", label: "Atelier", swatches: ["#2C3A14", "#3F5210", "#6B7F2A", "#D5DEC0"] },
       { id: "editorial", label: "Editorial", swatches: ["#0F3D3E", "#E85D04", "#2A9D8F", "#E9C46A"] },
       { id: "ocean", label: "Ocean", swatches: ["#023E8A", "#0077B6", "#00B4D8", "#48CAE4"] },
       { id: "sunset", label: "Sunset", swatches: ["#6D2E46", "#D62828", "#F77F00", "#FCBF49"] },
@@ -258,6 +283,14 @@ export default function App() {
   }, [msgs]);
 
   useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const next = Math.min(Math.max(el.scrollHeight, 44), 240);
+    el.style.height = `${next}px`;
+  }, [chat]);
+
+  useEffect(() => {
     try {
       const raw = sessionStorage.getItem("liber-last-report");
       if (!raw) {
@@ -270,6 +303,48 @@ export default function App() {
       setHasStoredReport(false);
     }
   }, [msgs]);
+
+  // Visual QA: http://127.0.0.1:5173/?preview=flow
+  useEffect(() => {
+    if (!/preview=flow/.test(window.location.search)) return;
+    const stages = [
+      "queued",
+      "llm",
+      "charts",
+      "inject",
+      "latex",
+      "docx",
+      "ok",
+    ] as const;
+    const id = "preview-flow";
+    let i = 0;
+    const tick = () => {
+      const stage = stages[i % stages.length];
+      setBusy(stage !== "ok");
+      setMsgs([
+        {
+          id: "preview-user",
+          role: "user",
+          text: "Intent · preview flow",
+        },
+        {
+          id,
+          role: "bot",
+          text: stageLabel(stage, stage === "charts" ? "cht_01" : null),
+          pending: stage !== "ok",
+          pendingStage: stage,
+          pendingDetail: stage === "charts" ? "cht_01" : null,
+          ...(stage === "ok"
+            ? { text: "Готово · preview", pending: false }
+            : {}),
+        },
+      ]);
+      i += 1;
+    };
+    tick();
+    const t = window.setInterval(tick, 1600);
+    return () => window.clearInterval(t);
+  }, []);
 
   async function editFigure(
     msgId: string,
@@ -447,19 +522,58 @@ export default function App() {
     if (photoMode === "edit") {
       return attachPhotos.length > 0 && chat.trim().length > 0;
     }
-    const hasSource = Boolean(file) || sourceText.trim().length > 0;
-    return hasSource;
-  }, [file, sourceText, busy, photoMode, attachPhotos, chat]);
+    return Boolean(file) || chat.trim().length > 0;
+  }, [file, busy, photoMode, attachPhotos, chat]);
 
-  const onDrop = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f && /\.(txt|md)$/i.test(f.name)) {
-      setFile(f);
-      setSourceText("");
+  const ingestFiles = useCallback((list: FileList | File[]) => {
+    const arr = Array.from(list);
+    for (const f of arr) {
+      if (/\.(txt|md)$/i.test(f.name) || f.type === "text/plain" || f.type === "text/markdown") {
+        setFile(f);
+        continue;
+      }
+      if (/^image\//.test(f.type) || /\.(png|jpe?g)$/i.test(f.name)) {
+        setAttachPhotos((prev) => [...prev, f].slice(0, 2));
+        setForbidImages(false);
+        setMaxImages((n) => Math.max(n, 2));
+      }
     }
   }, []);
+
+  const onDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      setDrag(false);
+      if (e.dataTransfer.files?.length) ingestFiles(e.dataTransfer.files);
+    },
+    [ingestFiles],
+  );
+
+  const settingsSummary = useMemo(() => {
+    const bits: string[] = [];
+    if (docTitle.trim()) bits.push(docTitle.trim().slice(0, 28));
+    if (forbidCharts) bits.push("без графиков");
+    else {
+      bits.push(chartPalette === "auto" ? "Auto" : chartPalette);
+      bits.push(`≤${maxCharts} гр.`);
+      if (!chartAuto && types.length) bits.push(types.slice(0, 2).join("+"));
+    }
+    if (forbidImages && !attachPhotos.length) bits.push("без фото");
+    else bits.push(`≤${Math.max(maxImages, attachPhotos.length)} фото`);
+    if (dryRun) bits.push("dry-run");
+    return bits.join(" · ");
+  }, [
+    docTitle,
+    forbidCharts,
+    chartPalette,
+    maxCharts,
+    chartAuto,
+    types,
+    forbidImages,
+    attachPhotos.length,
+    maxImages,
+    dryRun,
+  ]);
 
   function enableAuto() {
     setChartAuto(true);
@@ -483,23 +597,31 @@ export default function App() {
 
   async function send() {
     if (!canSend) return;
+    const chatTrim = chat.trim();
     const intentText =
-      chat.trim() ||
-      (photoMode === "edit"
-        ? ""
-        : "Оформи понятный русскоязычный отчёт: структура, таблицы где уместны числа.");
+      photoMode === "edit"
+        ? chatTrim
+        : file
+          ? chatTrim || DEFAULT_INTENT
+          : chatTrim;
     if (photoMode === "edit" && !intentText) return;
+    if (photoMode === "document" && !file && !chatTrim) return;
 
-    const userLabel = [
-      intentText,
-      photoMode === "edit" ? "режим: только правка фото" : null,
+    const userBody =
+      photoMode === "edit"
+        ? intentText
+        : file
+          ? chatTrim
+            ? chatTrim
+            : `Файл: ${file.name}`
+          : chatTrim;
+    const userTags = [
+      photoMode === "edit" ? "только правка фото" : null,
       attachPhotos.length
         ? `фото: ${attachPhotos.map((f) => f.name).join(", ")}`
         : null,
-      photoMode === "document"
-        ? docTitle.trim()
-          ? `название: ${docTitle.trim()}`
-          : null
+      photoMode === "document" && docTitle.trim()
+        ? `название: ${docTitle.trim()}`
         : null,
       photoMode === "document" ? chartsLabel() : null,
       photoMode === "document"
@@ -510,7 +632,7 @@ export default function App() {
       photoMode === "document"
         ? file
           ? `файл: ${file.name}`
-          : "текст из поля Source"
+          : null
         : null,
     ]
       .filter(Boolean)
@@ -519,17 +641,20 @@ export default function App() {
     const pendingId = uid();
     setMsgs((m) => [
       ...m,
-      { id: uid(), role: "user", text: userLabel },
+      { id: uid(), role: "user", text: userBody, tags: userTags || undefined },
       {
         id: pendingId,
         role: "bot",
         text:
           photoMode === "edit" ? "Править фото…" : "Генерирую документ…",
         pending: true,
+        pendingStage: "queued",
+        pendingDetail: null,
       },
     ]);
     setBusy(true);
     setChat("");
+    if (chatRef.current) chatRef.current.style.height = "44px";
     const photosSnapshot = [...attachPhotos];
     setAttachPhotos([]);
 
@@ -539,9 +664,14 @@ export default function App() {
     if (photoMode === "edit") {
       fd.append("intent", intentText);
     } else {
-      if (file) fd.append("source", file);
-      else fd.append("source_text", sourceText);
-      fd.append("intent", intentText);
+      if (file) {
+        fd.append("source", file);
+        fd.append("intent", intentText);
+      } else {
+        // Chat-only: same text is Source + Intent
+        fd.append("source_text", chatTrim);
+        fd.append("intent", intentText);
+      }
       fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
       fd.append(
         "max_images",
@@ -621,6 +751,7 @@ export default function App() {
                   text: stageLabel(data.stage || "queued"),
                   pending: true,
                   pendingStage: data.stage || "queued",
+                  pendingDetail: null,
                 }
               : msg,
           ),
@@ -665,6 +796,7 @@ export default function App() {
                       text: stageLabel(stage || "queued", detail),
                       pending: true,
                       pendingStage: stage,
+                      pendingDetail: detail,
                     }
                   : msg,
               ),
@@ -730,397 +862,252 @@ export default function App() {
         .join(" · ") || "сервисы не готовы"
     : "проверка…";
 
+  const healthReady = Boolean(
+    health?.vision_configured && health?.docker_ok && health?.playwright_ok,
+  );
+
   return (
-    <div className="app">
+    <div
+      className={`app chat-app${drag ? " is-drag" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDrag(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDrag(false);
+      }}
+      onDrop={onDrop}
+    >
       {toast && (
         <div className="liber-toast" role="status" aria-live="polite">
           {toast}
         </div>
       )}
-      <aside className="panel">
-        <header className="brand-block">
-          <p className="eyebrow">печатный стол</p>
-          <h1 className="brand">Liber</h1>
-          <p className="tagline">
-            Текст и цифры → отчёт с графиками в PDF и DOCX
-          </p>
-        </header>
 
-        <section className="section" aria-labelledby="sec-doc">
-          <h2 className="section-title" id="sec-doc">
-            Документ
-          </h2>
-          <label className="field" htmlFor="doc-title">
-            Название
-          </label>
-          <input
-            id="doc-title"
-            type="text"
-            maxLength={200}
-            placeholder="Как назвать отчёт на титуле…"
-            value={docTitle}
-            onChange={(e) => setDocTitle(e.target.value)}
-          />
-          <p className="hint">
-            Попадёт в {"\\title"} PDF/DOCX. Пусто — модель придумает сама.
-          </p>
-        </section>
-
-        <section className="section" aria-labelledby="sec-source">
-          <h2 className="section-title" id="sec-source">
-            Source
-          </h2>
-          <label className="field">Файл</label>
-          <div
-            className={`dropzone${drag ? " active" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={onDrop}
-            onClick={() => fileRef.current?.click()}
-          >
-            <strong>{file ? file.name : "Перетащи .txt / .md"}</strong>
-            или кликни, чтобы выбрать
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".txt,.md,text/plain,text/markdown"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setFile(f);
-                  setSourceText("");
-                }
-              }}
-            />
-          </div>
-
-          <label className="field">Или вставь текст</label>
-          <textarea
-            rows={5}
-            placeholder="Цифры, разделы, факты…"
-            value={sourceText}
-            onChange={(e) => {
-              setSourceText(e.target.value);
-              if (e.target.value) setFile(null);
-            }}
-          />
-        </section>
-
-        <section className="section" aria-labelledby="sec-charts">
-          <h2 className="section-title" id="sec-charts">
-            Графики
-          </h2>
-          <label className="field">Тип</label>
-          <div className="chips">
-            <ChartTypeChip
-              typeId="auto"
-              className={`chip auto${chartAuto ? " on" : ""}`}
-              onClick={enableAuto}
-              disabled={forbidCharts}
+      <header className="topbar">
+        <div className="topbar-brand">
+          <p className="eyebrow">
+            atelier · печатный стол
+            <span
+              className={`topbar-live${healthReady ? " ok" : health ? " warn" : ""}`}
+              title={paradeHint}
             >
-              на усмотрение модели
-            </ChartTypeChip>
-            {catalog.map((t) => (
-              <ChartTypeChip
-                key={t}
-                typeId={t as ChartTypeId}
-                className={`chip${!chartAuto && types.includes(t) ? " on" : ""}`}
-                onClick={() => toggleType(t)}
-                disabled={forbidCharts}
-              >
-                {t}
-              </ChartTypeChip>
-            ))}
-          </div>
-
-          <label className="field">Свой тип / пожелание</label>
-          <input
-            type="text"
-            placeholder="pie, воронка, сравнение долей…"
-            value={chartHints}
-            disabled={forbidCharts}
-            onChange={(e) => {
-              setChartHints(e.target.value);
-              if (e.target.value.trim()) setChartAuto(false);
-            }}
-          />
-          <p className="hint">Сведём к Chart.js-каталогу. Бюджет — потолок, не план.</p>
-
-          <label className="field">Палитра</label>
-          <div className="chips palettes">
-            {palettes.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`chip palette${chartPalette === p.id ? " on" : ""}`}
-                disabled={forbidCharts}
-                onClick={() => setChartPalette(p.id)}
-                title={p.label}
-              >
-                <span className="swatches" aria-hidden>
-                  {p.swatches.slice(0, 4).map((c) => (
-                    <span key={c} className="swatch" style={{ background: c }} />
-                  ))}
-                </span>
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          <label className="field">Стиль / нюансы</label>
-          <input
-            type="text"
-            placeholder="без сетки, толще линии, легенда снизу…"
-            value={chartStyle}
-            disabled={forbidCharts}
-            onChange={(e) => setChartStyle(e.target.value)}
-          />
-          <p className="hint">Цвета из палитры; поле уточняет оформление.</p>
-
-          <div className="row">
-            <div>
-              <label className="field">Графиков ≤</label>
-              <input
-                type="number"
-                min={0}
-                max={8}
-                value={maxCharts}
-                disabled={forbidCharts}
-                onChange={(e) => setMaxCharts(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <label className="field">Картинок ≤</label>
-              <input
-                type="number"
-                min={0}
-                max={8}
-                value={maxImages}
-                disabled={forbidImages}
-                onChange={(e) => setMaxImages(Number(e.target.value))}
-              />
-            </div>
-          </div>
-
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={forbidCharts}
-              onChange={(e) => setForbidCharts(e.target.checked)}
-            />
-            Без графиков
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={forbidImages}
-              onChange={(e) => setForbidImages(e.target.checked)}
-            />
-            Без фото (Image API)
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={dryRun}
-              onChange={(e) => setDryRun(e.target.checked)}
-            />
-            Dry-run (без LLM, проверка Docker/TeX)
-          </label>
-        </section>
-
-        <div className="health">
-          <p className="health-title">Статус</p>
-          {!health && <div className="health-grid">Проверка API…</div>}
-          {health && (
-            <>
-              <div className="health-grid">
-                <div className="health-row">
-                  <span>Docker</span>
-                  <span className={`val${health.docker_ok ? "" : " bad"}`}>
-                    {health.docker_ok ? "ok" : health.docker_error || "fail"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Vision</span>
-                  <span className={`val${health.vision_configured ? "" : " bad"}`}>
-                    {health.vision_configured ? "ok" : "нет URL"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Playwright</span>
-                  <span className={`val${health.playwright_ok ? "" : " bad"}`}>
-                    {health.playwright_ok ? "ok" : "нет Chromium"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Image API</span>
-                  <span
-                    className={`val${
-                      health.image_api_configured || health.kandinsky_configured
-                        ? ""
-                        : " bad"
-                    }`}
-                  >
-                    {health.image_api_configured || health.kandinsky_configured
-                      ? "ok"
-                      : "нет URL"}
-                  </span>
-                </div>
-              </div>
-              <p className="health-foot">
-                {health.vision_configured && health.docker_ok
-                  ? `Готово: ${paradeHint}`
-                  : `Нужны Vision + Docker · сейчас: ${paradeHint}`}
-              </p>
-            </>
-          )}
-        </div>
-      </aside>
-
-      <main className="main">
-        <div className="desk">
-          <div className="desk-head">
-            <h2>Сборка</h2>
-            <span className="desk-meta">
-              {busy ? "генерация…" : "чат · pdf · docx"}
+              <span className="health-dot" aria-hidden />
+              {healthReady ? "готово" : health ? "сервисы" : "…"}
             </span>
-          </div>
+          </p>
+          <h1 className="brand">Liber</h1>
+        </div>
+        <button
+          type="button"
+          className="topbar-settings"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Настройки отчёта"
+          title="Палитра, типы графиков, лимиты"
+        >
+          <SettingsIcon size={17} />
+          <span>Настройки</span>
+        </button>
+      </header>
 
+      <main className="main chat-main">
+        <div className="desk chat-desk">
           <div className="messages" ref={messagesRef}>
-            {msgs.length === 0 && (
-              <div className="empty">
-                <h2>Собери отчёт на столе</h2>
-                <p>
-                  Слева — исходник и оформление. Здесь в чате появится отчёт:
-                  текст, таблицы и графики — плюс PDF и DOCX.
-                </p>
-                <ol>
-                  <li>Загрузи Source или вставь текст с числами</li>
-                  <li>Назови документ, выбери палитру и типы</li>
-                  <li>Напиши Intent и нажми «Собрать»</li>
-                </ol>
-                {hasStoredReport && (
-                  <button
-                    type="button"
-                    className="empty-restore"
-                    onClick={restoreLastReport}
-                  >
-                    Открыть последний отчёт
-                  </button>
-                )}
-              </div>
-            )}
-            {msgs.map((m) => {
-              const hasReport =
-                m.role === "bot" &&
-                m.result?.preview &&
-                (m.result.preview.blocks?.length ?? 0) > 0;
-              return (
-              <div
-                key={m.id}
-                className={`msg ${m.role}${hasReport ? " has-report" : ""}`}
-              >
-                <div className="meta">{m.role === "user" ? "запрос" : "отчёт"}</div>
-                {m.role === "bot" && hasReport && m.result?.preview ? (
-                  <ReportView
-                    preview={m.result.preview}
-                    downloads={m.result.downloads}
-                    runId={m.result.run_id}
-                    stats={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
-                    warnings={m.result.warnings}
-                    palettes={palettes}
-                    catalogTypes={catalog}
-                    defaultPalette={chartPalette === "auto" ? "editorial" : chartPalette}
-                    editingFigureId={
-                      editBusy?.msgId === m.id ? editBusy.figureId : null
-                    }
-                    editError={
-                      editError?.msgId === m.id ? editError.message : null
-                    }
-                    editErrorFigureId={
-                      editError?.msgId === m.id ? editError.figureId : null
-                    }
-                    downloadsPulse={downloadsPulseMsgId === m.id}
-                    onEditCancel={() => {
-                      if (editError?.msgId === m.id) setEditError(null);
+            <AnimatePresence mode="popLayout">
+              {msgs.length === 0 && (
+                <motion.div
+                  className="empty"
+                  key="empty"
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <p className="empty-kicker">печатный стол</p>
+                  <h2>Напиши или прикрепи .txt</h2>
+                  <p>
+                    Как в чате: запрос с цифрами — или файл + короткая просьба.
+                    Отчёт с графиками появится здесь; PDF и DOCX — внизу карточки.
+                  </p>
+                  <ol>
+                    <li>Вставь текст или перетащи .txt / .md</li>
+                    <li>При желании открой ⚙ — палитра и лимиты</li>
+                    <li>Нажми «Собрать»</li>
+                  </ol>
+                  {hasStoredReport && (
+                    <button
+                      type="button"
+                      className="empty-restore"
+                      onClick={restoreLastReport}
+                    >
+                      Открыть последний отчёт
+                    </button>
+                  )}
+                </motion.div>
+              )}
+              {msgs.map((m, mi) => {
+                const hasReport =
+                  m.role === "bot" &&
+                  m.result?.preview &&
+                  (m.result.preview.blocks?.length ?? 0) > 0;
+                return (
+                  <motion.div
+                    key={m.id}
+                    className={`msg ${m.role}${hasReport ? " has-report" : ""}`}
+                    layout={!reduceMotion}
+                    initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      delay: Math.min(mi * 0.04, 0.24),
+                      ease: [0.22, 1, 0.36, 1],
                     }}
-                    onEditFigure={(req) =>
-                      editFigure(m.id, m.result!.run_id, req)
-                    }
-                    onEditImage={(req) =>
-                      editImage(m.id, m.result!.run_id, req)
-                    }
-                  />
-                ) : m.role === "bot" && m.pending ? (
-                  <ReportPending label={m.text || undefined} />
-                ) : (
-                  <>
-                    <div className="msg-body">{m.text}</div>
-                    {m.role === "bot" && m.error && <p className="err">{m.error}</p>}
-                    {m.role === "bot" && m.result && (
+                  >
+                    <div className="meta">
+                      {m.role === "user" ? "запрос" : "отчёт"}
+                    </div>
+                    {m.role === "user" ? (
                       <>
-                        <p className="stats">
-                          charts {m.result.charts_ok}/{m.result.charts_planned?.length || 0}
-                          {" · "}
-                          figures {m.result.figures_ok}/{m.result.figures_planned?.length || 0}
-                        </p>
-                        {m.result.warnings?.length > 0 && (
-                          <div className="warns">{m.result.warnings.join(" · ")}</div>
+                        <div className="msg-body msg-pre">{m.text}</div>
+                        {m.tags ? (
+                          <p className="msg-tags">{m.tags}</p>
+                        ) : null}
+                      </>
+                    ) : m.role === "bot" && hasReport && m.result?.preview ? (
+                      <ReportView
+                        preview={m.result.preview}
+                        downloads={m.result.downloads}
+                        runId={m.result.run_id}
+                        stats={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
+                        warnings={m.result.warnings}
+                        palettes={palettes}
+                        catalogTypes={catalog}
+                        defaultPalette={
+                          chartPalette === "auto" ? "atelier" : chartPalette
+                        }
+                        editingFigureId={
+                          editBusy?.msgId === m.id ? editBusy.figureId : null
+                        }
+                        editError={
+                          editError?.msgId === m.id ? editError.message : null
+                        }
+                        editErrorFigureId={
+                          editError?.msgId === m.id ? editError.figureId : null
+                        }
+                        downloadsPulse={downloadsPulseMsgId === m.id}
+                        onEditCancel={() => {
+                          if (editError?.msgId === m.id) setEditError(null);
+                        }}
+                        onEditFigure={(req) =>
+                          editFigure(m.id, m.result!.run_id, req)
+                        }
+                        onEditImage={(req) =>
+                          editImage(m.id, m.result!.run_id, req)
+                        }
+                      />
+                    ) : m.role === "bot" && m.pending ? (
+                      <ReportPending
+                        label={m.text || undefined}
+                        stage={m.pendingStage || "queued"}
+                        detail={m.pendingDetail}
+                      />
+                    ) : (
+                      <>
+                        <div className="msg-body">{m.text}</div>
+                        {m.role === "bot" && m.error && (
+                          <p className="err">{m.error}</p>
                         )}
-                        <div className="downloads">
-                          {m.result.downloads?.pdf && (
-                            <a href={m.result.downloads.pdf} download>
-                              PDF
-                            </a>
-                          )}
-                          {m.result.downloads?.docx && (
-                            <a className="secondary" href={m.result.downloads.docx} download>
-                              DOCX
-                            </a>
-                          )}
-                        </div>
-                        {m.result.previews && m.result.previews.length > 0 && (
-                          <div className="previews">
-                            {m.result.previews.map((p) => (
-                              <a
-                                key={p.id}
-                                className="preview"
-                                href={p.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                title={`${p.kind} ${p.id}`}
-                              >
-                                <img src={p.url} alt={`${p.kind} ${p.id}`} />
-                                <span>{p.id}</span>
-                              </a>
-                            ))}
-                          </div>
+                        {m.role === "bot" && m.result && (
+                          <>
+                            <p className="stats">
+                              charts {m.result.charts_ok}/
+                              {m.result.charts_planned?.length || 0}
+                              {" · "}
+                              figures {m.result.figures_ok}/
+                              {m.result.figures_planned?.length || 0}
+                            </p>
+                            {m.result.warnings?.length > 0 && (
+                              <div className="warns">
+                                {m.result.warnings.join(" · ")}
+                              </div>
+                            )}
+                            <div className="downloads">
+                              {m.result.downloads?.pdf && (
+                                <a href={m.result.downloads.pdf} download>
+                                  PDF
+                                </a>
+                              )}
+                              {m.result.downloads?.docx && (
+                                <a
+                                  className="secondary"
+                                  href={m.result.downloads.docx}
+                                  download
+                                >
+                                  DOCX
+                                </a>
+                              )}
+                            </div>
+                            {m.result.previews && m.result.previews.length > 0 && (
+                              <div className="previews">
+                                {m.result.previews.map((p) => (
+                                  <a
+                                    key={p.id}
+                                    className="preview"
+                                    href={p.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={`${p.kind} ${p.id}`}
+                                  >
+                                    <img
+                                      src={p.url}
+                                      alt={`${p.kind} ${p.id}`}
+                                    />
+                                    <span>{p.id}</span>
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     )}
-                  </>
-                )}
-              </div>
-              );
-            })}
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
             <div ref={bottomRef} />
           </div>
 
           <div className="composer-wrap">
-            {attachPhotos.length > 0 && (
-              <ComposerPhotoChips
-                files={attachPhotos}
-                busy={busy}
-                onRemove={(i) =>
-                  setAttachPhotos((list) => list.filter((_, j) => j !== i))
-                }
-              />
+            {(file || attachPhotos.length > 0) && (
+              <div className="composer-attach-row">
+                {file && (
+                  <div className="composer-file-chip">
+                    <span className="composer-file-name" title={file.name}>
+                      {file.name}
+                    </span>
+                    <button
+                      type="button"
+                      className="composer-photo-x"
+                      aria-label="Убрать файл"
+                      disabled={busy}
+                      onClick={() => setFile(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                {attachPhotos.length > 0 && (
+                  <ComposerPhotoChips
+                    files={attachPhotos}
+                    busy={busy}
+                    onRemove={(i) =>
+                      setAttachPhotos((list) => list.filter((_, j) => j !== i))
+                    }
+                  />
+                )}
+              </div>
             )}
-            <div className="composer-modes" role="group" aria-label="Режим фото">
+            <div className="composer-modes" role="group" aria-label="Режим">
               <button
                 type="button"
                 className={`chip${photoMode === "document" ? " on" : ""}`}
@@ -1134,42 +1121,57 @@ export default function App() {
                 className={`chip${photoMode === "edit" ? " on" : ""}`}
                 disabled={busy}
                 onClick={() => setPhotoMode("edit")}
-                title="Нужны фото + текст правки; Source не обязателен"
+                title="Фото + текст правки"
               >
                 Только правка
               </button>
             </div>
+            <p className="composer-summary" title={settingsSummary}>
+              {settingsSummary}
+            </p>
             <div className="composer">
               <input
-                ref={photoRef}
+                ref={fileRef}
                 type="file"
-                accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
                 multiple
                 hidden
                 onChange={(e) => {
-                  const list = Array.from(e.target.files || []);
+                  const list = e.target.files;
                   e.target.value = "";
-                  if (!list.length) return;
-                  setAttachPhotos((prev) => [...prev, ...list].slice(0, 2));
-                  if (forbidImages) setForbidImages(false);
-                  if (maxImages < 1) setMaxImages(Math.max(2, list.length));
+                  if (list?.length) ingestFiles(list);
                 }}
               />
+              <input ref={photoRef} type="file" accept="image/*" multiple hidden />
               <button
                 type="button"
                 className="composer-attach"
-                disabled={busy || attachPhotos.length >= 2}
-                title="Прикрепить фото (до 2)"
-                onClick={() => photoRef.current?.click()}
+                disabled={busy}
+                title="Прикрепить .txt / .md или фото"
+                onClick={() => fileRef.current?.click()}
               >
                 📎
               </button>
-              <input
-                type="text"
+              <button
+                type="button"
+                className="composer-attach composer-gear"
+                disabled={busy}
+                title="Настройки: палитра, типы, лимиты"
+                aria-label="Настройки отчёта"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <SettingsIcon size={16} />
+              </button>
+              <textarea
+                ref={chatRef}
+                className="composer-input"
+                rows={1}
                 placeholder={
                   photoMode === "edit"
-                    ? "Что изменить на фото (EN или коротко по-русски)…"
-                    : "Intent: с таблицами, короткий отчёт…"
+                    ? "Что изменить на фото…"
+                    : file
+                      ? "Что сделать с файлом (можно пусто)…"
+                      : "Напиши отчёт с цифрами или прикрепи .txt…"
                 }
                 value={chat}
                 disabled={busy}
@@ -1193,6 +1195,44 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        docTitle={docTitle}
+        onDocTitle={setDocTitle}
+        chartAuto={chartAuto}
+        onEnableAuto={enableAuto}
+        types={types}
+        catalog={catalog}
+        onToggleType={toggleType}
+        chartHints={chartHints}
+        onChartHints={(v) => {
+          setChartHints(v);
+          if (v.trim()) setChartAuto(false);
+        }}
+        chartPalette={chartPalette}
+        palettes={palettes}
+        onPalette={setChartPalette}
+        chartStyle={chartStyle}
+        onChartStyle={setChartStyle}
+        maxCharts={maxCharts}
+        onMaxCharts={setMaxCharts}
+        maxImages={maxImages}
+        onMaxImages={setMaxImages}
+        forbidCharts={forbidCharts}
+        onForbidCharts={setForbidCharts}
+        forbidImages={forbidImages}
+        onForbidImages={setForbidImages}
+        dryRun={dryRun}
+        onDryRun={setDryRun}
+        health={health}
+        paradeHint={
+          health?.vision_configured && health?.docker_ok
+            ? `Готово: ${paradeHint}`
+            : `Сейчас: ${paradeHint}`
+        }
+      />
     </div>
   );
 }

@@ -44,11 +44,46 @@ def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: s
     )
 
 
+def _enclosing_figure_span(tex: str, start: int) -> tuple[int, int] | None:
+    """Return [begin, end_after) of the figure env containing ``start``, if any."""
+    begin = tex.rfind(r"\begin{figure}", 0, start)
+    end_before = tex.rfind(r"\end{figure}", 0, start)
+    if begin == -1 or begin < end_before:
+        return None
+    end = tex.find(r"\end{figure}", start)
+    if end == -1:
+        return None
+    return begin, end + len(r"\end{figure}")
+
+
 def _slot_inside_figure(tex: str, start: int) -> bool:
     """True if match start sits between \\begin{figure} and \\end{figure}."""
-    begin = tex.rfind(r"\begin{figure}", 0, start)
-    end = tex.rfind(r"\end{figure}", 0, start)
-    return begin != -1 and begin > end
+    return _enclosing_figure_span(tex, start) is not None
+
+
+def _inner_slot_replacement(
+    tex: str,
+    start: int,
+    fid: str,
+    meta: dict[str, Any],
+    *,
+    rel_dir: str,
+    label_prefix: str,
+) -> str:
+    """Inside an existing figure: image + caption/label if the shell has none."""
+    body = _includegraphics_line(fid, meta, rel_dir=rel_dir)
+    span = _enclosing_figure_span(tex, start)
+    if span is None:
+        return body
+    shell = tex[span[0] : span[1]]
+    if r"\caption" in shell:
+        return body
+    caption = escape_tex_text(str(meta.get("caption") or fid))
+    return (
+        body
+        + f"  \\caption{{{caption}}}\n"
+        + f"  \\label{{{label_prefix}:{fid}}}\n"
+    )
 
 
 def inject_media(
@@ -69,7 +104,9 @@ def inject_media(
         if not st.get("ok") or not meta:
             return ""
         if _slot_inside_figure(tex, m.start()):
-            return _includegraphics_line(fid, meta, rel_dir=rel_dir)
+            return _inner_slot_replacement(
+                tex, m.start(), fid, meta, rel_dir=rel_dir, label_prefix="fig"
+            )
         return _figure_env(fid, meta, rel_dir=rel_dir, label_prefix="fig")
 
     out = _FIG_SLOT.sub(repl_fig, tex)
@@ -82,7 +119,9 @@ def inject_media(
             return ""
         # Positions are relative to `out` (post-figure inject), not original `tex`.
         if _slot_inside_figure(out, m.start()):
-            return _includegraphics_line(cid, meta, rel_dir=rel_dir)
+            return _inner_slot_replacement(
+                out, m.start(), cid, meta, rel_dir=rel_dir, label_prefix="chart"
+            )
         return _figure_env(cid, meta, rel_dir=rel_dir, label_prefix="chart")
 
     out = _CHART_SLOT.sub(repl_chart, out)

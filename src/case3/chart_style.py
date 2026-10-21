@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 # Preset ids used in Form/UI. ``auto`` = model picks one preset for the doc.
-PALETTE_IDS = ("auto", "editorial", "ocean", "sunset", "mono")
+PALETTE_IDS = ("auto", "editorial", "ocean", "sunset", "mono", "atelier")
 
 _HEX = re.compile(r"#([0-9a-fA-F]{6})\b")
 _RGBA = re.compile(
@@ -43,16 +43,58 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
     area = str(p.get("area") or "")
     grid = str(p.get("grid") or "")
 
-    # Collect unique hex colors (order of first appearance)
+    muted = str(p.get("muted") or "").upper()
+    src = html or ""
+
+    def _is_near_white(hx: str) -> bool:
+        r, g, b = _parse_hex(hx)
+        return min(r, g, b) >= 245
+
+    def _is_ink_grey(hx: str) -> bool:
+        r, g, b = _parse_hex(hx)
+        if max(r, g, b) - min(r, g, b) > 28:
+            return False
+        return 40 <= _lum(r, g, b) <= 190
+
+    # Nearest Chart.js color prop — avoid mistaking labels.color for borderColor.
+    _PROP_NEAR = re.compile(
+        r"(backgroundcolor|bordercolor|pointbackgroundcolor|pointbordercolor|"
+        r"fillcolor|(?<![a-z])color)\s*[:=]",
+        re.I,
+    )
+    _SERIES_PROPS = frozenset(
+        {
+            "backgroundcolor",
+            "bordercolor",
+            "pointbackgroundcolor",
+            "pointbordercolor",
+            "fillcolor",
+        }
+    )
+
+    def _series_context(start: int) -> bool:
+        ctx = src[max(0, start - 72) : start]
+        matches = list(_PROP_NEAR.finditer(ctx))
+        if not matches:
+            return False
+        return matches[-1].group(1).lower() in _SERIES_PROPS
+
+    # Collect unique hex colors (order of first appearance). Skip near-white
+    # so Chart.js segment borders stay clean.
     seen: list[str] = []
-    for m in _HEX.finditer(html or ""):
+    series: set[str] = set()
+    for m in _HEX.finditer(src):
         hx = f"#{m.group(1).upper()}"
+        if _is_near_white(hx):
+            continue
         if hx not in seen:
             seen.append(hx)
+        if _series_context(m.start()):
+            series.add(hx)
     if not seen:
         return html
 
-    # Darkest → primary, then accents by appearance among the rest
+    # Darkest series/ink → primary; series → accents; label greys → muted.
     ranked = sorted(seen, key=lambda h: _lum(*_parse_hex(h)))
     mapping: dict[str, str] = {}
     if ranked:
@@ -60,6 +102,9 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
         accent_i = 1
         for hx in seen:
             if hx in mapping:
+                continue
+            if muted and _is_ink_grey(hx) and hx not in series:
+                mapping[hx] = muted
                 continue
             mapping[hx] = targets[min(accent_i, len(targets) - 1)].upper()
             accent_i += 1
@@ -132,6 +177,16 @@ _PALETTES: dict[str, dict[str, Any]] = {
         "area": "rgba(17,24,39,0.12)",
         "grid": "rgba(17,24,39,0.08)",
     },
+    # Soft olive→mist mono (Mary-like stacked luxury, Liber hues — no purple).
+    "atelier": {
+        "label": "Atelier",
+        "primary": "#2C3A14",
+        "accents": ["#3F5210", "#6B7F2A", "#A8B87A", "#D5DEC0"],
+        # Axis/legend ink — keep readable on cream paper (not dusty sage).
+        "muted": "#5A614C",
+        "area": "rgba(107,127,42,0.18)",
+        "grid": "rgba(44,58,20,0.09)",
+    },
 }
 
 
@@ -140,6 +195,21 @@ def normalize_palette_id(raw: str | None) -> str:
     if key in PALETTE_IDS:
         return key
     return "editorial"
+
+
+# Intent line: "- палитра графиков: Atelier (atelier) — …" or "… AUTO — …"
+_PALETTE_INTENT_RE = re.compile(
+    r"палитра графиков:\s*(?:AUTO\b|[^(]*\((\w+)\))",
+    re.I,
+)
+
+
+def palette_from_intent(intent: str) -> str:
+    """Parse UI palette id from Intent block; ``auto`` when missing/AUTO."""
+    m = _PALETTE_INTENT_RE.search(intent or "")
+    if not m or m.group(1) is None:
+        return "auto"
+    return normalize_palette_id(m.group(1))
 
 
 def palette_public() -> list[dict[str, Any]]:
@@ -151,7 +221,7 @@ def palette_public() -> list[dict[str, Any]]:
             "swatches": ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"],
         }
     ]
-    for pid in ("editorial", "ocean", "sunset", "mono"):
+    for pid in ("editorial", "ocean", "sunset", "mono", "atelier"):
         p = _PALETTES[pid]
         out.append(
             {
@@ -169,7 +239,7 @@ def intent_palette_lines(palette_id: str, style_notes: str = "") -> list[str]:
     lines: list[str] = []
     if pid == "auto":
         lines.append(
-            "- палитра графиков: AUTO — выбери одну из editorial/ocean/sunset/mono "
+            "- палитра графиков: AUTO — выбери одну из editorial/ocean/sunset/mono/atelier "
             "на весь документ; не смешивай пресеты и не используй фиолетовый нейрослоп"
         )
     else:

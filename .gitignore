@@ -20,6 +20,8 @@ debug-bundle/
 
 web/node_modules/
 web/dist/
+workers/*/node_modules/
+workers/*/.wrangler/
 
 *.pdf
 *.docx
