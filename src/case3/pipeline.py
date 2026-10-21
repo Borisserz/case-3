@@ -6,16 +6,19 @@ import json
 import logging
 import shutil
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable  # Any used by user_figures metas
 
 from case3.charts import generate_all_charts, max_charts_from_env
+from case3.chat_summary import try_generate_chat_summary
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
 from case3.image_api import ImageApiConfig, generate_all_figures
 from case3.render import render_tex
+from case3.summary_bus import BUS
 from case3.user_photos import (
     ensure_user_slots_in_tex,
     materialize_user_figures,
@@ -251,15 +254,97 @@ def run_pipeline(
             shutil.copytree(figs_dir, dest)
 
         bump("latex")
-        artifacts = render_tex(
-            tex_path,
-            out_dir=out,
-            formats=formats,
-            extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-            log_dir=logs,
-            project_root=root,
-            on_format=lambda fmt: bump("docx" if fmt == "docx" else "latex"),
-        )
+        injected_tex = tex_path.read_text(encoding="utf-8")
+        # Chat summary streams in parallel with PDF/DOCX (does not block print truth).
+        if dry_run:
+            meta["chat_summary"] = ""
+            meta["summary_status"] = "skipped"
+            BUS.start(run_id)
+            BUS.finish(run_id, "", "skipped")
+            artifacts = render_tex(
+                tex_path,
+                out_dir=out,
+                formats=formats,
+                extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+                log_dir=logs,
+                project_root=root,
+                on_format=lambda fmt: bump("docx" if fmt == "docx" else "latex"),
+            )
+        else:
+            meta["summary_status"] = "streaming"
+            meta["chat_summary"] = ""
+            _write_meta(meta, out, logs)
+            BUS.start(run_id)
+
+            def _do_render() -> dict:
+                return render_tex(
+                    tex_path,
+                    out_dir=out,
+                    formats=formats,
+                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+                    log_dir=logs,
+                    project_root=root,
+                    on_format=lambda fmt: bump(
+                        "docx" if fmt == "docx" else "latex"
+                    ),
+                )
+
+            def _do_summary() -> tuple[str, str]:
+                def on_delta(piece: str) -> None:
+                    BUS.publish(run_id, piece)
+
+                chart_ids = [
+                    str(c.get("id") or "")
+                    for c in (charts or [])
+                    if isinstance(c, dict) and c.get("id")
+                ]
+                fig_ids = [
+                    str(f.get("id") or "")
+                    for f in (figures or [])
+                    if isinstance(f, dict) and f.get("id")
+                ]
+                media_facts = {
+                    "charts_planned": len(chart_ids),
+                    "figures_planned": len(fig_ids),
+                    "charts_ok": sum(
+                        1
+                        for cid in chart_ids
+                        if isinstance(status.get(cid), dict)
+                        and status[cid].get("ok")
+                    ),
+                    "figures_ok": sum(
+                        1
+                        for fid in fig_ids
+                        if isinstance(status.get(fid), dict)
+                        and status[fid].get("ok")
+                    ),
+                }
+
+                text, status_sum = try_generate_chat_summary(
+                    injected_tex,
+                    intent=intent,
+                    media=media_facts,
+                    on_delta=on_delta,
+                )
+                BUS.finish(run_id, text, status_sum)
+                return text, status_sum
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_r = pool.submit(_do_render)
+                fut_s = pool.submit(_do_summary)
+                artifacts = fut_r.result()
+                summary_text, summary_status = fut_s.result()
+
+            meta["chat_summary"] = summary_text or ""
+            meta["summary_status"] = summary_status
+            if summary_text:
+                (out / "chat_summary.txt").write_text(
+                    summary_text, encoding="utf-8"
+                )
+                (logs / "chat_summary.txt").write_text(
+                    summary_text, encoding="utf-8"
+                )
+
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
         meta["stage"] = "ok"

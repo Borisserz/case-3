@@ -55,18 +55,16 @@ export function Sidebar({
       <div className="liber-sidebar-top">
         <div className="liber-sidebar-brand">
           <IconLiberMark size={collapsed ? 26 : 30} />
-          {!collapsed ? (
-            <div className="liber-sidebar-brand-text">
-              <span className="liber-sidebar-word">Liber</span>
-              <span
-                className={`liber-sidebar-live${healthReady ? " ok" : ""}`}
-                title={healthHint}
-              >
-                <span className="health-dot" aria-hidden />
-                {healthLabel}
-              </span>
-            </div>
-          ) : null}
+          <div className="liber-sidebar-brand-text liber-side-label" aria-hidden={collapsed}>
+            <span className="liber-sidebar-word">Liber</span>
+            <span
+              className={`liber-sidebar-live${healthReady ? " ok" : ""}`}
+              title={healthHint}
+            >
+              <span className="health-dot" aria-hidden />
+              {healthLabel}
+            </span>
+          </div>
         </div>
         <button
           type="button"
@@ -88,7 +86,7 @@ export function Sidebar({
         aria-label="Новый отчёт"
       >
         <IconPlus size={16} />
-        {!collapsed ? <span>Новый отчёт</span> : null}
+        <span className="liber-side-label">Новый отчёт</span>
       </button>
 
       <nav className="liber-sidebar-nav" aria-label="Разделы">
@@ -109,9 +107,9 @@ export function Sidebar({
           title="История"
         >
           <IconHistory size={17} />
-          {!collapsed ? <span>История</span> : null}
-          {!collapsed && history.length > 0 ? (
-            <span className="liber-sidebar-count">{history.length}</span>
+          <span className="liber-side-label">История</span>
+          {history.length > 0 ? (
+            <span className="liber-sidebar-count liber-side-label">{history.length}</span>
           ) : null}
         </button>
         <button
@@ -122,7 +120,7 @@ export function Sidebar({
           aria-label="Настройки"
         >
           <IconSettings size={17} />
-          {!collapsed ? <span>Настройки</span> : null}
+          <span className="liber-side-label">Настройки</span>
         </button>
       </nav>
 
@@ -171,14 +169,11 @@ export function Sidebar({
       </AnimatePresence>
 
       <div className="liber-sidebar-foot">
-        {!collapsed ? (
-          <p className="liber-sidebar-foot-label">
-            Atelier
-            <span>PDF · DOCX · Source</span>
-          </p>
-        ) : (
-          <span className="liber-sidebar-foot-dot" aria-hidden />
-        )}
+        <p className="liber-sidebar-foot-label liber-side-label">
+          Atelier
+          <span>PDF · DOCX · Source</span>
+        </p>
+        <span className="liber-sidebar-foot-dot" aria-hidden />
       </div>
     </aside>
   );

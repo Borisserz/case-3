@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
@@ -28,6 +28,7 @@ from case3.llm_client import LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
+from case3.summary_bus import BUS
 from case3.tex_preview import build_report_preview
 from case3.user_photos import UserPhotoError, save_user_photos
 
@@ -266,6 +267,10 @@ def _run_result_payload(
     )
     mc = int(max_charts if max_charts is not None else meta.get("max_charts") or 0)
     mi = int(max_images if max_images is not None else meta.get("max_images") or 0)
+    chat_summary = str(meta.get("chat_summary") or "")
+    summary_status = str(meta.get("summary_status") or "")
+    if not summary_status and chat_summary:
+        summary_status = "ok"
     return {
         "run_id": run_id,
         "status": meta.get("status", "ok"),
@@ -283,6 +288,8 @@ def _run_result_payload(
         "downloads": files,
         "previews": _media_previews(run_id, out_dir, media),
         "preview": _build_preview_payload(run_id, out_dir, media),
+        "chat_summary": chat_summary,
+        "summary_status": summary_status or None,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),
     }
@@ -602,6 +609,66 @@ async def api_run(
     )
 
 
+def _sse_pack(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.get("/api/runs/{run_id}/summary/stream")
+def stream_run_summary(run_id: str) -> StreamingResponse:
+    """SSE: chat summary deltas while PDF renders (replay-safe)."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)):
+        raise HTTPException(404, detail="run not found")
+    # Allow stream as soon as run dirs exist (work or out)
+    work = ROOT / "runs" / "work" / run_id
+    if not out_dir.is_dir() and not work.is_dir():
+        raise HTTPException(404, detail="run not found")
+
+    def gen():
+        # If bus already finished, subscribe still replays.
+        # If meta already has final summary and bus never started (restart), emit once.
+        snap = BUS.snapshot(run_id)
+        meta_path = out_dir / "meta.json"
+        if meta_path.is_file() and not snap.get("done") and not snap.get("text"):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+            final = str(meta.get("chat_summary") or "")
+            st = str(meta.get("summary_status") or "")
+            if final and st in {"ok", "error", "skipped"}:
+                if final:
+                    yield _sse_pack("delta", {"text": final})
+                yield _sse_pack("done", {"text": final, "status": st or "ok"})
+                return
+
+        for ev in BUS.subscribe(run_id, timeout_s=180.0):
+            kind = ev.get("event") or "delta"
+            if kind == "delta":
+                yield _sse_pack("delta", {"text": ev.get("text") or ""})
+            else:
+                yield _sse_pack(
+                    "done",
+                    {
+                        "text": ev.get("text") or "",
+                        "status": ev.get("status") or "ok",
+                    },
+                )
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/api/runs/{run_id}/status")
 def get_run_status(run_id: str) -> dict[str, Any]:
     if not _RUN_ID_OK.match(run_id):
@@ -631,6 +698,8 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "stage_detail": meta.get("stage_detail"),
             "max_charts": meta.get("max_charts"),
             "max_images": meta.get("max_images"),
+            "chat_summary": str(meta.get("chat_summary") or ""),
+            "summary_status": meta.get("summary_status"),
         }
     if status == "error":
         return {

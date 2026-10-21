@@ -68,6 +68,62 @@ def apply_doc_title(tex: str, title: str) -> str:
     return tex[: m.start()] + block + tex[m.start() :]
 
 
+_TITLE_CMD = re.compile(r"\\title\{([^{}]*)\}")
+_AUTHOR_CMD = re.compile(r"\\author\{[^{}]*\}")
+_DATE_CMD = re.compile(r"\\date\{[^{}]*\}")
+
+
+def ensure_title_block(tex: str) -> str:
+    """D3: hard masthead — topical \\title + empty \\author + \\date{\\today} + \\maketitle.
+
+    Preserves a non-empty model/UI \\title. Does not invent content titles from Source.
+    """
+    out = tex or ""
+    m_title = _TITLE_CMD.search(out)
+    title_body = (m_title.group(1) if m_title else "").strip()
+    if not title_body:
+        # Placeholder only when completely missing/empty — model should have set one;
+        # keep a neutral Russian default so PDF still builds.
+        safe_title = "Отчёт"
+        if m_title:
+            out = _TITLE_CMD.sub(lambda _m: r"\title{" + safe_title + "}", out, count=1)
+        else:
+            m_begin = re.search(r"\\begin\{document\}", out)
+            if not m_begin:
+                return out
+            block = f"\\title{{{safe_title}}}\n\\author{{}}\n\\date{{\\today}}\n"
+            out = out[: m_begin.start()] + block + out[m_begin.start() :]
+
+    if _AUTHOR_CMD.search(out):
+        out = _AUTHOR_CMD.sub(lambda _m: r"\author{}", out, count=1)
+    else:
+        out = re.sub(
+            r"(\\title\{[^{}]*\})",
+            lambda m: m.group(1) + "\n\\author{}",
+            out,
+            count=1,
+        )
+
+    if _DATE_CMD.search(out):
+        out = _DATE_CMD.sub(lambda _m: r"\date{\today}", out, count=1)
+    else:
+        out = re.sub(
+            r"(\\author\{[^{}]*\})",
+            lambda m: m.group(1) + "\n\\date{\\today}",
+            out,
+            count=1,
+        )
+
+    if r"\maketitle" not in out:
+        out = re.sub(
+            r"(\\begin\{document\})",
+            lambda m: m.group(1) + "\n\\maketitle",
+            out,
+            count=1,
+        )
+    return out
+
+
 def preferred_types_from_intent(intent: str) -> list[str]:
     """Parse forced chart types from Intent UI block."""
     m = _PREFERRED_TYPES_RE.search(intent or "")
@@ -690,6 +746,7 @@ def generate_document(
     forced_title = doc_title_from_intent(intent_text)
     if forced_title:
         tex = apply_doc_title(tex, forced_title)
+    tex = ensure_title_block(tex)
 
     if tex_body_is_sparse(tex) and source_text.strip():
         log.warning(
@@ -704,6 +761,7 @@ def generate_document(
         )
         if forced_title:
             tex = apply_doc_title(tex, forced_title)
+        tex = ensure_title_block(tex)
 
     # Safety: no raw Markdown pipes should remain after Source-fill.
     if re.search(r"(?m)^[ \t]*\|.+\|[ \t]*$", tex):

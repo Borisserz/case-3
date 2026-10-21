@@ -1,9 +1,10 @@
-/** PDF page slider (pdf.js). Supports controlled page for figure→PDF jump. */
+/** PDF page slider (pdf.js). Figure→PDF jump: load → optional text find → render (no races). */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { pageTextMatchesNeedle } from "./pdfFindPage";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -11,50 +12,131 @@ type Props = {
   url: string;
   /** Jump to this page when it changes (1-based). */
   page?: number;
+  /** Caption / id needles from figure→PDF click. */
+  findNeedles?: string[] | null;
+  /** Bumps on each jump so same figure re-searches. */
+  findToken?: number | null;
   onPageChange?: (page: number, pageCount: number) => void;
 };
 
-export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
+async function findPageByNeedles(
+  doc: PDFDocumentProxy,
+  needles: string[],
+): Promise<number | null> {
+  const list = needles.map((n) => n.trim()).filter((n) => n.length >= 3);
+  if (!list.length) return null;
+  for (let i = 1; i <= doc.numPages; i++) {
+    const pdfPage = await doc.getPage(i);
+    const tc = await pdfPage.getTextContent();
+    const text = tc.items
+      .map((it) =>
+        typeof it === "object" && it && "str" in it
+          ? String((it as { str: string }).str)
+          : "",
+      )
+      .join(" ");
+    for (const needle of list) {
+      if (pageTextMatchesNeedle(text, needle)) return i;
+    }
+  }
+  return null;
+}
+
+export function PdfFirstPage({
+  url,
+  page: pageProp,
+  findNeedles,
+  findToken,
+  onPageChange,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
+  const renderTaskRef = useRef<RenderTask | null>(null);
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const renderGen = useRef(0);
+  const onPageChangeRef = useRef(onPageChange);
+  onPageChangeRef.current = onPageChange;
+  const findNeedlesRef = useRef(findNeedles);
+  findNeedlesRef.current = findNeedles;
+  const findTokenRef = useRef(findToken);
+  findTokenRef.current = findToken;
+  const pagePropRef = useRef(pageProp);
+  pagePropRef.current = pageProp;
+  /** Last findToken already applied (cold load or live jump). */
+  const appliedFindRef = useRef<number | null>(null);
 
-  const renderPage = useCallback(async (doc: PDFDocumentProxy, n: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const gen = ++renderGen.current;
-    setDrawing(true);
-    try {
-      const pdfPage = await doc.getPage(n);
-      if (gen !== renderGen.current) return;
-      const base = pdfPage.getViewport({ scale: 1 });
-      const maxW = Math.min(720, canvas.parentElement?.clientWidth || 720);
-      const scale = maxW / base.width;
-      const viewport = pdfPage.getViewport({ scale: Math.max(0.8, scale) });
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("no canvas");
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-      if (gen !== renderGen.current) return;
-      setReady(true);
-      setErr(null);
-    } finally {
-      if (gen === renderGen.current) setDrawing(false);
+  const cancelRender = useCallback(() => {
+    const task = renderTaskRef.current;
+    renderTaskRef.current = null;
+    if (task) {
+      try {
+        task.cancel();
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 
+  const renderPage = useCallback(
+    async (doc: PDFDocumentProxy, n: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const gen = ++renderGen.current;
+      cancelRender();
+      setDrawing(true);
+      try {
+        const pdfPage = await doc.getPage(n);
+        if (gen !== renderGen.current) return;
+        const base = pdfPage.getViewport({ scale: 1 });
+        const maxW = Math.min(720, canvas.parentElement?.clientWidth || 720);
+        const scale = maxW / base.width;
+        const viewport = pdfPage.getViewport({ scale: Math.max(0.8, scale) });
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("no canvas");
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const task = pdfPage.render({ canvasContext: ctx, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (gen !== renderGen.current) return;
+        setReady(true);
+        setErr(null);
+      } catch (e) {
+        // pdf.js cancel → RenderingCancelledException — not a real failure
+        const name = e && typeof e === "object" && "name" in e ? String((e as { name: string }).name) : "";
+        const msg = e instanceof Error ? e.message : String(e);
+        if (
+          name.includes("Cancel") ||
+          /cancel/i.test(msg) ||
+          gen !== renderGen.current
+        ) {
+          return;
+        }
+        throw e;
+      } finally {
+        if (gen === renderGen.current) {
+          renderTaskRef.current = null;
+          setDrawing(false);
+        }
+      }
+    },
+    [cancelRender],
+  );
+
+  // Load document once per URL. If mount came from a figure jump, find page
+  // before the first paint (avoids render↔getTextContent races).
   useEffect(() => {
     let cancelled = false;
     setErr(null);
     setReady(false);
     setPage(1);
     setPageCount(0);
+    appliedFindRef.current = null;
+    cancelRender();
     const prev = docRef.current;
     docRef.current = null;
     if (prev) void prev.destroy();
@@ -70,13 +152,29 @@ export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
           return;
         }
         docRef.current = doc;
-        setPageCount(doc.numPages);
-        const start =
-          pageProp && pageProp >= 1
-            ? Math.min(pageProp, doc.numPages)
+        const nPages = doc.numPages;
+        setPageCount(nPages);
+
+        let start =
+          pagePropRef.current && pagePropRef.current >= 1
+            ? Math.min(pagePropRef.current, nPages)
             : 1;
+
+        const token = findTokenRef.current;
+        const needles = findNeedlesRef.current;
+        if (token != null && needles?.length) {
+          try {
+            const found = await findPageByNeedles(doc, needles);
+            if (!cancelled && found != null) start = found;
+            if (!cancelled) appliedFindRef.current = token;
+          } catch {
+            /* keep hint */
+          }
+        }
+
+        if (cancelled) return;
         setPage(start);
-        onPageChange?.(start, doc.numPages);
+        onPageChangeRef.current?.(start, nPages);
       } catch (e) {
         if (!cancelled) {
           setErr(e instanceof Error ? e.message : "PDF preview failed");
@@ -86,6 +184,7 @@ export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
 
     return () => {
       cancelled = true;
+      cancelRender();
       const d = docRef.current;
       docRef.current = null;
       if (d) void d.destroy();
@@ -93,11 +192,31 @@ export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only on url
   }, [url]);
 
+  // Jump while PDF tab already open: search without reloading the document.
+  // (Do NOT sync pageProp→page after load — TeX hints are often «1» and would
+  // clobber a successful caption find that landed on page 2+.)
   useEffect(() => {
-    if (pageProp == null || pageCount < 1) return;
-    const next = Math.min(pageCount, Math.max(1, pageProp));
-    setPage((p) => (p === next ? p : next));
-  }, [pageProp, pageCount]);
+    if (findToken == null || !findNeedles?.length || pageCount < 1) return;
+    if (appliedFindRef.current === findToken) return;
+    const doc = docRef.current;
+    if (!doc) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const found = await findPageByNeedles(doc, findNeedles);
+        if (cancelled) return;
+        appliedFindRef.current = findToken;
+        if (found == null) return;
+        setPage(found);
+        onPageChangeRef.current?.(found, pageCount);
+      } catch {
+        /* keep current */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [findToken, findNeedles, pageCount]);
 
   useEffect(() => {
     const doc = docRef.current;
@@ -114,19 +233,20 @@ export function PdfFirstPage({ url, page: pageProp, onPageChange }: Props) {
     })();
     return () => {
       cancelled = true;
+      cancelRender();
     };
-  }, [page, pageCount, renderPage]);
+  }, [page, pageCount, renderPage, cancelRender]);
 
   const go = useCallback(
     (delta: number) => {
       setPage((p) => {
         if (pageCount < 1) return p;
         const next = Math.min(pageCount, Math.max(1, p + delta));
-        onPageChange?.(next, pageCount);
+        onPageChangeRef.current?.(next, pageCount);
         return next;
       });
     },
-    [pageCount, onPageChange],
+    [pageCount],
   );
 
   useEffect(() => {

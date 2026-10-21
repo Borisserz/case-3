@@ -58,7 +58,6 @@ type Props = {
   preview: ReportPreview;
   downloads?: Downloads;
   runId?: string;
-  stats?: string;
   warnings?: string[];
   palettes?: PaletteInfo[];
   catalogTypes?: string[];
@@ -78,6 +77,7 @@ type Props = {
     id: string;
     figureIndex: number;
     pdfPage?: number;
+    caption?: string;
   }) => void;
   /** C3: open PDF tab when preview body is empty. */
   onOpenPdf?: () => void;
@@ -118,7 +118,6 @@ export function ReportView({
   preview,
   downloads,
   runId,
-  stats,
   warnings,
   palettes = [],
   catalogTypes = [],
@@ -146,11 +145,13 @@ export function ReportView({
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [imageFor, setImageFor] = useState<string | null>(null);
   const [draft, setDraft] = useState<ChartEditDraft | null>(null);
+  const [sheetPreviewHtml, setSheetPreviewHtml] = useState<string | null>(null);
   const lbTitle = useId();
 
   const closeSheet = useCallback(() => {
     setSheetFor(null);
     setDraft(null);
+    setSheetPreviewHtml(null);
     onEditCancel?.();
   }, [onEditCancel]);
 
@@ -182,15 +183,11 @@ export function ReportView({
     <article className="report">
       <div className="report-rail" aria-hidden />
 
-      {(stats || (warnings && warnings.length > 0) || runId) && (
+      {warnings && warnings.length > 0 ? (
         <header className="report-meta">
-          {runId && <span className="report-run">run {runId}</span>}
-          {stats && <span className="report-stats">{stats}</span>}
-          {warnings && warnings.length > 0 && (
-            <span className="report-warns">{warnings.join(" · ")}</span>
-          )}
+          <span className="report-warns">{warnings.join(" · ")}</span>
         </header>
-      )}
+      ) : null}
 
       {preview.title ? (
         <h1 className="report-title">{preview.title}</h1>
@@ -355,6 +352,7 @@ export function ReportView({
                 id: b.id,
                 figureIndex: n,
                 pdfPage: b.pdfPage,
+                caption,
               });
             };
             const figInner = (
@@ -367,6 +365,9 @@ export function ReportView({
                       caption={b.caption || caption}
                       fallbackUrl={b.url}
                       version={bustFromUrl(b.url)}
+                      htmlOverride={
+                        sheetOpen ? sheetPreviewHtml : null
+                      }
                       disabled={isEditing}
                       onJumpToPdf={onJumpToPdf ? jumpPdf : undefined}
                     />
@@ -427,7 +428,6 @@ export function ReportView({
                       }}
                     >
                       в PDF
-                      {b.pdfPage ? ` · с.${b.pdfPage}` : ""}
                     </button>
                   )}
                   {isPhoto && b.url && !isEditing && (
@@ -573,6 +573,7 @@ export function ReportView({
                     busy={isEditing}
                     error={sheetError}
                     onDraftChange={setDraft}
+                    onPreviewHtml={setSheetPreviewHtml}
                     onCancel={() => {
                       if (!editingFigureId) closeSheet();
                     }}
@@ -608,7 +609,7 @@ export function ReportView({
             return (
               <figure
                 key={i}
-                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen ? " is-tuning" : ""}`}
+                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}`}
                 style={delayStyle}
               >
                 {isChart ? (
@@ -700,11 +701,6 @@ export function ReportPending({
   return (
     <div className="report-pending">
       <PipelineFlow stage={stage} label={label} detail={detail} />
-      <div className="report-pending-lines" aria-hidden>
-        <i style={{ width: "92%" }} />
-        <i style={{ width: "78%" }} />
-        <i style={{ width: "64%" }} />
-      </div>
     </div>
   );
 }

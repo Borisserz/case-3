@@ -1,0 +1,199 @@
+"""Short Liber chat summary from a document outline (facts only)."""
+
+from __future__ import annotations
+
+from typing import Any, Iterator
+
+from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.tex_preview import tex_to_preview_blocks
+
+SUMMARY_SYSTEM = """Ты — Liber Atelier: спокойный ассистент за рабочим столом.
+Пользователь только что получил готовый отчёт. Напиши короткое сообщение в чат (как Cursor / DeepSeek): что собрано и что внутри.
+
+Правила:
+- Пиши на языке outline / Intent (по умолчанию русский).
+- Факты и числа — только из OUTLINE и MEDIA_DELIVERED. Ничего не выдумывай.
+- Intent — пожелание пользователя, НЕ отчёт о результате. Если Intent просит N графиков,
+  а MEDIA_DELIVERED.charts_ok = 0 — не пиши, что графики подготовлены.
+- Считай графики только по charts_ok / строкам CHART:; иллюстрации — figures_ok / FIGURE:.
+- 2–4 коротких абзаца, примерно 80–180 слов. Допустим лёгкий markdown (**жирный**, короткий список).
+- Без клише («в современном мире», «важно отметить»), без эмодзи, без заголовка «Сводка».
+- В конце одной фразой скажи, что подробности — в полном документе (превью / PDF).
+- Не цитируй TeX и не упоминай пайплайн/слоты/JSON."""
+
+_MAX_PARAS = 6
+_MAX_HEADINGS = 12
+_MAX_FIGS = 8
+_MAX_TABLES = 4
+
+
+def build_outline(tex: str) -> str:
+    """Compact outline for the summary LLM (no preamble noise)."""
+    data = tex_to_preview_blocks(tex or "")
+    lines: list[str] = []
+    title = str(data.get("title") or "").strip()
+    if title:
+        lines.append(f"TITLE: {title}")
+
+    headings = 0
+    paras = 0
+    figs = 0
+    tables = 0
+    for block in data.get("blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "heading" and headings < _MAX_HEADINGS:
+            level = int(block.get("level") or 1)
+            text = str(block.get("text") or "").strip()
+            if text:
+                prefix = "#" * min(max(level, 1), 3)
+                lines.append(f"{prefix} {text}")
+                headings += 1
+        elif kind == "paragraph" and paras < _MAX_PARAS:
+            text = str(block.get("text") or "").strip()
+            if text:
+                snippet = text if len(text) <= 220 else text[:217].rstrip() + "…"
+                lines.append(f"PARA: {snippet}")
+                paras += 1
+        elif kind == "figure" and figs < _MAX_FIGS:
+            cap = str(block.get("caption") or "").strip()
+            fid = str(block.get("id") or "").strip()
+            label = cap or fid or "figure"
+            # Chart slots use cht_*; photo/API figures use fig_* / usr_*
+            tag = "CHART" if fid.startswith("cht_") else "FIGURE"
+            lines.append(f"{tag}: {label}")
+            figs += 1
+        elif kind == "table" and tables < _MAX_TABLES:
+            cap = str(block.get("caption") or "").strip()
+            headers = block.get("headers") or []
+            if cap:
+                lines.append(f"TABLE: {cap}")
+            elif headers:
+                lines.append("TABLE: " + " | ".join(str(h) for h in headers[:6]))
+            else:
+                lines.append("TABLE: (без подписи)")
+            tables += 1
+
+    return "\n".join(lines).strip() or "(пустой документ)"
+
+
+def format_media_delivered(media: dict[str, Any] | None) -> str:
+    """Explicit delivered counts so the summary cannot invent charts/photos."""
+    m = media or {}
+    charts_ok = int(m.get("charts_ok") or 0)
+    figures_ok = int(m.get("figures_ok") or 0)
+    charts_planned = int(m.get("charts_planned") or 0)
+    figures_planned = int(m.get("figures_planned") or 0)
+    return (
+        "MEDIA_DELIVERED:\n"
+        f"charts_ok: {charts_ok}\n"
+        f"figures_ok: {figures_ok}\n"
+        f"charts_planned: {charts_planned}\n"
+        f"figures_planned: {figures_planned}"
+    )
+
+
+def build_summary_user(
+    outline: str,
+    *,
+    intent: str | None = None,
+    media: dict[str, Any] | None = None,
+) -> str:
+    parts = ["OUTLINE:", outline.strip() or "(пусто)"]
+    parts.append("\n" + format_media_delivered(media))
+    intent_s = (intent or "").strip()
+    if intent_s:
+        parts.append(
+            "\nINTENT (пожелание, не факт доставки):\n" + intent_s[:1200]
+        )
+    parts.append(
+        "\nНапиши сообщение для чата Liber. Только текст ответа, без преамбулы. "
+        "Не преувеличивай MEDIA_DELIVERED."
+    )
+    return "\n".join(parts)
+
+
+def generate_chat_summary(
+    tex: str,
+    *,
+    intent: str | None = None,
+    media: dict[str, Any] | None = None,
+    client: LLMClient | None = None,
+    on_delta: Any | None = None,
+) -> str:
+    """Complete (optionally streaming via on_delta) a chat summary. Raises LLMError."""
+    outline = build_outline(tex)
+    user = build_summary_user(outline, intent=intent, media=media)
+    llm = client or LLMClient(LLMConfig.from_env())
+    if on_delta is not None and hasattr(llm, "stream"):
+        chunks: list[str] = []
+        for piece in llm.stream(
+            system=SUMMARY_SYSTEM,
+            user_text=user,
+            reasoning="off",
+            max_tokens=400,
+        ):
+            if piece:
+                chunks.append(piece)
+                on_delta(piece)
+        text = "".join(chunks).strip()
+        if text:
+            return text
+    text = llm.complete(
+        system=SUMMARY_SYSTEM,
+        user_text=user,
+        reasoning="off",
+    )
+    return (text or "").strip()
+
+
+def try_generate_chat_summary(
+    tex: str,
+    *,
+    intent: str | None = None,
+    media: dict[str, Any] | None = None,
+    client: LLMClient | None = None,
+    on_delta: Any | None = None,
+) -> tuple[str, str]:
+    """Return (text, status) where status is ok|error|skipped. Never raises."""
+    try:
+        if client is None:
+            try:
+                LLMConfig.from_env()
+            except LLMConfigError:
+                return "", "skipped"
+        text = generate_chat_summary(
+            tex,
+            intent=intent,
+            media=media,
+            client=client,
+            on_delta=on_delta,
+        )
+        if not text:
+            return "", "error"
+        return text, "ok"
+    except (LLMError, LLMConfigError, OSError, ValueError):
+        return "", "error"
+
+
+def iter_summary_deltas(
+    tex: str,
+    *,
+    intent: str | None = None,
+    media: dict[str, Any] | None = None,
+    client: LLMClient | None = None,
+) -> Iterator[str]:
+    """Yield text deltas then stop (for tests / bus publishers)."""
+    outline = build_outline(tex)
+    user = build_summary_user(outline, intent=intent, media=media)
+    llm = client or LLMClient(LLMConfig.from_env())
+    if hasattr(llm, "stream"):
+        yield from llm.stream(
+            system=SUMMARY_SYSTEM,
+            user_text=user,
+            reasoning="off",
+            max_tokens=400,
+        )
+    else:
+        yield llm.complete(system=SUMMARY_SYSTEM, user_text=user, reasoning="off")

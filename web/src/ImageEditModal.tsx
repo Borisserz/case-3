@@ -15,6 +15,7 @@ type Props = {
   open: boolean;
   figureId: string;
   caption?: string;
+  /** @deprecated Kept for callers; preview stays on the figure above (как графики). */
   previewUrl?: string;
   busy?: boolean;
   error?: string | null;
@@ -26,7 +27,6 @@ export function ImageEditModal({
   open,
   figureId,
   caption: initialCaption,
-  previewUrl,
   busy,
   error,
   onCancel,
@@ -71,12 +71,6 @@ export function ImageEditModal({
           ×
         </button>
       </header>
-
-      {previewUrl && (
-        <div className="img-edit-preview-inline">
-          <img src={previewUrl} alt="" />
-        </div>
-      )}
 
       <section className="chart-edit-block">
         <label className="field">Режим</label>

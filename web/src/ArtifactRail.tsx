@@ -24,6 +24,7 @@ import {
   clampRailWidth,
   saveRailWidth,
 } from "./railWidth";
+import { pdfSearchNeedles } from "./pdfFindPage";
 
 const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
@@ -56,7 +57,6 @@ type ReportBundle = {
   preview?: ReportPreview;
   downloads?: Record<string, string>;
   runId?: string;
-  stats?: string;
   warnings?: string[];
 };
 
@@ -77,6 +77,9 @@ type Props = {
   onWidthChange?: (pct: number) => void;
   onTab: (tab: ArtifactTab) => void;
   onClose: () => void;
+  /** Controlled close: keep mounted, animate width → 0, then onClosed. */
+  closing?: boolean;
+  onClosed?: () => void;
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
@@ -99,12 +102,15 @@ export function ArtifactRail({
   onWidthChange,
   onTab,
   onClose,
+  closing = false,
+  onClosed,
   onEditFigure,
   onEditImage,
   onEditCancel,
 }: Props) {
   const reduceMotion = useReducedMotion();
   const tab = artifact.tab;
+  const openWidthRef = useRef<number | null>(null);
   const isReport = artifact.kind === "report";
   const hasPreview = Boolean(report?.preview?.blocks?.length);
   const hasPdf = Boolean(report?.downloads?.pdf);
@@ -126,6 +132,11 @@ export function ArtifactRail({
     artifact.kind === "source" ? artifact.fileName : undefined;
 
   const [pdfPage, setPdfPage] = useState(1);
+  /** Caption/id search after figure→PDF click (TeX page hints miss natural breaks). */
+  const [pdfFind, setPdfFind] = useState<{
+    needles: string[];
+    token: number;
+  } | null>(null);
   const [tocActive, setTocActive] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
@@ -190,10 +201,18 @@ export function ArtifactRail({
   }, []);
 
   const jumpFigureToPdf = useCallback(
-    (info: { id: string; figureIndex: number; pdfPage?: number }) => {
-      // Prefer TeX page hint (C10); else figureIndex heuristic
-      const guess = Math.max(1, info.pdfPage ?? info.figureIndex);
-      setPdfPage(guess);
+    (info: {
+      id: string;
+      figureIndex: number;
+      pdfPage?: number;
+      caption?: string;
+    }) => {
+      // Don't seed pdfPage from TeX hints — without \\newpage they are almost
+      // always «1» and fight pdf.js caption search (figure may be on p.2+).
+      setPdfFind({
+        needles: pdfSearchNeedles(info.caption, info.id),
+        token: Date.now(),
+      });
       onTab("pdf");
     },
     [onTab],
@@ -241,10 +260,50 @@ export function ArtifactRail({
     saveRailWidth(RAIL_WIDTH_DEFAULT);
   }, [onWidthChange]);
 
+  const deskOpen = !narrow && !closing;
+  /** Width-driven collapse — flexBasis % fought CSS `flex` shorthand and stalled. */
+  const deskClosed = {
+    width: 0,
+    minWidth: 0,
+    marginLeft: 0,
+    opacity: 1,
+  };
+  const deskOpened = {
+    opacity: 1,
+    width: `${widthPct}%`,
+    minWidth: 280,
+    marginLeft: 6,
+  };
+  const onClosedRef = useRef(onClosed);
+  onClosedRef.current = onClosed;
+  const closedOnceRef = useRef(false);
+  const closingRef = useRef(closing);
+  closingRef.current = closing;
+
+  const finishClose = useCallback(() => {
+    if (closedOnceRef.current) return;
+    closedOnceRef.current = true;
+    onClosedRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!closing) {
+      closedOnceRef.current = false;
+      return;
+    }
+    if (reduceMotion) {
+      finishClose();
+      return;
+    }
+    /* Fallback if onAnimationComplete misses (e.g. interrupted). */
+    const t = window.setTimeout(finishClose, 520);
+    return () => window.clearTimeout(t);
+  }, [closing, reduceMotion, finishClose]);
+
   const panel = (
     <motion.aside
       ref={panelRef as RefObject<HTMLElement>}
-      className={`artifact-rail${narrow ? " is-overlay" : ""}${dragging ? " is-dragging" : ""}`}
+      className={`artifact-rail${narrow ? " is-overlay" : ""}${dragging ? " is-dragging" : ""}${closing ? " is-closing" : ""}`}
       role="complementary"
       aria-label="Артефакт"
       aria-labelledby={titleId}
@@ -253,23 +312,60 @@ export function ArtifactRail({
         narrow
           ? undefined
           : {
-              flex: `0 0 ${widthPct}%`,
-              maxWidth: "min(780px, 72vw)",
-              width: `${widthPct}%`,
+              flex: "0 0 auto",
+              maxWidth: closing ? undefined : "min(780px, 72vw)",
+              overflow: "hidden",
             }
       }
       initial={
-        reduceMotion ? false : { opacity: 0, x: narrow ? 36 : 20 }
+        reduceMotion
+          ? false
+          : narrow
+            ? { opacity: 0, x: 36 }
+            : { ...deskClosed, opacity: 0 }
       }
-      animate={{ opacity: 1, x: 0 }}
+      animate={
+        narrow
+          ? closing
+            ? { opacity: 0, x: 28 }
+            : { opacity: 1, x: 0 }
+          : closing
+            ? deskClosed
+            : deskOpened
+      }
       exit={
-        reduceMotion ? undefined : { opacity: 0, x: narrow ? 28 : 12 }
+        reduceMotion
+          ? undefined
+          : narrow
+            ? { opacity: 0, x: 28 }
+            : deskClosed
       }
       transition={
         reduceMotion
           ? { duration: 0 }
-          : { type: "spring", stiffness: 420, damping: 36, mass: 0.75 }
+          : narrow
+            ? { type: "spring", stiffness: 420, damping: 36, mass: 0.75 }
+            : {
+                width: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+                minWidth: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+                marginLeft: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+                opacity: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+              }
       }
+      onUpdate={() => {
+        if (!narrow && panelRef.current && deskOpen) {
+          openWidthRef.current = panelRef.current.getBoundingClientRect().width;
+        }
+      }}
+      onAnimationComplete={() => {
+        // Ignore completion of the *previous* open tween when `animate` flips
+        // to closed — that used to call finishClose while width was still full,
+        // unmounting the rail and snapping the chat bubble.
+        if (!closingRef.current) return;
+        const w = panelRef.current?.getBoundingClientRect().width ?? 0;
+        if (w > 32) return;
+        finishClose();
+      }}
     >
       {!narrow && (
         <div
@@ -292,11 +388,6 @@ export function ArtifactRail({
       )}
 
       <div className="artifact-rail-inner">
-        {isReport ? (
-          <p className="rail-print-hint">
-            PDF — истина печати · превью ≈ блоки TeX
-          </p>
-        ) : null}
         <header className="artifact-rail-head">
           <span id={titleId} className="sr-only">
             {artifact.kind === "report"
@@ -387,7 +478,6 @@ export function ArtifactRail({
                   preview={report.preview}
                   downloads={report.downloads}
                   runId={report.runId}
-                  stats={report.stats}
                   warnings={report.warnings}
                   palettes={palettes}
                   catalogTypes={catalogTypes}
@@ -419,6 +509,8 @@ export function ArtifactRail({
                     key={report.downloads.pdf}
                     url={report.downloads.pdf}
                     page={pdfPage}
+                    findNeedles={pdfFind?.needles}
+                    findToken={pdfFind?.token}
                     onPageChange={(p) => setPdfPage(p)}
                   />
                 </Suspense>

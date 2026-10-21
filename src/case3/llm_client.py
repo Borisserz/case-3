@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import http.client
+import io
 import json
 import os
 import re
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -174,6 +175,7 @@ def build_body(
     reasoning: str = "off",
     max_tokens: int = 16384,
     base_url: str | None = None,
+    stream: bool = False,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (
         {"enable_thinking": False}
@@ -186,8 +188,10 @@ def build_body(
             {"role": "user", "content": user_text},
         ],
         "temperature": temperature,
-        "max_tokens": max(256, int(max_tokens)),
+        "max_tokens": max(16, int(max_tokens)),
     }
+    if stream:
+        body["stream"] = True
     host = (base_url or "").lower()
     openrouter = "openrouter.ai" in host
     if openrouter:
@@ -214,6 +218,15 @@ class LLMClient:
         self._sleep = sleep
         self.last_finish_reason: str = ""
 
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        if "openrouter.ai" in (self.config.base_url or "").lower():
+            headers.setdefault("HTTP-Referer", "https://github.com/Borisserz/case-3")
+            headers.setdefault("X-Title", "case-3")
+        return headers
+
     def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
         r = reasoning or self.config.reasoning
         if r not in _REASONING:
@@ -228,13 +241,7 @@ class LLMClient:
             base_url=self.config.base_url,
         )
         data = json.dumps(body).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-        # OpenRouter ranking / app attribution (optional but recommended).
-        if "openrouter.ai" in (self.config.base_url or "").lower():
-            headers.setdefault("HTTP-Referer", "https://github.com/Borisserz/case-3")
-            headers.setdefault("X-Title", "case-3")
+        headers = self._headers()
 
         error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
@@ -259,3 +266,76 @@ class LLMClient:
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                 raise LLMError(f"invalid JSON from {self.config.endpoint}") from exc
         raise error or LLMError("request failed")
+
+    def stream(
+        self,
+        *,
+        system: str,
+        user_text: str,
+        reasoning: str | None = None,
+        max_tokens: int | None = None,
+    ) -> Iterator[str]:
+        """Yield content deltas from an OpenAI-compatible SSE chat completion."""
+        r = reasoning or self.config.reasoning
+        if r not in _REASONING:
+            raise LLMConfigError(f"reasoning={r!r}: expected {', '.join(_REASONING)}")
+        tok = int(max_tokens) if max_tokens is not None else self.config.max_tokens
+        body = build_body(
+            system=system,
+            user_text=user_text,
+            model=self.config.model,
+            temperature=self.config.temperature,
+            reasoning=r,
+            max_tokens=tok,
+            base_url=self.config.base_url,
+            stream=True,
+        )
+        data = json.dumps(body).encode("utf-8")
+        headers = self._headers()
+        req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
+                # Prefer line iteration for true streaming; fall back to full read.
+                line_iter: Any
+                if hasattr(resp, "__iter__") and not isinstance(resp, (bytes, str)):
+                    line_iter = resp
+                else:
+                    line_iter = io.BytesIO(resp.read())
+
+                for raw_line in line_iter:
+                    if isinstance(raw_line, bytes):
+                        line = raw_line.decode("utf-8", "replace")
+                    else:
+                        line = str(raw_line)
+                    line = line.strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = obj.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    piece = _as_text(delta.get("content"))
+                    if piece:
+                        yield piece
+                    fr = choices[0].get("finish_reason")
+                    if fr:
+                        self.last_finish_reason = str(fr)
+        except urllib.error.HTTPError as exc:
+            raise LLMError(
+                f"HTTP {exc.code} from {self.config.endpoint}: {_http_body(exc)}"
+            ) from exc
+        except TimeoutError as exc:
+            raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+        except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:
+            if isinstance(getattr(exc, "reason", None), TimeoutError):
+                raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+            raise LLMError(f"{type(exc).__name__}: {exc}") from exc

@@ -35,9 +35,15 @@ import {
 } from "./reportHistory";
 import { SettingsModal } from "./SettingsModal";
 import { Sidebar, type HistoryItem } from "./Sidebar";
-import { ThinkingBar } from "./ThinkingBar";
+import { ThinkingFold } from "./ThinkingFold";
+import {
+  pushThinkingLine,
+  stageKey as thinkingStageKey,
+  type ThinkingLine,
+} from "./pipelinePhrases";
 import { loadRailWidth } from "./railWidth";
 import { ChartsQa } from "./ChartsQa";
+import { MsgMarkdown } from "./lightMd";
 
 const LONG_TEXT_CHARS = 400;
 
@@ -92,6 +98,8 @@ type RunResult = {
   figures_planned: string[];
   warnings: string[];
   media_status?: Record<string, unknown>;
+  chat_summary?: string;
+  summary_status?: string | null;
   error?: string;
   detail?: string;
 };
@@ -122,8 +130,99 @@ type Msg =
       pending?: boolean;
       pendingStage?: string;
       pendingDetail?: string | null;
+      /** LLM chat summary streaming into the bubble */
+      streamingSummary?: boolean;
+      /** Collapsible pipeline phrases in the bubble */
+      thinking?: ThinkingLine[];
+      thinkingStartedAt?: number;
+      thinkingStageKey?: string;
+      thinkingStageAt?: number;
+      /** Frozen when run finishes (for collapsed fold meta). */
+      thinkingElapsedSec?: number;
       error?: string;
     };
+
+function appendBotThinking(
+  msg: Extract<Msg, { role: "bot" }>,
+  stage?: string | null,
+  detail?: string | null,
+  beat = false,
+): Extract<Msg, { role: "bot" }> {
+  const key = thinkingStageKey(stage, detail);
+  const now = Date.now();
+  const stageAt =
+    msg.thinkingStageKey === key && msg.thinkingStageAt
+      ? msg.thinkingStageAt
+      : now;
+  const dwellSec = (now - stageAt) / 1000;
+  const startedAt = msg.thinkingStartedAt || now;
+  const thinking = pushThinkingLine(msg.thinking || [], {
+    stage,
+    detail,
+    dwellSec,
+    beat,
+    seed: startedAt,
+  });
+  return {
+    ...msg,
+    thinking,
+    thinkingStartedAt: startedAt,
+    thinkingStageKey: key,
+    thinkingStageAt: stageAt,
+  };
+}
+
+function reportReadyText(result?: RunResult, streamed?: string): string {
+  const fromResult = (result?.chat_summary || "").trim();
+  if (fromResult) return fromResult;
+  const fromStream = (streamed || "").trim();
+  if (fromStream) return fromStream;
+  return "Отчёт готов";
+}
+
+/** Open SSE summary stream; returns closer. */
+function openSummaryStream(
+  runId: string,
+  onDelta: (full: string) => void,
+  onDone: (full: string, status: string) => void,
+): () => void {
+  const es = new EventSource(
+    `/api/runs/${encodeURIComponent(runId)}/summary/stream`,
+  );
+  let acc = "";
+  const onDeltaEv = (ev: Event) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as { text?: string };
+      acc += data.text || "";
+      onDelta(acc);
+    } catch {
+      /* ignore */
+    }
+  };
+  const onDoneEv = (ev: Event) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        text?: string;
+        status?: string;
+      };
+      const final = (data.text || acc || "").trim();
+      onDone(final, data.status || "ok");
+    } catch {
+      onDone(acc, "ok");
+    }
+    es.close();
+  };
+  es.addEventListener("delta", onDeltaEv);
+  es.addEventListener("done", onDoneEv);
+  es.onerror = () => {
+    es.close();
+  };
+  return () => {
+    es.removeEventListener("delta", onDeltaEv);
+    es.removeEventListener("done", onDoneEv);
+    es.close();
+  };
+}
 
 const STAGE_LABELS: Record<string, string> = {
   queued: "В очереди…",
@@ -271,6 +370,9 @@ export default function App() {
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
   const [narrowRail, setNarrowRail] = useState(false);
   const [railWidthPct, setRailWidthPct] = useState(() => loadRailWidth());
+  /** Keep rail mounted + desk layout until width→0 finishes (avoids bubble snap). */
+  const [railExiting, setRailExiting] = useState(false);
+  const lastArtifactRef = useRef<ActiveArtifact | null>(null);
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -289,12 +391,12 @@ export default function App() {
   const palettes = useMemo<PaletteInfo[]>(() => {
     if (health?.chart_palettes?.length) return health.chart_palettes;
     return [
-      { id: "auto", label: "Auto", swatches: ["#0F3D3E", "#E85D04", "#0077B6", "#F77F00"] },
-      { id: "atelier", label: "Atelier", swatches: ["#3F5210", "#5A6E28", "#8A9A5C", "#D5E0BE"] },
-      { id: "editorial", label: "Editorial", swatches: ["#1A4A4B", "#E07A3D", "#3AA99A", "#E9C46A"] },
-      { id: "ocean", label: "Ocean", swatches: ["#0A4A8A", "#1A7FB8", "#3DB8D4", "#90D8EC"] },
-      { id: "sunset", label: "Sunset", swatches: ["#7A3A52", "#D64545", "#F08A30", "#F5C96A"] },
-      { id: "mono", label: "Mono", swatches: ["#1F2937", "#4B5563", "#9CA3AF", "#E5E7EB"] },
+      { id: "auto", label: "Auto", swatches: ["#2E4208", "#F07A3A", "#0B4F8C", "#FF8C2A"] },
+      { id: "atelier", label: "Atelier", swatches: ["#2E4208", "#4F6B14", "#7A9A28", "#B8D45A"] },
+      { id: "editorial", label: "Editorial", swatches: ["#0F3D3E", "#F07A3A", "#2EC4B6", "#E8B84A"] },
+      { id: "ocean", label: "Ocean", swatches: ["#0B4F8C", "#1E8AD4", "#2EC4E0", "#5ED4F0"] },
+      { id: "sunset", label: "Sunset", swatches: ["#8B2E4A", "#F04545", "#FF8C2A", "#F0C040"] },
+      { id: "mono", label: "Mono", swatches: ["#1A1F28", "#3A4250", "#8B939E", "#B0B6BE"] },
     ];
   }, [health]);
 
@@ -455,7 +557,8 @@ export default function App() {
       {
         id,
         role: "bot",
-        text: "Отчёт готов",
+        text:
+          "Собрал демо-отчёт: структура, таблица и график по числам из Source.\n\nПодробности — в полном документе справа.",
         result,
       },
     ]);
@@ -486,31 +589,85 @@ export default function App() {
     ] as const;
     const id = "preview-flow";
     let i = 0;
+    let thinking: ThinkingLine[] = [];
+    let thinkingStartedAt = Date.now();
+    let thinkingStageKey: string | undefined;
+    let thinkingStageAt = Date.now();
     const tick = () => {
-      const stage = stages[i % stages.length];
+      const idx = i % stages.length;
+      if (idx === 0 && i > 0) {
+        thinking = [];
+        thinkingStartedAt = Date.now();
+        thinkingStageKey = undefined;
+        thinkingStageAt = Date.now();
+      }
+      const stage = stages[idx];
+      const detail = stage === "charts" ? "cht_01" : null;
       setBusy(stage !== "ok");
-      setMsgs([
-        {
-          id: "preview-user",
-          role: "user",
-          text: "Intent · preview flow",
-        },
-        {
-          id,
-          role: "bot",
-          text: stageLabel(stage, stage === "charts" ? "cht_01" : null),
-          pending: stage !== "ok",
-          pendingStage: stage,
-          pendingDetail: stage === "charts" ? "cht_01" : null,
-          ...(stage === "ok"
-            ? { text: "Готово · preview", pending: false }
-            : {}),
-        },
-      ]);
+      if (stage === "ok") {
+        setMsgs([
+          {
+            id: "preview-user",
+            role: "user",
+            text: "Intent · preview flow",
+          },
+          {
+            id,
+            role: "bot",
+            text: "Готово · preview — структура ясна, отчёт собран.",
+            pending: false,
+            thinking,
+            thinkingStartedAt,
+            thinkingElapsedSec: Math.max(
+              0,
+              Math.round((Date.now() - thinkingStartedAt) / 1000),
+            ),
+            result: {
+              run_id: "preview-flow",
+              status: "ok",
+              downloads: {},
+              charts_ok: 0,
+              figures_ok: 0,
+              charts_planned: [],
+              figures_planned: [],
+              warnings: [],
+            },
+          },
+        ]);
+      } else {
+        const draft = appendBotThinking(
+          {
+            id,
+            role: "bot",
+            text: stageLabel(stage, detail),
+            pending: true,
+            pendingStage: stage,
+            pendingDetail: detail,
+            thinking,
+            thinkingStartedAt,
+            thinkingStageKey,
+            thinkingStageAt,
+          },
+          stage,
+          detail,
+        );
+        thinking = draft.thinking || [];
+        thinkingStartedAt = draft.thinkingStartedAt || thinkingStartedAt;
+        thinkingStageKey = draft.thinkingStageKey;
+        thinkingStageAt = draft.thinkingStageAt || thinkingStageAt;
+        setMsgs([
+          {
+            id: "preview-user",
+            role: "user",
+            text: "Intent · preview flow",
+          },
+          draft,
+        ]);
+      }
       i += 1;
     };
     tick();
-    const t = window.setInterval(tick, 1600);
+    const t = window.setInterval(tick, 1400);
     return () => window.clearInterval(t);
   }, []);
 
@@ -551,7 +708,7 @@ export default function App() {
           if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
           const next = {
             ...msg,
-            text: `Обновлено · ${req.figureId}`,
+            // Keep chat summary — only refresh artifacts (toast signals edit).
             result: {
               ...msg.result,
               preview: data.preview ?? msg.result.preview,
@@ -622,7 +779,7 @@ export default function App() {
           if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
           const next = {
             ...msg,
-            text: `Фото обновлено · ${req.figureId}`,
+            // Keep chat summary — only refresh artifacts (как правка графика).
             result: {
               ...msg.result,
               preview: data.preview ?? msg.result.preview,
@@ -664,6 +821,7 @@ export default function App() {
     const nextTab: ArtifactTab =
       tab ??
       (preferPdf ? "pdf" : preferPreview ? "preview" : "source");
+    setRailExiting(false);
     setActiveArtifact({
       kind: "report",
       msgId,
@@ -677,6 +835,7 @@ export default function App() {
     text: string;
     fileName?: string;
   }) {
+    setRailExiting(false);
     setActiveArtifact({
       kind: "source",
       tab: "source",
@@ -687,6 +846,7 @@ export default function App() {
   }
 
   function openIntentArtifact(text: string) {
+    setRailExiting(false);
     setActiveArtifact({
       kind: "intent",
       tab: "source",
@@ -696,8 +856,23 @@ export default function App() {
   }
 
   function closeArtifact() {
+    if (!activeArtifact || railExiting) return;
+    lastArtifactRef.current = activeArtifact;
+    // Keep activeArtifact until width→0 finishes — nulling early dropped
+    // `closing`/`has-rail` and snapped the user bubble after a long stall.
+    setRailExiting(true);
+  }
+
+  function finishArtifactClose() {
+    setRailExiting(false);
     setActiveArtifact(null);
   }
+
+  useEffect(() => {
+    if (activeArtifact && !railExiting) {
+      lastArtifactRef.current = activeArtifact;
+    }
+  }, [activeArtifact, railExiting]);
 
   function setArtifactTab(tab: ArtifactTab) {
     setActiveArtifact((prev) => {
@@ -719,7 +894,7 @@ export default function App() {
         {
           id,
           role: "bot",
-          text: "Отчёт готов",
+          text: reportReadyText(result),
           result,
         },
       ]);
@@ -735,6 +910,7 @@ export default function App() {
     setFile(null);
     setSourceDraft(null);
     setAttachPhotos([]);
+    setRailExiting(false);
     setActiveArtifact(null);
     setPlaqueDismissed(false);
     setEditError(null);
@@ -756,7 +932,7 @@ export default function App() {
       {
         id,
         role: "bot",
-        text: "Отчёт готов",
+        text: reportReadyText(result),
         result,
       },
     ]);
@@ -856,32 +1032,6 @@ export default function App() {
     [ingestFiles],
   );
 
-  const settingsSummary = useMemo(() => {
-    const bits: string[] = [];
-    if (docTitle.trim()) bits.push(docTitle.trim().slice(0, 28));
-    if (forbidCharts) bits.push("без графиков");
-    else {
-      bits.push(chartPalette === "auto" ? "Auto" : chartPalette);
-      bits.push(`≤${maxCharts} гр.`);
-      if (!chartAuto && types.length) bits.push(types.slice(0, 2).join("+"));
-    }
-    if (forbidImages && !attachPhotos.length) bits.push("без фото");
-    else bits.push(`≤${Math.max(maxImages, attachPhotos.length)} фото`);
-    if (dryRun) bits.push("dry-run");
-    return bits.join(" · ");
-  }, [
-    docTitle,
-    forbidCharts,
-    chartPalette,
-    maxCharts,
-    chartAuto,
-    types,
-    forbidImages,
-    attachPhotos.length,
-    maxImages,
-    dryRun,
-  ]);
-
   function enableAuto() {
     setChartAuto(true);
     setTypes([]);
@@ -968,15 +1118,20 @@ export default function App() {
         chips: userChips.length ? userChips : undefined,
         attachment,
       },
-      {
-        id: pendingId,
-        role: "bot",
-        text:
-          photoMode === "edit" ? "Править фото…" : "Генерирую документ…",
-        pending: true,
-        pendingStage: "queued",
-        pendingDetail: null,
-      },
+      appendBotThinking(
+        {
+          id: pendingId,
+          role: "bot",
+          text:
+            photoMode === "edit" ? "Править фото…" : "Генерирую документ…",
+          pending: true,
+          pendingStage: "queued",
+          pendingDetail: null,
+          thinkingStartedAt: Date.now(),
+        },
+        "queued",
+        null,
+      ),
     ]);
     setBusy(true);
     setChat("");
@@ -1080,74 +1235,124 @@ export default function App() {
         const runId = data.run_id as string;
         if (!runId) throw new Error("server did not return run_id");
         setMsgs((m) =>
-          m.map((msg) =>
-            msg.id === pendingId
-              ? {
-                  ...msg,
-                  text: stageLabel(data.stage || "queued"),
-                  pending: true,
-                  pendingStage: data.stage || "queued",
-                  pendingDetail: null,
-                }
-              : msg,
-          ),
+          m.map((msg) => {
+            if (msg.id !== pendingId || msg.role !== "bot") return msg;
+            const stage = data.stage || "queued";
+            return appendBotThinking(
+              {
+                ...msg,
+                text: stageLabel(stage),
+                pending: true,
+                pendingStage: stage,
+                pendingDetail: null,
+              },
+              stage,
+              null,
+            );
+          }),
         );
         const pollStarted = Date.now();
         const pollDeadlineMs = 20 * 60 * 1000;
         let soft404 = 0;
-        for (;;) {
-          if (Date.now() - pollStarted > pollDeadlineMs) {
-            throw new Error(
-              `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
-            );
-          }
-          await new Promise((r) => setTimeout(r, 400));
-          const st = await fetch(
-            `/api/runs/${encodeURIComponent(runId)}/status`,
-          );
-          const body = await st.json().catch(() => ({}));
-          if (st.status === 404) {
-            soft404 += 1;
-            if (soft404 > 8) {
-              throw new Error(`run ${runId} не найден (status 404)`);
+        let stopSummary: (() => void) | null = null;
+        let streamedSummary = "";
+        let summaryStreamStarted = false;
+        try {
+          for (;;) {
+            if (Date.now() - pollStarted > pollDeadlineMs) {
+              throw new Error(
+                `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
+              );
             }
-            continue;
-          }
-          soft404 = 0;
-          if (!st.ok) {
-            throw new Error(
-              typeof body.detail === "string"
-                ? body.detail
-                : body.error || st.statusText,
+            await new Promise((r) => setTimeout(r, 400));
+            const st = await fetch(
+              `/api/runs/${encodeURIComponent(runId)}/status`,
             );
-          }
-          const stage = body.stage as string | undefined;
-          const detail = (body.stage_detail as string | null) || null;
-          if (body.status === "running" || body.status === "started") {
-            setMsgs((m) =>
-              m.map((msg) =>
-                msg.id === pendingId
-                  ? {
+            const body = await st.json().catch(() => ({}));
+            if (st.status === 404) {
+              soft404 += 1;
+              if (soft404 > 8) {
+                throw new Error(`run ${runId} не найден (status 404)`);
+              }
+              continue;
+            }
+            soft404 = 0;
+            if (!st.ok) {
+              throw new Error(
+                typeof body.detail === "string"
+                  ? body.detail
+                  : body.error || st.statusText,
+              );
+            }
+            const stage = body.stage as string | undefined;
+            const detail = (body.stage_detail as string | null) || null;
+            const summaryStatus = body.summary_status as string | undefined;
+            const shouldStream =
+              !summaryStreamStarted &&
+              (stage === "latex" ||
+                stage === "docx" ||
+                summaryStatus === "streaming" ||
+                summaryStatus === "ok");
+            if (shouldStream) {
+              summaryStreamStarted = true;
+              stopSummary = openSummaryStream(
+                runId,
+                (full) => {
+                  streamedSummary = full;
+                  setMsgs((m) =>
+                    m.map((msg) => {
+                      if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                      return {
+                        ...msg,
+                        text: full,
+                        pending: true,
+                        streamingSummary: true,
+                        pendingStage: stage || msg.pendingStage,
+                        pendingDetail: detail,
+                      };
+                    }),
+                  );
+                },
+                (full) => {
+                  streamedSummary = full || streamedSummary;
+                },
+              );
+            }
+            if (body.status === "running" || body.status === "started") {
+              setMsgs((m) =>
+                m.map((msg) => {
+                  if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                  const next = appendBotThinking(
+                    {
                       ...msg,
-                      text: stageLabel(stage || "queued", detail),
                       pending: true,
                       pendingStage: stage,
                       pendingDetail: detail,
-                    }
-                  : msg,
-              ),
-            );
-            continue;
+                      text:
+                        msg.streamingSummary && msg.text.trim()
+                          ? msg.text
+                          : stageLabel(stage || "queued", detail),
+                    },
+                    stage,
+                    detail,
+                  );
+                  return next;
+                }),
+              );
+              continue;
+            }
+            if (body.status === "error") {
+              throw new Error(
+                [body.error || body.message, runId ? `run ${runId}` : null]
+                  .filter(Boolean)
+                  .join(" · "),
+              );
+            }
+            result = body as RunResult;
+            break;
           }
-          if (body.status === "error") {
-            throw new Error(
-              [body.error || body.message, runId ? `run ${runId}` : null]
-                .filter(Boolean)
-                .join(" · "),
-            );
-          }
-          result = body as RunResult;
-          break;
+        } finally {
+          stopSummary?.();
         }
       }
 
@@ -1160,16 +1365,25 @@ export default function App() {
         /* quota */
       }
       setMsgs((m) =>
-        m.map((msg) =>
-          msg.id === pendingId
-            ? {
-                id: pendingId,
-                role: "bot",
-                text: "Отчёт готов",
-                result,
-              }
-            : msg,
-        ),
+        m.map((msg) => {
+          if (msg.id !== pendingId || msg.role !== "bot") return msg;
+          const streamed =
+            msg.streamingSummary && msg.text.trim() ? msg.text : "";
+          return {
+            id: pendingId,
+            role: "bot" as const,
+            text: reportReadyText(result, streamed),
+            result,
+            thinking: msg.thinking,
+            thinkingStartedAt: msg.thinkingStartedAt,
+            thinkingElapsedSec: msg.thinkingStartedAt
+              ? Math.max(
+                  0,
+                  Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
+                )
+              : undefined,
+          };
+        }),
       );
       if (result.preview?.blocks?.length || result.downloads?.pdf) {
         openReportArtifact(pendingId, result);
@@ -1216,16 +1430,47 @@ export default function App() {
   const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
 
   const railOpen = Boolean(activeArtifact);
+  const railLayout = railOpen || railExiting;
+  const railArtifact = activeArtifact ?? (railExiting ? lastArtifactRef.current : null);
   const pendingBot = msgs.find((m) => m.role === "bot" && m.pending);
   const thinkingLabel =
     pendingBot && pendingBot.role === "bot"
       ? stageLabel(pendingBot.pendingStage, pendingBot.pendingDetail)
-      : undefined;
+      : busy
+        ? "Генерирую документ…"
+        : undefined;
+
+  // Micro-beats while a stage dwells — more varied phrases in the fold
+  useEffect(() => {
+    if (!busy || !pendingBot || pendingBot.role !== "bot") return;
+    const id = pendingBot.id;
+    const t = window.setInterval(() => {
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== id || msg.role !== "bot" || !msg.pending) return msg;
+          return appendBotThinking(
+            msg,
+            msg.pendingStage,
+            msg.pendingDetail,
+            true,
+          );
+        }),
+      );
+    }, 3200);
+    return () => window.clearInterval(t);
+  }, [
+    busy,
+    pendingBot && pendingBot.role === "bot" ? pendingBot.id : null,
+    pendingBot && pendingBot.role === "bot" ? pendingBot.pendingStage : null,
+    pendingBot && pendingBot.role === "bot" ? pendingBot.pendingDetail : null,
+  ]);
+
+  // Use railArtifact (not activeArtifact) so preview stays mounted while closing.
   const activeReportMsg =
-    activeArtifact?.kind === "report"
+    railArtifact?.kind === "report"
       ? msgs.find(
           (m) =>
-            m.id === activeArtifact.msgId && m.role === "bot" && m.result,
+            m.id === railArtifact.msgId && m.role === "bot" && m.result,
         )
       : null;
   const activeReport =
@@ -1249,7 +1494,7 @@ export default function App() {
 
   return (
     <div
-      className={`app chat-app${drag ? " is-drag" : ""}${railOpen ? " has-rail" : ""}`}
+      className={`app chat-app${drag ? " is-drag" : ""}${railLayout && !narrowRail ? " has-rail" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDrag(true);
@@ -1283,10 +1528,10 @@ export default function App() {
 
         <div className="shell-column">
       <main className="main chat-main">
-        <div className={`desk-split${railOpen && !narrowRail ? " is-open" : ""}`}>
+        <div className={`desk-split${railLayout && !narrowRail ? " is-open" : ""}`}>
           <div className="desk chat-desk">
             <div className="messages" ref={messagesRef}>
-              <AnimatePresence mode="popLayout">
+              <AnimatePresence initial={false}>
                 {msgs.length === 0 &&
                   !/preview=artifact/.test(window.location.search) && (
                   <EmptyState
@@ -1313,24 +1558,15 @@ export default function App() {
                     m.role === "user" &&
                     m.text.length > 140 &&
                     !m.attachment;
-                  const userChips =
-                    m.role === "user"
-                      ? m.chips?.length
-                        ? m.chips
-                        : m.tags
-                          ? m.tags.split(/\s*·\s*/).filter(Boolean)
-                          : []
-                      : [];
                   return (
                     <motion.div
                       key={m.id}
                       className={`msg ${m.role}${hasArtifact ? " has-artifact" : ""}`}
-                      layout={!reduceMotion}
                       initial={reduceMotion ? false : { opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{
-                        duration: 0.4,
-                        delay: Math.min(mi * 0.04, 0.24),
+                        duration: 0.35,
+                        delay: Math.min(mi * 0.03, 0.18),
                         ease: [0.22, 1, 0.36, 1],
                       }}
                     >
@@ -1369,26 +1605,23 @@ export default function App() {
                           ) : (
                             <div className="msg-body msg-pre">{m.text}</div>
                           )}
-                          {userChips.length ? (
-                            <ul className="msg-chips" aria-label="Настройки запроса">
-                              {userChips.map((chip) => (
-                                <li key={chip} className="msg-chip">
-                                  {chip}
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
                         </>
                       ) : m.role === "bot" && hasArtifact && m.result ? (
                         <div className="msg-row">
                           <span className="msg-avatar">
                             <IconLiberMark size={28} />
                           </span>
-                          <div>
-                          <div className="msg-body">{m.text || "Отчёт готов"}</div>
+                          <div className="msg-bot-stack">
+                          {m.thinking?.length ? (
+                            <ThinkingFold
+                              lines={m.thinking}
+                              live={false}
+                              elapsedSec={m.thinkingElapsedSec}
+                            />
+                          ) : null}
+                          <MsgMarkdown text={m.text || "Отчёт готов"} />
                           <ArtifactCard
                             title={reportTitle(m.result)}
-                            subtitle={`charts ${m.result.charts_ok}/${m.result.charts_planned?.length || 0} · figures ${m.result.figures_ok}/${m.result.figures_planned?.length || 0}`}
                             thumbUrl={reportThumb(m.result)}
                             pdfUrl={m.result.downloads?.pdf}
                             downloads={m.result.downloads}
@@ -1423,48 +1656,71 @@ export default function App() {
                           <span className="msg-avatar">
                             <IconLiberMark size={28} />
                           </span>
-                          <ReportPending
-                            label={m.text || undefined}
-                            stage={m.pendingStage || "queued"}
-                            detail={m.pendingDetail}
-                          />
+                          <div className="msg-bot-stack">
+                            <ReportPending
+                              label={thinkingLabel || m.text || undefined}
+                              stage={m.pendingStage || "queued"}
+                              detail={m.pendingDetail}
+                            />
+                            <ThinkingFold
+                              lines={m.thinking || []}
+                              live
+                              elapsedSec={
+                                m.thinkingStartedAt
+                                  ? Math.max(
+                                      0,
+                                      Math.round(
+                                        (Date.now() - m.thinkingStartedAt) /
+                                          1000,
+                                      ),
+                                    )
+                                  : undefined
+                              }
+                            />
+                            {m.streamingSummary && m.text.trim() ? (
+                              <div className="msg-stream-wrap">
+                                <MsgMarkdown text={m.text} streaming />
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       ) : (
                         <div className="msg-row">
                           <span className="msg-avatar">
                             <IconLiberMark size={28} />
                           </span>
-                          <div>
-                          <div className="msg-body">{m.text}</div>
+                          <div className="msg-bot-stack">
+                          {m.role === "bot" && m.thinking?.length ? (
+                            <ThinkingFold
+                              lines={m.thinking}
+                              live={false}
+                              elapsedSec={m.thinkingElapsedSec}
+                            />
+                          ) : null}
+                          {m.role === "bot" && !m.error ? (
+                            <MsgMarkdown text={m.text} />
+                          ) : (
+                            <div className="msg-body">{m.text}</div>
+                          )}
                           {m.role === "bot" && m.error && (
                             <p className="err">{m.error}</p>
                           )}
-                          {m.role === "bot" && m.result && (
-                            <>
-                              <p className="stats">
-                                charts {m.result.charts_ok}/
-                                {m.result.charts_planned?.length || 0}
-                                {" · "}
-                                figures {m.result.figures_ok}/
-                                {m.result.figures_planned?.length || 0}
-                              </p>
-                              {(m.result.downloads?.pdf ||
-                                m.result.downloads?.docx) && (
-                                <ArtifactCard
-                                  title={reportTitle(m.result)}
-                                  subtitle="Файлы готовы"
-                                  thumbUrl={reportThumb(m.result)}
-                                  pdfUrl={m.result.downloads?.pdf}
-                                  downloads={m.result.downloads}
-                                  pulse={downloadsPulseMsgId === m.id}
-                                  updated={downloadsPulseMsgId === m.id}
-                                  onView={() =>
-                                    openReportArtifact(m.id, m.result!)
-                                  }
-                                />
-                              )}
-                            </>
-                          )}
+                          {m.role === "bot" &&
+                            m.result &&
+                            (m.result.downloads?.pdf ||
+                              m.result.downloads?.docx) && (
+                              <ArtifactCard
+                                title={reportTitle(m.result)}
+                                thumbUrl={reportThumb(m.result)}
+                                pdfUrl={m.result.downloads?.pdf}
+                                downloads={m.result.downloads}
+                                pulse={downloadsPulseMsgId === m.id}
+                                updated={downloadsPulseMsgId === m.id}
+                                onView={() =>
+                                  openReportArtifact(m.id, m.result!)
+                                }
+                              />
+                            )}
                           </div>
                         </div>
                       )}
@@ -1476,7 +1732,6 @@ export default function App() {
             </div>
 
             <div className="composer-wrap">
-              <ThinkingBar active={busy} label={thinkingLabel} />
               {attachPhotos.length > 0 && (
                 <div className="composer-attach-row">
                   <ComposerPhotoChips
@@ -1508,9 +1763,6 @@ export default function App() {
                   }}
                 />
               ) : null}
-              <p className="composer-summary" title={settingsSummary}>
-                {settingsSummary}
-              </p>
               <div className="composer">
                 <input
                   ref={fileRef}
@@ -1580,18 +1832,18 @@ export default function App() {
             </div>
           </div>
 
-          <AnimatePresence>
-            {railOpen && activeArtifact && (
+          {railArtifact && (
               <ArtifactRail
                 key="artifact-rail"
-                artifact={activeArtifact}
+                artifact={railArtifact}
+                closing={railExiting}
+                onClosed={finishArtifactClose}
                 report={
                   activeReport
                     ? {
                         preview: activeReport.preview,
                         downloads: activeReport.downloads,
                         runId: activeReport.run_id,
-                        stats: `charts ${activeReport.charts_ok}/${activeReport.charts_planned?.length || 0} · figures ${activeReport.figures_ok}/${activeReport.figures_planned?.length || 0}`,
                         warnings: activeReport.warnings,
                       }
                     : null
@@ -1604,26 +1856,26 @@ export default function App() {
                   chartPalette === "auto" ? "atelier" : chartPalette
                 }
                 editingFigureId={
-                  activeArtifact.kind === "report" &&
-                  editBusy?.msgId === activeArtifact.msgId
+                  railArtifact.kind === "report" &&
+                  editBusy?.msgId === railArtifact.msgId
                     ? editBusy.figureId
                     : null
                 }
                 editError={
-                  activeArtifact.kind === "report" &&
-                  editError?.msgId === activeArtifact.msgId
+                  railArtifact.kind === "report" &&
+                  editError?.msgId === railArtifact.msgId
                     ? editError.message
                     : null
                 }
                 editErrorFigureId={
-                  activeArtifact.kind === "report" &&
-                  editError?.msgId === activeArtifact.msgId
+                  railArtifact.kind === "report" &&
+                  editError?.msgId === railArtifact.msgId
                     ? editError.figureId
                     : null
                 }
                 downloadsPulse={
-                  activeArtifact.kind === "report" &&
-                  downloadsPulseMsgId === activeArtifact.msgId
+                  railArtifact.kind === "report" &&
+                  downloadsPulseMsgId === railArtifact.msgId
                 }
                 narrow={narrowRail}
                 widthPct={railWidthPct}
@@ -1632,27 +1884,27 @@ export default function App() {
                 onClose={closeArtifact}
                 onEditCancel={() => {
                   if (
-                    activeArtifact.kind === "report" &&
-                    editError?.msgId === activeArtifact.msgId
+                    railArtifact.kind === "report" &&
+                    editError?.msgId === railArtifact.msgId
                   ) {
                     setEditError(null);
                   }
                 }}
                 onEditFigure={
-                  activeArtifact.kind === "report" && activeReport
+                  railArtifact.kind === "report" && activeReport
                     ? (req) =>
                         editFigure(
-                          activeArtifact.msgId,
+                          railArtifact.msgId,
                           activeReport.run_id,
                           req,
                         )
                     : undefined
                 }
                 onEditImage={
-                  activeArtifact.kind === "report" && activeReport
+                  railArtifact.kind === "report" && activeReport
                     ? (req) =>
                         editImage(
-                          activeArtifact.msgId,
+                          railArtifact.msgId,
                           activeReport.run_id,
                           req,
                         )
@@ -1660,7 +1912,6 @@ export default function App() {
                 }
               />
             )}
-          </AnimatePresence>
         </div>
       </main>
         </div>

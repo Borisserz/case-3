@@ -11,6 +11,8 @@ type Props = {
   fallbackUrl?: string;
   /** Cache-bust from preview URL (?v=) — refetch HTML after Apply. */
   version?: string | number | null;
+  /** G9 draft HTML while edit sheet is open (replaces fetched HTML in-place). */
+  htmlOverride?: string | null;
   onJumpToPdf?: () => void;
   disabled?: boolean;
 };
@@ -32,12 +34,14 @@ export function ChartLivePane({
   caption,
   fallbackUrl,
   version,
+  htmlOverride = null,
   onJumpToPdf,
   disabled,
 }: Props) {
   const [html, setHtml] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const rev = version ?? bustFromUrl(fallbackUrl);
+  const shown = (htmlOverride && htmlOverride.trim()) || html;
 
   useEffect(() => {
     let cancelled = false;
@@ -64,32 +68,36 @@ export function ChartLivePane({
     };
   }, [runId, chartId, rev]);
 
-  if (html) {
+  if (shown) {
     return (
       <div className="chart-live-pane">
         <LiveChart
-          html={html}
+          html={shown}
           title={caption || chartId}
           showBadge={false}
         />
-        <div className="chart-live-chrome">
-          <span className="live-chart-badge" aria-hidden>
-            <span>live Chart.js</span>
-            <span className="live-chart-badge-sep">·</span>
-            <span>наведение = значения</span>
-          </span>
-          {onJumpToPdf ? (
-            <button
-              type="button"
-              className="chart-live-pdf"
-              disabled={disabled}
-              onClick={onJumpToPdf}
-              title="Страница рисунка в PDF (истина печати)"
-            >
-              открыть в PDF
-            </button>
-          ) : null}
-        </div>
+        {onJumpToPdf || htmlOverride?.trim() ? (
+          <div className="chart-live-chrome">
+            {htmlOverride?.trim() ? (
+              <span className="live-chart-draft" aria-hidden>
+                черновик до сохранения
+              </span>
+            ) : (
+              <span />
+            )}
+            {onJumpToPdf ? (
+              <button
+                type="button"
+                className="chart-live-pdf"
+                disabled={disabled}
+                onClick={onJumpToPdf}
+                title="Страница рисунка в PDF (истина печати)"
+              >
+                открыть в PDF
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   }
