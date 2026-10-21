@@ -18,7 +18,16 @@ from case3.envfile import load_dotenv
 from case3.pipeline import PipelineError, run_pipeline
 
 load_dotenv(ROOT / ".env")
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / "Library/Caches/ms-playwright"))
+# Cross-platform Playwright cache (Mac / Linux / Windows)
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    for _c in (
+        Path.home() / "Library" / "Caches" / "ms-playwright",
+        Path.home() / ".cache" / "ms-playwright",
+        Path.home() / "AppData" / "Local" / "ms-playwright",
+    ):
+        if _c.is_dir():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_c)
+            break
 
 OUT_SUMMARY = ROOT / "runs" / "e2e_mac_matrix" / "summary.json"
 

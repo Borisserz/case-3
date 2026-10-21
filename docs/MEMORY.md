@@ -82,6 +82,7 @@ Parked backlog: [`plans/2026-10-20-liber-ux-polish-roadmap.md`](superpowers/plan
 | Фото / Image API | KI-image-api → ADR-0004 → specs image-api |
 | Деплой на винду | knowledge/ops-windows.md |
 | «Почему не PPTX» | knowledge/parked-pptx.md |
+| Полный аудит / top-10 probes | [`docs/audits/`](audits/) |
 
 ---
 

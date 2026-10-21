@@ -566,6 +566,11 @@ button:disabled {
   margin-top: 0.35rem;
 }
 
+/* Settings limits: 3 fields (charts / images / diagrams) must stay one row */
+.settings-limits-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .check {
   display: flex;
   align-items: flex-start;

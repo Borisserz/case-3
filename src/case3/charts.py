@@ -103,6 +103,28 @@ def _write_frame(work_dir: Path) -> Path:
     return index
 
 
+def is_blank_chart_error(exc: BaseException) -> bool:
+    """True when Playwright accepted READY but canvas stayed white (transient flake)."""
+    return isinstance(exc, RuntimeError) and "blank chart screenshot" in str(exc)
+
+
+def _force_chart_paint(page) -> None:  # noqa: ANN001
+    """Nudge Chart.js after READY — first paint can lag under Image API / matrix load."""
+    page.evaluate(
+        """() => {
+          try {
+            if (window.Chart && Chart.instances) {
+              const inst = Chart.instances;
+              const list = Array.isArray(inst) ? inst : Object.values(inst);
+              for (const c of list) {
+                if (c && typeof c.update === 'function') c.update('none');
+              }
+            }
+          } catch (e) { /* ignore */ }
+        }"""
+    )
+
+
 def _assert_chart_visible(page) -> None:  # noqa: ANN001
     """Reject blank / empty charts before accepting PNG."""
     stats = page.evaluate(
@@ -201,6 +223,7 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                     "() => window.__CASE3_CHART_READY === true",
                     timeout=timeout_ms,
                 )
+                _force_chart_paint(page)
                 # Poll until canvas has ink — READY can still beat first paint.
                 # Under matrix load 2.5s was too short (grouped_bar → painted=0).
                 deadline = timeout_ms
@@ -214,6 +237,8 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                         break
                     except RuntimeError as exc:
                         last_err = exc
+                        if waited > 0 and waited % 500 < step:
+                            _force_chart_paint(page)
                         page.wait_for_timeout(step)
                         waited += step
                 if last_err is not None:
@@ -223,7 +248,15 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
             finally:
                 browser.close()
 
-    _run_sync_playwright(_render)
+    # One full Chromium relaunch on blank canvas — seen after Image API photo+chart
+    # (READY true, painted=0). Second pass almost always paints.
+    try:
+        _run_sync_playwright(_render)
+    except RuntimeError as exc:
+        if not is_blank_chart_error(exc):
+            raise
+        log.warning("blank chart — retrying once with fresh browser: %s", exc)
+        _run_sync_playwright(_render)
 
     data = dest_png.read_bytes()
     if len(data) > _MAX_PNG:

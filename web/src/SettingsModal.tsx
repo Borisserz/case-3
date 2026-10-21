@@ -101,7 +101,7 @@ export function SettingsModal({
             <h3 className="settings-block-title" id="set-limits">
               Лимиты
             </h3>
-            <div className="row">
+            <div className="row settings-limits-row">
               <div>
                 <label className="field" htmlFor="set-max-c">
                   Графиков ≤
