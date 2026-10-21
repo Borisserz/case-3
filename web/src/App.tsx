@@ -37,6 +37,7 @@ import { SettingsModal } from "./SettingsModal";
 import { Sidebar, type HistoryItem } from "./Sidebar";
 import { ThinkingBar } from "./ThinkingBar";
 import { loadRailWidth } from "./railWidth";
+import { ChartsQa } from "./ChartsQa";
 
 const LONG_TEXT_CHARS = 400;
 
@@ -358,7 +359,8 @@ export default function App() {
     const el = chatRef.current;
     if (!el) return;
     el.style.height = "0px";
-    const next = Math.min(Math.max(el.scrollHeight, 44), 240);
+    // Standard chat composer: ~1–4 lines, then internal scroll (not a tall slab).
+    const next = Math.min(Math.max(el.scrollHeight, 44), 112);
     el.style.height = `${next}px`;
   }, [chat]);
 
@@ -1239,6 +1241,11 @@ export default function App() {
     activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
       ? activeArtifact.title
       : sourceDraft?.title ?? null;
+
+  // Visual QA all chart types: http://127.0.0.1:5173/?preview=charts-qa
+  if (/preview=charts-qa/.test(window.location.search)) {
+    return <ChartsQa />;
+  }
 
   return (
     <div

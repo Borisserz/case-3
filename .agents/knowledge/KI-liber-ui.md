@@ -32,7 +32,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Chat Source without file = Intent text
 - pdfjs chunk lazy-loaded — need `npm install` after pull
 - Figure→PDF uses TeX `pdfPage` hint (`estimate_figure_pdf_pages`) then figureIndex
-- Live Chart.js in Preview + edit sheet (`LiveChart` / `GET…/charts/{id}` + `POST…/preview`); PDF remains print truth
+- Live Chart.js in Preview + edit sheet (`LiveChart` inline mount — no iframe / `GET…/charts/{id}` + `POST…/preview`); PDF remains print truth. Blur root cause was iframe fractional-px compositor layer, not Chart DPR alone. Retina live DPR → 3. QA all types: `?preview=charts-qa` + `web/public/qa-chart-fixtures.json`.
 - After chart Apply, `ChartLivePane` must refetch on URL `?v=` bust (stale HTML otherwise)
 - Live frame CSS mirrors `chart_frame.html` (donut legend / KPI); no CSS `scale` (breaks hover hit-testing)
 - User bubble: collapsed Intent + `chips[]` (C6); long text still opens Source

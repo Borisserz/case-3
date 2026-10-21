@@ -962,14 +962,14 @@ button:disabled {
   animation: report-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Opacity-only: transform on .report-fig leaves a compositor layer that
+   softens live Chart.js (and HTML inside) on fractional CSS widths. */
 @keyframes report-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 
@@ -1651,7 +1651,53 @@ button:disabled {
   line-height: 1.35;
 }
 
-/* G9/G12 live Chart.js */
+/* All-types live chart QA (?preview=charts-qa) */
+.charts-qa {
+  min-height: 100vh;
+  padding: 1.25rem 1.5rem 2.5rem;
+  background: var(--paper, #f3f0e8);
+  color: var(--ink, #1a2e2a);
+}
+.charts-qa-head h1 {
+  margin: 0 0 0.35rem;
+  font-family: var(--serif);
+  font-size: 1.45rem;
+}
+.charts-qa-head p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.charts-qa-err {
+  color: var(--warn, #a65);
+}
+.charts-qa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+}
+.charts-qa-card {
+  background: #fff;
+  border: 1px solid var(--rule, #d5dec0);
+  border-radius: 14px;
+  padding: 0.65rem 0.75rem 0.85rem;
+  box-shadow: var(--shadow-card, 0 1px 0 rgba(0, 0, 0, 0.04));
+}
+.charts-qa-card h2 {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.charts-qa-miss {
+  margin: 1rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* G9/G12 live Chart.js — inline mount (no iframe); same DPR as page */
 .live-chart {
   position: relative;
   border-radius: 12px;
@@ -1659,14 +1705,14 @@ button:disabled {
   background: #fff;
   border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
 }
-.live-chart.is-compact .live-chart-frame {
-  min-height: 160px;
+.live-chart.is-inline {
+  /* No transform/filter — those create a blurry compositor layer on fractional widths */
+  transform: none;
+  filter: none;
 }
-.live-chart-frame {
-  display: block;
-  width: 100%;
-  border: 0;
-  background: #fff;
+.live-chart.is-compact .live-chart-mount {
+  min-height: 180px;
+  padding: 8px 10px 10px;
 }
 .live-chart-badge {
   display: inline-flex;
@@ -2513,7 +2559,7 @@ button:disabled {
   align-items: end;
   padding: 0.4rem 0.45rem 0.4rem 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 1.35rem;
   background: var(--surface);
   box-shadow: var(--shadow-card);
 }
@@ -2526,14 +2572,13 @@ button:disabled {
   background: transparent;
   resize: none;
   min-height: 2.45rem;
-  max-height: 15rem;
+  max-height: 7rem; /* ~4 lines — дальше скролл внутри */
   line-height: 1.45;
   font: inherit;
   color: inherit;
   width: 100%;
   overflow-y: auto;
   white-space: pre-wrap;
-  field-sizing: content;
 }
 
 .composer-input:focus {
