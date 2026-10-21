@@ -102,6 +102,33 @@ def _rewrite_js_type(html: str, preferred: str) -> str:
                 out,
                 count=1,
             )
+    elif preferred == "scatter":
+        out = _scalar_series_to_scatter_points(out)
+    return out
+
+
+def _scalar_series_to_scatter_points(html: str) -> str:
+    """Chart.js scatter needs ``data:[{x,y},…]`` — coerce categorical scalars."""
+
+    def _points(m: re.Match[str]) -> str:
+        raw = m.group(1)
+        nums = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", raw)]
+        if not nums:
+            return m.group(0)
+        # Already point objects?
+        if re.search(r"\{\s*x\s*:", raw):
+            return m.group(0)
+        pts = ",".join(f"{{x:{i},y:{v}}}" for i, v in enumerate(nums))
+        return f"data:[{pts}]"
+
+    out = re.sub(
+        r"data\s*:\s*\[([^\]]*)\]",
+        _points,
+        html or "",
+        flags=re.I,
+    )
+    # Scatter ignores category labels; drop to avoid Chart.js axis confusion.
+    out = re.sub(r"labels\s*:\s*\[[^\]]*\]\s*,?", "", out, count=1, flags=re.I)
     return out
 
 
@@ -159,11 +186,11 @@ def _solidify_pale_bar_fill(html: str) -> str:
         return f"backgroundColor:'#{r:02X}{g:02X}{b:02X}'"
 
     # Only touch scalar backgroundColor (not arrays of segment colors).
+    # All datasets — grouped/stacked often ship N pale fills.
     return re.sub(
         r"backgroundColor\s*:\s*'rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*([0-9.]+)\s*\)'",
         _bump,
         html or "",
-        count=1,
         flags=re.I,
     )
 
@@ -206,7 +233,7 @@ def harden_chart_html(html: str, chart_type: str) -> str:
                 count=1,
             )
         out = _solidify_pale_bar_fill(out)
-    elif want in {"bar", "grouped_bar"} and out:
+    elif want in {"bar", "grouped_bar", "stacked_bar"} and out:
         out = _solidify_pale_bar_fill(out)
     return out
 
