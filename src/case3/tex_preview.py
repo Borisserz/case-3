@@ -351,6 +351,7 @@ def build_report_preview(
     fj = figures_json or {}
     cap_by_id: dict[str, str] = {}
     type_by_id: dict[str, str] = {}
+    palette_by_id: dict[str, str] = {}
     for item in fj.get("charts") or []:
         if isinstance(item, dict) and item.get("id"):
             fid0 = str(item["id"])
@@ -360,6 +361,9 @@ def build_report_preview(
             ctype = str(item.get("type") or "").strip()
             if ctype:
                 type_by_id[fid0] = ctype
+            pal = str(item.get("palette") or "").strip()
+            if pal:
+                palette_by_id[fid0] = pal
     for item in fj.get("figures") or []:
         if isinstance(item, dict) and item.get("id"):
             cap = str(item.get("caption") or "").strip()
@@ -389,6 +393,8 @@ def build_report_preview(
             entry["pdfPage"] = page_hints[fid]
         if fid in type_by_id:
             entry["chartType"] = type_by_id[fid]
+        if fid in palette_by_id:
+            entry["palette"] = palette_by_id[fid]
         # Optional Mary-style card meta from charts[] (Source-derived only).
         for item in fj.get("charts") or []:
             if not isinstance(item, dict):
@@ -401,6 +407,10 @@ def build_report_preview(
             hl = item.get("highlights")
             if isinstance(hl, list) and hl:
                 entry["highlights"] = hl
+            if not entry.get("palette"):
+                pal = str(item.get("palette") or "").strip()
+                if pal:
+                    entry["palette"] = pal
             break
         if st.get("ok") and fid:
             entry["url"] = f"/api/runs/{run_id}/figures/{fid}.png"

@@ -33,10 +33,10 @@ def _fake_generate(source, *, out_tex, intent=None, **kwargs):
     out_tex.parent.mkdir(parents=True, exist_ok=True)
     out_tex.write_text(_FAKE_TEX, encoding="utf-8")
     (out_tex.parent / "figures.json").write_text(
-        json.dumps({"figures": [], "charts": []}), encoding="utf-8"
+        json.dumps({"figures": [], "charts": [], "diagrams": []}), encoding="utf-8"
     )
     (out_tex.parent / "source.raw_model.txt").write_text("{}", encoding="utf-8")
-    return out_tex, [], []
+    return out_tex, [], [], []
 
 
 def _fake_render(tex_path, **kwargs):

@@ -20,6 +20,7 @@ from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_ht
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
+from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.generate import max_images_from_env, resolve_text_file
@@ -86,6 +87,7 @@ def build_intent_from_ui(
     chart_palette: str = "atelier",
     chart_style: str = "",
     doc_title: str = "",
+    max_diagrams: int = 2,
 ) -> str:
     """Compose Intent from chat + UI controls.
 
@@ -94,6 +96,7 @@ def build_intent_from_ui(
     chart_palette / chart_style → color preset + optional look notes.
     doc_title → forced \\title (also applied post-LLM).
     max_* are ceilings, not quotas.
+    max_diagrams → Liber Mermaid schemas (UI-only); independent of charts.
     """
     parts: list[str] = []
     chat = (chat or "").strip()
@@ -105,6 +108,7 @@ def build_intent_from_ui(
     auto = bool(chart_auto) or (not clean and not hints)
     palette = normalize_palette_id(chart_palette)
     title = (doc_title or "").strip()
+    md = max(0, min(int(max_diagrams), 3))
     if title:
         # Marker parsed by generate.doc_title_from_intent — keep format stable.
         req.append(f"- CASE3_DOC_TITLE: {title}")
@@ -114,7 +118,7 @@ def build_intent_from_ui(
         )
 
     if forbid_charts or max_charts <= 0:
-        req.append("- без графиков и диаграмм")
+        req.append("- без HTML-графиков (charts: []; Chart.js) — это не про Mermaid-схемы")
     else:
         req.append(
             f"- не больше {max_charts} HTML-графиков (Chart.js); 0 OK если чисел мало; "
@@ -165,6 +169,20 @@ def build_intent_from_ui(
             "- figures[].caption — русская подпись; "
             "figures[].prompt — English, photorealistic, detailed lighting/subject, "
             "no Cyrillic/watermark/tiny text; не дублируй числами charts"
+        )
+    # Liber Mermaid — independent of charts/photos; default-on when budget ≥ 1.
+    if md <= 0:
+        req.append("- без Mermaid-схем (diagrams: []) — CASE3_MAX_DIAGRAMS=0")
+    else:
+        req.append(
+            f"- до {md} Mermaid-схем (JSON diagrams[], Liber UI only, не в PDF); "
+            "DEFAULT-ON: если в Source есть шаги/роли/ветвления/структура/≥3 раздела — "
+            "сделай ≥1 схему; пустой diagrams[] только при «без схем» в Intent "
+            "или чисто числовом Source без структуры"
+        )
+        req.append(
+            "- diagrams[].type: flowchart|sequence|mindmap|timeline|stateDiagram; "
+            "первая строка mermaid соответствует type; id узлов ASCII, подписи RU из Source"
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()
@@ -229,6 +247,7 @@ def health() -> dict[str, Any]:
         "defaults": {
             "max_charts": max_charts_from_env(),
             "max_images": max_images_from_env(),
+            "max_diagrams": max_diagrams_from_env(),
         },
         "chart_types": sorted(CHART_TYPES),
         "chart_palettes": palette_public(),
@@ -240,6 +259,37 @@ def chart_types() -> dict[str, Any]:
     return {"types": sorted(CHART_TYPES), "palettes": palette_public()}
 
 
+def _load_diagrams_from_out(out_dir: Path) -> list[dict[str, Any]]:
+    """UI-only Mermaid payloads from figures.json (no TeX inject)."""
+    fj = out_dir / "figures.json"
+    if not fj.is_file():
+        return []
+    try:
+        data = json.loads(fj.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    raw = data.get("diagrams") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        did = str(item.get("id") or "").strip()
+        mermaid = str(item.get("mermaid") or "").strip()
+        if not did or not mermaid:
+            continue
+        out.append(
+            {
+                "id": did,
+                "title": str(item.get("title") or did).strip()[:80],
+                "type": str(item.get("type") or "").strip(),
+                "mermaid": mermaid,
+            }
+        )
+    return out
+
+
 def _run_result_payload(
     run_id: str,
     out_dir: Path,
@@ -248,6 +298,7 @@ def _run_result_payload(
     intent: str | None = None,
     max_charts: int | None = None,
     max_images: int | None = None,
+    max_diagrams: int | None = None,
 ) -> dict[str, Any]:
     files: dict[str, str] = {}
     for art in out_dir.iterdir():
@@ -267,6 +318,10 @@ def _run_result_payload(
     )
     mc = int(max_charts if max_charts is not None else meta.get("max_charts") or 0)
     mi = int(max_images if max_images is not None else meta.get("max_images") or 0)
+    md = int(
+        max_diagrams if max_diagrams is not None else meta.get("max_diagrams") or 0
+    )
+    diagrams = _load_diagrams_from_out(out_dir)
     chat_summary = str(meta.get("chat_summary") or "")
     summary_status = str(meta.get("summary_status") or "")
     if not summary_status and chat_summary:
@@ -279,8 +334,12 @@ def _run_result_payload(
         "intent": intent if intent is not None else meta.get("intent"),
         "max_charts": mc,
         "max_images": mi,
+        "max_diagrams": md,
         "figures_planned": meta.get("figures_planned") or [],
         "charts_planned": meta.get("charts_planned") or [],
+        "diagrams_planned": meta.get("diagrams_planned") or [d["id"] for d in diagrams],
+        "diagrams": diagrams,
+        "diagrams_ok": int(meta.get("diagrams_ok") or len(diagrams)),
         "media_status": media,
         "charts_ok": charts_ok,
         "figures_ok": figs_ok,
@@ -304,6 +363,7 @@ def _bg_run_pipeline(
     intent: str,
     max_images: int,
     max_charts: int,
+    max_diagrams: int = 0,
     user_figures: list[dict[str, Any]] | None = None,
 ) -> None:
     try:
@@ -315,6 +375,7 @@ def _bg_run_pipeline(
             intent=intent,
             max_images=max_images,
             max_charts=max_charts,
+            max_diagrams=max_diagrams,
             run_id=run_id,
             user_figures=user_figures,
         )
@@ -441,6 +502,7 @@ async def api_run(
     intent: str = Form(""),
     max_charts: int | None = Form(None),
     max_images: int | None = Form(None),
+    max_diagrams: int | None = Form(None),
     chart_types: str = Form(""),
     chart_hints: str = Form(""),
     chart_auto: str = Form("false"),
@@ -467,12 +529,15 @@ async def api_run(
         max_charts = max_charts_from_env()
     if max_images is None:
         max_images = max_images_from_env()
+    if max_diagrams is None:
+        max_diagrams = max_diagrams_from_env()
     if no_charts:
         max_charts = 0
     if no_images:
         max_images = 0
     max_charts = max(0, min(int(max_charts), 8))
     max_images = max(0, min(int(max_images), 8))
+    max_diagrams = max(0, min(int(max_diagrams), 3))
 
     # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
     upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
@@ -519,6 +584,7 @@ async def api_run(
         chart_types=types,
         max_charts=max_charts,
         max_images=max_images,
+        max_diagrams=max_diagrams,
         forbid_charts=no_charts,
         forbid_images=no_images,
         chart_hints=chart_hints or "",
@@ -571,6 +637,7 @@ async def api_run(
         "dry_run": is_dry,
         "max_images": max_images,
         "max_charts": max_charts,
+        "max_diagrams": max_diagrams,
         "user_figures": [f.get("id") for f in user_figures],
         "status": "running",
         "stage": "queued",
@@ -591,6 +658,7 @@ async def api_run(
                 intent=full_intent,
                 max_images=max_images,
                 max_charts=max_charts,
+                max_diagrams=max_diagrams,
                 user_figures=user_figures,
             )
         )
@@ -605,6 +673,7 @@ async def api_run(
             "stage": "queued",
             "max_charts": max_charts,
             "max_images": max_images,
+            "max_diagrams": max_diagrams,
         },
     )
 
@@ -702,13 +771,35 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "summary_status": meta.get("summary_status"),
         }
     if status == "error":
+        err = meta.get("error") or "pipeline failed"
+        failed_c = meta.get("failed_charts")
+        failed_f = meta.get("failed_figures")
+        if not isinstance(failed_c, list) or not isinstance(failed_f, list):
+            media = meta.get("media_status") or {}
+            if not isinstance(media, dict):
+                media = {}
+            if not isinstance(failed_c, list):
+                failed_c = [
+                    cid
+                    for cid in (meta.get("charts_planned") or [])
+                    if not (isinstance(media.get(cid), dict) and media[cid].get("ok"))
+                ]
+            if not isinstance(failed_f, list):
+                failed_f = [
+                    fid
+                    for fid in (meta.get("figures_planned") or [])
+                    if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
+                ]
         return {
             "run_id": run_id,
             "status": "error",
             "stage": "error",
-            "error": meta.get("error") or "pipeline failed",
-            "message": meta.get("error") or "pipeline failed",
+            "error": err,
+            "message": err,
             "hint": f"logs: runs/logs/{run_id}",
+            "failed_charts": failed_c,
+            "failed_figures": failed_f,
+            "latex_log_tail": meta.get("latex_log_tail") or "",
             "max_charts": meta.get("max_charts"),
             "max_images": meta.get("max_images"),
         }

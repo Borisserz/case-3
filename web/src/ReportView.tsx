@@ -41,6 +41,8 @@ export type PreviewBlock =
       caption?: string;
       url?: string;
       chartType?: string;
+      /** G2: last applied / run palette id for edit sheet seed. */
+      palette?: string;
       /** C10: 1-based PDF page hint from TeX breaks. */
       pdfPage?: number;
       insight?: string;
@@ -568,7 +570,11 @@ export function ReportView({
                     caption={b.caption || caption}
                     palettes={palettes}
                     catalogTypes={catalogTypes}
-                    initialPalette={defaultPalette}
+                    initialPalette={
+                      (b.palette && b.palette !== "auto"
+                        ? b.palette
+                        : defaultPalette) || "atelier"
+                    }
                     initialType={b.chartType || ""}
                     busy={isEditing}
                     error={sheetError}

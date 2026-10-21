@@ -29,7 +29,7 @@ def test_real_upload_085455_style_recovers() -> None:
         "      \"caption\": \"Broken\",\n"
         "      \"html\": \"<canvas id=\\\"c3\\\"\n"
     )
-    tex, _figs, charts = parse_model_output(raw, max_images=0, max_charts=3)
+    tex, _figs, charts, _dias, _drops = parse_model_output(raw, max_images=0, max_charts=3)
     assert {c["id"] for c in charts} == {"cht_01", "cht_02"}
     assert "%CASE3_CHART:cht_01%" in tex
     assert r"\documentclass" in tex
@@ -75,7 +75,7 @@ def test_parse_json_only_builds_tex_with_slots() -> None:
 }
 ```
 '''
-    tex, figures, charts = parse_model_output(raw, max_images=0, max_charts=3)
+    tex, figures, charts, _dias, _drops = parse_model_output(raw, max_images=0, max_charts=3)
     assert figures == []
     assert len(charts) == 1
     assert charts[0]["id"] == "cht_01"
@@ -101,6 +101,6 @@ def test_parse_prefers_continuation_json_over_truncated_first() -> None:
         "    }\n  ]\n}\n"
         "```\n"
     )
-    tex, _figs, charts = parse_model_output(raw, max_images=0, max_charts=3)
+    tex, _figs, charts, _dias, _drops = parse_model_output(raw, max_images=0, max_charts=3)
     assert len(charts) == 1
     assert "%CASE3_CHART:cht_01%" in tex

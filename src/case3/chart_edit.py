@@ -276,7 +276,11 @@ def edit_chart_in_run(
         if palette_id == "auto":
             raise ChartEditError("укажите палитру, тип или текст «как изменить»")
         modes.append("local_palette")
-        new_html = sanitize_chart_html(apply_palette_to_html(html, palette_id))
+        # G4: KPI cards need CSS vars, not Chart.js color remap.
+        if current_type == "kpi" or want_type == "kpi" or 'class="kpi"' in html:
+            new_html = apply_kpi_palette_vars(html, palette_id)
+        else:
+            new_html = sanitize_chart_html(apply_palette_to_html(html, palette_id))
 
     # Commit figures.json only after PNG succeeds (avoid HTML/PNG drift).
     if want_type:
@@ -295,6 +299,9 @@ def edit_chart_in_run(
         new_html = harden_chart_html(new_html, final_type)
     chart["html"] = new_html
     chart["type"] = final_type
+    # G2: persist so Liber edit sheet seeds this figure's palette next open.
+    if palette_id and palette_id != "auto":
+        chart["palette"] = palette_id
     charts[idx] = chart
     fj["charts"] = charts
     figs_dir = out_dir / "figures"

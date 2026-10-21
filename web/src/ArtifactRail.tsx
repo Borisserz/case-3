@@ -15,6 +15,8 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ChartEditRequest, PaletteInfo } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
+import { DiagramPane } from "./DiagramPane";
+import type { DiagramInfo } from "./DiagramFullscreen";
 import { ExportMenu } from "./ExportMenu";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
@@ -30,7 +32,7 @@ const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
 );
 
-export type ArtifactTab = "preview" | "pdf" | "source";
+export type ArtifactTab = "preview" | "pdf" | "source" | "diagram";
 
 export type ActiveArtifact =
   | {
@@ -38,6 +40,8 @@ export type ActiveArtifact =
       msgId: string;
       tab: ArtifactTab;
       title?: string;
+      /** Which Mermaid diagram is focused when tab === "diagram". */
+      activeDiagramId?: string | null;
     }
   | {
       kind: "source";
@@ -58,6 +62,7 @@ type ReportBundle = {
   downloads?: Record<string, string>;
   runId?: string;
   warnings?: string[];
+  diagrams?: DiagramInfo[];
 };
 
 type Props = {
@@ -76,6 +81,7 @@ type Props = {
   widthPct?: number;
   onWidthChange?: (pct: number) => void;
   onTab: (tab: ArtifactTab) => void;
+  onSelectDiagram?: (id: string) => void;
   onClose: () => void;
   /** Controlled close: keep mounted, animate width → 0, then onClosed. */
   closing?: boolean;
@@ -101,6 +107,7 @@ export function ArtifactRail({
   widthPct = RAIL_WIDTH_DEFAULT,
   onWidthChange,
   onTab,
+  onSelectDiagram,
   onClose,
   closing = false,
   onClosed,
@@ -112,8 +119,17 @@ export function ArtifactRail({
   const tab = artifact.tab;
   const openWidthRef = useRef<number | null>(null);
   const isReport = artifact.kind === "report";
+  const diagrams = isReport ? report?.diagrams || [] : [];
+  const activeDiagramId =
+    isReport && artifact.kind === "report"
+      ? artifact.activeDiagramId || diagrams[0]?.id || null
+      : null;
+  const activeDiagram =
+    diagrams.find((d) => d.id === activeDiagramId) || diagrams[0] || null;
+  const showDiagramSurface = tab === "diagram" && Boolean(activeDiagram);
   const hasPreview = Boolean(report?.preview?.blocks?.length);
   const hasPdf = Boolean(report?.downloads?.pdf);
+  const hasDiagrams = diagrams.length > 0;
   const hasSource = Boolean(
     (sourceText && sourceText.length > 0) ||
       artifact.kind === "source" ||
@@ -157,14 +173,18 @@ export function ArtifactRail({
     const all: { id: ArtifactTab; label: string; show: boolean }[] = [
       { id: "preview", label: "Превью", show: isReport && hasPreview },
       { id: "pdf", label: "PDF", show: isReport && hasPdf },
+      { id: "diagram", label: "Схема", show: isReport && hasDiagrams },
       { id: "source", label: "Source", show: hasSource },
     ];
     return all.filter((t) => t.show);
-  }, [isReport, hasPreview, hasPdf, hasSource]);
+  }, [isReport, hasPreview, hasPdf, hasDiagrams, hasSource]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Diagram fullscreen owns Esc while open.
+      if (document.querySelector(".diagram-fullscreen")) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -454,7 +474,7 @@ export function ArtifactRail({
         </header>
 
         <div className="artifact-rail-body" ref={setBodyRef}>
-          {tab === "preview" && toc.length >= 2 ? (
+          {!showDiagramSurface && tab === "preview" && toc.length >= 2 ? (
             <RailToc
               items={toc}
               activeId={tocActive}
@@ -466,14 +486,26 @@ export function ArtifactRail({
 
           <AnimatePresence mode="wait">
             <motion.div
-              key={`${artifact.kind}-${tab}`}
+              key={
+                showDiagramSurface
+                  ? `diagram-${activeDiagramId}`
+                  : `${artifact.kind}-${tab}`
+              }
               className="artifact-rail-pane"
               initial={reduceMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             >
-              {tab === "preview" && report?.preview ? (
+              {showDiagramSurface && activeDiagram ? (
+                <DiagramPane
+                  diagram={activeDiagram}
+                  siblings={diagrams.length > 1 ? diagrams : undefined}
+                  onSelectSibling={onSelectDiagram}
+                />
+              ) : null}
+
+              {!showDiagramSurface && tab === "preview" && report?.preview ? (
                 <ReportView
                   preview={report.preview}
                   downloads={report.downloads}
@@ -496,7 +528,7 @@ export function ArtifactRail({
                 />
               ) : null}
 
-              {tab === "pdf" && report?.downloads?.pdf ? (
+              {!showDiagramSurface && tab === "pdf" && report?.downloads?.pdf ? (
                 <Suspense
                   fallback={
                     <div className="pdf-skeleton pdf-skeleton-solo" aria-busy>
@@ -516,7 +548,7 @@ export function ArtifactRail({
                 </Suspense>
               ) : null}
 
-              {tab === "source" ? (
+              {!showDiagramSurface && tab === "source" ? (
                 <SourcePane
                   title={displaySourceTitle}
                   text={displaySource || "Нет текста источника."}
@@ -524,12 +556,12 @@ export function ArtifactRail({
                 />
               ) : null}
 
-              {tab === "preview" && !hasPreview ? (
+              {!showDiagramSurface && tab === "preview" && !hasPreview ? (
                 <p className="artifact-rail-loading muted">
                   Превью пустое — откройте вкладку PDF.
                 </p>
               ) : null}
-              {tab === "pdf" && !hasPdf ? (
+              {!showDiagramSurface && tab === "pdf" && !hasPdf ? (
                 <p className="artifact-rail-loading muted">PDF ещё нет.</p>
               ) : null}
             </motion.div>

@@ -31,7 +31,7 @@ def test_json_plus_preamble_only_recovers_document() -> None:
 \setotherlanguage{engl
 ```
 """
-    tex, figs, charts = parse_model_output(raw, max_images=0, max_charts=2)
+    tex, figs, charts, _dias, _drops = parse_model_output(raw, max_images=0, max_charts=2)
     assert r"\begin{document}" in tex
     assert r"\end{document}" in tex
     assert "%CASE3_CHART:cht_01%" in tex

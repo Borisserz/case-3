@@ -466,6 +466,8 @@ def polish_charts(
         if html:
             html = harden_chart_html(html, ctype)
         c["html"] = html
+        if pid != "auto":
+            c["palette"] = pid
         c["width"] = sanitize_width(
             str(c.get("width") or "") or None,
             default=default_w,

@@ -5,8 +5,11 @@ Post-LLM TeX repair then `latexmk -xelatex` / pandoc in Docker `case-3:tex`.
 
 ## Entry
 - Harden: `tex_preamble.ensure_document_preamble` (called from `render.prepare_tex_source`)
-- Row repair: `repair_tabularx_row_breaks`
+- Row repair: `repair_tabularx_row_breaks` (trigger: ≥1 trailing-`&` line)
+- Orphan table chrome: `strip_orphan_table_markup` (bare `&` → `\&`, drop midrule outside tabular)
+- Prose lists: `tex_prose.harden_prose_lists` (`- `/`• ` → itemize)
 - Render: `render.render_tex` (`--net=none`, optional `reference.docx`)
+- C8 errors: `pipeline._attach_error_diagnostics` → `failed_charts` + `latex_log_tail` on status
 
 ## Invariants
 - Cyrillic via DejaVu + polyglossia/fontspec
@@ -26,4 +29,4 @@ Post-LLM TeX repair then `latexmk -xelatex` / pandoc in Docker `case-3:tex`.
 - Chat preview ≠ PDF numbering/chrome
 
 ## See
-ADR-0005 · `tests/test_repair_tabularx_rows.py` · `tests/test_harden_tables.py`
+ADR-0005 · `tests/test_repair_tabularx_rows.py` · `tests/test_harden_tables.py` · `tests/test_orphan_table_markup.py` · `tests/test_tex_prose_lists.py`

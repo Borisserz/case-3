@@ -76,7 +76,9 @@ Parked backlog: [`plans/2026-10-20-liber-ux-polish-roadmap.md`](superpowers/plan
 |--------|---------|
 | Баг пайплайна / PDF | KI-pipeline → KI-tex-render → ADR-0001 |
 | График / палитра / edit | KI-charts → ADR-0002 |
-| Liber UI | KI-liber-ui → ADR-0003 |
+| Liber UI | KI-liber-ui → ADR-0003 · ADR-0006 |
+| Схемы Mermaid (UI) | ADR-0007 → KI-liber-ui / KI-pipeline · spec semantic-diagrams |
+| Inline схемы в Preview | spec+plan `liber-inline-preview-diagrams` (после Liber refactor: `liberTypes` / rail) |
 | Фото / Image API | KI-image-api → ADR-0004 → specs image-api |
 | Деплой на винду | knowledge/ops-windows.md |
 | «Почему не PPTX» | knowledge/parked-pptx.md |

@@ -386,6 +386,16 @@ type Props = {
 
 type CardPos = { left: number; top: number; place: "above" | "below" };
 
+/** G1: never crash on unknown catalog ids from API/LLM. */
+function metaFor(typeId: string): (typeof META)[ChartTypeId] {
+  if (typeId in META) return META[typeId as ChartTypeId];
+  return {
+    title: typeId || "Chart",
+    blurb: "Тип из каталога Liber",
+    Glyph: GlyphBar,
+  };
+}
+
 export function ChartTypeChip({
   typeId,
   children,
@@ -393,10 +403,11 @@ export function ChartTypeChip({
   disabled,
   onClick,
 }: Props) {
-  const meta = META[typeId];
+  const meta = metaFor(typeId);
   const Glyph = meta.Glyph;
   const tipId = useId();
   const btnRef = useRef<HTMLButtonElement>(null);
+  const hideTimer = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<CardPos | null>(null);
 
@@ -415,13 +426,25 @@ export function ChartTypeChip({
     setPos({ left, top, place: placeAbove ? "above" : "below" });
   }, []);
 
+  const clearHide = useCallback(() => {
+    if (hideTimer.current != null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, []);
+
   const show = useCallback(() => {
     if (disabled) return;
+    clearHide();
     place();
     setOpen(true);
-  }, [disabled, place]);
+  }, [disabled, place, clearHide]);
 
-  const hide = useCallback(() => setOpen(false), []);
+  const hide = useCallback(() => {
+    clearHide();
+    // Bridge gap to portal card (pointer-events:auto) without flicker.
+    hideTimer.current = window.setTimeout(() => setOpen(false), 140);
+  }, [clearHide]);
 
   return (
     <span className={`chip-preview-wrap${disabled ? " is-disabled" : ""}`}>

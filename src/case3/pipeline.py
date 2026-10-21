@@ -14,10 +14,11 @@ from typing import Any, Callable  # Any used by user_figures metas
 
 from case3.charts import generate_all_charts, max_charts_from_env
 from case3.chat_summary import try_generate_chat_summary
+from case3.diagrams import max_diagrams_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
 from case3.image_api import ImageApiConfig, generate_all_figures
-from case3.render import render_tex
+from case3.render import RenderError, render_tex
 from case3.summary_bus import BUS
 from case3.user_photos import (
     ensure_user_slots_in_tex,
@@ -44,6 +45,69 @@ class PipelineError(RuntimeError):
         self.out_dir = out_dir
         self.logs_dir = logs_dir
         self.meta = meta
+
+
+def _latex_log_tail(path: Path | None, *, lines: int = 40) -> str:
+    """Last N lines of a TeX log (C8 diagnostics)."""
+    if path is None or not Path(path).is_file():
+        return ""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    parts = text.splitlines()
+    if not parts:
+        return ""
+    return "\n".join(parts[-max(1, lines) :])
+
+
+def _find_latex_log(logs_dir: Path) -> Path | None:
+    if not logs_dir.is_dir():
+        return None
+    preferred = sorted(logs_dir.glob("*.log"))
+    for p in preferred:
+        if p.name != "pipeline.log":
+            return p
+    pipe = logs_dir / "pipeline.log"
+    return pipe if pipe.is_file() else None
+
+
+def _attach_error_diagnostics(
+    meta: dict[str, Any],
+    *,
+    logs_dir: Path,
+    error: str,
+    log_path: Path | None = None,
+) -> dict[str, Any]:
+    """Enrich meta with failed media ids + latex log tail (C8)."""
+    out = dict(meta)
+    media = out.get("media_status") or {}
+    if not isinstance(media, dict):
+        media = {}
+    failed_c = [
+        cid
+        for cid in (out.get("charts_planned") or [])
+        if not (isinstance(media.get(cid), dict) and media[cid].get("ok"))
+    ]
+    failed_f = [
+        fid
+        for fid in (out.get("figures_planned") or [])
+        if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
+    ]
+    out["failed_charts"] = failed_c
+    out["failed_figures"] = failed_f
+    bits = [str(error).strip()]
+    if failed_c:
+        bits.append(f"charts failed: {', '.join(failed_c)}")
+    if failed_f:
+        bits.append(f"figures failed: {', '.join(failed_f)}")
+    out["error"] = "; ".join(b for b in bits if b)
+    lp = Path(log_path) if log_path else _find_latex_log(logs_dir)
+    tail = _latex_log_tail(lp)
+    if tail:
+        out["latex_log_tail"] = tail
+        out["latex_log_path"] = str(lp) if lp else None
+    return out
 
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
@@ -100,6 +164,7 @@ def run_pipeline(
     intent: str | None = None,
     max_images: int | None = None,
     max_charts: int | None = None,
+    max_diagrams: int | None = None,
     run_id: str | None = None,
     on_stage: Callable[[str, str | None], None] | None = None,
     user_figures: list[dict[str, Any]] | None = None,
@@ -116,6 +181,11 @@ def run_pipeline(
 
     images_budget = max_images_from_env() if max_images is None else max(0, int(max_images))
     charts_budget = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
+    diagrams_budget = (
+        max_diagrams_from_env()
+        if max_diagrams is None
+        else max(0, min(int(max_diagrams), 3))
+    )
     user_figs = list(user_figures or [])
     # Uploads always need figure budget even if UI had «без фото» half-checked
     if user_figs:
@@ -135,6 +205,7 @@ def run_pipeline(
         "dry_run": dry_run,
         "max_images": images_budget,
         "max_charts": charts_budget,
+        "max_diagrams": diagrams_budget,
         "user_figures": [f.get("id") for f in user_figs],
         "started_at": stamp,
         "status": "running",
@@ -152,7 +223,7 @@ def run_pipeline(
         tex_path = work / f"{stem}.tex"
         # Reserve slots for uploads so the LLM plans fewer generated photos.
         llm_image_budget = max(0, images_budget - len(user_figs))
-        _, figures, charts = generate_document(
+        _, figures, charts, diagrams = generate_document(
             text_path,
             out_tex=tex_path,
             intent=intent,
@@ -160,6 +231,7 @@ def run_pipeline(
             dry_run=dry_run,
             max_images=llm_image_budget,
             max_charts=charts_budget,
+            max_diagrams=diagrams_budget,
         )
         figures = merge_user_figures(figures, user_figs, max_images=images_budget)
         raw_tex = tex_path.read_text(encoding="utf-8")
@@ -175,10 +247,17 @@ def run_pipeline(
             fj = {}
         fj["figures"] = figures
         fj["charts"] = charts
+        fj["diagrams"] = diagrams
+        # Keep diagrams_dropped from generate if present (soft-fail telemetry).
         fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
         meta["figures_planned"] = [f["id"] for f in figures]
         meta["charts_planned"] = [c["id"] for c in charts]
+        meta["diagrams_planned"] = [d["id"] for d in diagrams]
+        meta["diagrams_ok"] = len(diagrams)
+        dropped = fj.get("diagrams_dropped") if isinstance(fj.get("diagrams_dropped"), list) else []
+        if dropped:
+            meta["diagrams_dropped"] = dropped
         _write_meta(meta, out, logs)
 
         status: dict = {}
@@ -352,13 +431,21 @@ def run_pipeline(
     except Exception as exc:
         meta["status"] = "error"
         meta["stage"] = "error"
-        meta["error"] = str(exc)
+        log_path = getattr(exc, "log_path", None) if isinstance(exc, RenderError) else None
+        meta.update(
+            _attach_error_diagnostics(
+                meta,
+                logs_dir=logs,
+                error=str(exc),
+                log_path=Path(log_path) if log_path else None,
+            )
+        )
         meta["traceback"] = traceback.format_exc()
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         _write_meta(meta, out, logs)
         raise PipelineError(
-            str(exc),
+            str(meta.get("error") or exc),
             run_id=run_id,
             out_dir=out,
             logs_dir=logs,

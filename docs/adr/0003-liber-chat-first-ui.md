@@ -31,3 +31,6 @@ React Liber — **chat-first**: composer + сообщения; advanced controls
 
 ## Amendment (2026-10-21)
 Chat-first сохраняется; тяжёлые артефакты (TeX preview, PDF, Source) открываются в правом **Artifact rail** (Julius-style), а не раздувают тред. См. `docs/superpowers/specs/2026-10-21-liber-artifact-rail-design.md`.
+
+## Amendment (2026-10-21 · diagrams)
+Artifact rail hosts **UI-only Mermaid diagrams** (Diagram strip + fullscreen + PNG download). They are not injected into PDF/DOCX. See ADR-0007.

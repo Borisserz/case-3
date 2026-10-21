@@ -20,6 +20,9 @@ debug-bundle/
 
 web/node_modules/
 web/dist/
+web/tsconfig.tsbuildinfo
+# Offline Mermaid copy for local HTML demos only (app imports npm `mermaid`)
+web/public/vendor/
 workers/*/node_modules/
 workers/*/.wrangler/
 

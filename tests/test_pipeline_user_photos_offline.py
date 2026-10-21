@@ -62,7 +62,12 @@ def test_pipeline_merges_user_photo_and_skips_image_api(tmp_path: Path, monkeypa
             json.dumps(_FAKE_JSON, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         (out_tex.parent / "source.raw_model.txt").write_text("{}", encoding="utf-8")
-        return out_tex, list(_FAKE_JSON["figures"]), list(_FAKE_JSON["charts"])
+        return (
+            out_tex,
+            list(_FAKE_JSON["figures"]),
+            list(_FAKE_JSON["charts"]),
+            list(_FAKE_JSON.get("diagrams") or []),
+        )
 
     def fake_charts(charts, figs_dir, **kwargs):
         figs_dir.mkdir(parents=True, exist_ok=True)

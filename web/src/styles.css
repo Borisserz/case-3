@@ -429,7 +429,8 @@ button:disabled {
   border: 1px solid color-mix(in srgb, var(--foil) 40%, var(--rule));
   box-shadow: var(--shadow-lift);
   animation: chip-preview-in 0.22s var(--ease-out) both;
-  pointer-events: none;
+  /* G1: allow hover bridge onto the portal card (was none → flicker/crash path). */
+  pointer-events: auto;
 }
 
 .chip-preview-card.place-above {
@@ -4636,4 +4637,332 @@ button.send:disabled {
     animation: none;
     transition: none;
   }
+}
+
+/* —— Semantic diagrams (UI-only Mermaid) —— */
+.diagram-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.85rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-soft, #f4f7f4) 88%, white);
+  flex-shrink: 0;
+}
+
+.diagram-strip-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #5a6b60);
+  flex-shrink: 0;
+}
+
+.diagram-strip-chips {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.diagram-strip-chip {
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: #fff;
+  color: var(--ink, #1a2e22);
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.diagram-strip-chip:hover {
+  border-color: var(--accent, #6b8f76);
+}
+
+.diagram-strip-chip.is-active {
+  background: color-mix(in srgb, var(--accent, #6b8f76) 18%, white);
+  border-color: var(--accent, #6b8f76);
+  font-weight: 600;
+}
+
+.diagram-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 1.25rem;
+  min-height: 100%;
+}
+
+.diagram-pane-liber-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted, #5a6b60);
+  font-family: system-ui, sans-serif;
+}
+
+.diagram-zoom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 220px;
+  height: 100%;
+}
+
+.diagram-zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.diagram-zoom-btn {
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: #fff;
+  color: var(--ink, #1a2e22);
+  border-radius: 8px;
+  min-width: 2rem;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.diagram-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.diagram-zoom-btn:hover:not(:disabled) {
+  border-color: var(--accent, #6b8f76);
+}
+
+.diagram-zoom-hint {
+  font-size: 0.72rem;
+  color: var(--muted, #5a6b60);
+  font-family: system-ui, sans-serif;
+  margin-left: 0.25rem;
+}
+
+.diagram-zoom-viewport {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--radius-md, 12px);
+  background: #fff;
+  min-height: 200px;
+  touch-action: pan-y;
+}
+
+.diagram-zoom-viewport.is-pannable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.diagram-zoom-viewport.is-pannable:active {
+  cursor: grabbing;
+}
+
+.diagram-zoom-stage {
+  transform-origin: 0 0;
+  padding: 1rem;
+  width: max-content;
+  min-width: 100%;
+}
+
+.mermaid-view-loading {
+  margin: 0.75rem 1rem;
+  font-size: 0.88rem;
+  color: var(--muted, #5a6b60);
+  font-family: system-ui, sans-serif;
+}
+
+.mermaid-view-svg.is-loading {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diagram-fullscreen-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted, #5a6b60);
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
+}
+
+.diagram-pane-siblings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.diagram-pane-sib {
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: #fff;
+  color: var(--ink, #1a2e22);
+  border-radius: 999px;
+  padding: 0.22rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagram-pane-sib.is-active {
+  background: color-mix(in srgb, var(--accent, #6b8f76) 18%, white);
+  border-color: var(--accent, #6b8f76);
+  font-weight: 600;
+}
+
+.diagram-pane-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.diagram-pane-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink, #1a2e22);
+}
+
+.diagram-pane-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.diagram-pane-err {
+  margin: 0;
+  color: #a33;
+  font-size: 0.88rem;
+}
+
+.diagram-pane-canvas {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.diagram-pane-canvas .diagram-zoom {
+  flex: 1;
+}
+
+.diagram-fullscreen-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 1rem 1.1rem;
+}
+
+.diagram-fullscreen-body .diagram-zoom {
+  flex: 1;
+  min-height: 360px;
+}
+
+.mermaid-view-svg svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.mermaid-view-error {
+  padding: 0.75rem;
+  color: #7a3a3a;
+}
+
+.mermaid-view-raw {
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  background: #f6f6f4;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  overflow: auto;
+  max-height: 12rem;
+}
+
+.diagram-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(18, 28, 22, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.diagram-fullscreen-sheet {
+  width: min(1100px, 96vw);
+  height: min(880px, 92vh);
+  max-height: 92vh;
+  background: #fff;
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 18px 48px rgba(20, 40, 28, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diagram-fullscreen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.diagram-fullscreen-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.diagram-fullscreen-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.diagram-fullscreen-close {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.45rem;
+  color: var(--muted, #5a6b60);
+}
+
+/* .diagram-fullscreen-body set above with zoom flex */
+
+.artifact-card-diagrams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0 0.85rem 0.55rem;
+}
+
+.artifact-card-diagram-chip {
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  background: color-mix(in srgb, var(--bg-soft, #f4f7f4) 70%, white);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--ink, #1a2e22);
+}
+
+.artifact-card-diagram-chip:hover {
+  border-color: var(--accent, #6b8f76);
 }

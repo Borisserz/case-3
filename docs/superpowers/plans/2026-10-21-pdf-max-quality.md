@@ -86,10 +86,8 @@
 
 **Файлы:** опционально `tex_prose.py`; вызов после salvage / в harden; `tests/test_tex_prose_lists.py`
 
-- [ ] **Шаг 1.** Правило: только очевидные `- `/`• ` в абзаце → `itemize` (не трогать готовые окружения).
-- [ ] **Шаг 2.** RED на фикстуре.
-- [ ] **Шаг 3.** GREEN минимальный конвертер.
-- [ ] **Шаг 4.** Если риск высокий — park, усилить gold в prompt, обновить KI.
+- [x] **Шаг 1–3.** Done 2026-10-21: `tex_prose.harden_prose_lists` в `ensure_document_preamble`; `tests/test_tex_prose_lists.py`.
+- [x] **Шаг 4.** Низкий риск — shipped (не park).
 
 ---
 
@@ -115,8 +113,7 @@
 
 **Файлы:** `chart_style.py`; при UI — CSS print-mode (C9); ADR если появится `print_tokens.json`
 
-- [ ] **Шаг 1.** Один источник swatches для API + таблицы в prompt.
-- [ ] **Шаг 2.** Тест: `palette_public()` ≡ `_PALETTES`.
+- [x] **Шаг 1–2.** Done 2026-10-21: `palette_fallback_table()` → `{{PALETTE_TABLE}}` в `system_tex.md`; `tests/test_palette_tokens.py`.
 
 ---
 

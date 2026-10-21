@@ -1,0 +1,241 @@
+/** Liber chat transcript (user / bot bubbles). */
+
+import { AnimatePresence, motion } from "framer-motion";
+import { ArtifactCard } from "./ArtifactCard";
+import { ContextPlaque } from "./ContextPlaque";
+import { EmptyState } from "./EmptyState";
+import { IconCopy, IconLiberMark } from "./icons";
+import { LONG_TEXT_CHARS } from "./liberConstants";
+import type { Msg, RunResult, SourceAttachment } from "./liberTypes";
+import { reportThumb, reportTitle } from "./liberRunHelpers";
+import { MsgMarkdown } from "./lightMd";
+import { ReportPending } from "./ReportView";
+import { ThinkingFold } from "./ThinkingFold";
+
+type Props = {
+  msgs: Msg[];
+  reduceMotion: boolean | null;
+  hasStoredReport: boolean;
+  thinkingLabel?: string;
+  downloadsPulseMsgId: string | null;
+  messagesRef: React.RefObject<HTMLDivElement | null>;
+  bottomRef: React.RefObject<HTMLDivElement | null>;
+  onRestore: () => void;
+  onPrompt: (text: string) => void;
+  onOpenSource: (draft: SourceAttachment) => void;
+  onOpenIntent: (text: string) => void;
+  onOpenReport: (msgId: string, result: RunResult) => void;
+  onOpenDiagram: (msgId: string, result: RunResult, diagramId: string) => void;
+};
+
+export function ChatMessages({
+  msgs,
+  reduceMotion,
+  hasStoredReport,
+  thinkingLabel,
+  downloadsPulseMsgId,
+  messagesRef,
+  bottomRef,
+  onRestore,
+  onPrompt,
+  onOpenSource,
+  onOpenIntent,
+  onOpenReport,
+  onOpenDiagram,
+}: Props) {
+  return (
+    <div className="messages" ref={messagesRef}>
+      <AnimatePresence initial={false}>
+        {msgs.length === 0 &&
+          !/preview=artifact/.test(window.location.search) && (
+            <EmptyState
+              hasStoredReport={hasStoredReport}
+              onRestore={onRestore}
+              onPrompt={onPrompt}
+            />
+          )}
+        {msgs.map((m, mi) => {
+          const hasArtifact =
+            m.role === "bot" &&
+            Boolean(
+              m.result?.preview?.blocks?.length || m.result?.downloads?.pdf,
+            );
+          const userLong =
+            m.role === "user" &&
+            !m.attachment &&
+            m.text.length > LONG_TEXT_CHARS;
+          const userCollapseIntent =
+            m.role === "user" && m.text.length > 140 && !m.attachment;
+          return (
+            <motion.div
+              key={m.id}
+              className={`msg ${m.role}${hasArtifact ? " has-artifact" : ""}`}
+              initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.35,
+                delay: Math.min(mi * 0.03, 0.18),
+                ease: [0.22, 1, 0.36, 1],
+              }}
+            >
+              {m.role === "user" ? (
+                <>
+                  {m.attachment ? (
+                    <div className="msg-attach-row">
+                      <ContextPlaque
+                        title={m.attachment.title}
+                        subtitle={`${m.attachment.text.length} символов`}
+                        onOpen={() => onOpenSource(m.attachment!)}
+                      />
+                    </div>
+                  ) : null}
+                  {userLong ? (
+                    <button
+                      type="button"
+                      className="msg-body msg-plaque-trigger"
+                      onClick={() => onOpenIntent(m.text)}
+                    >
+                      Intent · {m.text.length} символов — открыть
+                    </button>
+                  ) : userCollapseIntent ? (
+                    <details className="msg-intent-fold">
+                      <summary className="msg-intent-summary">
+                        <span className="msg-intent-label">Intent</span>
+                        <span className="msg-intent-preview">
+                          {m.text.slice(0, 72).trim()}
+                          {m.text.length > 72 ? "…" : ""}
+                        </span>
+                      </summary>
+                      <div className="msg-body msg-pre">{m.text}</div>
+                    </details>
+                  ) : (
+                    <div className="msg-body msg-pre">{m.text}</div>
+                  )}
+                </>
+              ) : m.role === "bot" && hasArtifact && m.result ? (
+                <div className="msg-row">
+                  <span className="msg-avatar">
+                    <IconLiberMark size={28} />
+                  </span>
+                  <div className="msg-bot-stack">
+                    {m.thinking?.length ? (
+                      <ThinkingFold
+                        lines={m.thinking}
+                        live={false}
+                        elapsedSec={m.thinkingElapsedSec}
+                      />
+                    ) : null}
+                    <MsgMarkdown text={m.text || "Отчёт готов"} />
+                    <ArtifactCard
+                      title={reportTitle(m.result)}
+                      thumbUrl={reportThumb(m.result)}
+                      pdfUrl={m.result.downloads?.pdf}
+                      downloads={m.result.downloads}
+                      pulse={downloadsPulseMsgId === m.id}
+                      updated={downloadsPulseMsgId === m.id}
+                      diagrams={m.result.diagrams}
+                      onView={() => onOpenReport(m.id, m.result!)}
+                      onOpenDiagram={(id) =>
+                        onOpenDiagram(m.id, m.result!, id)
+                      }
+                    />
+                    {m.result.warnings?.length ? (
+                      <div className="warns">
+                        {m.result.warnings.join(" · ")}
+                      </div>
+                    ) : null}
+                    <div className="msg-actions">
+                      <button
+                        type="button"
+                        className="msg-action"
+                        title="Копировать"
+                        aria-label="Копировать текст"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(
+                            m.text || "Отчёт готов",
+                          );
+                        }}
+                      >
+                        <IconCopy size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : m.role === "bot" && m.pending ? (
+                <div className="msg-row">
+                  <span className="msg-avatar">
+                    <IconLiberMark size={28} />
+                  </span>
+                  <div className="msg-bot-stack">
+                    <ReportPending
+                      label={thinkingLabel || m.text || undefined}
+                      stage={m.pendingStage || "queued"}
+                      detail={m.pendingDetail}
+                    />
+                    <ThinkingFold
+                      lines={m.thinking || []}
+                      live
+                      elapsedSec={
+                        m.thinkingStartedAt
+                          ? Math.max(
+                              0,
+                              Math.round(
+                                (Date.now() - m.thinkingStartedAt) / 1000,
+                              ),
+                            )
+                          : undefined
+                      }
+                    />
+                    {m.streamingSummary && m.text.trim() ? (
+                      <div className="msg-stream-wrap">
+                        <MsgMarkdown text={m.text} streaming />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="msg-row">
+                  <span className="msg-avatar">
+                    <IconLiberMark size={28} />
+                  </span>
+                  <div className="msg-bot-stack">
+                    {m.role === "bot" && m.thinking?.length ? (
+                      <ThinkingFold
+                        lines={m.thinking}
+                        live={false}
+                        elapsedSec={m.thinkingElapsedSec}
+                      />
+                    ) : null}
+                    {m.role === "bot" && !m.error ? (
+                      <MsgMarkdown text={m.text} />
+                    ) : (
+                      <div className="msg-body">{m.text}</div>
+                    )}
+                    {m.role === "bot" && m.error && (
+                      <p className="err">{m.error}</p>
+                    )}
+                    {m.role === "bot" &&
+                      m.result &&
+                      (m.result.downloads?.pdf ||
+                        m.result.downloads?.docx) && (
+                        <ArtifactCard
+                          title={reportTitle(m.result)}
+                          thumbUrl={reportThumb(m.result)}
+                          pdfUrl={m.result.downloads?.pdf}
+                          downloads={m.result.downloads}
+                          pulse={downloadsPulseMsgId === m.id}
+                          updated={downloadsPulseMsgId === m.id}
+                          onView={() => onOpenReport(m.id, m.result!)}
+                        />
+                      )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+      <div ref={bottomRef} />
+    </div>
+  );
+}

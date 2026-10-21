@@ -1,17 +1,21 @@
 # KI: Liber UI
 
 ## What
-Vite React soft-premium chat desk: sidebar + compose → poll run → compact chat card + **Artifact rail** (Preview · PDF · Source).
+Vite React soft-premium chat desk: sidebar + compose → poll run → compact chat card + **Artifact rail** (Preview · PDF · Схема · Source).
 
 ## Entry
-- `web/src/App.tsx` — shell orchestration, submit FormData, `activeArtifact`, messages
+- `web/src/App.tsx` — thin shell: state + `send`/`edit*` + rail wiring (≈1.3k lines after 2026-10-21 split)
+- `liberTypes.ts` / `liberConstants.ts` / `liberRunHelpers.ts` — shared types, defaults, pure run helpers (C8 error format, SSE summary, stage labels)
+- `ChatMessages.tsx` / `ChatComposer.tsx` / `ComposerPhotoChips.tsx` — transcript + composer UI
+- `useLiberDevPreviews.ts` — `?preview=artifact|flow` bootstraps
 - `Sidebar.tsx` — New / History (sessionStorage) / Settings; collapse
 - `EmptyState.tsx` — hero + ≤3 prompts
 - `ThinkingFold.tsx` + `pipelinePhrases.ts` — collapsible «Размышления» in bot bubble (Flow above); no ThinkingBar; phrases from large pools, seeded per run (`thinkingStartedAt`) so logs don’t repeat the same sequence
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
 - `reportHistory.ts` — local history + last-run payloads
-- `ArtifactRail.tsx` — sidecar: tabs, Export, resize, TOC, figure→PDF, SourcePane
+- `ArtifactRail.tsx` — sidecar: tabs (Превью·PDF·Схема·Source), Export, resize, TOC, figure→PDF, SourcePane
+- `DiagramPane.tsx` / `MermaidView.tsx` / `DiagramFullscreen.tsx` / `downloadDiagramPng.ts` — UI-only Mermaid (tab «Схема»)
 - `ArtifactCard.tsx` / `ContextPlaque.tsx` / `ExportMenu.tsx` / `PdfThumb.tsx`
 - `SettingsModal.tsx` — palette, types, limits, dry-run
 - `ReportView.tsx` — TeX blocks + edit; ChartCard wraps charts
@@ -28,9 +32,13 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Rail width persisted in `localStorage` key `liber-rail-width` (dblclick reset)
 - Close rail: keep `activeArtifact` until width→0 (`railExiting` + `onClosed`); don’t null early (snaps user bubble). Guard `onAnimationComplete` until width &lt; 32px.
 - Soft-green tokens in `styles.css`; PDF = print truth (rail hint)
+- Diagrams are Liber-only (`RunResult.diagrams`); never TeX-injected; Settings «Схемы» 0–3; client PNG download
+- Schema tab: hint «Только в Liber»; zoom ± / % / Ctrl+wheel + pan; PNG via viewBox + slug(title); fullscreen has own SVG ref
 
 ## Gotchas
-- Preview blocks may still drop lists/emphasis (roadmap C1/C2)
+- C8: run error bubble may include `график …` / `TeX: …` from status `failed_charts` + `latex_log_tail`
+- Chart type chip hover: portal card `pointer-events:auto` + delayed hide; unknown typeId → GlyphBar fallback (G1)
+- Edit sheet palette seeds from `block.palette` then Settings default (G2)
 - Chat Source without file = Intent text
 - pdfjs chunk lazy-loaded — need `npm install` after pull
 - Figure→PDF: **pdf.js text search** by caption (TeX `pdfPage` hints omit natural breaks → badge no longer shows «с.N»; jump must not seed page=1 or it clobbers find)

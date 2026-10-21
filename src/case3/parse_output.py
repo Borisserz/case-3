@@ -1,4 +1,4 @@
-"""Parse LLM reply: ```latex ... ``` then ```json ... ``` (figures + charts)."""
+"""Parse LLM reply: ```latex ... ``` then ```json ... ``` (figures + charts + diagrams)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from case3.chart_html import CHART_TYPES, ChartHtmlError, sanitize_chart_html
+from case3.diagrams import parse_diagrams
 from case3.image_prompt import ImagePromptError, sanitize_image_prompt
 from case3.tex_safe import sanitize_width
 from case3.tex_utils import extract_tex, finish_preamble_only_tex
@@ -121,14 +122,16 @@ def _pick_fences(raw: str) -> tuple[str | None, str | None]:
 
 
 def salvage_json_object(raw: str) -> dict[str, Any] | None:
-    """Recover figures/charts from truncated or multi-fence JSON.
+    """Recover figures/charts/diagrams from truncated or multi-fence JSON.
 
-    Keeps only complete chart/figure objects (valid JSON object substrings).
+    Keeps only complete chart/figure/diagram objects (valid JSON object substrings).
     """
     figures: list[Any] = []
     charts: list[Any] = []
+    diagrams: list[Any] = []
     seen_fig: set[str] = set()
     seen_cht: set[str] = set()
+    seen_dia: set[str] = set()
 
     blobs = _json_candidates(raw)
     if not blobs and (raw or "").lstrip().startswith("{"):
@@ -152,6 +155,10 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
                 if isinstance(item, dict) and str(item.get("id", "")) not in seen_cht:
                     charts.append(item)
                     seen_cht.add(str(item.get("id", "")))
+            for item in data.get("diagrams") or []:
+                if isinstance(item, dict) and str(item.get("id", "")) not in seen_dia:
+                    diagrams.append(item)
+                    seen_dia.add(str(item.get("id", "")))
             continue
 
         # Truncated root: scan every `{`; skip unclosed spans (advance by 1).
@@ -205,10 +212,13 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
             elif "prompt" in obj and oid and oid not in seen_fig:
                 figures.append(obj)
                 seen_fig.add(oid)
+            elif "mermaid" in obj and oid and oid not in seen_dia:
+                diagrams.append(obj)
+                seen_dia.add(oid)
 
-    if not figures and not charts:
+    if not figures and not charts and not diagrams:
         return None
-    return {"figures": figures, "charts": charts}
+    return {"figures": figures, "charts": charts, "diagrams": diagrams}
 
 
 def _parse_figures_list(raw_figs: Any, *, max_images: int) -> list[dict[str, Any]]:
@@ -312,7 +322,7 @@ def _align(
 
 
 def _merge_media_lists(primary: list[Any], extra: list[Any]) -> list[Any]:
-    """Union by id; prefer the entry with longer html/prompt."""
+    """Union by id; prefer the entry with longer html/prompt/mermaid."""
     by_id: dict[str, Any] = {}
     for item in list(primary or []) + list(extra or []):
         if not isinstance(item, dict):
@@ -324,8 +334,12 @@ def _merge_media_lists(primary: list[Any], extra: list[Any]) -> list[Any]:
         if prev is None:
             by_id[oid] = item
             continue
-        prev_len = len(str(prev.get("html") or prev.get("prompt") or ""))
-        new_len = len(str(item.get("html") or item.get("prompt") or ""))
+        prev_len = len(
+            str(prev.get("html") or prev.get("prompt") or prev.get("mermaid") or "")
+        )
+        new_len = len(
+            str(item.get("html") or item.get("prompt") or item.get("mermaid") or "")
+        )
         if new_len > prev_len:
             by_id[oid] = item
     return list(by_id.values())
@@ -347,22 +361,31 @@ def _load_media_payload(raw: str, json_body: str | None) -> dict[str, Any]:
         figures = _merge_media_lists(
             data.get("figures") or [], salvaged.get("figures") or []
         )
-        if charts or figures:
-            if not (data.get("charts") or data.get("figures")):
-                log.warning(
-                    "salvaged truncated JSON → %d charts, %d figures",
-                    len(charts),
-                    len(figures),
-                )
-            elif len(charts) > len(data.get("charts") or []) or len(figures) > len(
-                data.get("figures") or []
+        diagrams = _merge_media_lists(
+            data.get("diagrams") or [], salvaged.get("diagrams") or []
+        )
+        if charts or figures or diagrams:
+            if not (
+                data.get("charts") or data.get("figures") or data.get("diagrams")
             ):
                 log.warning(
-                    "merged salvage into JSON → %d charts, %d figures",
+                    "salvaged truncated JSON → %d charts, %d figures, %d diagrams",
                     len(charts),
                     len(figures),
+                    len(diagrams),
                 )
-            return {"figures": figures, "charts": charts}
+            elif (
+                len(charts) > len(data.get("charts") or [])
+                or len(figures) > len(data.get("figures") or [])
+                or len(diagrams) > len(data.get("diagrams") or [])
+            ):
+                log.warning(
+                    "merged salvage into JSON → %d charts, %d figures, %d diagrams",
+                    len(charts),
+                    len(figures),
+                    len(diagrams),
+                )
+            return {"figures": figures, "charts": charts, "diagrams": diagrams}
     return data if isinstance(data, dict) else {}
 
 
@@ -385,7 +408,14 @@ def parse_model_output(
     *,
     max_images: int,
     max_charts: int = 0,
-) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+    max_diagrams: int = 0,
+) -> tuple[
+    str,
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, str]],
+]:
     tex_body, json_body = _pick_fences(raw)
     data = _load_media_payload(raw, json_body)
 
@@ -455,16 +485,24 @@ def parse_model_output(
 
     figures: list[dict[str, Any]] = []
     charts: list[dict[str, Any]] = []
+    diagrams: list[dict[str, Any]] = []
+    diagram_drops: list[dict[str, str]] = []
     if isinstance(data, dict) and data:
         figures = _parse_figures_list(data.get("figures"), max_images=max_images)
         charts = _parse_charts_list(data.get("charts"), max_charts=max_charts)
+        diagrams, diagram_drops = parse_diagrams(
+            data.get("diagrams"), max_diagrams=max_diagrams, with_drops=True
+        )
 
-    # Id collision across figures and charts
+    # Id collision across figures, charts, and diagrams
     fig_ids = {f["id"] for f in figures}
     chart_ids = {c["id"] for c in charts}
-    clash = fig_ids & chart_ids
+    dia_ids = {d["id"] for d in diagrams}
+    clash = (fig_ids & chart_ids) | (fig_ids & dia_ids) | (chart_ids & dia_ids)
     if clash:
-        raise ParseError(f"id collision between figures and charts: {sorted(clash)}")
+        raise ParseError(
+            f"id collision between figures/charts/diagrams: {sorted(clash)}"
+        )
 
     if max_images > 0 and figures:
         if not fig_slots:
@@ -527,4 +565,9 @@ def parse_model_output(
             tex = _strip_chart_slots(tex, set())
         charts = []
 
-    return tex, figures, charts
+    # Diagrams are Liber UI-only — never TeX slots / inject.
+    if max_diagrams <= 0:
+        diagrams = []
+        diagram_drops = []
+
+    return tex, figures, charts, diagrams, diagram_drops

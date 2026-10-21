@@ -1,13 +1,6 @@
-/** Liber Atelier — advanced report settings (chat-first). */
+/** Liber Atelier — report limits + desk health (chart type/style live in edit sheet). */
 
 import { useEffect, useId, useRef } from "react";
-import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
-
-export type PaletteInfo = {
-  id: string;
-  label: string;
-  swatches: string[];
-};
 
 export type HealthSnapshot = {
   docker_ok: boolean;
@@ -21,24 +14,12 @@ export type HealthSnapshot = {
 type Props = {
   open: boolean;
   onClose: () => void;
-  docTitle: string;
-  onDocTitle: (v: string) => void;
-  chartAuto: boolean;
-  onEnableAuto: () => void;
-  types: string[];
-  catalog: string[];
-  onToggleType: (t: string) => void;
-  chartHints: string;
-  onChartHints: (v: string) => void;
-  chartPalette: string;
-  palettes: PaletteInfo[];
-  onPalette: (id: string) => void;
-  chartStyle: string;
-  onChartStyle: (v: string) => void;
   maxCharts: number;
   onMaxCharts: (n: number) => void;
   maxImages: number;
   onMaxImages: (n: number) => void;
+  maxDiagrams: number;
+  onMaxDiagrams: (n: number) => void;
   forbidCharts: boolean;
   onForbidCharts: (v: boolean) => void;
   forbidImages: boolean;
@@ -52,24 +33,12 @@ type Props = {
 export function SettingsModal({
   open,
   onClose,
-  docTitle,
-  onDocTitle,
-  chartAuto,
-  onEnableAuto,
-  types,
-  catalog,
-  onToggleType,
-  chartHints,
-  onChartHints,
-  chartPalette,
-  palettes,
-  onPalette,
-  chartStyle,
-  onChartStyle,
   maxCharts,
   onMaxCharts,
   maxImages,
   onMaxImages,
+  maxDiagrams,
+  onMaxDiagrams,
   forbidCharts,
   onForbidCharts,
   forbidImages,
@@ -128,96 +97,6 @@ export function SettingsModal({
         </header>
 
         <div className="settings-modal-body">
-          <section className="settings-block" aria-labelledby="set-doc">
-            <h3 className="settings-block-title" id="set-doc">
-              Документ
-            </h3>
-            <label className="field" htmlFor="set-doc-title">
-              Название
-            </label>
-            <input
-              id="set-doc-title"
-              type="text"
-              maxLength={200}
-              placeholder="Титул PDF/DOCX — пусто, модель придумает"
-              value={docTitle}
-              onChange={(e) => onDocTitle(e.target.value)}
-            />
-          </section>
-
-          <section className="settings-block" aria-labelledby="set-charts">
-            <h3 className="settings-block-title" id="set-charts">
-              Графики
-            </h3>
-            <label className="field">Тип</label>
-            <div className="chips">
-              <ChartTypeChip
-                typeId="auto"
-                className={`chip auto${chartAuto ? " on" : ""}`}
-                onClick={onEnableAuto}
-                disabled={forbidCharts}
-              >
-                на усмотрение модели
-              </ChartTypeChip>
-              {catalog.map((t) => (
-                <ChartTypeChip
-                  key={t}
-                  typeId={t as ChartTypeId}
-                  className={`chip${!chartAuto && types.includes(t) ? " on" : ""}`}
-                  onClick={() => onToggleType(t)}
-                  disabled={forbidCharts}
-                >
-                  {t}
-                </ChartTypeChip>
-              ))}
-            </div>
-
-            <label className="field" htmlFor="set-hints">
-              Свой тип / пожелание
-            </label>
-            <input
-              id="set-hints"
-              type="text"
-              placeholder="pie, воронка, сравнение долей…"
-              value={chartHints}
-              disabled={forbidCharts}
-              onChange={(e) => onChartHints(e.target.value)}
-            />
-
-            <label className="field">Палитра</label>
-            <div className="chips palettes">
-              {palettes.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`chip palette${chartPalette === p.id ? " on" : ""}`}
-                  disabled={forbidCharts}
-                  onClick={() => onPalette(p.id)}
-                  title={p.label}
-                >
-                  <span className="swatches" aria-hidden>
-                    {p.swatches.slice(0, 4).map((c) => (
-                      <span key={c} className="swatch" style={{ background: c }} />
-                    ))}
-                  </span>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            <label className="field" htmlFor="set-style">
-              Стиль / нюансы
-            </label>
-            <input
-              id="set-style"
-              type="text"
-              placeholder="без сетки, толще линии, легенда снизу…"
-              value={chartStyle}
-              disabled={forbidCharts}
-              onChange={(e) => onChartStyle(e.target.value)}
-            />
-          </section>
-
           <section className="settings-block" aria-labelledby="set-limits">
             <h3 className="settings-block-title" id="set-limits">
               Лимиты
@@ -251,6 +130,19 @@ export function SettingsModal({
                   onChange={(e) => onMaxImages(Number(e.target.value))}
                 />
               </div>
+              <div>
+                <label className="field" htmlFor="set-max-d">
+                  Схем ≤
+                </label>
+                <input
+                  id="set-max-d"
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={maxDiagrams}
+                  onChange={(e) => onMaxDiagrams(Number(e.target.value))}
+                />
+              </div>
             </div>
             <label className="check">
               <input
@@ -278,7 +170,10 @@ export function SettingsModal({
             </label>
           </section>
 
-          <section className="settings-block settings-health" aria-labelledby="set-health">
+          <section
+            className="settings-block settings-health"
+            aria-labelledby="set-health"
+          >
             <h3 className="settings-block-title" id="set-health">
               Статус
             </h3>
@@ -293,7 +188,9 @@ export function SettingsModal({
                 </div>
                 <div className="health-row">
                   <span>Vision</span>
-                  <span className={`val${health.vision_configured ? "" : " bad"}`}>
+                  <span
+                    className={`val${health.vision_configured ? "" : " bad"}`}
+                  >
                     {health.vision_configured ? "ok" : "нет"}
                   </span>
                 </div>
@@ -324,7 +221,11 @@ export function SettingsModal({
         </div>
 
         <footer className="settings-modal-foot">
-          <button type="button" className="settings-modal-done" onClick={onClose}>
+          <button
+            type="button"
+            className="settings-modal-done"
+            onClick={onClose}
+          >
             Готово
           </button>
         </footer>

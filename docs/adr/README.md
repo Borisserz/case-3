@@ -10,5 +10,6 @@
 | [0004](0004-office-image-api.md) | Photos via office Image API (not Kandinsky-only) | Accepted |
 | [0005](0005-tex-harden-over-perfect-model.md) | Harden TeX post-LLM instead of trusting model | Accepted |
 | [0006](0006-liber-soft-premium-ui.md) | Liber soft-premium shell (Mary + Julius) | Accepted |
+| [0007](0007-liber-ui-only-diagrams.md) | Liber UI-only Mermaid diagrams (+ PNG download) | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

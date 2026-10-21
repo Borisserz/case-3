@@ -3,6 +3,8 @@
 import { ExportMenu } from "./ExportMenu";
 import { PdfThumb } from "./PdfThumb";
 
+type DiagramChip = { id: string; title: string };
+
 type Props = {
   title: string;
   subtitle?: string;
@@ -11,7 +13,9 @@ type Props = {
   downloads?: Record<string, string>;
   pulse?: boolean;
   updated?: boolean;
+  diagrams?: DiagramChip[];
   onView: () => void;
+  onOpenDiagram?: (id: string) => void;
 };
 
 export function ArtifactCard({
@@ -22,7 +26,9 @@ export function ArtifactCard({
   downloads,
   pulse = false,
   updated = false,
+  diagrams = [],
   onView,
+  onOpenDiagram,
 }: Props) {
   return (
     <div
@@ -52,6 +58,20 @@ export function ArtifactCard({
           ) : null}
         </div>
       </button>
+      {diagrams.length > 0 && onOpenDiagram ? (
+        <div className="artifact-card-diagrams" role="group" aria-label="Схемы">
+          {diagrams.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className="artifact-card-diagram-chip"
+              onClick={() => onOpenDiagram(d.id)}
+            >
+              Схема: {d.title || d.id}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="artifact-card-actions">
         <button type="button" className="artifact-card-view" onClick={onView}>
           Смотреть

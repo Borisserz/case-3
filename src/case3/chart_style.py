@@ -271,6 +271,21 @@ def palette_public() -> list[dict[str, Any]]:
     return out
 
 
+def palette_fallback_table() -> str:
+    """D10: one markdown/prompt table sourced from ``_PALETTES`` (not hand-copied hex)."""
+    lines = [
+        "**Fallback palette hex** (Intent AUTO or unnamed → pick one; print ≈ Liber):",
+        "",
+    ]
+    for pid in ("editorial", "ocean", "sunset", "mono", "atelier"):
+        p = _PALETTES[pid]
+        accents = "/".join(str(a) for a in p["accents"][:4])
+        lines.append(
+            f"- **{pid}** ({p['label']}): ink `{p['primary']}`; accents `{accents}`"
+        )
+    return "\n".join(lines)
+
+
 def intent_palette_lines(palette_id: str, style_notes: str = "") -> list[str]:
     """Lines appended to UI Intent for chart colors / look."""
     pid = normalize_palette_id(palette_id)

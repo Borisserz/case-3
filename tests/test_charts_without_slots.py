@@ -31,7 +31,7 @@ def test_json_charts_appended_when_tex_has_no_slots() -> None:
 \end{document}
 ```
 '''
-    tex, figures, charts = parse_model_output(raw, max_images=0, max_charts=3)
+    tex, figures, charts, _dias, _drops = parse_model_output(raw, max_images=0, max_charts=3)
     assert figures == []
     assert len(charts) == 1
     assert charts[0]["id"] == "cht_01"

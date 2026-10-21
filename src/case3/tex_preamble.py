@@ -273,7 +273,8 @@ def _repair_tabular_body_rows(body: str) -> str:
         if re.search(r"&\s*$", ln.strip())
         and not re.search(r"\\\\\s*$", ln.strip())
     )
-    if amp_ends < 3:
+    # One trailing-& line is enough (2-col: ``A &\\nB \\\\``) — D12.
+    if amp_ends < 1:
         return body
 
     out: list[str] = []
@@ -633,8 +634,11 @@ def ensure_document_preamble(tex: str) -> str:
     out = repair_tabularx_row_breaks(out)
     out = harden_wide_tables(out)
     out = harden_tabularx_colcount(out)
+    out = strip_orphan_table_markup(out)
+    from case3.tex_prose import harden_prose_lists
     from case3.tex_tables import harden_table_rules
 
+    out = harden_prose_lists(out)
     return harden_table_rules(out)
 
 
@@ -645,3 +649,49 @@ def strip_orphan_slots(tex: str) -> str:
         "",
         tex,
     )
+
+
+_ORPHAN_RULE = re.compile(
+    r"^[ \t]*\\(?:toprule|midrule|bottomrule|hline)\b.*$",
+    re.M,
+)
+
+
+def strip_orphan_table_markup(tex: str) -> str:
+    """Escape bare ``&`` and drop booktabs/hline rules outside tabular bodies.
+
+    Prevents Misplaced ``&`` / ``\\noalign`` when the model leaks table chrome
+    into prose (D12 / home_doc_audit T_line).
+    """
+    if not tex:
+        return tex
+    parts: list[str] = []
+    pos = 0
+    depth = 0
+    for m in re.finditer(
+        r"\\begin\{(tabularx?\*?|longtable\*?)\}|\\end\{(tabularx?\*?|longtable\*?)\}",
+        tex,
+        flags=re.I,
+    ):
+        chunk = tex[pos : m.start()]
+        if depth == 0:
+            chunk = _sanitize_orphan_chunk(chunk)
+        parts.append(chunk)
+        token = m.group(0)
+        parts.append(token)
+        if token.lower().startswith(r"\begin"):
+            depth += 1
+        else:
+            depth = max(0, depth - 1)
+        pos = m.end()
+    tail = tex[pos:]
+    if depth == 0:
+        tail = _sanitize_orphan_chunk(tail)
+    parts.append(tail)
+    return "".join(parts)
+
+
+def _sanitize_orphan_chunk(chunk: str) -> str:
+    chunk = _ORPHAN_RULE.sub("", chunk)
+    # Escape bare & only (keep already-escaped \&).
+    return re.sub(r"(?<!\\)&", r"\\&", chunk)

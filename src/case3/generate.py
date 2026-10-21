@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from case3.chart_html import CHART_TYPES
-from case3.chart_style import palette_from_intent
+from case3.chart_style import palette_fallback_table, palette_from_intent
 from case3.chart_types_coerce import (
     coerce_chart_types,
     ensure_all_charts_match_types,
@@ -150,13 +150,16 @@ def max_images_from_env() -> int:
     return _img_max()
 
 
-def load_system_prompt(*, max_images: int, max_charts: int) -> str:
+def load_system_prompt(
+    *, max_images: int, max_charts: int, max_diagrams: int = 0
+) -> str:
     path = _repo_root() / "prompt" / "system_tex.md"
     text = path.read_text(encoding="utf-8")
     return (
-        text.replace("{{MAX_IMAGES}}", str(max_images)).replace(
-            "{{MAX_CHARTS}}", str(max_charts)
-        )
+        text.replace("{{MAX_IMAGES}}", str(max_images))
+        .replace("{{MAX_CHARTS}}", str(max_charts))
+        .replace("{{MAX_DIAGRAMS}}", str(max_diagrams))
+        .replace("{{PALETTE_TABLE}}", palette_fallback_table())
     )
 
 
@@ -180,6 +183,7 @@ def build_user_prompt(
     source: str,
     max_images: int,
     max_charts: int,
+    max_diagrams: int = 0,
 ) -> str:
     safe = neutralize_source(source.strip())
     lines = [
@@ -189,9 +193,12 @@ def build_user_prompt(
         "## Limits",
         f"- max_images (photo slots via Image API /generate): {max_images}",
         f"- CASE3_MAX_CHARTS (HTML→PNG budget): {max_charts}",
-        "- Output order (mandatory): ```json FIRST (figures+charts), then ```latex full document.",
+        f"- CASE3_MAX_DIAGRAMS (Mermaid Liber UI-only): {max_diagrams}",
+        "- Output order (mandatory): ```json FIRST (figures+charts+diagrams), then ```latex full document.",
         "- Finish BOTH fences — never stop mid-table. Prefer short prose; ≤2 charts if Source is long.",
         "- If max_charts≥1 and Source has numbers → include charts with variety of types.",
+        "- If max_diagrams≥1 → DEFAULT-ON: emit ≥1 Mermaid diagram whenever Source has steps/roles/branches/structure/≥3 sections (JSON only, no TeX slots). Skip only if Intent says «без схем» or Source is pure numbers with no structure.",
+        "- Mermaid: ASCII node ids; RU labels in []; first line matches type (flowchart/sequenceDiagram/…).",
         "- Chart colors: follow Intent palette hexes; captions RU; photo prompts EN (sharp, high quality).",
         "- Page: A4 portrait; wide tables → tabularx{\\textwidth}{…} (no landscape overflow).",
         "- Never write case-3/case3 in \\title/\\author/body; topical title; \\author{} if unknown.",
@@ -636,11 +643,14 @@ def generate_document(
     dry_run: bool = False,
     max_images: int | None = None,
     max_charts: int | None = None,
-) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Returns (tex_path, figures, charts).
+    max_diagrams: int | None = None,
+) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Returns (tex_path, figures, charts, diagrams).
 
-    max_images / max_charts: per-request overrides; None → env defaults.
+    max_images / max_charts / max_diagrams: per-request overrides; None → env defaults.
     """
+    from case3.diagrams import max_diagrams_from_env
+
     text_path = resolve_text_file(source)
     source_text = text_path.read_text(encoding="utf-8")
     stem = text_path.stem
@@ -655,24 +665,30 @@ def generate_document(
         max_charts = max_charts_from_env()
     else:
         max_charts = max(0, int(max_charts))
+    if max_diagrams is None:
+        max_diagrams = max_diagrams_from_env()
+    else:
+        max_diagrams = max(0, min(int(max_diagrams), 3))
 
     gold_paths = select_gold(gold_dir, intent_text, max_items=3, max_images=max_images)
-    system = load_system_prompt(max_images=max_images, max_charts=max_charts) + format_gold_appendix(
-        gold_paths
-    )
+    system = load_system_prompt(
+        max_images=max_images, max_charts=max_charts, max_diagrams=max_diagrams
+    ) + format_gold_appendix(gold_paths)
     user = build_user_prompt(
         intent=intent_text,
         source=source_text,
         max_images=max_images,
         max_charts=max_charts,
+        max_diagrams=max_diagrams,
     )
     log.info(
-        "source=%s intent_len=%d gold=%s max_images=%d max_charts=%d",
+        "source=%s intent_len=%d gold=%s max_images=%d max_charts=%d max_diagrams=%d",
         text_path.name,
         len(intent_text),
         [p.name for p in gold_paths],
         max_images,
         max_charts,
+        max_diagrams,
     )
 
     out_tex.parent.mkdir(parents=True, exist_ok=True)
@@ -686,13 +702,13 @@ def generate_document(
         content = "\n\n".join(lines) if lines else "(пусто)"
         body = stub.read_text(encoding="utf-8").replace("%%CONTENT%%", content)
         out_tex.write_text(body, encoding="utf-8")
-        payload = {"figures": [], "charts": []}
+        payload = {"figures": [], "charts": [], "diagrams": []}
         (out_tex.parent / "figures.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         log.info("dry-run wrote %s", out_tex)
-        return out_tex, [], []
+        return out_tex, [], [], []
 
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
@@ -725,8 +741,11 @@ def generate_document(
         )
 
     try:
-        tex, figures, charts = parse_model_output(
-            raw, max_images=max_images, max_charts=max_charts
+        tex, figures, charts, diagrams, diagram_drops = parse_model_output(
+            raw,
+            max_images=max_images,
+            max_charts=max_charts,
+            max_diagrams=max_diagrams,
         )
     except Exception:
         log.exception(
@@ -778,21 +797,29 @@ def generate_document(
         tex = ensure_document_preamble(tex)
 
     out_tex.write_text(tex, encoding="utf-8")
+    fj_payload: dict[str, Any] = {
+        "figures": figures,
+        "charts": charts,
+        "diagrams": diagrams,
+    }
+    if diagram_drops:
+        fj_payload["diagrams_dropped"] = diagram_drops
     (out_tex.parent / "figures.json").write_text(
-        json.dumps({"figures": figures, "charts": charts}, ensure_ascii=False, indent=2)
-        + "\n",
+        json.dumps(fj_payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     log.info(
-        "wrote %s (%d chars, %d figures, %d charts)",
+        "wrote %s (%d chars, %d figures, %d charts, %d diagrams, %d diagram drops)",
         out_tex,
         len(tex),
         len(figures),
         len(charts),
+        len(diagrams),
+        len(diagram_drops),
     )
-    return out_tex, figures, charts
+    return out_tex, figures, charts, diagrams
 
 
 def generate_tex(*args, **kwargs):
-    path, _figs, _charts = generate_document(*args, **kwargs)
+    path, _figs, _charts, _dias = generate_document(*args, **kwargs)
     return path

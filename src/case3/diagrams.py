@@ -1,0 +1,163 @@
+"""Sanitize / parse Mermaid diagrams (Liber UI-only; never TeX-injected)."""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from typing import Any, Literal, overload
+
+log = logging.getLogger("case3.diagrams")
+
+
+def max_diagrams_from_env() -> int:
+    """CASE3_MAX_DIAGRAMS; default 2; clamp 0–3."""
+    raw = (os.environ.get("CASE3_MAX_DIAGRAMS") or "2").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 2
+    return max(0, min(n, 3))
+
+
+DIAGRAM_TYPES = frozenset(
+    {"flowchart", "sequence", "mindmap", "timeline", "stateDiagram"}
+)
+
+# First-line keywords allowed for each diagrams[].type (after normalize).
+_TYPE_HEADERS: dict[str, frozenset[str]] = {
+    "flowchart": frozenset({"flowchart", "graph"}),
+    "sequence": frozenset({"sequencediagram", "sequence"}),
+    "mindmap": frozenset({"mindmap"}),
+    "timeline": frozenset({"timeline"}),
+    "stateDiagram": frozenset({"statediagram-v2", "statediagram", "state"}),
+}
+
+_ID_OK = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_FENCE = re.compile(r"^```(?:mermaid)?\s*\n([\s\S]*?)\n?```\s*$", re.I)
+_MAX_BODY = 6000
+_MAX_TITLE = 80
+_FIRST_TOKEN = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
+
+
+class DiagramError(ValueError):
+    """Invalid Mermaid diagram payload."""
+
+
+def sanitize_mermaid(text: str) -> str:
+    """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart."""
+    raw = (text or "").strip()
+    if not raw:
+        raise DiagramError("empty mermaid")
+    m = _FENCE.match(raw)
+    if m:
+        raw = m.group(1).strip()
+    # Also strip a leading ```mermaid line if model left an open fence fragment
+    if raw.lower().startswith("```mermaid"):
+        raw = re.sub(r"^```mermaid\s*\n?", "", raw, count=1, flags=re.I).strip()
+        if raw.endswith("```"):
+            raw = raw[: -3].rstrip()
+    if not raw:
+        raise DiagramError("empty mermaid after fence strip")
+    if len(raw) > _MAX_BODY:
+        raise DiagramError(f"mermaid too long ({len(raw)} > {_MAX_BODY})")
+    # Mermaid accepts `graph` as alias of flowchart — normalize for Liber + type gate.
+    raw = re.sub(r"(?i)^graph(\s+)", r"flowchart\1", raw, count=1)
+    return raw
+
+
+def _first_keyword(mermaid: str) -> str:
+    line = (mermaid or "").lstrip().splitlines()[0] if mermaid else ""
+    m = _FIRST_TOKEN.match(line.strip())
+    return (m.group(1) if m else "").lower()
+
+
+def _normalize_type(dtype: str) -> str:
+    t = (dtype or "").strip()
+    aliases = {
+        "state": "stateDiagram",
+        "statediagram": "stateDiagram",
+        "statediagram-v2": "stateDiagram",
+        "sequencediagram": "sequence",
+        "flow": "flowchart",
+        "graph": "flowchart",
+    }
+    key = t.lower()
+    return aliases.get(key, t)
+
+
+def header_matches_type(dtype: str, mermaid: str) -> bool:
+    """True when first Mermaid keyword matches diagrams[].type whitelist."""
+    kw = _first_keyword(mermaid)
+    allowed = _TYPE_HEADERS.get(dtype)
+    if not allowed:
+        return False
+    return kw in allowed
+
+
+@overload
+def parse_diagrams(
+    raw: Any, *, max_diagrams: int, with_drops: Literal[False] = False
+) -> list[dict[str, Any]]: ...
+
+
+@overload
+def parse_diagrams(
+    raw: Any, *, max_diagrams: int, with_drops: Literal[True]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]: ...
+
+
+def parse_diagrams(
+    raw: Any, *, max_diagrams: int, with_drops: bool = False
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Validate LLM diagrams[]; drop bad entries (soft-fail).
+
+    When with_drops=True, also return [{id, reason}, ...] for meta/UI later.
+    """
+    out: list[dict[str, Any]] = []
+    drops: list[dict[str, str]] = []
+    if not isinstance(raw, list) or max_diagrams <= 0:
+        return (out, drops) if with_drops else out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        did = str(item.get("id", "")).strip()
+        dtype = _normalize_type(str(item.get("type", "")).strip())
+        title = str(item.get("title", "") or item.get("caption", "") or "").strip()
+        mermaid_raw = str(item.get("mermaid", "")).strip()
+        if not _ID_OK.match(did):
+            drops.append({"id": did or "?", "reason": "bad id"})
+            continue
+        if dtype not in DIAGRAM_TYPES:
+            drops.append({"id": did, "reason": f"unknown type {dtype!r}"})
+            continue
+        if not mermaid_raw:
+            drops.append({"id": did, "reason": "empty mermaid"})
+            continue
+        try:
+            mermaid = sanitize_mermaid(mermaid_raw)
+        except DiagramError as exc:
+            log.warning("drop diagram %s: %s", did, exc)
+            drops.append({"id": did, "reason": str(exc)})
+            continue
+        if not header_matches_type(dtype, mermaid):
+            reason = (
+                f"type/header mismatch: type={dtype} "
+                f"first={_first_keyword(mermaid)!r}"
+            )
+            log.warning("drop diagram %s: %s", did, reason)
+            drops.append({"id": did, "reason": reason})
+            continue
+        if not title:
+            title = did
+        out.append(
+            {
+                "id": did,
+                "title": title[:_MAX_TITLE],
+                "type": dtype,
+                "mermaid": mermaid,
+            }
+        )
+        if len(out) >= max_diagrams:
+            break
+    return (out, drops) if with_drops else out

@@ -67,6 +67,11 @@ def test_polish_charts_applies_kpi_palette() -> None:
     html = out[0]["html"]
     assert "--kpi-value" in html or "case3-palette" in html
     assert "#E85D04" not in html  # no hardcoded frame orange in fragment
+    assert out[0].get("palette") == "atelier"
+    ocean = polish_charts(charts, palette_id="ocean")[0]["html"]
+    assert _PALETTES["ocean"]["primary"] in ocean or any(
+        a in ocean for a in _PALETTES["ocean"]["accents"][:2]
+    )
 
 
 def test_chart_frame_has_premium_css_hooks() -> None:
