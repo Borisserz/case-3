@@ -24,8 +24,11 @@ type Props = {
   deckStyle: DeckStyle;
   deckPacks?: DeckThemePackInfo[];
   busy?: boolean;
-  /** Apply pack + structure only — never dump DNA into chat. */
-  onApply: (next: DeckStyle, meta: { title: string; arc: string }) => void;
+  /** Apply pack + structure; parent fills composer with starterPrompt. */
+  onApply: (
+    next: DeckStyle,
+    meta: { title: string; arc: string; starterPrompt: string },
+  ) => void;
 };
 
 function withStructure(style: DeckStyle, structureId: string): DeckStyle {
@@ -316,7 +319,11 @@ export function DeckTemplateGallery({
         applyPackToStyle(preview.pack, deckStyle),
         preview.card.structureId,
       ),
-      { title: preview.card.title, arc: preview.card.arc },
+      {
+        title: preview.card.title,
+        arc: preview.card.arc,
+        starterPrompt: preview.card.starterPrompt,
+      },
     );
     setPreview(null);
   }

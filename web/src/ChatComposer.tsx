@@ -30,10 +30,10 @@ type Props = {
   showPackPresets: boolean;
   deckStyle: DeckStyle;
   deckPacks?: DeckThemePackInfo[];
-  /** Apply pack + structure only (no prompt dump). */
+  /** Apply pack + structure and fill composer with starter prompt (Julius). */
   onUseDeckTemplate?: (
     next: DeckStyle,
-    meta: { title: string; arc: string },
+    meta: { title: string; arc: string; starterPrompt: string },
   ) => void;
   /** Transient status after template apply. */
   deckApplyHint?: string | null;
@@ -92,8 +92,6 @@ export function ChatComposer({
           : "Опишите отчёт или вставьте Source…";
 
   const showDeckSettings = workMode === "presentation";
-  const needSource =
-    workMode === "presentation" && !file && !sourceDraft?.text;
 
   useEffect(() => {
     if (!showPackPresets) return;
@@ -209,11 +207,7 @@ export function ChatComposer({
                 ? "Собрать презентацию"
                 : "Собрать отчёт"
           }
-          title={
-            needSource && !canSend
-              ? "Сначала Source"
-              : "Собрать"
-          }
+          title="Собрать"
         >
           {busy ? "…" : <IconSend size={16} />}
         </button>

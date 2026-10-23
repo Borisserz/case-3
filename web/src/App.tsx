@@ -62,6 +62,7 @@ import {
   type DeckThemePackInfo,
   FALLBACK_DECK_PACKS,
 } from "./deckStyle";
+import { starterPromptForStructure } from "./deckTemplates";
 import { SettingsModal } from "./SettingsModal";
 import { Sidebar, type HistoryItem } from "./Sidebar";
 import { loadRailWidth } from "./railWidth";
@@ -736,12 +737,9 @@ export default function App() {
     }
     const hasSource = Boolean(file) || Boolean(sourceDraft?.text);
     const chatTrim = chat.trim();
-    // Presentation: need Source (file/paste) or a real brief — not empty Enter after template.
-    if (workMode === "presentation") {
-      return hasSource || chatTrim.length >= 48;
-    }
+    // Any scale brief is fine — do not gate presentation/diagram on Source length.
     return hasSource || chatTrim.length > 0;
-  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft, workMode]);
+  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft]);
 
   const capturePastedSource = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -821,14 +819,6 @@ export default function App() {
     const chatTrim = chat.trim();
     const draftSnap = sourceDraft;
     const hasSource = Boolean(file) || Boolean(draftSnap?.text);
-    if (workMode === "presentation" && !hasSource && chatTrim.length < 48) {
-      setDeckApplyHint(
-        "Добавьте Source (.txt/.md или длинную вставку) — шаблон уже выбран.",
-      );
-      setToast("Нужен Source для презентации");
-      window.setTimeout(() => setToast(null), 2800);
-      return;
-    }
     const intentText =
       photoMode === "edit"
         ? chatTrim
@@ -1366,12 +1356,20 @@ export default function App() {
                   onUseDeckTemplate={(next, meta) => {
                     setDeckStyle(next);
                     saveDeckStyle(next);
-                    setDeckApplyHint(
-                      `Шаблон «${meta.title}» · ${next.themePack} · не отправлено — добавьте Source`,
-                    );
-                    setToast(`Взяли шаблон «${meta.title}»`);
+                    const prompt =
+                      meta.starterPrompt ||
+                      starterPromptForStructure(next.structureId);
+                    setChat(prompt);
+                    setDeckApplyHint(null);
+                    setToast(`Шаблон «${meta.title}» — правьте текст и отправьте`);
                     window.setTimeout(() => setToast(null), 2800);
-                    window.setTimeout(() => chatRef.current?.focus(), 0);
+                    window.setTimeout(() => {
+                      const el = chatRef.current;
+                      if (!el) return;
+                      el.focus();
+                      el.style.height = "auto";
+                      el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+                    }, 0);
                   }}
                   onOpenDeckStyle={() => setDeckStyleOpen(true)}
                   deckStyleOpen={deckStyleOpen}
