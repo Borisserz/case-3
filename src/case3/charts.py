@@ -18,8 +18,10 @@ _T = TypeVar("_T")
 
 
 def _prefer_stable_playwright_browsers() -> None:
-    """Cursor sandbox temp browsers often miss the right CPU arch → SEGV / blank PNG."""
-    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    """Prefer real OS browser cache over Cursor sandbox temp (often incomplete → launch fail)."""
+    current = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or ""
+    sandboxish = "cursor-sandbox-cache" in current or "/var/folders/" in current
+    if current and not sandboxish:
         return
     candidates = [
         Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS

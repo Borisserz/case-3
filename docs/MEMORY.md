@@ -17,6 +17,7 @@ L3  Долгосрочная память  docs/adr · .agents/knowledge · docs
 | [`AGENTS.md`](../AGENTS.md) | Контракт для агента: стек, запреты, куда смотреть |
 | [`.cursor/rules/case3-memory.mdc`](../.cursor/rules/case3-memory.mdc) | Always-on: «сначала MEMORY» |
 | [`README.md`](../README.md) | Запуск Windows / Qwen / Image API |
+| [`docs/knowledge/windows-final-run.md`](knowledge/windows-final-run.md) | Win readiness + 3 промпта финал-прогона |
 | Текущий чат | Задача «сейчас»; не считается источником истины без коммита в L3 |
 
 **Правило:** если решение переживает один чат — запиши в ADR или KI, не оставляй только в диалоге.

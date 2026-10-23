@@ -1,4 +1,4 @@
-/** Collapsible «Размышления» — pipeline phrases inside the bot bubble. */
+/** Collapsible step timeline — Julius “Running steps” DNA, Liber copy. */
 
 import { useEffect, useState } from "react";
 import type { ThinkingLine } from "./pipelinePhrases";
@@ -7,13 +7,20 @@ type Props = {
   lines: ThinkingLine[];
   /** While true — prefer expanded; when false — start collapsed. */
   live?: boolean;
+  /** Override live title (e.g. deck build). */
+  liveLabel?: string;
   elapsedSec?: number;
   className?: string;
 };
 
+function stepWord(n: number): string {
+  return n === 1 ? "шаг" : n < 5 ? "шага" : "шагов";
+}
+
 export function ThinkingFold({
   lines,
   live = false,
+  liveLabel,
   elapsedSec,
   className = "",
 }: Props) {
@@ -25,6 +32,11 @@ export function ThinkingFold({
     setOpen(live);
   }, [live]);
 
+  // New phrases while live → keep fold open (user may have collapsed mid-run)
+  useEffect(() => {
+    if (live && lines.length) setOpen(true);
+  }, [live, lines.length]);
+
   useEffect(() => {
     if (!live) return;
     setTick(0);
@@ -35,14 +47,15 @@ export function ThinkingFold({
   if (!lines.length) return null;
 
   const n = lines.length;
-  const shownSec =
-    typeof elapsedSec === "number" && elapsedSec >= 0
+  // Live: prefer local 1s tick — parent elapsedSec only updates on stage churn.
+  const shownSec = live
+    ? tick
+    : typeof elapsedSec === "number" && elapsedSec >= 0
       ? elapsedSec
-      : live
-        ? tick
-        : undefined;
+      : undefined;
   const sec =
     typeof shownSec === "number" ? ` · ${shownSec} сек` : "";
+  const title = live ? liveLabel || "Выполняется" : "Шаги";
 
   return (
     <div
@@ -57,9 +70,9 @@ export function ThinkingFold({
         <span className="thinking-fold-chevron" aria-hidden>
           {open ? "▾" : "▸"}
         </span>
-        <span className="thinking-fold-title">Размышления</span>
+        <span className="thinking-fold-title">{title}</span>
         <span className="thinking-fold-meta">
-          {n} {n === 1 ? "шаг" : n < 5 ? "шага" : "шагов"}
+          {n} {stepWord(n)}
           {sec}
         </span>
         {live ? (

@@ -9,7 +9,6 @@ import type { ThinkingLine } from "./pipelinePhrases";
 import type { Msg, RunResult, SourceDraft } from "./liberTypes";
 import {
   appendBotThinking,
-  reportTitle,
   stageLabel,
 } from "./liberRunHelpers";
 
@@ -95,7 +94,7 @@ export function useLiberDevPreviews({
         id,
         role: "bot",
         text:
-          "Собрал демо-отчёт: структура, таблица и график по числам из Source.\n\nПодробности — в полном документе справа.",
+          "Собрал демо-отчёт: структура, таблица и график по числам из Source.\n\nОткройте карточку ниже — полный документ в панели.",
         result,
       },
     ]);
@@ -104,13 +103,139 @@ export function useLiberDevPreviews({
       text: "# Source\n\nДемонстрационный файл для вкладки Source.\n",
       fileName: "northstar_demo.md",
     });
-    setActiveArtifact({
-      kind: "report",
-      msgId: id,
-      tab: "preview",
-      title: reportTitle(result),
-    });
+    // Julius QA: cards stay in chat; rail opens only on «Открыть»
   }, [setMsgs, setSourceDraft, setActiveArtifact]);
+
+  // Visual QA: http://127.0.0.1:5173/?preview=deck-busy — live ThinkingFold + DeckBuildCard
+  useEffect(() => {
+    if (!/preview=deck-busy/.test(window.location.search)) return;
+    const id = "preview-deck-busy";
+    const stages = [
+      "slides_queued",
+      "slides_llm",
+      "slides_diagrams",
+      "slides_render",
+      "slides_pptx",
+    ] as const;
+    const stageToSlides = (k: string) => k.replace(/^slides_/, "");
+    let i = 0;
+    let thinking: ThinkingLine[] = [];
+    let thinkingStartedAt = Date.now();
+    let thinkingStageKey: string | undefined;
+    let thinkingStageAt = Date.now();
+    const tick = () => {
+      const key = stages[i % stages.length];
+      const slidesStage = stageToSlides(key);
+      const draft = appendBotThinking(
+        {
+          id,
+          role: "bot",
+          text: "Собираю презентацию…",
+          pending: true,
+          pendingStage: key,
+          thinkingMode: "presentation",
+          thinking,
+          thinkingStartedAt,
+          thinkingStageKey,
+          thinkingStageAt,
+          result: {
+            run_id: "preview-deck-busy",
+            status: "ok",
+            downloads: {
+              pdf: "/api/runs/source_20261021T082640Z/files/source.pdf",
+            },
+            preview: {
+              title: "Marketing QBR",
+              blocks: [
+                { type: "heading", level: 1, text: "Quarterly business review" },
+              ],
+            },
+            charts_ok: 0,
+            figures_ok: 0,
+            charts_planned: [],
+            figures_planned: [],
+            warnings: [],
+            slides_status: "running",
+            slides_stage: slidesStage,
+          },
+        },
+        key,
+        null,
+      );
+      thinking = draft.thinking || [];
+      thinkingStartedAt = draft.thinkingStartedAt || thinkingStartedAt;
+      thinkingStageKey = draft.thinkingStageKey;
+      thinkingStageAt = draft.thinkingStageAt || thinkingStageAt;
+      setBusy(true);
+      setMsgs([
+        {
+          id: "preview-deck-busy-user",
+          role: "user",
+          text: "Сделай презентацию по отчёту.",
+        },
+        draft,
+      ]);
+      i += 1;
+    };
+    tick();
+    const t = window.setInterval(tick, 1600);
+    return () => {
+      window.clearInterval(t);
+      setBusy(false);
+    };
+  }, [setMsgs, setBusy]);
+
+  // Visual QA: http://127.0.0.1:5173/?preview=deck — PPTX + PDF twin stack
+  useEffect(() => {
+    if (!/preview=deck(?:-busy)?/.test(window.location.search)) return;
+    if (/preview=deck-busy/.test(window.location.search)) return;
+    const id = "preview-deck";
+    const runId = "source_20261021T082640Z";
+    const result: RunResult = {
+      run_id: runId,
+      status: "ok",
+      output_mode: "presentation",
+      downloads: {
+        pdf: `/api/runs/${runId}/files/source.pdf`,
+        pptx: `/api/runs/${runId}/files/deck.pptx`,
+        deck_pdf: `/api/runs/${runId}/files/deck.pdf`,
+      },
+      preview: {
+        title: "Marketing QBR",
+        blocks: [
+          { type: "heading", level: 1, text: "Quarterly business review" },
+          {
+            type: "paragraph",
+            text: "Демо стека Julius: PPTX + PDF twin в чате.",
+          },
+        ],
+      },
+      charts_ok: 0,
+      figures_ok: 0,
+      charts_planned: [],
+      figures_planned: [],
+      warnings: [],
+      slides_status: "ok",
+      slide_pngs: [
+        `/api/runs/${runId}/figures/cht_01.png`,
+        `/api/runs/${runId}/figures/cht_01.png`,
+        `/api/runs/${runId}/figures/cht_01.png`,
+      ],
+    };
+    setMsgs([
+      {
+        id: "preview-deck-user",
+        role: "user",
+        text: "Собери презентацию QBR: два слайда, спокойная палитра.",
+      },
+      {
+        id,
+        role: "bot",
+        text: "Готово — презентация и PDF twin. Откройте карточку, чтобы править слайды.",
+        result,
+      },
+    ]);
+  }, [setMsgs]);
 
   // Visual QA: http://127.0.0.1:5173/?preview=flow
   useEffect(() => {

@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   formatRunStatusError,
+  provisionalSessionTitle,
   reportReadyText,
+  reportTitle,
   stageLabel,
 } from "./liberRunHelpers";
 
@@ -14,6 +16,12 @@ describe("liberRunHelpers", () => {
     assert.equal(stageLabel("latex"), "Собираю PDF…");
   });
 
+  it("stageLabel scales by thinking mode", () => {
+    assert.match(stageLabel("llm", null, "diagram"), /схем/i);
+    assert.match(stageLabel("llm", null, "presentation"), /слайд/i);
+    assert.match(stageLabel("slides_render", null, "presentation"), /twin|превью/i);
+  });
+
   it("reportReadyText prefers chat_summary", () => {
     assert.equal(
       reportReadyText({ chat_summary: "  Итог  " } as never, "stream"),
@@ -21,6 +29,26 @@ describe("liberRunHelpers", () => {
     );
     assert.equal(reportReadyText(undefined, " streamed "), "streamed");
     assert.equal(reportReadyText(), "Отчёт готов");
+  });
+
+  it("reportTitle prefers preview.title", () => {
+    assert.equal(
+      reportTitle({
+        run_id: "r1",
+        preview: { title: "  Board Update  " },
+      } as never),
+      "Board Update",
+    );
+    assert.equal(
+      reportTitle({ run_id: "r2", output_mode: "diagram" } as never),
+      "Схема · r2",
+    );
+  });
+
+  it("provisionalSessionTitle by mode", () => {
+    assert.equal(provisionalSessionTitle("report"), "Новый отчёт");
+    assert.equal(provisionalSessionTitle("diagram"), "Новая схема");
+    assert.equal(provisionalSessionTitle("presentation"), "Новая презентация");
   });
 
   it("formatRunStatusError includes chart + TeX tail", () => {

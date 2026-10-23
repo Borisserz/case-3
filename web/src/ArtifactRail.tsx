@@ -146,16 +146,13 @@ export function ArtifactRail({
   const hasPdf = Boolean(report?.downloads?.pdf);
   const hasDiagrams = diagrams.length > 0;
   const slidesStatus = isReport ? report?.slidesStatus || null : null;
+  /* Show tab only when deck exists or failed — never open rail mid-build. */
   const hasPresentationTab =
     isReport &&
     Boolean(
       slidesStatus === "ok" ||
-        slidesStatus === "running" ||
-        slidesStatus === "queued" ||
         slidesStatus === "error" ||
-        makingPresentation ||
-        (report?.slidePngs && report.slidePngs.length > 0) ||
-        onMakePresentation,
+        (report?.slidePngs && report.slidePngs.length > 0),
     );
   const hasSource = Boolean(
     (sourceText && sourceText.length > 0) ||

@@ -1,5 +1,7 @@
 # Ops — Windows desk
 
+Финальный прогон (3 запроса + readiness): [`windows-final-run.md`](windows-final-run.md).
+
 ## First install
 
 1. Docker Desktop running  

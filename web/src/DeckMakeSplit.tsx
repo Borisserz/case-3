@@ -3,6 +3,8 @@
 type Props = {
   busy?: boolean;
   ready?: boolean;
+  /** Outline style under Julius in-chat cards (don't compete with preview). */
+  quiet?: boolean;
   onMake: () => void;
   onOpen?: () => void;
   onStyle?: () => void;
@@ -11,10 +13,15 @@ type Props = {
 export function DeckMakeSplit({
   busy = false,
   ready = false,
+  quiet = false,
   onMake,
   onOpen,
   onStyle,
 }: Props) {
+  const splitClass = quiet ? "deck-make-split is-quiet" : "deck-make-split";
+  const primaryClass = quiet
+    ? "artifact-card-view deck-make-primary is-ghost"
+    : "artifact-card-view deck-make-primary is-accent";
   const gear = onStyle ? (
     <button
       type="button"
@@ -29,12 +36,8 @@ export function DeckMakeSplit({
   ) : null;
   if (ready && onOpen) {
     return (
-      <div className="deck-make-split">
-        <button
-          type="button"
-          className="artifact-card-view deck-make-primary is-accent"
-          onClick={onOpen}
-        >
+      <div className={splitClass}>
+        <button type="button" className={primaryClass} onClick={onOpen}>
           Презентация
         </button>
         {gear}
@@ -42,10 +45,10 @@ export function DeckMakeSplit({
     );
   }
   return (
-    <div className="deck-make-split">
+    <div className={splitClass}>
       <button
         type="button"
-        className="artifact-card-view deck-make-primary is-accent"
+        className={primaryClass}
         onClick={onMake}
         disabled={busy}
       >

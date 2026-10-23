@@ -151,11 +151,14 @@ def _content(data: Any) -> tuple[str, str]:
         if _has_tex_signal(blob):
             return blob.strip(), finish
 
+    hint = (
+        "Проверь VISION_API_BASE_URL / модель; VISION_REASONING=off; "
+        "на :free при length→empty смени модель "
+        "(например google/gemini-2.0-flash-exp:free) и перезапусти API"
+    )
     raise LLMError(
         "empty response from Vision API "
-        f"(finish_reason={finish!r}). "
-        "Проверь VISION_API_BASE_URL / модель; "
-        "в .env попробуй VISION_REASONING=off и перезапусти api.cmd"
+        f"(finish_reason={finish!r}). {hint}"
     )
 
 
@@ -194,16 +197,19 @@ def build_body(
         body["stream"] = True
     host = (base_url or "").lower()
     openrouter = "openrouter.ai" in host
+    model_l = (model or "").lower()
     if openrouter:
-        # MiniMax Flash etc.: thinking is mandatory — cannot send effort "none".
-        # VISION_REASONING=off → cheapest effort + hide reasoning from content.
-        effort = "low" if reasoning == "off" else reasoning
-        if effort not in ("low", "medium", "high", "xhigh", "max", "minimal"):
-            effort = "low"
-        body["reasoning"] = {
-            "effort": effort,
-            "exclude": reasoning == "off",
-        }
+        # MiniMax Flash: thinking object is mandatory — low + exclude when off.
+        # Nemotron / most free models: sending reasoning still burns max_tokens into
+        # hidden thought → finish_reason=length with empty content. Omit when off.
+        if reasoning == "off":
+            if "minimax" in model_l:
+                body["reasoning"] = {"effort": "low", "exclude": True}
+        else:
+            effort = reasoning
+            if effort not in ("low", "medium", "high", "xhigh", "max", "minimal"):
+                effort = "low"
+            body["reasoning"] = {"effort": effort, "exclude": False}
     else:
         # Local Qwen / vLLM-style thinking switch.
         body["chat_template_kwargs"] = thinking

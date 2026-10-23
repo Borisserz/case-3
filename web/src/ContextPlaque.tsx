@@ -1,24 +1,69 @@
-/** Compact source / long-intent chip (composer + sent request). */
+/** Compact source chip — composer + sent user bubble. */
+
+import { IconSourceDoc } from "./icons";
+
+export type SourcePlaqueKind = "md" | "txt" | "paste";
 
 type Props = {
   title: string;
   subtitle?: string;
+  /** Original filename when known — drives MD/TXT badge. */
+  fileName?: string;
   onOpen: () => void;
-  /** Composer only — omit in chat history (attached doc). */
+  /** Composer only — omit in chat history. */
   onDismiss?: () => void;
   disabled?: boolean;
 };
 
+export function resolveSourceKind(
+  fileName?: string,
+  title?: string,
+): SourcePlaqueKind {
+  const name = (fileName || title || "").trim();
+  if (/\.(md|markdown)$/i.test(name)) return "md";
+  if (/\.txt$/i.test(name)) return "txt";
+  if (
+    !fileName &&
+    (/^текст(\s+запроса)?$/i.test(name) || name === "Текст" || name === "Текст запроса")
+  ) {
+    return "paste";
+  }
+  if (fileName) return "txt";
+  return "paste";
+}
+
+function kindLabel(kind: SourcePlaqueKind): string {
+  if (kind === "md") return "MD";
+  if (kind === "txt") return "TXT";
+  return "Текст";
+}
+
+function displayTitle(title: string, kind: SourcePlaqueKind): string {
+  if (kind === "paste" && /^текст(\s+запроса)?$/i.test(title.trim())) {
+    return "Вставленный текст";
+  }
+  return title;
+}
+
 export function ContextPlaque({
   title,
   subtitle,
+  fileName,
   onOpen,
   onDismiss,
   disabled = false,
 }: Props) {
-  const tip = subtitle ? `${title} · ${subtitle}` : title;
+  const kind = resolveSourceKind(fileName, title);
+  const shown = displayTitle(title, kind);
+  const badge = kindLabel(kind);
+  const tip = subtitle ? `${shown} · ${subtitle}` : shown;
+
   return (
-    <div className="context-plaque" role="region" aria-label="Контекст источника">
+    <div
+      className={`context-plaque is-${kind}`}
+      role="region"
+      aria-label={`Источник: ${shown}`}
+    >
       <button
         type="button"
         className={`context-plaque-main${onDismiss ? "" : " is-solo"}`}
@@ -26,22 +71,17 @@ export function ContextPlaque({
         disabled={disabled}
         title={tip}
       >
-        <span className="context-plaque-icon" aria-hidden>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"
-              stroke="currentColor"
-              strokeWidth="1.7"
-            />
-            <path
-              d="M14 3v5h5"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinejoin="round"
-            />
-          </svg>
+        <span className="context-plaque-tile" aria-hidden>
+          <IconSourceDoc kind={kind} size={17} />
+          <span className="context-plaque-badge">{badge}</span>
         </span>
-        <span className="context-plaque-title">{title}</span>
+        <span className="context-plaque-copy">
+          <span className="context-plaque-eyebrow">Source</span>
+          <span className="context-plaque-title">{shown}</span>
+          {subtitle ? (
+            <span className="context-plaque-meta">{subtitle}</span>
+          ) : null}
+        </span>
       </button>
       {onDismiss ? (
         <button

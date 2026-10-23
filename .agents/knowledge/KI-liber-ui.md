@@ -12,7 +12,12 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - `EmptyState.tsx` — «Чем займёмся?»; empty desk uses `is-empty-home` (composer centered mid-viewport like Julius)
 - `liberModes.ts` + `ChatComposer` pills: Отчёт · Схема · Презентация — **остаются** после первого сообщения; gallery только empty∧presentation; стиль → `DeckStyleSheet`
 - Template apply: **только** pack+structure (не DNA-промпт в чат); honesty «пример · 6 кадров / 10–12 в деке»; presentation send требует Source или brief ≥48 символов
-- `output_mode=presentation` → `formats=none` (без PDF/DOCX) + после run сразу `makePresentation` и rail tab «Презентация»
+- `output_mode=presentation` → `formats=none` (без PDF/DOCX) + после run сразу `makePresentation`; rail **не** авто-открывается — Julius large `DeckFileCard`s in-chat; rail only on card click
+- Composer modes diagram/report: likewise no auto-open rail after finish (click ArtifactCard)
+- Julius in-chat cards (2026-10-23): matte paper stage + file glyph + hover veil + footer «→»; deck = PPTX+PDF twin (+ filmstrip); report = A4 sheet; diagram = sketch hero; `DeckMakeSplit quiet` under cards; empty hero = Crimson serif + segmented mode track; `?preview=deck` QA; history/restore **не** auto-open rail
+- Deck gen (2026-10-23): `makePresentation` **closes rail**, keeps progress in chat (`DeckBuildCard` + thinking); presentation tab only when `ok`/`error`; `thinkingMode` pools in `pipelinePhrases.ts` (report/diagram/presentation + slides_*)
+- Julius strip (2026-10-23): composer `Working · m:ss` on **any** busy run (report/diagram/deck); chat column sticky head from `preview.title` (`provisionalSessionTitle` → `reportTitle`); sidebar brand unchanged
+- Empty-home centering (2026-10-23): report/diagram = `is-starters-home` @ `composer-max`; presentation = `is-deck-home` @ `--deck-stage-max` — composer sheet **same width** as template grid (`max-width:100%`, no 40rem cap); rail-open chat column centered
 - `ThinkingFold.tsx` + `pipelinePhrases.ts` — collapsible «Размышления» in bot bubble (Flow above); no ThinkingBar; phrases from large pools, seeded per run (`thinkingStartedAt`) so logs don’t repeat the same sequence
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
@@ -31,7 +36,9 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Summary SSE: `GET /api/runs/{id}/summary/stream` while stage `latex`/`docx`; light markdown via `lightMd.tsx`
 - Export ▾ = PDF / DOCX (not sticky footer downloads)
 - `sessionStorage` last report + history list → opens rail
-- Attach `.txt/.md` or intent >400 chars → plaque + Source tab
+- Attach `.txt/.md` or intent >400 chars → `ContextPlaque` (Source + MD/TXT/Текст badge, kind glyph) + Source tab
+- Deck build: `ThinkingFold` auto-opens with `live` + «Собираю презентацию» while `slides_*` / slides_status running|queued; `DeckBuildCard` under ArtifactCard; QA `?preview=deck-busy`
+- `PdfThumb`: skeleton+shimmer while pdf.js loads (not empty “PDF” stub)
 - Rail width persisted in `localStorage` key `liber-rail-width` (dblclick reset)
 - Close rail: keep `activeArtifact` until width→0 (`railExiting` + `onClosed`); don’t null early (snaps user bubble). Guard `onAnimationComplete` until width &lt; 32px.
 - Soft-green tokens in `web/src/styles/tokens.css` (split: shell/chat/composer/deck/rail/presentation/modals); PDF = print truth (rail hint)
@@ -58,6 +65,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Live Chart.js in Preview + edit sheet (`LiveChart` inline mount — no iframe / `GET…/charts/{id}` + `POST…/preview`); PDF remains print truth. Blur root cause was iframe fractional-px compositor layer, not Chart DPR alone. Retina live DPR → 3. QA all types: `?preview=charts-qa` + `web/public/qa-chart-fixtures.json`.
 - After chart Apply, `ChartLivePane` must refetch on URL `?v=` bust (stale HTML otherwise)
 - Live frame CSS mirrors `chart_frame.html` (donut legend / KPI); no CSS `scale` (breaks hover hit-testing)
+- Live donut canvas must stay **in-flow** (not `absolute; inset:0`) — stretch inverted arc hit-tests; doughnut interaction = `nearest`+`intersect`; `.live-chart` overflow visible so center tooltips show
 - User bubble: collapsed Intent + `chips[]` (C6); long text still opens Source
 - Global `editingFigureId` locks all edit buttons
 - History payloads are session-only; refresh keeps them until tab close

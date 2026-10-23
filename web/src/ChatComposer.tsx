@@ -1,14 +1,21 @@
 /** Liber bottom composer: attach · textarea · send; deck style via DeckStyleSheet. */
 
 import type { RefObject } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ComposerPhotoChips } from "./ComposerPhotoChips";
 import { ContextPlaque } from "./ContextPlaque";
 import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
+import { ModeStarterGrid } from "./ModeStarterGrid";
 import { IconPalette, IconPaperclip, IconSend } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./liberModes";
 import type { SourceDraft } from "./liberTypes";
+
+function formatBusyTimer(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 type Props = {
   busy: boolean;
@@ -16,7 +23,7 @@ type Props = {
   chat: string;
   attachPhotos: File[];
   showPlaque: boolean;
-  plaqueDraft: { title: string; subtitle: string } | null;
+  plaqueDraft: { title: string; subtitle: string; fileName?: string } | null;
   sourceDraft: SourceDraft | null;
   file: File | null;
   chatRef: RefObject<HTMLTextAreaElement | null>;
@@ -24,7 +31,7 @@ type Props = {
   photoRef: RefObject<HTMLInputElement | null>;
   workMode: LiberWorkMode;
   onWorkMode: (mode: LiberWorkMode) => void;
-  /** Mode pills — stay after first message. */
+  /** Mode pills — empty home only (hide once chat has messages). */
   showModes: boolean;
   /** Empty chat + presentation — show template gallery. */
   showPackPresets: boolean;
@@ -50,6 +57,8 @@ type Props = {
   onRemovePhoto: (index: number) => void;
   onOpenSource: () => void;
   onDismissPlaque: () => void;
+  /** Fill composer from quiet starter card (report/diagram). */
+  onPickStarter?: (prompt: string) => void;
 };
 
 export function ChatComposer({
@@ -83,8 +92,10 @@ export function ChatComposer({
   onRemovePhoto,
   onOpenSource,
   onDismissPlaque,
+  onPickStarter,
 }: Props) {
   const galleryRef = useRef<HTMLDivElement>(null);
+  const [busySec, setBusySec] = useState(0);
   const placeholder =
     workMode === "diagram"
       ? "Опишите процесс или вставьте Source для схемы…"
@@ -105,149 +116,187 @@ export function ChatComposer({
     return () => window.clearTimeout(t);
   }, [showPackPresets]);
 
+  useEffect(() => {
+    if (!busy) {
+      setBusySec(0);
+      return;
+    }
+    setBusySec(0);
+    const t = window.setInterval(() => setBusySec((s) => s + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [busy]);
+
+  const isDeckHome = Boolean(showPackPresets);
+  const isStartersHome = Boolean(
+    showModes && (workMode === "report" || workMode === "diagram"),
+  );
   return (
     <div
-      className={`composer-wrap${showPackPresets ? " is-deck-home" : ""}`}
+      className={`composer-wrap${isDeckHome ? " is-deck-home" : ""}${isStartersHome ? " is-starters-home" : ""}`}
     >
-      {attachPhotos.length > 0 && (
-        <div className="composer-attach-row">
-          <ComposerPhotoChips
-            files={attachPhotos}
-            busy={busy}
-            onRemove={onRemovePhoto}
+      {/* Same width column as .composer — plaque/Working can't drift left of the sheet */}
+      <div className="composer-stack">
+        {attachPhotos.length > 0 && (
+          <div className="composer-attach-row">
+            <ComposerPhotoChips
+              files={attachPhotos}
+              busy={busy}
+              onRemove={onRemovePhoto}
+            />
+          </div>
+        )}
+        {showPlaque && plaqueDraft ? (
+          <ContextPlaque
+            title={plaqueDraft.title}
+            subtitle={plaqueDraft.subtitle}
+            fileName={plaqueDraft.fileName}
+            disabled={busy}
+            onOpen={onOpenSource}
+            onDismiss={onDismissPlaque}
           />
-        </div>
-      )}
-      {showPlaque && plaqueDraft ? (
-        <ContextPlaque
-          title={plaqueDraft.title}
-          subtitle={plaqueDraft.subtitle}
-          disabled={busy}
-          onOpen={onOpenSource}
-          onDismiss={onDismissPlaque}
-        />
-      ) : null}
+        ) : null}
 
-      {deckApplyHint ? (
-        <div className="composer-deck-hint" role="status">
-          <span>{deckApplyHint}</span>
-          {onDismissDeckApplyHint ? (
+        {deckApplyHint ? (
+          <div className="composer-deck-hint" role="status">
+            <span>{deckApplyHint}</span>
+            {onDismissDeckApplyHint ? (
+              <button
+                type="button"
+                className="composer-deck-hint-x"
+                aria-label="Скрыть"
+                onClick={onDismissDeckApplyHint}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {busy ? (
+          <div className="composer-working" role="status" aria-live="polite">
+            <span className="composer-working-dot" aria-hidden />
+            <span className="composer-working-label">
+              Working · {formatBusyTimer(busySec)}
+            </span>
+          </div>
+        ) : null}
+
+        <div className="composer">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
+            multiple
+            hidden
+            onChange={(e) => {
+              const list = e.target.files;
+              e.target.value = "";
+              if (list?.length) onIngestFiles(list);
+            }}
+          />
+          <input
+            ref={photoRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+          />
+          <textarea
+            ref={chatRef}
+            className="composer-input"
+            rows={2}
+            placeholder={placeholder}
+            value={chat}
+            disabled={busy}
+            onChange={(e) => onChatChange(e.target.value)}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData("text/plain");
+              if (onPasteCapture(pasted)) {
+                e.preventDefault();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSend();
+              }
+            }}
+          />
+          <div className="composer-inner-bar">
             <button
               type="button"
-              className="composer-deck-hint-x"
-              aria-label="Скрыть"
-              onClick={onDismissDeckApplyHint}
-            >
-              ×
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="composer">
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
-          multiple
-          hidden
-          onChange={(e) => {
-            const list = e.target.files;
-            e.target.value = "";
-            if (list?.length) onIngestFiles(list);
-          }}
-        />
-        <input
-          ref={photoRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-        />
-        <button
-          type="button"
-          className="composer-attach"
-          disabled={busy}
-          title="Прикрепить .txt / .md или фото"
-          aria-label="Прикрепить файл"
-          onClick={() => fileRef.current?.click()}
-        >
-          <IconPaperclip size={18} />
-        </button>
-        <textarea
-          ref={chatRef}
-          className="composer-input"
-          rows={1}
-          placeholder={placeholder}
-          value={chat}
-          disabled={busy}
-          onChange={(e) => onChatChange(e.target.value)}
-          onPaste={(e) => {
-            const pasted = e.clipboardData.getData("text/plain");
-            if (onPasteCapture(pasted)) {
-              e.preventDefault();
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
-        />
-        <button
-          className="send"
-          type="button"
-          disabled={!canSend}
-          onClick={onSend}
-          aria-busy={busy || undefined}
-          aria-label={
-            workMode === "diagram"
-              ? "Собрать схему"
-              : workMode === "presentation"
-                ? "Собрать презентацию"
-                : "Собрать отчёт"
-          }
-          title="Собрать"
-        >
-          {busy ? "…" : <IconSend size={16} />}
-        </button>
-      </div>
-
-      {showModes ? (
-        <div className="composer-toolbar">
-          {showDeckStyleBtn ? (
-            <button
-              type="button"
-              className={`composer-palette-btn${deckStyleOpen ? " is-on" : ""}`}
+              className="composer-attach"
               disabled={busy}
-              title="Стиль презентации"
-              aria-label="Стиль презентации"
-              aria-pressed={deckStyleOpen}
-              onClick={onOpenDeckStyle}
+              title="Прикрепить .txt / .md или фото"
+              aria-label="Прикрепить файл"
+              onClick={() => fileRef.current?.click()}
             >
-              <IconPalette size={18} />
+              <IconPaperclip size={18} />
             </button>
-          ) : null}
-          <div className="composer-modes" role="group" aria-label="Режим">
-            {LIBER_MODE_PILLS.map((p) => {
-              const on = workMode === p.id;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`composer-mode-pill${on ? " is-on" : ""}`}
-                  disabled={busy}
-                  title={p.hint}
-                  aria-pressed={on}
-                  onClick={() => onWorkMode(on ? null : p.id)}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
+            {showDeckStyleBtn ? (
+              <button
+                type="button"
+                className={`composer-palette-btn${deckStyleOpen ? " is-on" : ""}`}
+                disabled={busy}
+                title="Стиль презентации"
+                aria-label="Стиль презентации"
+                aria-pressed={deckStyleOpen}
+                onClick={onOpenDeckStyle}
+              >
+                <IconPalette size={18} />
+              </button>
+            ) : null}
+            {showModes ? (
+              <div className="composer-modes" role="group" aria-label="Режим">
+                {LIBER_MODE_PILLS.map((p) => {
+                  const on = workMode === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`composer-mode-pill${on ? " is-on" : ""}`}
+                      disabled={busy}
+                      title={p.hint}
+                      aria-pressed={on}
+                      onClick={() => onWorkMode(on ? null : p.id)}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="composer-inner-spacer" aria-hidden />
+            )}
+            <button
+              className={`send${busy ? " is-busy" : ""}`}
+              type="button"
+              disabled={!canSend}
+              onClick={onSend}
+              aria-busy={busy || undefined}
+              aria-label={
+                workMode === "diagram"
+                  ? "Собрать схему"
+                  : workMode === "presentation"
+                    ? "Собрать презентацию"
+                    : "Собрать отчёт"
+              }
+              title="Собрать"
+            >
+              <IconSend size={16} />
+            </button>
           </div>
         </div>
+      </div>
+
+      {showModes &&
+      onPickStarter &&
+      (workMode === "report" || workMode === "diagram") ? (
+        <ModeStarterGrid
+          workMode={workMode}
+          busy={busy}
+          onPick={onPickStarter}
+        />
       ) : null}
 
       {showPackPresets && onUseDeckTemplate ? (

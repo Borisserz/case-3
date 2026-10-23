@@ -50,6 +50,38 @@ export function IconPaperclip(p: IconProps) {
   );
 }
 
+/** Source attach glyph — folded page + kind cue (md lines / txt lines / paste braces). */
+export function IconSourceDoc({
+  kind = "txt",
+  size = 18,
+  className,
+}: IconProps & { kind?: "md" | "txt" | "paste" }) {
+  return (
+    <svg {...base({ size, className })}>
+      <path
+        {...stroke}
+        d="M7 3.5h7.2L19 8.3V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5"
+      />
+      <path {...stroke} d="M14 3.5V8h4.8" />
+      {kind === "paste" ? (
+        <>
+          <path {...stroke} d="M9.2 12.2h2.2M9.2 15.2h5.6" />
+          <path {...stroke} d="M10.5 10.8v6.2M13.5 10.8v6.2" opacity="0.55" />
+        </>
+      ) : kind === "md" ? (
+        <>
+          <path {...stroke} d="M9 12h6M9 15h4.5" />
+          <path {...stroke} d="M9 9.2h2.2" />
+        </>
+      ) : (
+        <>
+          <path {...stroke} d="M9 11.5h6M9 14.2h6M9 16.9h3.8" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function IconSettings(p: IconProps) {
   return (
     <svg {...base(p)}>

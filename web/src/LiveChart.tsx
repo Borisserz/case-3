@@ -70,9 +70,13 @@ const LIVE_CSS = `
 }
 .live-chart-mount .liber-live-box.is-hbar { aspect-ratio: 11 / 4.2; }
 .live-chart-mount .liber-live-box.is-donut { aspect-ratio: 1 / 1; max-width: min(100%, 360px); }
-/* Parent box owns the size; Chart.js sets canvas buffer + style from it. */
+/* Parent box owns the size; Chart.js sets buffer — keep CSS box = layout box. */
 .live-chart-mount .liber-live-box canvas {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none;
+  max-height: none;
 }
 .live-chart-mount .chart-card { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 .live-chart-mount .chart-kpi-header { display: flex; flex-direction: column; gap: 4px; padding: 0 4px 8px; }
@@ -100,11 +104,16 @@ const LIVE_CSS = `
   aspect-ratio: 1 / 1;
   max-width: 280px;
   margin: 0;
+  /* Canvas stays in-flow — absolute+inset stretched the bitmap and inverted hit-tests. */
 }
 .live-chart-mount .donut-viz > canvas {
   display: block;
-  position: absolute;
-  inset: 0;
+  position: relative;
+  z-index: 0;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none;
+  max-height: none;
 }
 .live-chart-mount .donut-center {
   position: absolute; inset: 0;
@@ -305,7 +314,7 @@ function patchChartForLive(Chart: ChartStatic): void {
     el.point.radius = 3.5;
     el.point.hoverRadius = 5.5;
   }
-  Chart.defaults.interaction = { mode: "index", intersect: false };
+  Chart.defaults.interaction = { mode: "nearest", intersect: true };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scale = Chart.defaults.scale as any;
   if (scale.grid) {
@@ -321,6 +330,27 @@ function patchChartForLive(Chart: ChartStatic): void {
     cfg.options.maintainAspectRatio = false;
     cfg.options.animation = false;
     cfg.options.devicePixelRatio = liveDpr();
+    const type = String(cfg.type || "").toLowerCase();
+    const isDonut = type === "doughnut" || type === "pie";
+    const isHbar = cfg.options.indexAxis === "y";
+    // index+intersect:false maps doughnut arcs wrong (top↔bottom); bars need axis.
+    if (isDonut) {
+      cfg.options.interaction = { mode: "nearest", intersect: true };
+    } else if (isHbar) {
+      cfg.options.interaction = { mode: "index", intersect: false, axis: "y" };
+    } else {
+      cfg.options.interaction = { mode: "index", intersect: false, axis: "x" };
+    }
+    cfg.options.plugins = cfg.options.plugins || {};
+    cfg.options.plugins.tooltip = {
+      ...(cfg.options.plugins.tooltip || {}),
+      enabled: true,
+      // Keep tooltip inside chartArea so overflow:hidden parents don't hide it
+      position: "nearest",
+      yAlign: "bottom",
+      xAlign: "center",
+      caretPadding: 8,
+    };
     return cfg;
   }
 

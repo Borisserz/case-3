@@ -7,6 +7,75 @@
   background: transparent;
 }
 
+.composer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Julius activity strip — olive Liber, not blue chrome; any run (report/diagram/deck) */
+.composer-working {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.05rem;
+  padding: 0.4rem 0.9rem;
+  margin: 0;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--foil));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sheet) 88%, var(--secondary)) 0%,
+      color-mix(in srgb, var(--surface-2) 94%, var(--paper)) 100%
+    );
+  font-size: 0.8125rem;
+  color: var(--muted);
+  box-sizing: border-box;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foil) 22%, transparent);
+}
+
+.composer-working-dot {
+  flex-shrink: 0;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  animation: composer-working-pulse 1.2s ease-in-out infinite;
+}
+
+.composer-working-label {
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+  font-family: var(--mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+@keyframes composer-working-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-working-dot {
+    animation: none;
+  }
+}
+
 .composer-photos {
   display: flex;
   flex-wrap: wrap;
@@ -45,64 +114,75 @@
   cursor: pointer;
 }
 
-.composer-toolbar {
+.composer-inner-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.15rem 0.05rem 0;
+  gap: 0.35rem;
+  min-height: 2.35rem;
+  margin-top: 0.15rem;
+  padding: 0.55rem 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
-.composer-toolbar .composer-palette-btn {
-  width: 2.45rem;
-  height: 2.45rem;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--ink-2);
+.composer-inner-bar .send {
+  margin-left: auto;
 }
 
-.composer-toolbar .composer-palette-btn.is-on {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent) 12%, var(--sheet));
-  color: var(--accent);
+.composer-inner-spacer {
+  flex: 1 1 auto;
+  min-width: 0.5rem;
 }
 
 .composer-modes {
   display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.12rem;
+  padding: 0.18rem;
   flex: 0 1 auto;
-  border: none;
-  background: transparent;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 78%, var(--sheet));
 }
 
 .composer-mode-pill {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font-size: 0.8rem;
-  font-weight: 550;
-  padding: 0.4rem 0.95rem;
-  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  padding: 0.32rem 0.72rem;
+  border-radius: 9px;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast),
+    box-shadow var(--dur-fast);
 }
 
 .composer-mode-pill:hover:not(:disabled) {
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, var(--sheet));
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--sheet) 70%, transparent);
+}
+
+.composer-mode-pill:active:not(:disabled) {
+  background: color-mix(in srgb, var(--sheet) 88%, transparent);
 }
 
 .composer-mode-pill.is-on {
   background: var(--sheet);
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  box-shadow: var(--shadow-card);
+  color: var(--primary);
+  font-weight: 650;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent),
+    0 1px 3px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.composer-mode-pill.is-on:active:not(:disabled) {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 3%, transparent);
 }
 
 .composer-mode-pill:disabled {
@@ -167,14 +247,17 @@
 
 .composer-deck-gallery-anchor {
   width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+  box-sizing: border-box;
 }
 
 .composer-palette-btn {
   flex: 0 0 auto;
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.2rem;
+  height: 2.2rem;
   border: none;
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   display: grid;
@@ -184,8 +267,14 @@
 }
 
 .composer-palette-btn:hover:not(:disabled) {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--secondary) 45%, transparent);
+}
+
+.composer-palette-btn.is-on {
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet));
+  color: var(--primary);
 }
 
 .composer-palette {
@@ -351,10 +440,10 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 2.45rem;
-  height: 2.45rem;
+  width: 2.2rem;
+  height: 2.2rem;
   border: none;
-  border-radius: 999px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -364,8 +453,8 @@
 }
 
 .composer-attach:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--secondary) 45%, transparent);
+  color: var(--primary);
 }
 
 .composer-attach:disabled {
@@ -377,39 +466,64 @@
   font-size: 0;
 }
 
+/* Soft sheet desk object — not a messenger pill */
 .composer {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.35rem;
-  align-items: end;
-  padding: 0.4rem 0.45rem 0.4rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 1.35rem;
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: stretch;
+  width: 100%;
+  /* Julius empty-home column; active chat re-widens via shell .chat-column rule */
+  max-width: min(100%, 40rem);
+  margin-inline: auto;
+  padding: 0.85rem 0.95rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, var(--primary));
+  border-radius: 16px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-sheet);
   transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast);
 }
 
+/* Prefer token when wrap already constrains; keep ~40rem Julius feel on empty home */
+.composer-wrap .composer {
+  max-width: min(100%, var(--composer-max), 40rem);
+}
+
+/* Presentation: sheet width = template grid width (same deck stage) */
+.composer-wrap.is-deck-home .composer {
+  max-width: 100%;
+  margin-inline: 0;
+}
+
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  box-shadow: var(--shadow-card), var(--focus-ring);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  box-shadow:
+    var(--shadow-sheet-focus),
+    0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent),
+    var(--focus-ring);
 }
 
 .composer input[type="text"],
 .composer-input {
   border-radius: 0;
-  padding: 0.55rem 0.35rem;
+  padding: 0.15rem 0.15rem 0.35rem;
   border: none;
   background: transparent;
   resize: none;
-  min-height: 2.45rem;
-  max-height: 7rem; /* ~4 lines — дальше скролл внутри */
-  line-height: 1.45;
+  min-height: 3.25rem;
+  max-height: 8.5rem;
+  line-height: 1.5;
   font: inherit;
-  color: inherit;
+  font-size: 1.02rem;
+  color: var(--ink);
   width: 100%;
   overflow-y: auto;
   white-space: pre-wrap;
+  letter-spacing: -0.01em;
+}
+
+.composer-input::placeholder {
+  color: var(--muted-2);
 }
 
 .composer-input:focus {
@@ -420,23 +534,25 @@
 button.send {
   display: grid;
   place-items: center;
-  width: 2.45rem;
-  height: 2.45rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 2.4rem;
+  height: 2.4rem;
   padding: 0;
-  background: var(--ink);
-  color: #fff;
+  background: var(--primary);
+  color: #fffcf7;
   border: none;
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: none;
-  transition: background var(--dur-mid) var(--ease-out), opacity var(--dur-fast),
-    transform var(--dur-fast);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 12%, transparent) inset;
+  transition: background var(--dur-mid) var(--ease-out), color var(--dur-fast),
+    box-shadow var(--dur-fast), transform var(--dur-fast);
   white-space: nowrap;
 }
 
 button.send:not(:disabled):hover {
-  background: var(--primary);
+  background: var(--primary-hover);
 }
 
 button.send:not(:disabled):active {
@@ -444,7 +560,132 @@ button.send:not(:disabled):active {
 }
 
 button.send:disabled {
-  opacity: 0.35;
+  opacity: 1;
+  background: color-mix(in srgb, var(--secondary) 68%, var(--primary));
+  color: color-mix(in srgb, var(--primary) 55%, var(--sheet));
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button.send.is-busy {
+  animation: send-busy-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes send-busy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.send:not(:disabled):active {
+    transform: none;
+  }
+  button.send.is-busy {
+    animation: none;
+  }
+}
+
+
+
+/* Editorial starters — hairline tiles, same column as composer sheet */
+.mode-starter-grid {
+  width: 100%;
+  max-width: min(100%, var(--composer-max));
+  margin: var(--space-5) 0 0;
+  padding: 0 0.15rem var(--space-2);
+  box-sizing: border-box;
+}
+
+.mode-starter-grid-head h3 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.mode-starter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.mode-starter-list > li {
+  display: flex;
+  min-height: 0;
+}
+
+@media (max-width: 560px) {
+  .mode-starter-list {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+}
+
+.mode-starter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  width: 100%;
+  height: 100%;
+  min-height: 4.75rem;
+  text-align: left;
+  padding: 0.8rem 0.9rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+
+.mode-starter-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--sheet) 70%, transparent);
+}
+
+.mode-starter-card:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
+.mode-starter-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.018em;
+}
+
+.mode-starter-hint {
+  font-size: 0.73rem;
+  font-weight: 450;
+  line-height: 1.42;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-starter-card {
+    transition: none;
+  }
+}

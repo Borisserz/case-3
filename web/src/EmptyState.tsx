@@ -1,8 +1,8 @@
-/** Liber empty hero — modes live under composer. */
+/** Liber empty hero — modes live in composer inner bar. */
 
 import { motion, useReducedMotion } from "framer-motion";
 import { IconLiberMark } from "./icons";
-import type { LiberWorkMode } from "./liberModes";
+import { modeNudge, type LiberWorkMode } from "./liberModes";
 
 type Props = {
   hasStoredReport: boolean;
@@ -10,20 +10,28 @@ type Props = {
   workMode?: LiberWorkMode;
 };
 
+function restoreLabel(workMode: LiberWorkMode): string {
+  if (workMode === "diagram") return "Открыть последнюю схему";
+  if (workMode === "presentation") return "Открыть последнюю презентацию";
+  if (workMode === "report") return "Открыть последний отчёт";
+  return "Открыть последнюю работу";
+}
+
 export function EmptyState({
   hasStoredReport,
   onRestore,
   workMode = null,
 }: Props) {
   const reduce = useReducedMotion();
-  const copy =
+  const title =
     workMode === "presentation"
-      ? { title: "Какую презентацию соберём?", body: "" }
+      ? "Какую презентацию соберём?"
       : workMode === "diagram"
-        ? { title: "Какую схему нарисовать?", body: "" }
+        ? "Какую схему нарисовать?"
         : workMode === "report"
-          ? { title: "Какой отчёт собрать?", body: "" }
-          : { title: "Чем займёмся?", body: "" };
+          ? "Какой отчёт собрать?"
+          : "Чем могу помочь?";
+  const subtitle = modeNudge(workMode);
   return (
     <motion.div
       className="empty empty-hero"
@@ -32,12 +40,12 @@ export function EmptyState({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduce ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
-      <IconLiberMark size={56} />
-      <h2>{copy.title}</h2>
-      {copy.body ? <p>{copy.body}</p> : null}
+      <IconLiberMark size={24} />
+      <h2>{title}</h2>
+      <p>{subtitle}</p>
       {hasStoredReport && (
         <button type="button" className="empty-restore" onClick={onRestore}>
-          Открыть последний отчёт
+          {restoreLabel(workMode)}
         </button>
       )}
     </motion.div>

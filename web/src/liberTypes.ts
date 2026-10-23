@@ -1,6 +1,6 @@
 /** Shared Liber desk types (chat + run payload). */
 
-import type { ThinkingLine } from "./pipelinePhrases";
+import type { ThinkingLine, ThinkingMode } from "./pipelinePhrases";
 import type { ReportPreview } from "./ReportView";
 
 export type PaletteInfo = {
@@ -111,6 +111,8 @@ export type BotMsg = {
   thinkingStageAt?: number;
   /** Frozen when run finishes (for collapsed fold meta). */
   thinkingElapsedSec?: number;
+  /** Phrase pool: report / diagram / presentation */
+  thinkingMode?: ThinkingMode;
   error?: string;
 };
 

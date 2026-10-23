@@ -1,5 +1,6 @@
 /** Liber Atelier — chat-first desk shell (orchestration only). */
 
+/* premium-home-bust */
 import {
   useCallback,
   useEffect,
@@ -33,6 +34,7 @@ import {
   formatRunStatusError,
   openSummaryStream,
   paradeHintFromHealth,
+  provisionalSessionTitle,
   readTextFile,
   reportReadyText,
   reportTitle,
@@ -109,7 +111,9 @@ export default function App() {
   );
   const [deckStyle, setDeckStyle] = useState<DeckStyle>(() => loadDeckStyle());
   const [deckStyleOpen, setDeckStyleOpen] = useState(false);
-  const [workMode, setWorkMode] = useState<LiberWorkMode>(null);
+  const [workMode, setWorkMode] = useState<LiberWorkMode>("report");
+  /** Julius chat rename — column head only; seeded then → preview.title */
+  const [chatTitle, setChatTitle] = useState<string | null>(null);
   const [deckApplyHint, setDeckApplyHint] = useState<string | null>(null);
   const [deckPacks, setDeckPacks] =
     useState<DeckThemePackInfo[]>(FALLBACK_DECK_PACKS);
@@ -191,6 +195,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.title = chatTitle ? `${chatTitle} · Liber` : "Liber";
+  }, [chatTitle]);
+
+  useEffect(() => {
     let cancelled = false;
     fetch("/api/deck-themes")
       .then(async (r) => {
@@ -224,9 +232,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const jumpBottom = (smooth: boolean) => {
+      const el = messagesRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      bottomRef.current?.scrollIntoView({
+        behavior: smooth ? "smooth" : "auto",
+        block: "end",
+      });
+    };
+    // Dev previews: land on the card (retry after PDF thumb layout).
+    if (/preview=(artifact|deck)/.test(window.location.search)) {
+      stickBottom.current = true;
+      jumpBottom(false);
+      const t1 = window.setTimeout(() => jumpBottom(false), 120);
+      const t2 = window.setTimeout(() => jumpBottom(false), 480);
+      return () => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
+    }
     // Don't yank the chat while the user is reading earlier messages.
     if (!stickBottom.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    jumpBottom(true);
   }, [msgs]);
 
   useEffect(() => {
@@ -449,19 +476,34 @@ export default function App() {
   async function makePresentation(msgId: string, result: RunResult) {
     const runId = result.run_id;
     if (!runId) return;
-    openReportArtifact(msgId, result, "presentation");
+    // Julius: deck builds on the main chat — never park progress in the rail.
+    setRailExiting(false);
+    setActiveArtifact(null);
+    setBusy(true);
     setMsgs((m) =>
       m.map((msg) => {
         if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-        return {
-          ...msg,
-          result: {
-            ...msg.result,
-            slides_status: "queued",
-            slides_stage: "queued",
-            slides_error: null,
+        const next = appendBotThinking(
+          {
+            ...msg,
+            thinkingMode: "presentation",
+            pending: true,
+            pendingStage: "slides_queued",
+            pendingDetail: null,
+            text: msg.text?.trim()
+              ? msg.text
+              : "Собираю презентацию…",
+            result: {
+              ...msg.result,
+              slides_status: "queued",
+              slides_stage: "queued",
+              slides_error: null,
+            },
           },
-        };
+          "slides_queued",
+          null,
+        );
+        return next;
       }),
     );
     try {
@@ -533,6 +575,13 @@ export default function App() {
                 return msg;
               return {
                 ...msg,
+                pending: false,
+                thinkingElapsedSec: msg.thinkingStartedAt
+                  ? Math.max(
+                      0,
+                      Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
+                    )
+                  : msg.thinkingElapsedSec,
                 result: {
                   ...msg.result,
                   downloads: { ...msg.result.downloads, ...downloads },
@@ -549,36 +598,31 @@ export default function App() {
           if (slidesStatus === "ok") {
             setDownloadsPulseMsgId(msgId);
             window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
-            // Always surface the deck in the side rail when ready.
-            openReportArtifact(
-              msgId,
-              {
-                ...result,
-                downloads: { ...result.downloads, ...downloads },
-                slides_status: slidesStatus,
-                slides_stage: slidesStage,
-                slides_error: slidesError,
-                slide_pngs: slidePngs,
-                deck: deckIr,
-                deck_pdf_mode: deckPdfMode,
-              },
-              "presentation",
-            );
           }
           break;
         }
+        const slideKey = slidesStage
+          ? `slides_${slidesStage}`
+          : "slides_queued";
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
               return msg;
-            return {
-              ...msg,
-              result: {
-                ...msg.result,
-                slides_status: slidesStatus,
-                slides_stage: slidesStage,
+            return appendBotThinking(
+              {
+                ...msg,
+                thinkingMode: "presentation",
+                pending: true,
+                pendingStage: slideKey,
+                result: {
+                  ...msg.result,
+                  slides_status: slidesStatus,
+                  slides_stage: slidesStage,
+                },
               },
-            };
+              slideKey,
+              null,
+            );
           }),
         );
       }
@@ -588,6 +632,7 @@ export default function App() {
           if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
           return {
             ...msg,
+            pending: false,
             result: {
               ...msg.result,
               slides_status: "error",
@@ -597,6 +642,8 @@ export default function App() {
           };
         }),
       );
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -667,6 +714,7 @@ export default function App() {
       const result = JSON.parse(raw) as RunResult;
       if (!result?.preview?.blocks?.length) return;
       const id = uid();
+      setChatTitle(reportTitle(result));
       setMsgs([
         {
           id,
@@ -675,7 +723,7 @@ export default function App() {
           result,
         },
       ]);
-      openReportArtifact(id, result);
+      // Julius: card in chat; rail only on «Открыть»
     } catch {
       /* ignore */
     }
@@ -683,6 +731,7 @@ export default function App() {
 
   function startNewReport() {
     setMsgs([]);
+    setChatTitle(null);
     setChat("");
     setFile(null);
     setSourceDraft(null);
@@ -705,6 +754,7 @@ export default function App() {
     }
     const result = stored as RunResult;
     const id = uid();
+    setChatTitle(item.title || reportTitle(result));
     setMsgs([
       {
         id,
@@ -713,13 +763,13 @@ export default function App() {
         result,
       },
     ]);
-    openReportArtifact(id, result);
     setHistoryOpen(false);
   }
 
   function rememberRun(result: RunResult) {
     saveRunPayload(result);
     const title = reportTitle(result);
+    setChatTitle(title);
     setHistory(
       pushHistory({
         id: result.run_id,
@@ -873,7 +923,18 @@ export default function App() {
       dryRun ? "dry-run" : null,
     ].filter((x): x is string => Boolean(x));
 
+    const thinkingMode =
+      outMode === "diagram"
+        ? ("diagram" as const)
+        : outMode === "presentation"
+          ? ("presentation" as const)
+          : ("report" as const);
     const pendingId = uid();
+    // Presentation builds stay on the chat sheet — close rail if open.
+    if (outMode === "presentation") {
+      setRailExiting(false);
+      setActiveArtifact(null);
+    }
     setMsgs((m) => [
       ...m,
       {
@@ -899,12 +960,14 @@ export default function App() {
           pendingStage: "queued",
           pendingDetail: null,
           thinkingStartedAt: Date.now(),
+          thinkingMode,
         },
         "queued",
         null,
       ),
     ]);
     setBusy(true);
+    setChatTitle(provisionalSessionTitle(workMode));
     setChat("");
     if (chatRef.current) chatRef.current.style.height = "44px";
     const photosSnapshot = [...attachPhotos];
@@ -973,16 +1036,25 @@ export default function App() {
 
     try {
       const res = await fetch("/api/run", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
       if (!res.ok) {
-        throw new Error(
-          formatApiDetailError(data as Record<string, unknown>, res.statusText),
-        );
+        const fallback =
+          res.status === 500 || res.status === 502 || res.status === 503
+            ? "API недоступен — проверь :8000 (прокси Vite)"
+            : res.statusText;
+        throw new Error(formatApiDetailError(data, fallback));
       }
 
       // Sync photo-edit response (no poll)
       if (data.mode === "photo_edit" && data.status === "ok") {
         const result = data as RunResult;
+        setChatTitle(
+          (typeof data.caption === "string" && data.caption.trim()) ||
+            "Правка фото",
+        );
         setMsgs((m) =>
           m.map((msg) =>
             msg.id === pendingId
@@ -997,6 +1069,7 @@ export default function App() {
         );
         setToast("Фото изменено");
         window.setTimeout(() => setToast(null), 2800);
+        setBusy(false);
         return;
       }
 
@@ -1010,10 +1083,11 @@ export default function App() {
           m.map((msg) => {
             if (msg.id !== pendingId || msg.role !== "bot") return msg;
             const stage = data.stage || "queued";
+            const mode = msg.thinkingMode || "report";
             return appendBotThinking(
               {
                 ...msg,
-                text: stageLabel(stage),
+                text: stageLabel(stage, null, mode),
                 pending: true,
                 pendingStage: stage,
                 pendingDetail: null,
@@ -1094,6 +1168,7 @@ export default function App() {
               setMsgs((m) =>
                 m.map((msg) => {
                   if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                  const mode = msg.thinkingMode || "report";
                   const next = appendBotThinking(
                     {
                       ...msg,
@@ -1103,7 +1178,7 @@ export default function App() {
                       text:
                         msg.streamingSummary && msg.text.trim()
                           ? msg.text
-                          : stageLabel(stage || "queued", detail),
+                          : stageLabel(stage || "queued", detail, mode),
                     },
                     stage,
                     detail,
@@ -1127,6 +1202,7 @@ export default function App() {
       }
 
       try {
+        setChatTitle(reportTitle(result));
         if (
           result.preview?.blocks?.length ||
           result.downloads?.pdf ||
@@ -1150,6 +1226,7 @@ export default function App() {
             result,
             thinking: msg.thinking,
             thinkingStartedAt: msg.thinkingStartedAt,
+            thinkingMode: msg.thinkingMode,
             thinkingElapsedSec: msg.thinkingStartedAt
               ? Math.max(
                   0,
@@ -1159,21 +1236,15 @@ export default function App() {
           };
         }),
       );
-      const isDiagramOnly =
-        result.output_mode === "diagram" ||
-        (workMode === "diagram" &&
-          Boolean(result.diagrams?.length) &&
-          !result.downloads?.pdf);
       const isPresentationOnly =
         outMode === "presentation" || result.output_mode === "presentation";
       if (isPresentationOnly && result.run_id) {
-        openPresentationArtifact(pendingId, result);
+        // makePresentation owns busy until deck finishes
         void makePresentation(pendingId, result);
-      } else if (isDiagramOnly && result.diagrams?.length) {
-        openDiagramArtifact(pendingId, result, result.diagrams[0].id);
-      } else if (result.preview?.blocks?.length || result.downloads?.pdf) {
-        openReportArtifact(pendingId, result);
+      } else {
+        setBusy(false);
       }
+      // Julius: keep artifacts in-chat; rail opens only via ArtifactCard click.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setMsgs((m) =>
@@ -1183,7 +1254,6 @@ export default function App() {
             : msg,
         ),
       );
-    } finally {
       setBusy(false);
     }
   }
@@ -1199,7 +1269,8 @@ export default function App() {
         title: sourceDraft.title,
         subtitle: file
           ? formatBytes(file.size)
-          : `${sourceDraft.text.length} символов`,
+          : `${sourceDraft.text.length.toLocaleString("ru-RU")} символов`,
+        fileName: sourceDraft.fileName,
       }
     : null;
   const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
@@ -1210,7 +1281,11 @@ export default function App() {
   const pendingBot = msgs.find((m) => m.role === "bot" && m.pending);
   const thinkingLabel =
     pendingBot && pendingBot.role === "bot"
-      ? stageLabel(pendingBot.pendingStage, pendingBot.pendingDetail)
+      ? stageLabel(
+          pendingBot.pendingStage,
+          pendingBot.pendingDetail,
+          pendingBot.thinkingMode || "report",
+        )
       : busy
         ? "Генерирую документ…"
         : undefined;
@@ -1313,6 +1388,7 @@ export default function App() {
                   msgs={msgs}
                   reduceMotion={reduceMotion}
                   hasStoredReport={hasStoredReport}
+                  sessionTitle={chatTitle}
                   thinkingLabel={thinkingLabel}
                   workMode={workMode}
                   downloadsPulseMsgId={downloadsPulseMsgId}
@@ -1345,14 +1421,16 @@ export default function App() {
                     setWorkMode(mode);
                     if (mode !== "presentation") setDeckApplyHint(null);
                   }}
-                  showModes
+                  showModes={msgs.length === 0 && !busy}
                   showPackPresets={
                     msgs.length === 0 &&
                     !busy &&
                     workMode === "presentation"
                   }
                   showDeckStyleBtn={
-                    msgs.length === 0 && workMode === "presentation"
+                    msgs.length === 0 &&
+                    !busy &&
+                    workMode === "presentation"
                   }
                   deckStyle={deckStyle}
                   deckPacks={deckPacks}
@@ -1404,6 +1482,10 @@ export default function App() {
                     setActiveArtifact((a) =>
                       a?.kind === "source" || a?.kind === "intent" ? null : a,
                     );
+                  }}
+                  onPickStarter={(prompt) => {
+                    setChat(prompt);
+                    chatRef.current?.focus();
                   }}
                 />
               </div>

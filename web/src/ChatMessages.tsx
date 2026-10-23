@@ -1,4 +1,4 @@
-/** Liber chat transcript (user / bot bubbles). */
+/** Liber chat transcript — Julius column DNA (user panel + document bot). */
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ArtifactCard } from "./ArtifactCard";
@@ -17,6 +17,8 @@ type Props = {
   msgs: Msg[];
   reduceMotion: boolean | null;
   hasStoredReport: boolean;
+  /** Julius-style session rename — chat column only (not sidebar). */
+  sessionTitle?: string | null;
   thinkingLabel?: string;
   workMode?: LiberWorkMode;
   downloadsPulseMsgId: string | null;
@@ -36,6 +38,7 @@ export function ChatMessages({
   msgs,
   reduceMotion,
   hasStoredReport,
+  sessionTitle = null,
   thinkingLabel,
   workMode = null,
   downloadsPulseMsgId,
@@ -50,11 +53,19 @@ export function ChatMessages({
   onOpenPresentation,
   onDeckStyle,
 }: Props) {
+  const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
     <div className="messages" ref={messagesRef}>
+      {showSessionHead ? (
+        <header className="chat-session-head">
+          <h1 className="chat-session-title" title={sessionTitle || undefined}>
+            {sessionTitle}
+          </h1>
+        </header>
+      ) : null}
       <AnimatePresence initial={false}>
         {msgs.length === 0 &&
-          !/preview=artifact/.test(window.location.search) && (
+          !/preview=(artifact|deck|deck-busy|flow)/.test(window.location.search) && (
             <EmptyState
               hasStoredReport={hasStoredReport}
               onRestore={onRestore}
@@ -67,8 +78,15 @@ export function ChatMessages({
             Boolean(
               m.result?.preview?.blocks?.length ||
                 m.result?.downloads?.pdf ||
+                m.result?.downloads?.pptx ||
+                m.result?.downloads?.deck_pdf ||
                 (m.result?.diagrams && m.result.diagrams.length > 0),
             );
+          const slidesLive =
+            m.role === "bot" &&
+            (Boolean(m.pending && m.pendingStage?.startsWith("slides_")) ||
+              m.result?.slides_status === "running" ||
+              m.result?.slides_status === "queued");
           const userLong =
             m.role === "user" &&
             !m.attachment &&
@@ -93,7 +111,8 @@ export function ChatMessages({
                     <div className="msg-attach-row">
                       <ContextPlaque
                         title={m.attachment.title}
-                        subtitle={`${m.attachment.text.length} символов`}
+                        subtitle={`${m.attachment.text.length.toLocaleString("ru-RU")} символов`}
+                        fileName={m.attachment.fileName}
                         onOpen={() => onOpenSource(m.attachment!)}
                       />
                     </div>
@@ -130,8 +149,20 @@ export function ChatMessages({
                     {m.thinking?.length ? (
                       <ThinkingFold
                         lines={m.thinking}
-                        live={false}
-                        elapsedSec={m.thinkingElapsedSec}
+                        live={slidesLive}
+                        liveLabel={
+                          slidesLive ? "Собираю презентацию" : undefined
+                        }
+                        elapsedSec={
+                          slidesLive && m.thinkingStartedAt
+                            ? Math.max(
+                                0,
+                                Math.round(
+                                  (Date.now() - m.thinkingStartedAt) / 1000,
+                                ),
+                              )
+                            : m.thinkingElapsedSec
+                        }
                       />
                     ) : null}
                     <MsgMarkdown text={m.text || "Отчёт готов"} />
@@ -144,6 +175,7 @@ export function ChatMessages({
                       updated={downloadsPulseMsgId === m.id}
                       diagrams={m.result.diagrams}
                       slidesStatus={m.result.slides_status}
+                      slidesStage={m.result.slides_stage}
                       slidePngs={m.result.slide_pngs}
                       onView={() => {
                         const r = m.result!;

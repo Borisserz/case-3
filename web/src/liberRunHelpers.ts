@@ -3,6 +3,8 @@
 import {
   pushThinkingLine,
   stageKey as thinkingStageKey,
+  stageLabelForMode,
+  type ThinkingMode,
 } from "./pipelinePhrases";
 import { STAGE_LABELS } from "./liberConstants";
 import type { BotMsg, RunResult } from "./liberTypes";
@@ -13,7 +15,8 @@ export function appendBotThinking(
   detail?: string | null,
   beat = false,
 ): BotMsg {
-  const key = thinkingStageKey(stage, detail);
+  const mode: ThinkingMode = msg.thinkingMode || "report";
+  const key = thinkingStageKey(stage, detail, mode);
   const now = Date.now();
   const stageAt =
     msg.thinkingStageKey === key && msg.thinkingStageAt
@@ -27,6 +30,7 @@ export function appendBotThinking(
     dwellSec,
     beat,
     seed: startedAt,
+    mode,
   });
   return {
     ...msg,
@@ -45,7 +49,7 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
   if (result?.output_mode === "diagram" || result?.diagrams?.length) {
     const n = result.diagrams?.length || 0;
     return n
-      ? `Схема готова (${n}). Краткое описание — в чате; полный вид справа.`
+      ? `Схема готова (${n}). Откройте карточку ниже, чтобы развернуть.`
       : "Схема готова";
   }
   return "Отчёт готов";
@@ -95,7 +99,14 @@ export function openSummaryStream(
   };
 }
 
-export function stageLabel(stage?: string, detail?: string | null): string {
+export function stageLabel(
+  stage?: string,
+  detail?: string | null,
+  mode: ThinkingMode = "report",
+): string {
+  if (mode !== "report") {
+    return stageLabelForMode(stage, detail, mode);
+  }
   if (detail && stage === "charts") return `Рисую ${detail}…`;
   if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
   return "Генерирую документ…";
@@ -134,7 +145,22 @@ export function reportThumb(result: RunResult): string | null {
 export function reportTitle(result: RunResult): string {
   const t = result.preview?.title?.trim();
   if (t) return t;
+  if (result.output_mode === "diagram" || result.diagrams?.length) {
+    return `Схема · ${result.run_id}`;
+  }
+  if (result.output_mode === "presentation") {
+    return `Презентация · ${result.run_id}`;
+  }
   return `Отчёт · ${result.run_id}`;
+}
+
+/** Provisional chat header while a run is in flight (Julius rename). */
+export function provisionalSessionTitle(
+  mode: "report" | "diagram" | "presentation" | null | undefined,
+): string {
+  if (mode === "diagram") return "Новая схема";
+  if (mode === "presentation") return "Новая презентация";
+  return "Новый отчёт";
 }
 
 /** C8: human status error with failed charts + TeX log tail. */
