@@ -150,7 +150,7 @@
   border-radius: 17px;
   border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
   background:
-    radial-gradient(ellipse 90% 48% at 0% 0%, rgba(228, 237, 208, 0.45), transparent 58%),
+    radial-gradient(ellipse 90% 48% at 0% 0%, rgba(18, 18, 18, 0.04), transparent 58%),
     var(--sheet);
   box-shadow: var(--shadow-lift);
   overflow: hidden;
@@ -242,11 +242,11 @@
   border-radius: 12px;
   min-height: 2.5rem;
   background: color-mix(in srgb, var(--primary) 94%, var(--sheet));
-  color: #fffcf7;
+  color: var(--on-primary);
   font-weight: 600;
   cursor: pointer;
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fffcf7 14%, transparent) inset,
+    0 1px 0 color-mix(in srgb, var(--on-primary) 14%, transparent) inset,
     0 2px 8px color-mix(in srgb, var(--primary) 14%, transparent);
   transition:
     background var(--dur-fast) var(--ease-out),
@@ -258,7 +258,7 @@
   background: var(--primary-hover);
   border-color: color-mix(in srgb, var(--primary-hover) 28%, transparent);
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fffcf7 10%, transparent) inset,
+    0 1px 0 color-mix(in srgb, var(--on-primary) 10%, transparent) inset,
     0 3px 10px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
@@ -291,7 +291,7 @@
   max-height: min(88vh, 720px);
   overflow: auto;
   border-radius: 17px;
-  background: var(--sheet, #fffcf7);
+  background: var(--sheet, #ffffff);
   border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
   box-shadow: var(--shadow-lift);
   padding: 1rem 1.1rem 1.15rem;
@@ -340,7 +340,7 @@
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
   background: rgba(15, 17, 20, 0.72);
-  color: #fffcf7;
+  color: var(--on-primary);
   font-size: 0.65rem;
   font-weight: 650;
 }

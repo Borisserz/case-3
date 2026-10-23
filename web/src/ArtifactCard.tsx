@@ -32,7 +32,12 @@ type Props = {
 
 function fileNameFromUrl(url: string, fallback: string): string {
   try {
-    return decodeURIComponent(url.split("/").pop() || fallback);
+    const raw = (url.split("/").pop() || fallback).split("?")[0] || fallback;
+    const name = decodeURIComponent(raw);
+    // Pipeline stems uploads as source.txt → source.pdf; show a human label.
+    if (/^source\.pdf$/i.test(name)) return "Отчёт.pdf";
+    if (/^source\.docx$/i.test(name)) return "Отчёт.docx";
+    return name || fallback;
   } catch {
     return fallback;
   }

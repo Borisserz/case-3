@@ -185,13 +185,13 @@ export function IconLiberMark({ size = 28 }: { size?: number }) {
       aria-hidden
       className="liber-mark"
     >
-      <circle cx="16" cy="16" r="15" fill="var(--surface-3, #E8F0E4)" />
+      <circle cx="16" cy="16" r="15" fill="var(--surface-3, #e8e8e6)" />
       <circle
         cx="16"
         cy="16"
         r="14"
         fill="none"
-        stroke="var(--accent, #3F5210)"
+        stroke="var(--accent, #1a1a1a)"
         strokeWidth="1.25"
         opacity="0.35"
       />
@@ -199,7 +199,7 @@ export function IconLiberMark({ size = 28 }: { size?: number }) {
         x="16"
         y="21"
         textAnchor="middle"
-        fill="var(--accent, #3F5210)"
+        fill="var(--accent, #1a1a1a)"
         fontFamily="Crimson Text, Georgia, serif"
         fontSize="15"
         fontWeight="600"

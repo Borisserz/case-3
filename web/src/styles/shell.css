@@ -459,10 +459,12 @@ button:disabled {
   min-height: 0;
 }
 
-/* Julius empty-home: hero sits close above sheet composer (cockpit, not void) */
+/* Julius empty-home: hero sits close above sheet composer (cockpit, not void).
+   Anchor from top — never justify-content:center here: presentation gallery
+   grows the column and would shove the composer upward between modes. */
 .desk.chat-desk.is-empty-home {
-  justify-content: center;
-  align-items: center; /* keep hero + composer column in desk center */
+  justify-content: flex-start;
+  align-items: center;
   gap: var(--space-3);
   overflow-y: auto;
   overflow-x: hidden;
@@ -471,17 +473,20 @@ button:disabled {
 
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage),
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) {
-  /* stretch + margin-auto on stage — align-items:center was left-pinning the gallery */
+  /* Same top inset for report / diagram / presentation so the sheet does not jump. */
   justify-content: flex-start;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding-top: clamp(2.75rem, 11vh, 5.25rem);
+  padding-bottom: min(6vh, 2.5rem);
+  box-sizing: border-box;
 }
 
 .desk.chat-desk.is-empty-home .messages {
   flex: 0 0 auto;
   width: 100%;
   overflow: visible;
-  padding: var(--space-5) var(--space-4) 0;
+  padding: var(--space-6) var(--space-4) 0;
   box-sizing: border-box;
 }
 
@@ -528,14 +533,14 @@ button:disabled {
   min-width: 0;
 }
 
-/* Empty stage (report/diagram/presentation): quieter hero */
+/* Empty stage (report/diagram/presentation): quieter hero, lower in the viewport */
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .messages,
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .messages {
-  padding-top: var(--space-4);
+  padding-top: var(--space-5);
 }
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .empty-hero,
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero {
-  padding: var(--space-3) var(--space-4) var(--space-1);
+  padding: var(--space-4) var(--space-4) var(--space-2);
 }
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .empty-hero h2,
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero h2 {
@@ -793,15 +798,15 @@ button:disabled {
   width: 100%;
   margin-bottom: 0.55rem;
   padding: 0.55rem 0.8rem;
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--border));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--sheet) 72%, var(--secondary));
-  color: var(--ink-2);
+  background: var(--sheet);
+  color: var(--ink);
   font-size: 0.86rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 4%, transparent);
   transition:
     background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
@@ -816,8 +821,8 @@ button:disabled {
 .liber-sidebar-new:hover:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fffcf7;
-  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 10%, transparent) inset;
+  color: var(--on-primary);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 10%, transparent) inset;
 }
 
 .liber-sidebar-new:disabled {
@@ -1087,7 +1092,7 @@ button:disabled {
   font-size: 0.72rem;
   font-weight: 650;
   letter-spacing: 0.01em;
-  color: #fffcf7;
+  color: var(--on-primary);
   background: var(--primary);
   cursor: pointer;
   transition: background 0.15s ease, opacity 0.15s ease;

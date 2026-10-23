@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Iterator
 
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.tex_preview import tex_to_preview_blocks
+
+# Chat blurb must not stall print UX for a full VISION_TIMEOUT_S (often 300s).
+_SUMMARY_TIMEOUT_S = 90.0
+_SUMMARY_RETRIES = 0
 
 SUMMARY_SYSTEM = """Ты — Liber Atelier: спокойный ассистент за рабочим столом.
 Пользователь только что получил готовый отчёт. Напиши короткое сообщение в чат (как Cursor / DeepSeek): что собрано и что внутри.
@@ -114,6 +119,55 @@ def build_summary_user(
     return "\n".join(parts)
 
 
+def local_summary_blurb(
+    tex: str,
+    *,
+    media: dict[str, Any] | None = None,
+) -> str:
+    """Deterministic fallback when the summary LLM times out or fails."""
+    data = tex_to_preview_blocks(tex or "")
+    title = str(data.get("title") or "").strip() or "Отчёт"
+    n_tables = sum(
+        1 for b in (data.get("blocks") or []) if isinstance(b, dict) and b.get("type") == "table"
+    )
+    n_heads = sum(
+        1
+        for b in (data.get("blocks") or [])
+        if isinstance(b, dict) and b.get("type") == "heading"
+    )
+    m = media or {}
+    charts_ok = int(m.get("charts_ok") or 0)
+    figures_ok = int(m.get("figures_ok") or 0)
+    bits: list[str] = [f"Готов: **{title}**."]
+    parts: list[str] = []
+    if n_heads:
+        parts.append(f"разделов: {n_heads}")
+    if n_tables:
+        parts.append(f"таблиц: {n_tables}")
+    if charts_ok:
+        parts.append(f"графиков: {charts_ok}")
+    if figures_ok:
+        parts.append(f"иллюстраций: {figures_ok}")
+    if parts:
+        bits.append("Внутри — " + ", ".join(parts) + ".")
+    bits.append("Подробности — в превью и PDF.")
+    return "\n\n".join(bits)
+
+
+def _summary_client(client: LLMClient | None) -> LLMClient:
+    if client is not None:
+        return client
+    cfg = LLMConfig.from_env()
+    return LLMClient(
+        replace(
+            cfg,
+            timeout_s=min(float(cfg.timeout_s), _SUMMARY_TIMEOUT_S),
+            max_retries=_SUMMARY_RETRIES,
+            max_tokens=min(int(cfg.max_tokens), 800),
+        )
+    )
+
+
 def generate_chat_summary(
     tex: str,
     *,
@@ -125,7 +179,7 @@ def generate_chat_summary(
     """Complete (optionally streaming via on_delta) a chat summary. Raises LLMError."""
     outline = build_outline(tex)
     user = build_summary_user(outline, intent=intent, media=media)
-    llm = client or LLMClient(LLMConfig.from_env())
+    llm = _summary_client(client)
     if on_delta is not None and hasattr(llm, "stream"):
         chunks: list[str] = []
         for piece in llm.stream(
@@ -156,13 +210,17 @@ def try_generate_chat_summary(
     client: LLMClient | None = None,
     on_delta: Any | None = None,
 ) -> tuple[str, str]:
-    """Return (text, status) where status is ok|error|skipped. Never raises."""
+    """Return (text, status) where status is ok|error|skipped. Never raises.
+
+    On LLM failure returns a local outline blurb with status ``error`` so the
+    chat is not empty after a long OpenRouter stall.
+    """
     try:
         if client is None:
             try:
                 LLMConfig.from_env()
             except LLMConfigError:
-                return "", "skipped"
+                return local_summary_blurb(tex, media=media), "skipped"
         text = generate_chat_summary(
             tex,
             intent=intent,
@@ -171,10 +229,19 @@ def try_generate_chat_summary(
             on_delta=on_delta,
         )
         if not text:
-            return "", "error"
+            blurb = local_summary_blurb(tex, media=media)
+            if on_delta:
+                on_delta(blurb)
+            return blurb, "error"
         return text, "ok"
     except (LLMError, LLMConfigError, OSError, ValueError):
-        return "", "error"
+        blurb = local_summary_blurb(tex, media=media)
+        if on_delta:
+            try:
+                on_delta(blurb)
+            except Exception:  # noqa: BLE001
+                pass
+        return blurb, "error"
 
 
 def iter_summary_deltas(

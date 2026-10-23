@@ -111,7 +111,7 @@
     linear-gradient(
       155deg,
       color-mix(in srgb, var(--pack-bg, var(--sheet)) 78%, var(--pack-accent, var(--secondary))),
-      color-mix(in srgb, var(--paper, #f0ede4) 52%, var(--secondary))
+      color-mix(in srgb, var(--paper, #f7f7f5) 52%, var(--secondary))
     );
   color: var(--pack-ink, var(--ink));
   overflow: hidden;
@@ -179,7 +179,7 @@
   display: grid;
   place-items: center;
   padding: var(--space-4);
-  background: color-mix(in srgb, var(--ink) 32%, var(--paper, #f0ede4));
+  background: color-mix(in srgb, var(--ink) 32%, var(--paper, #f7f7f5));
   backdrop-filter: blur(10px) saturate(1.05);
 }
 .deck-template-preview-panel {
@@ -191,7 +191,7 @@
   background: var(--paper, var(--sheet));
   box-shadow:
     var(--shadow-lift),
-    0 0 0 1px color-mix(in srgb, var(--foil, #b8a36a) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--foil, #8a8a86) 22%, transparent),
     0 28px 64px rgb(20 22 26 / 18%);
   padding: var(--space-5) var(--space-5) var(--space-4);
   display: flex;
@@ -300,16 +300,16 @@
   aspect-ratio: 16 / 9;
   border-radius: 5px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--paper, #f0ede4) 85%, var(--pack-bg, #fff));
+  background: color-mix(in srgb, var(--paper, #f7f7f5) 85%, var(--pack-bg, #fff));
   scroll-snap-align: start;
   scroll-snap-stop: always;
   box-shadow:
-    0 1px 0 color-mix(in srgb, var(--foil, #b8a36a) 40%, transparent),
+    0 1px 0 color-mix(in srgb, var(--foil, #8a8a86) 40%, transparent),
     0 10px 28px rgb(20 22 26 / 10%),
     inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 .deck-template-preview-frame.is-raster {
-  background: color-mix(in srgb, var(--paper, #f0ede4) 88%, #e8e4d8);
+  background: color-mix(in srgb, var(--paper, #f7f7f5) 88%, #e8e4d8);
 }
 .deck-template-preview-mat {
   position: absolute;
@@ -453,7 +453,7 @@
 .deck-template-preview-use {
   border-color: transparent;
   background: var(--primary);
-  color: #fffcf7;
+  color: var(--on-primary);
 }
 .deck-template-preview-use:hover:not(:disabled) {
   background: var(--primary-hover);
@@ -1144,7 +1144,7 @@
   max-height: min(90vh, 760px);
   overflow: auto;
   background:
-    radial-gradient(ellipse 90% 48% at 0% 0%, rgba(228, 237, 208, 0.4), transparent 58%),
+    radial-gradient(ellipse 90% 48% at 0% 0%, rgba(18, 18, 18, 0.04), transparent 58%),
     var(--sheet);
   border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
   border-radius: 17px;
@@ -1202,11 +1202,11 @@
 .deck-style-save {
   background: color-mix(in srgb, var(--primary) 94%, var(--sheet));
   border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
-  color: #fffcf7;
+  color: var(--on-primary);
   font-weight: 600;
   border-radius: 12px;
   box-shadow:
-    0 1px 0 color-mix(in srgb, #fffcf7 14%, transparent) inset,
+    0 1px 0 color-mix(in srgb, var(--on-primary) 14%, transparent) inset,
     0 2px 8px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 .deck-style-save:hover {
@@ -1455,7 +1455,7 @@
 .deck-style-preview-slide {
   aspect-ratio: 16 / 9;
   border-radius: 10px;
-  background: var(--deck-bg, #fffcf7);
+  background: var(--deck-bg, #ffffff);
   color: var(--deck-text, #14161a);
   padding: 0.85rem 1rem 0.7rem;
   position: relative;
@@ -1525,6 +1525,6 @@
 }
 .deck-style-preview-thead {
   background: var(--deck-primary, #2e4208);
-  color: var(--deck-bg, #fffcf7);
+  color: var(--deck-bg, #ffffff);
   font-weight: 600;
 }

@@ -4,6 +4,8 @@
 
 **Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. **В PDF/DOCX схем нет** (только графики/фото); print-truth = PDF.
 
+**Preview edit:** графики / фото / **таблицы** («Изменить» → sheet → Сохранить в отчёт = TeX + PDF/DOCX). Таблицы: `POST /api/runs/{id}/tables/{n}/edit`.
+
 **Память проекта (агенты и люди):** [`docs/MEMORY.md`](docs/MEMORY.md) · [`AGENTS.md`](AGENTS.md)
 
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  

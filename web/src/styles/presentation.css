@@ -93,7 +93,7 @@
   border: none;
   border-radius: var(--radius-sm);
   background: var(--primary);
-  color: #fffcf7;
+  color: var(--on-primary);
   font: inherit;
   font-weight: 600;
   font-size: 0.88rem;
@@ -179,7 +179,7 @@
   color: var(--ink, #1a2e22);
 }
 .presentation-seg-btn.is-on {
-  background: var(--sheet, #fffcf7);
+  background: var(--sheet, #ffffff);
   color: var(--ink, #1a2e22);
   box-shadow: 0 1px 3px rgba(15, 20, 18, 0.1);
 }
@@ -272,7 +272,7 @@
 }
 .presentation-save-pill.is-ok {
   background: color-mix(in srgb, var(--primary) 88%, #0f172a);
-  color: #fffcf7;
+  color: var(--on-primary);
 }
 .presentation-save-pill.is-err {
   display: flex;
@@ -652,7 +652,7 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.32rem 0.6rem;
-  background: color-mix(in srgb, var(--sheet, #fffcf7) 92%, white);
+  background: color-mix(in srgb, var(--sheet, #ffffff) 92%, white);
   border: 1px solid var(--rule, color-mix(in srgb, var(--deck-rule, #e6e2d8) 80%, transparent));
   border-radius: 12px;
   box-shadow:
@@ -670,7 +670,7 @@
   color: var(--muted);
   padding: 0.12rem 0.4rem;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--paper, #f0ede4) 80%, transparent);
+  background: color-mix(in srgb, var(--paper, #f7f7f5) 80%, transparent);
 }
 .deck-edit-toolbar-label {
   font-weight: 600;
@@ -695,7 +695,7 @@
   color: var(--deck-ink, #14161a);
 }
 .deck-edit-tb-btn:hover {
-  background: var(--deck-paper, var(--paper, #f0ede4));
+  background: var(--deck-paper, var(--paper, #f7f7f5));
 }
 .deck-edit-toolbar-hint {
   color: var(--deck-primary, var(--primary, #416650));
@@ -1188,7 +1188,7 @@
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #fffcf7;
+  color: var(--on-primary);
   background: rgba(20, 22, 26, 0.62);
   border-radius: 4px;
   padding: 0.05rem 0.32rem;

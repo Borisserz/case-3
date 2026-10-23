@@ -17,6 +17,7 @@ import {
 } from "./ArtifactRail";
 import type { ChartEditRequest } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
+import type { TableEditRequest } from "./TableEditSheet";
 import { ChatComposer } from "./ChatComposer";
 import { ChatMessages } from "./ChatMessages";
 import { ChartsQa } from "./ChartsQa";
@@ -437,6 +438,101 @@ export default function App() {
       setEditError({
         msgId,
         figureId: req.figureId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function editTable(
+    msgId: string,
+    runId: string,
+    req: TableEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: `tab:${req.tableIndex}`,
+        message: "Нет run_id — открой отчёт из свежего запуска, не из пустой сессии",
+      });
+      return false;
+    }
+    editLock.current = true;
+    const tableId = `tab:${req.tableIndex}`;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: tableId });
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(rid)}/tables/${req.tableIndex}/edit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            caption: req.caption,
+            headers: req.headers,
+            rows: req.rows,
+            formats: "both",
+          }),
+        },
+      );
+      let data: Record<string, unknown> = {};
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        const detail = data.detail;
+        const raw =
+          typeof detail === "string"
+            ? detail
+            : typeof data.error === "string"
+              ? data.error
+              : res.statusText || "table edit failed";
+        // FastAPI unmatched route (often empty run_id → /runs//tables/…)
+        if (raw === "Not Found" || res.status === 404) {
+          throw new Error(
+            raw === "run not found"
+              ? "Run не найден на диске — нужен свежий отчёт с этого API"
+              : "API не нашёл правку таблицы (404). Перезапусти api.cmd и сохрани ещё раз",
+          );
+        }
+        throw new Error(raw);
+      }
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const next = {
+            ...msg,
+            result: {
+              ...msg.result,
+              preview: data.preview ?? msg.result.preview,
+              downloads: data.downloads ?? msg.result.downloads,
+              warnings:
+                Array.isArray(data.warnings) && data.warnings.length
+                  ? data.warnings
+                  : msg.result.warnings,
+              media_status: data.media_status ?? msg.result.media_status,
+            },
+          };
+          if (next.result) rememberRun(next.result);
+          return next;
+        }),
+      );
+      setToast("Таблица обновлена");
+      setDownloadsPulseMsgId(msgId);
+      window.setTimeout(() => setToast(null), 2800);
+      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: tableId,
         message: err instanceof Error ? err.message : String(err),
       });
       return false;
@@ -1663,6 +1759,18 @@ export default function App() {
                   railArtifact.kind === "report" && activeReport
                     ? (req) =>
                         editImage(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+                onEditTable={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (req) =>
+                        editTable(
                           railArtifact.msgId,
                           activeReport.run_id,
                           req,

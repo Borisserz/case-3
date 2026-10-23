@@ -30,6 +30,7 @@ from case3.diagram_edit import (
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
+from case3.table_edit import TableEditError, edit_table_in_run
 from case3.generate import max_images_from_env, resolve_text_file
 from case3.image_api import ImageApiConfig, edit_png, image_api_configured
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
@@ -1069,6 +1070,15 @@ class FigureEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
+class TableEditBody(BaseModel):
+    """Structured table replace → patch TeX → rebuild PDF/DOCX."""
+
+    caption: str = Field(default="")
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+    formats: str = Field(default="both")
+
+
 def _resolve_run_dir(run_id: str) -> Path:
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
@@ -1333,6 +1343,68 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
             "kind": "figure",
             "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
         },
+        "warnings": [],
+    }
+
+
+@app.post("/api/runs/{run_id}/tables/{table_index}/edit")
+async def edit_run_table(
+    run_id: str, table_index: int, body: TableEditBody
+) -> dict[str, Any]:
+    """Replace one preview table (caption + grid) and rebuild PDF/DOCX."""
+    out_dir = _resolve_run_dir(run_id)
+    if table_index < 1:
+        raise HTTPException(400, detail="table_index must be ≥ 1")
+
+    fmt_raw = (body.formats or "both").strip().lower()
+    if fmt_raw == "both":
+        fmt_set = {"pdf", "docx"}
+    elif fmt_raw in {"pdf", "docx"}:
+        fmt_set = {fmt_raw}
+    else:
+        raise HTTPException(400, detail="formats must be pdf|docx|both")
+
+    headers = [str(h) for h in (body.headers or [])]
+    rows = [[str(c) for c in row] for row in (body.rows or [])]
+    caption = str(body.caption or "")
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_table_in_run,
+                out_dir,
+                table_index,
+                caption=caption,
+                headers=headers,
+                rows=rows,
+                formats=fmt_set,
+            )
+        )
+    except TableEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    media = result.get("media_status") or {}
+    preview = _build_preview_payload(
+        run_id, out_dir, media if isinstance(media, dict) else {}
+    )
+    v = int(result.get("version") or 0)
+
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
+
+    return {
+        "run_id": run_id,
+        "table_index": table_index,
+        "status": "ok",
+        "caption": result.get("caption"),
+        "media_status": media,
+        "downloads": files,
+        "preview": preview,
         "warnings": [],
     }
 

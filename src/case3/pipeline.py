@@ -487,6 +487,9 @@ def run_pipeline(
                 fut_r = pool.submit(_do_render)
                 fut_s = pool.submit(_do_summary)
                 artifacts = fut_r.result()
+                # Print is done — don't leave UI stuck on «Собираю DOCX…»
+                # while OpenRouter still streams the chat summary.
+                bump("summary")
                 summary_text, summary_status = fut_s.result()
 
             meta["chat_summary"] = summary_text or ""

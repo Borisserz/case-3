@@ -15,6 +15,11 @@ import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
+import {
+  TableEditSheet,
+  type TableEditDraft,
+  type TableEditRequest,
+} from "./TableEditSheet";
 import { PipelineFlow } from "./PipelineFlow";
 
 const PdfFirstPage = lazy(() =>
@@ -87,6 +92,7 @@ type Props = {
   /** Resolve true on success so the sheet can close. */
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
 };
 
@@ -135,6 +141,7 @@ export function ReportView({
   onOpenPdf,
   onEditFigure,
   onEditImage,
+  onEditTable,
   onEditCancel,
 }: Props) {
   const blocks = preview.blocks || [];
@@ -147,6 +154,8 @@ export function ReportView({
   } | null>(null);
   const [sheetFor, setSheetFor] = useState<string | null>(null);
   const [imageFor, setImageFor] = useState<string | null>(null);
+  const [tableFor, setTableFor] = useState<number | null>(null);
+  const [tableDraft, setTableDraft] = useState<TableEditDraft | null>(null);
   const [draft, setDraft] = useState<ChartEditDraft | null>(null);
   const [sheetPreviewHtml, setSheetPreviewHtml] = useState<string | null>(null);
   const lbTitle = useId();
@@ -160,6 +169,12 @@ export function ReportView({
 
   const closeImage = useCallback(() => {
     setImageFor(null);
+    onEditCancel?.();
+  }, [onEditCancel]);
+
+  const closeTable = useCallback(() => {
+    setTableFor(null);
+    setTableDraft(null);
     onEditCancel?.();
   }, [onEditCancel]);
 
@@ -281,40 +296,79 @@ export function ReportView({
           if (b.type === "table") {
             tabN += 1;
             const n = tabN;
-            const numericCols = (b.headers || []).map((_, ci) =>
-              colIsNumeric(b.headers, b.rows, ci),
+            const tableId = `tab:${n}`;
+            const tableOpen = tableFor === n;
+            const isEditingTable = editingFigureId === tableId;
+            const tableError =
+              tableOpen && editErrorFigureId === tableId ? editError : null;
+            const live =
+              tableOpen && tableDraft
+                ? tableDraft
+                : {
+                    caption: b.caption || "",
+                    headers: b.headers || [],
+                    rows: b.rows || [],
+                  };
+            const numericCols = live.headers.map((_, ci) =>
+              colIsNumeric(live.headers, live.rows, ci),
             );
+            const capText = live.caption.trim()
+              ? `Таблица ${n}: ${live.caption.trim()}`
+              : `Таблица ${n}`;
             return (
               <figure
                 key={i}
-                className="report-table-wrap report-block"
+                className={`report-table-wrap report-block${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}`}
                 style={delayStyle}
               >
-                {b.caption ? (
-                  <figcaption className="report-caption">
-                    Таблица {n}: {b.caption}
+                <div className="report-table-toolbar">
+                  <figcaption
+                    className={`report-caption${live.caption.trim() ? "" : " muted"}${tableOpen ? " is-draft" : ""}`}
+                  >
+                    {capText}
+                    {tableOpen && !isEditingTable ? (
+                      <span className="report-table-draft-tag"> черновик</span>
+                    ) : null}
                   </figcaption>
-                ) : (
-                  <figcaption className="report-caption muted">
-                    Таблица {n}
-                  </figcaption>
-                )}
+                  {onEditTable && !isEditingTable && (
+                    <button
+                      type="button"
+                      className={`report-fig-edit${tableOpen ? " is-open" : ""}`}
+                      aria-expanded={tableOpen}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (tableOpen) closeTable();
+                        else {
+                          setSheetFor(null);
+                          setImageFor(null);
+                          setTableDraft(null);
+                          setTableFor(n);
+                        }
+                      }}
+                    >
+                      {tableOpen ? "Закрыть" : "Изменить"}
+                    </button>
+                  )}
+                </div>
                 <div className="report-table-scroll">
                   <table className="report-table">
                     <thead>
                       <tr>
-                        {b.headers.map((h, hi) => (
+                        {live.headers.map((h, hi) => (
                           <th
                             key={hi}
                             className={numericCols[hi] ? "num" : undefined}
                           >
-                            {h}
+                            {h || (
+                              <span className="report-table-ph">Столбец {hi + 1}</span>
+                            )}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {b.rows.map((row, ri) => (
+                      {live.rows.map((row, ri) => (
                         <tr key={ri}>
                           {row.map((cell, ci) => (
                             <td
@@ -329,6 +383,33 @@ export function ReportView({
                     </tbody>
                   </table>
                 </div>
+                {isEditingTable && (
+                  <div className="report-table-busy" aria-live="polite">
+                    <p className="fig-press-label">Пересобираю таблицу в отчёте…</p>
+                    <p className="fig-press-hint">TeX · PDF · DOCX</p>
+                  </div>
+                )}
+                {tableOpen && onEditTable && (
+                  <TableEditSheet
+                    open
+                    tableIndex={n}
+                    initialCaption={b.caption || ""}
+                    initialHeaders={b.headers || []}
+                    initialRows={b.rows || []}
+                    busy={isEditingTable}
+                    error={tableError}
+                    onDraftChange={setTableDraft}
+                    onCancel={() => {
+                      if (!editingFigureId) closeTable();
+                    }}
+                    onSubmit={(req) => {
+                      void (async () => {
+                        const ok = await onEditTable(req);
+                        if (ok) closeTable();
+                      })();
+                    }}
+                  />
+                )}
               </figure>
             );
           }
@@ -446,6 +527,7 @@ export function ReportView({
                         if (sheetOpen) closeSheet();
                         else {
                           setImageFor(null);
+                          setTableFor(null);
                           setDraft(null);
                           setSheetFor(b.id);
                         }
@@ -466,6 +548,7 @@ export function ReportView({
                         if (imageOpen) closeImage();
                         else {
                           setSheetFor(null);
+                          setTableFor(null);
                           setImageFor(b.id);
                         }
                       }}

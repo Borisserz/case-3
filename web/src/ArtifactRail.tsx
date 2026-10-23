@@ -15,6 +15,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ChartEditRequest, PaletteInfo } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
+import type { TableEditRequest } from "./TableEditSheet";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { ExportMenu } from "./ExportMenu";
@@ -103,6 +104,7 @@ type Props = {
   onClosed?: () => void;
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   onMakePresentation?: () => void;
   makingPresentation?: boolean;
@@ -131,6 +133,7 @@ export function ArtifactRail({
   onClosed,
   onEditFigure,
   onEditImage,
+  onEditTable,
   onEditCancel,
   onMakePresentation,
   makingPresentation = false,
@@ -587,6 +590,7 @@ export function ArtifactRail({
                   onOpenPdf={hasPdf ? () => onTab("pdf") : undefined}
                   onEditFigure={onEditFigure}
                   onEditImage={onEditImage}
+                  onEditTable={onEditTable}
                   onEditCancel={onEditCancel}
                 />
               ) : null}

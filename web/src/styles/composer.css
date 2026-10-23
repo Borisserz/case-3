@@ -173,16 +173,17 @@
 }
 
 .composer-mode-pill.is-on {
-  background: var(--sheet);
-  color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
   font-weight: 650;
   box-shadow:
-    0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent),
-    0 1px 3px color-mix(in srgb, var(--ink) 5%, transparent);
+    0 1px 0 color-mix(in srgb, var(--on-primary) 12%, transparent) inset,
+    0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
 .composer-mode-pill.is-on:active:not(:disabled) {
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 3%, transparent);
+  background: var(--primary-hover);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 8%, transparent) inset;
 }
 
 .composer-mode-pill:disabled {
@@ -544,12 +545,12 @@ button.send {
   height: 2.4rem;
   padding: 0;
   background: var(--primary);
-  color: #fffcf7;
+  color: var(--on-primary);
   border: none;
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 12%, transparent) inset;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 12%, transparent) inset;
   transition: background var(--dur-mid) var(--ease-out), color var(--dur-fast),
     box-shadow var(--dur-fast), transform var(--dur-fast);
   white-space: nowrap;

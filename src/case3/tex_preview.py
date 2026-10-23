@@ -165,7 +165,14 @@ def _split_rows(tabular_body: str) -> list[list[str]]:
             continue
         if "&" not in s and not re.search(r"[A-Za-zА-Яа-я0-9]", s):
             continue
-        cells = [_plain_unescape(c) for c in s.split("&")]
+        cells = []
+        # Split on bare & only — keep \& inside a cell
+        for c in re.split(r"(?<!\\)&", s):
+            plain = _plain_unescape(c).strip()
+            # Liber table edit: empty cells serialize as TeX ~
+            if plain == "~":
+                plain = ""
+            cells.append(plain)
         if any(cells):
             rows.append(cells)
     return rows

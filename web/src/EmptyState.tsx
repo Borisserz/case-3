@@ -28,7 +28,7 @@ export function EmptyState({ workMode = null }: Props) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduce ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
-      <IconLiberMark size={36} />
+      <IconLiberMark size={72} />
       <h2>{title}</h2>
     </motion.div>
   );
