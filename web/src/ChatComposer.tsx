@@ -28,6 +28,8 @@ type Props = {
   showModes: boolean;
   /** Empty chat + presentation — show template gallery. */
   showPackPresets: boolean;
+  /** Empty presentation home only — palette / style sheet. */
+  showDeckStyleBtn?: boolean;
   deckStyle: DeckStyle;
   deckPacks?: DeckThemePackInfo[];
   /** Apply pack + structure and fill composer with starter prompt (Julius). */
@@ -66,6 +68,7 @@ export function ChatComposer({
   onWorkMode,
   showModes,
   showPackPresets,
+  showDeckStyleBtn = false,
   deckStyle,
   deckPacks,
   onUseDeckTemplate,
@@ -90,8 +93,6 @@ export function ChatComposer({
         : sourceDraft || file
           ? "Спросить Liber…"
           : "Опишите отчёт или вставьте Source…";
-
-  const showDeckSettings = workMode === "presentation";
 
   useEffect(() => {
     if (!showPackPresets) return;
@@ -215,7 +216,7 @@ export function ChatComposer({
 
       {showModes ? (
         <div className="composer-toolbar">
-          {showDeckSettings ? (
+          {showDeckStyleBtn ? (
             <button
               type="button"
               className={`composer-palette-btn${deckStyleOpen ? " is-on" : ""}`}

@@ -1347,6 +1347,11 @@ export default function App() {
                   }}
                   showModes
                   showPackPresets={
+                    msgs.length === 0 &&
+                    !busy &&
+                    workMode === "presentation"
+                  }
+                  showDeckStyleBtn={
                     msgs.length === 0 && workMode === "presentation"
                   }
                   deckStyle={deckStyle}
