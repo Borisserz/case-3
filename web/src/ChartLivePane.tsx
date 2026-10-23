@@ -76,26 +76,11 @@ export function ChartLivePane({
           title={caption || chartId}
           showBadge={false}
         />
-        {onJumpToPdf || htmlOverride?.trim() ? (
+        {htmlOverride?.trim() ? (
           <div className="chart-live-chrome">
-            {htmlOverride?.trim() ? (
-              <span className="live-chart-draft" aria-hidden>
-                черновик до сохранения
-              </span>
-            ) : (
-              <span />
-            )}
-            {onJumpToPdf ? (
-              <button
-                type="button"
-                className="chart-live-pdf"
-                disabled={disabled}
-                onClick={onJumpToPdf}
-                title="Страница рисунка в PDF (истина печати)"
-              >
-                открыть в PDF
-              </button>
-            ) : null}
+            <span className="live-chart-draft" aria-hidden>
+              черновик до сохранения
+            </span>
           </div>
         ) : null}
       </div>

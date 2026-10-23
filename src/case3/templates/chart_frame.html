@@ -128,16 +128,25 @@
       font-weight: 500;
       color: var(--chart-ink, #0F3D3E);
     }
+    /* Rank emphasis: first row strongest; rest still readable (not washed grey). */
+    .valued-legend__row:first-child .valued-legend__label,
+    .valued-legend li:first-child .valued-legend__label {
+      font-weight: 700;
+      color: var(--chart-ink, #0F3D3E);
+    }
     .valued-legend__swatch {
       width: 14px;
       height: 14px;
       border-radius: 999px;
       flex-shrink: 0;
+      box-shadow: inset 0 0 0 1px rgba(15, 61, 62, 0.12);
     }
     .valued-legend__label {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      color: var(--chart-ink, #0F3D3E);
+      opacity: 0.92;
     }
     .valued-legend__pct {
       font-variant-numeric: tabular-nums;
@@ -148,7 +157,9 @@
     }
     .valued-legend__abs {
       font-variant-numeric: tabular-nums;
-      color: var(--chart-muted, #6A7160);
+      font-weight: 600;
+      color: var(--chart-ink, #0F3D3E);
+      opacity: 0.72;
       min-width: 3em;
       text-align: right;
     }
@@ -198,15 +209,23 @@
       Chart.defaults.font.size = 17;
       Chart.defaults.font.weight = "500";
       Chart.defaults.color = "#3D5C60";
+      Chart.defaults.plugins.legend.display = true;
+      Chart.defaults.plugins.legend.position = "bottom";
       Chart.defaults.plugins.legend.labels.boxWidth = 16;
       Chart.defaults.plugins.legend.labels.padding = 20;
       Chart.defaults.plugins.legend.labels.font = { size: 16, weight: "500" };
       Chart.defaults.plugins.legend.labels.usePointStyle = true;
+      Chart.defaults.plugins.tooltip.enabled = true;
+      Chart.defaults.plugins.tooltip.backgroundColor = "rgba(26,52,48,0.92)";
+      Chart.defaults.plugins.tooltip.padding = 12;
+      Chart.defaults.plugins.tooltip.cornerRadius = 8;
+      Chart.defaults.plugins.tooltip.displayColors = true;
       Chart.defaults.elements.bar.borderRadius = 6;
       Chart.defaults.elements.bar.borderSkipped = false;
       Chart.defaults.elements.line.borderWidth = 3;
-      Chart.defaults.elements.point.radius = 4;
-      Chart.defaults.elements.point.hoverRadius = 5;
+      Chart.defaults.elements.point.radius = 5;
+      Chart.defaults.elements.point.hoverRadius = 7;
+      Chart.defaults.elements.point.hitRadius = 10;
       Chart.defaults.scale.grid.color = "rgba(26,74,75,0.08)";
       Chart.defaults.scale.grid.drawBorder = false;
     }

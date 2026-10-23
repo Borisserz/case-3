@@ -1025,34 +1025,6 @@
   }
 }
 
-.report-fig-pdf {
-  position: absolute;
-  top: 0.65rem;
-  left: 0.65rem;
-  z-index: 4;
-  min-height: 2rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--foil) 45%, var(--rule));
-  background: color-mix(in srgb, var(--sheet) 92%, transparent);
-  backdrop-filter: blur(6px);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(25, 25, 25, 0.06);
-  transition: background 0.14s, border-color 0.14s, transform 0.14s;
-}
-
-.report-fig-pdf:hover {
-  background: var(--secondary);
-  border-color: var(--primary);
-  color: var(--primary);
-  transform: translateY(-1px);
-}
-
 .report-fig-edit {
   position: absolute;
   top: 0.65rem;
@@ -1239,22 +1211,6 @@
   justify-content: space-between;
   gap: 0.45rem;
   padding: 0 0.15rem;
-}
-.chart-live-pdf {
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--rule));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foil) 35%, var(--paper));
-  color: var(--primary);
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.03em;
-  padding: 0.28rem 0.75rem;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.chart-live-pdf:hover:not(:disabled) {
-  background: var(--secondary);
-  border-color: var(--primary);
 }
 .report-fig-cap.is-jump {
   cursor: pointer;

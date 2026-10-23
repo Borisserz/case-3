@@ -1528,9 +1528,3 @@
   color: var(--deck-bg, #fffcf7);
   font-weight: 600;
 }
-.deck-style-foot {
-  margin: 0.85rem 0 0;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-

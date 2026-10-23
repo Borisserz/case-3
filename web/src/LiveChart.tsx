@@ -60,6 +60,8 @@ const LIVE_CSS = `
   --chart-accent: #4F6B14;
   --chart-muted: #6A7160;
   background: #fff;
+  /* Tooltips must not be clipped by parent overflow. */
+  overflow: visible;
 }
 .live-chart-mount .liber-live-box {
   position: relative;
@@ -67,6 +69,7 @@ const LIVE_CSS = `
   max-width: 100%;
   aspect-ratio: 11 / 5.6;
   margin: 0 auto;
+  overflow: visible;
 }
 .live-chart-mount .liber-live-box.is-hbar { aspect-ratio: 11 / 4.2; }
 .live-chart-mount .liber-live-box.is-donut { aspect-ratio: 1 / 1; max-width: min(100%, 360px); }
@@ -139,16 +142,25 @@ const LIVE_CSS = `
   gap: 8px 12px; align-items: center;
   font-size: 15px; font-weight: 500; color: var(--chart-ink, #0F3D3E);
 }
+.live-chart-mount .valued-legend__row:first-child .valued-legend__label,
+.live-chart-mount .valued-legend li:first-child .valued-legend__label {
+  font-weight: 700; color: var(--chart-ink, #0F3D3E);
+}
 .live-chart-mount .valued-legend__swatch {
   width: 12px; height: 12px; border-radius: 999px; flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(15, 61, 62, 0.12);
 }
-.live-chart-mount .valued-legend__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-chart-mount .valued-legend__label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--chart-ink, #0F3D3E); opacity: 0.92;
+}
 .live-chart-mount .valued-legend__pct {
   font-variant-numeric: tabular-nums; font-weight: 700;
   color: var(--kpi-ink, var(--chart-ink, #2E4208)); min-width: 2.8em; text-align: right;
 }
 .live-chart-mount .valued-legend__abs {
-  font-variant-numeric: tabular-nums; color: var(--chart-muted, #6A7160);
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--chart-ink, #0F3D3E); opacity: 0.72;
   min-width: 2.6em; text-align: right;
 }
 .live-chart-mount .kpi {
@@ -311,8 +323,9 @@ function patchChartForLive(Chart: ChartStatic): void {
   }
   if (el.line) el.line.borderWidth = 2.5;
   if (el.point) {
-    el.point.radius = 3.5;
-    el.point.hoverRadius = 5.5;
+    el.point.radius = 5;
+    el.point.hoverRadius = 8;
+    el.point.hitRadius = 12;
   }
   Chart.defaults.interaction = { mode: "nearest", intersect: true };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -333,23 +346,99 @@ function patchChartForLive(Chart: ChartStatic): void {
     const type = String(cfg.type || "").toLowerCase();
     const isDonut = type === "doughnut" || type === "pie";
     const isHbar = cfg.options.indexAxis === "y";
+    const isScatter = type === "scatter";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const datasets: any[] = Array.isArray(cfg.data?.datasets)
+      ? cfg.data.datasets
+      : [];
     // index+intersect:false maps doughnut arcs wrong (top↔bottom); bars need axis.
     if (isDonut) {
+      cfg.options.interaction = { mode: "nearest", intersect: true };
+    } else if (isScatter) {
       cfg.options.interaction = { mode: "nearest", intersect: true };
     } else if (isHbar) {
       cfg.options.interaction = { mode: "index", intersect: false, axis: "y" };
     } else {
       cfg.options.interaction = { mode: "index", intersect: false, axis: "x" };
     }
+    if (isScatter) {
+      cfg.options.elements = cfg.options.elements || {};
+      cfg.options.elements.point = {
+        ...(cfg.options.elements.point || {}),
+        radius: 10,
+        hoverRadius: 14,
+        hitRadius: 16,
+      };
+      for (const ds of datasets) {
+        const r = Number(ds.pointRadius);
+        if (!Number.isFinite(r) || r < 8) ds.pointRadius = 10;
+        const hr = Number(ds.pointHoverRadius);
+        if (!Number.isFinite(hr) || hr < 11) ds.pointHoverRadius = 14;
+        if (ds.borderWidth == null) ds.borderWidth = 2;
+      }
+    }
     cfg.options.plugins = cfg.options.plugins || {};
+    const multiSeries = datasets.length >= 2;
+    const hasNamed =
+      multiSeries &&
+      datasets.some(
+        (d: { label?: string }) =>
+          typeof d?.label === "string" && d.label.trim().length > 0,
+      );
+    // Donut uses HTML .valued-legend; keep Chart.js legend off. Else show series names.
+    const legendPrev = cfg.options.plugins.legend || {};
+    cfg.options.plugins.legend = {
+      ...legendPrev,
+      display: isDonut ? false : hasNamed || legendPrev.display === true,
+      position: legendPrev.position || "bottom",
+      labels: {
+        ...(typeof legendPrev.labels === "object" ? legendPrev.labels : {}),
+        usePointStyle: true,
+        boxWidth: 10,
+        padding: 14,
+      },
+    };
     cfg.options.plugins.tooltip = {
       ...(cfg.options.plugins.tooltip || {}),
       enabled: true,
-      // Keep tooltip inside chartArea so overflow:hidden parents don't hide it
       position: "nearest",
       yAlign: "bottom",
       xAlign: "center",
       caretPadding: 8,
+      displayColors: true,
+      callbacks: {
+        ...(cfg.options.plugins.tooltip?.callbacks || {}),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        label(ctx: any) {
+          const dsLabel = ctx.dataset?.label ? String(ctx.dataset.label) : "";
+          const cat = ctx.label != null ? String(ctx.label) : "";
+          let raw: number | undefined;
+          if (isDonut) {
+            raw = typeof ctx.parsed === "number" ? ctx.parsed : Number(ctx.raw);
+          } else if (ctx.parsed && typeof ctx.parsed === "object") {
+            const p = ctx.parsed as { x?: number; y?: number };
+            raw = typeof p.y === "number" ? p.y : p.x;
+          } else if (typeof ctx.parsed === "number") {
+            raw = ctx.parsed;
+          }
+          const num =
+            raw != null && Number.isFinite(raw)
+              ? String(Math.round(raw * 100) / 100)
+              : String(ctx.formattedValue ?? "");
+          let pct = "";
+          if (isDonut && raw != null && ctx.chart?.data?.datasets?.[0]?.data) {
+            const data = ctx.chart.data.datasets[0].data as number[];
+            const sum = data.reduce((a, b) => a + (Number(b) || 0), 0);
+            if (sum > 0) pct = ` (${Math.round((raw / sum) * 100)}%)`;
+          }
+          const head = dsLabel || cat;
+          if (head && cat && dsLabel && cat !== dsLabel) {
+            return `${dsLabel} · ${cat}: ${num}${pct}`;
+          }
+          if (head) return `${head}: ${num}${pct}`;
+          return num + pct;
+        },
+      },
     };
     return cfg;
   }

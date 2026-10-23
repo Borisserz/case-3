@@ -261,10 +261,6 @@ export function DeckStyleSheet({
           </div>
           <DeckStylePreview style={style} />
         </div>
-        <p className="deck-style-foot">
-          PPTX использует выбранные шрифты. Twin в Liber может отличаться —
-          как у Julius. Слайды — только из Source после «Сделать презентацию».
-        </p>
       </div>
     </div>
   );

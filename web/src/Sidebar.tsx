@@ -1,11 +1,9 @@
-/** Liber left rail — New · History (pin + folders) · Settings. */
+/** Liber left rail — New · Pinned · Folders · Recent · Settings (Codex-style). */
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useMemo, useState } from "react";
 import {
   IconChevron,
   IconFolder,
-  IconHistory,
   IconLiberMark,
   IconPanelLeft,
   IconPin,
@@ -24,8 +22,6 @@ type Props = {
   healthHint: string;
   history: HistoryItem[];
   folders: HistoryFolder[];
-  historyOpen: boolean;
-  onHistoryOpen: (open: boolean) => void;
   onNew: () => void;
   onOpenHistory: (item: HistoryItem) => void;
   onTogglePin: (runId: string) => void;
@@ -145,10 +141,9 @@ function HistoryRow({
 
 function FolderBlock({
   title,
-  icon,
   items,
   folders,
-  defaultOpen = true,
+  defaultOpen = false,
   folderId,
   onOpenHistory,
   onTogglePin,
@@ -158,26 +153,23 @@ function FolderBlock({
   busy,
 }: {
   title: string;
-  icon?: "pin" | "folder";
   items: HistoryItem[];
   folders: HistoryFolder[];
   defaultOpen?: boolean;
-  folderId?: string;
+  folderId: string;
   onOpenHistory: (item: HistoryItem) => void;
   onTogglePin: (runId: string) => void;
   onMoveToFolder: (runId: string, folderId: string | null) => void;
-  onRename?: (name: string) => void;
-  onDelete?: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
   busy: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(title);
 
-  if (items.length === 0 && !folderId) return null;
-
   return (
-    <section className="liber-hist-group">
+    <section className={`liber-hist-group${open ? " is-open" : ""}`}>
       <div className="liber-hist-group-head">
         <button
           type="button"
@@ -188,8 +180,9 @@ function FolderBlock({
           <span className={`liber-hist-chev${open ? " is-open" : ""}`}>
             <IconChevron size={12} />
           </span>
-          {icon === "pin" ? <IconPin size={13} /> : null}
-          {icon === "folder" ? <IconFolder size={13} /> : null}
+          <span className="liber-hist-group-ico" aria-hidden>
+            <IconFolder size={13} />
+          </span>
           {renaming ? (
             <input
               className="liber-hist-rename"
@@ -199,12 +192,12 @@ function FolderBlock({
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={() => {
-                onRename?.(nameDraft);
+                onRename(nameDraft);
                 setRenaming(false);
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  onRename?.(nameDraft);
+                  onRename(nameDraft);
                   setRenaming(false);
                 }
                 if (e.key === "Escape") setRenaming(false);
@@ -215,39 +208,37 @@ function FolderBlock({
           )}
           <span className="liber-hist-group-count">{items.length}</span>
         </button>
-        {folderId && onRename && onDelete ? (
-          <div className="liber-hist-group-tools">
-            <button
-              type="button"
-              className="liber-hist-act"
-              title="Переименовать"
-              aria-label="Переименовать папку"
-              onClick={() => {
-                setNameDraft(title);
-                setRenaming(true);
-              }}
-            >
-              <span className="liber-hist-act-glyph" aria-hidden>
-                Aa
-              </span>
-            </button>
-            <button
-              type="button"
-              className="liber-hist-act liber-hist-act-danger"
-              title="Удалить папку"
-              aria-label="Удалить папку"
-              onClick={() => {
-                if (
-                  window.confirm(`Удалить папку «${title}»? Чаты останутся.`)
-                ) {
-                  onDelete();
-                }
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ) : null}
+        <div className="liber-hist-group-tools">
+          <button
+            type="button"
+            className="liber-hist-act"
+            title="Переименовать"
+            aria-label="Переименовать папку"
+            onClick={() => {
+              setNameDraft(title);
+              setRenaming(true);
+            }}
+          >
+            <span className="liber-hist-act-glyph" aria-hidden>
+              Aa
+            </span>
+          </button>
+          <button
+            type="button"
+            className="liber-hist-act liber-hist-act-danger"
+            title="Удалить папку"
+            aria-label="Удалить папку"
+            onClick={() => {
+              if (
+                window.confirm(`Удалить папку «${title}»? Чаты останутся.`)
+              ) {
+                onDelete();
+              }
+            }}
+          >
+            ×
+          </button>
+        </div>
       </div>
       {open ? (
         <ul className="liber-hist-list">
@@ -272,6 +263,10 @@ function FolderBlock({
   );
 }
 
+function SectionLabel({ children }: { children: string }) {
+  return <p className="liber-hist-section-label liber-side-label">{children}</p>;
+}
+
 export function Sidebar({
   collapsed,
   onToggle,
@@ -280,8 +275,6 @@ export function Sidebar({
   healthHint,
   history,
   folders,
-  historyOpen,
-  onHistoryOpen,
   onNew,
   onOpenHistory,
   onTogglePin,
@@ -292,7 +285,6 @@ export function Sidebar({
   onSettings,
   busy = false,
 }: Props) {
-  const reduce = useReducedMotion();
   const [creating, setCreating] = useState(false);
   const [folderName, setFolderName] = useState("");
 
@@ -358,158 +350,147 @@ export function Sidebar({
         className="liber-sidebar-new"
         disabled={busy}
         onClick={onNew}
-        title="Новый отчёт"
-        aria-label="Новый отчёт"
+        title="Новый чат"
+        aria-label="Новый чат"
       >
         <IconPlus size={16} />
-        <span className="liber-side-label">Новый отчёт</span>
+        <span className="liber-side-label">Новый чат</span>
       </button>
 
-      <nav className="liber-sidebar-nav" aria-label="Разделы">
-        <button
-          type="button"
-          className={`liber-sidebar-item${historyOpen ? " is-active" : ""}`}
-          disabled={busy}
-          aria-expanded={historyOpen && !collapsed}
-          aria-label="История"
-          onClick={() => {
-            if (collapsed) {
-              onToggle();
-              onHistoryOpen(true);
-            } else {
-              onHistoryOpen(!historyOpen);
-            }
-          }}
-          title="История"
-        >
-          <IconHistory size={17} />
-          <span className="liber-side-label">История</span>
-          {history.length > 0 ? (
-            <span className="liber-sidebar-count liber-side-label">
-              {history.length}
-            </span>
-          ) : null}
-        </button>
-      </nav>
+      {!collapsed ? (
+        <div className="liber-sidebar-history" role="navigation" aria-label="Чаты">
+          {history.length === 0 && folders.length === 0 ? (
+            <p className="liber-sidebar-history-empty">
+              Пока пусто — соберите первый отчёт.
+            </p>
+          ) : (
+            <div className="liber-hist-stack">
+              {pinned.length > 0 ? (
+                <div className="liber-hist-section">
+                  <SectionLabel>Закреплённые</SectionLabel>
+                  <ul className="liber-hist-flat">
+                    {pinned.map((h) => (
+                      <HistoryRow
+                        key={h.id}
+                        item={h}
+                        folders={folders}
+                        busy={busy}
+                        onOpen={() => onOpenHistory(h)}
+                        onTogglePin={() => onTogglePin(h.runId)}
+                        onMoveToFolder={(fid) => onMoveToFolder(h.runId, fid)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
-      <AnimatePresence initial={false}>
-        {historyOpen && !collapsed ? (
-          <motion.div
-            className="liber-sidebar-history"
-            key="hist"
-            initial={reduce ? false : { opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={reduce ? undefined : { opacity: 0, height: 0 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="liber-hist-toolbar">
-              {creating ? (
-                <form
-                  className="liber-hist-create"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    submitFolder();
-                  }}
-                >
-                  <span className="liber-hist-create-icon" aria-hidden>
-                    <IconFolder size={15} />
-                  </span>
-                  <input
-                    value={folderName}
-                    onChange={(e) => setFolderName(e.target.value)}
-                    placeholder="Название папки…"
-                    maxLength={40}
-                    autoFocus
-                    aria-label="Название папки"
-                  />
-                  <button
-                    type="submit"
-                    className="liber-hist-create-go"
-                    disabled={!folderName.trim()}
-                  >
-                    Создать
-                  </button>
-                  <button
-                    type="button"
-                    className="liber-hist-create-cancel"
-                    aria-label="Отмена"
-                    title="Отмена"
-                    onClick={() => {
-                      setCreating(false);
-                      setFolderName("");
+              <div className="liber-hist-section">
+                <div className="liber-hist-section-head">
+                  <SectionLabel>Папки</SectionLabel>
+                  {!creating ? (
+                    <button
+                      type="button"
+                      className="liber-hist-add-folder"
+                      onClick={() => setCreating(true)}
+                      title="Новая папка"
+                    >
+                      <span className="liber-hist-add-ico" aria-hidden>
+                        <IconPlus size={11} />
+                      </span>
+                      <span className="liber-side-label">Новая</span>
+                    </button>
+                  ) : null}
+                </div>
+                {creating ? (
+                  <form
+                    className="liber-hist-create"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submitFolder();
                     }}
                   >
-                    ×
-                  </button>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  className="liber-hist-add-folder"
-                  onClick={() => setCreating(true)}
-                >
-                  <span className="liber-hist-add-ico" aria-hidden>
-                    <IconPlus size={12} />
-                  </span>
-                  Новая папка
-                </button>
-              )}
-            </div>
-
-            {history.length === 0 && folders.length === 0 ? (
-              <p className="liber-sidebar-history-empty">
-                Пока пусто — соберите первый отчёт.
-              </p>
-            ) : (
-              <div className="liber-hist-body">
-                <FolderBlock
-                  title="Закреплённые"
-                  icon="pin"
-                  items={pinned}
-                  folders={folders}
-                  defaultOpen
-                  onOpenHistory={onOpenHistory}
-                  onTogglePin={onTogglePin}
-                  onMoveToFolder={onMoveToFolder}
-                  busy={busy}
-                />
-                {folders.map((f) => (
-                  <FolderBlock
-                    key={f.id}
-                    title={f.name}
-                    icon="folder"
-                    folderId={f.id}
-                    items={unpinned.filter((h) => h.folderId === f.id)}
-                    folders={folders}
-                    defaultOpen
-                    onOpenHistory={onOpenHistory}
-                    onTogglePin={onTogglePin}
-                    onMoveToFolder={onMoveToFolder}
-                    onRename={(name) => onRenameFolder(f.id, name)}
-                    onDelete={() => onDeleteFolder(f.id)}
-                    busy={busy}
-                  />
-                ))}
-                <FolderBlock
-                  title={folders.length ? "Без папки" : "Недавние"}
-                  items={loose}
-                  folders={folders}
-                  defaultOpen
-                  onOpenHistory={onOpenHistory}
-                  onTogglePin={onTogglePin}
-                  onMoveToFolder={onMoveToFolder}
-                  busy={busy}
-                />
-                {history.length === 0 ? (
-                  <p className="liber-sidebar-history-empty">
-                    Папки готовы — отчёты появятся после сборки.
-                  </p>
+                    <span className="liber-hist-create-icon" aria-hidden>
+                      <IconFolder size={15} />
+                    </span>
+                    <input
+                      value={folderName}
+                      onChange={(e) => setFolderName(e.target.value)}
+                      placeholder="Название папки…"
+                      maxLength={40}
+                      autoFocus
+                      aria-label="Название папки"
+                    />
+                    <button
+                      type="submit"
+                      className="liber-hist-create-go"
+                      disabled={!folderName.trim()}
+                    >
+                      Создать
+                    </button>
+                    <button
+                      type="button"
+                      className="liber-hist-create-cancel"
+                      aria-label="Отмена"
+                      title="Отмена"
+                      onClick={() => {
+                        setCreating(false);
+                        setFolderName("");
+                      }}
+                    >
+                      ×
+                    </button>
+                  </form>
                 ) : null}
+                {folders.length === 0 && !creating ? (
+                  <p className="liber-hist-hint liber-side-label">Нет папок</p>
+                ) : (
+                  <div className="liber-hist-folders">
+                    {folders.map((f) => {
+                      const folderItems = unpinned.filter(
+                        (h) => h.folderId === f.id,
+                      );
+                      return (
+                        <FolderBlock
+                          key={f.id}
+                          title={f.name}
+                          folderId={f.id}
+                          items={folderItems}
+                          folders={folders}
+                          onOpenHistory={onOpenHistory}
+                          onTogglePin={onTogglePin}
+                          onMoveToFolder={onMoveToFolder}
+                          onRename={(name) => onRenameFolder(f.id, name)}
+                          onDelete={() => onDeleteFolder(f.id)}
+                          busy={busy}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+
+              {loose.length > 0 ? (
+                <div className="liber-hist-section">
+                  <SectionLabel>Недавние</SectionLabel>
+                  <ul className="liber-hist-flat">
+                    {loose.map((h) => (
+                      <HistoryRow
+                        key={h.id}
+                        item={h}
+                        folders={folders}
+                        busy={busy}
+                        onOpen={() => onOpenHistory(h)}
+                        onTogglePin={() => onTogglePin(h.runId)}
+                        onMoveToFolder={(fid) => onMoveToFolder(h.runId, fid)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="liber-sidebar-foot">
         <button

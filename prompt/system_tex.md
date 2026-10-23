@@ -88,119 +88,57 @@ Rules:
 - `charts[].type` **must match** the Chart.js `type:` / KPI markup you emit (`donut` → `doughnut`, `horizontal_bar` → `indexAxis:'y'`, `kpi` → `.kpi` cards).
 - Deliver a **full** chart: honest numbers from Source, Russian labels when Source is RU, legend/axes readable, palette from Intent.
 
-## Chart HTML — generate fresh every time (recipes = examples only)
+## Chart HTML — design freely (no gold paste)
 
-You **write** each chart’s `html` yourself for **this** document (ids, labels, colors, layout).
-Recipes below are **patterns to learn from**, not templates to paste. Do **not** reuse the same
-labels/`#0b5fff`-only look on every run. Keep individuality: palette, spacing, legend, and
-emphasis should fit **this** Source and Intent.
+You **author** each chart’s `html` for **this** Source + Intent. Gold TeX only shows `%CASE3_CHART:id%` placement — **do not** copy gold/HTML recipes, demo labels, or a fixed «default Chart.js» look between runs.
 
-### Quality bar (every chart)
+Customization is encouraged: layout chrome, legend placement, radius, cutout, header emphasis, series emphasis — as long as hard rails below hold.
 
-- Unique `canvas` / element `id` per chart (`c1`, `c2`, …).
-- Labels and legend in **Russian** when Source/Intent are Russian; short, no overflow.
-- Readable axes: `beginAtZero` when comparing counts; maxTicksLimit ~6; no tiny text.
-- `plugins.legend` on when ≥2 series/categories need names; off for one obvious series.
-- Canvas **1100×560** (sharp PNG); KPI may use the host `.kpi` block instead.
+### Hard rails (must)
+
+- Whitelist `charts[].type` only; Chart.js `type` / markup must match (`donut` → `doughnut`, `horizontal_bar` → `indexAxis:'y'`, `kpi` → `.kpi` cards).
+- Numbers / % / absolutes in chart **only from Source** (simple share math OK).
+- Unique element ids (`c1`, `c2`, …). Fragment only — no `<html>` / CDN / `fetch` / plugins.
 - `options.animation = false`. End with `window.__CASE3_CHART_READY=true;`.
-- Never invent numbers; never CDN/`fetch`; fragment only.
-
-### Visual style — vivid, NOT AI-slop
-
-Aim for a **print magazine / annual-report** chart: juicy saturated inks, crisp edges, calm whitespace.
-**One palette per document.** If Intent lists hex/rgba (UI palette preset) → use **those exact colors** in `charts[].html`.
-If Intent says AUTO palette → pick **one** of: editorial / ocean / sunset / mono / **atelier** and stick to it.
+- Canvas ≈ **1100×560** (donut square ≈ 520). Host loads Chart.js offline.
+- **One named palette per document** — Intent hex/rgba if listed; else pick editorial / ocean / sunset / mono / atelier.
 
 {{PALETTE_TABLE}}
 
-Honor free-text style notes in Intent (legend on/off, thicker lines, minimal grid) without inventing new hues.
-Numbers in charts/KPI/legend — **only from Source** (no invented %).
+### Visual freedom (do invent layout; don’t invent colors outside palette)
 
-**Do:**
+Aim for **print magazine** charts: saturated multi-hue accents from the table (not a single-blue wash), crisp edges, calm whitespace.
 
-- Solid fills for bars/donut slices (full opacity or ~0.92) — vivid saturated, not washed-out pastel.
-- Bars: `borderRadius: 6`, slight `borderWidth: 0`, category colors from the table above.
-- Lines: `borderWidth: 3`, `tension: 0.2–0.3`, `pointRadius: 4`, `pointHoverRadius: 5`; optional soft fill under one series.
-- Donut: `cutout: '60%'`, prefer `.donut-layout` + HTML `.valued-legend` (host CSS) over Chart.js legend; center `%` + short label.
-- Stacked / answer cards: optional `.chart-kpi-header` (eyebrow + big value + context) above the viz — values from Source.
-- Grid: light (`rgba(26,74,75,0.08)`), **no** heavy frames; hide top/right spines if using scales.
-- Typography via Chart defaults is fine; keep labels short.
+**You may vary:**
 
-**Don’t (AI-slop tells):**
+- Wrapper: bare canvas · `.chart-card` · optional `.chart-kpi-header` (eyebrow / big / context from Source).
+- Donut: prefer `.donut-layout` + `.valued-legend` (host CSS) + center `.pct`/`.lbl`; `cutout` ~55–68%; slice `borderWidth` 2–3 white; Chart.js `legend.display:false` when valued list is present. **`labels` = short names only** (`Retail`, not `Retail 42% (210)` — %/abs go in valued-legend columns).
+- Bars: `borderRadius` 4–10; category or series colors from **different** palette accents (hue contrast, not luminance-only steps).
+- Stacked: `stack` + `scales.*.stacked`; white borders between segments; prefer ≤6 series (merge «прочее» if Source allows).
+- Line/area: `tension` 0.15–0.35, `borderWidth` 2–4, optional soft `area` fill from palette.
+- **Legend (required when ≥2 series):** `plugins.legend: {display:true, position:'bottom'}` and named `datasets[].label`. Donut → HTML `.valued-legend` instead.
+- **Tooltips:** always `plugins.tooltip: {enabled:true}` (Liber hover shows values; print still has the legend).
+- Language: Russian labels when Source is RU.
 
-- Purple / indigo / violet gradients (`#7c3aed`, `#6366f1`, neon pink-blue).
-- Only default Chart.js blue (`#0b5fff` / `#36a2eb`) on every chart.
-- Glow, shadows-as-decoration, rainbow 8+ unrelated hues, glassmorphism.
-- Tiny unreadable legends, cramped canvas, identical look copy-pasted from recipes.
+**Don’t:**
 
-### Recipes (structure only — replace data; keep the ink palette spirit)
+- Purple / indigo / violet / neon pink-blue gradients.
+- Default Chart.js blue only (`#0b5fff` / `#36a2eb`) on every chart.
+- Same-hue pastel ladders for 5+ series (unreadable in print).
+- Glow, glassmorphism, invented KPI numbers, paste of prior-run HTML.
 
-**bar**
+### Type → Chart.js mapping (structure only)
 
-```html
-<canvas id="c1" width="1100" height="560"></canvas>
-<script>
-new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['A','B'],datasets:[{label:'N',data:[12,28],backgroundColor:['#F07A3A','#2EC4B6'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.10)'},ticks:{maxTicksLimit:6}},x:{grid:{display:false}}},animation:false}});
-window.__CASE3_CHART_READY=true;
-</script>
-```
+| Catalog | Emit |
+|---------|------|
+| `bar` / `grouped_bar` / `stacked_bar` | `type:'bar'` (+ stacks / multi datasets) |
+| `horizontal_bar` | `type:'bar'`, `indexAxis:'y'` |
+| `line` / `area` | `type:'line'` (`area` → `fill:true`) |
+| `donut` | `type:'doughnut'` + valued legend layout |
+| `scatter` | `type:'scatter'`, `pointRadius:10`, `pointHoverRadius:14` |
+| `kpi` | HTML `.kpi` / `.kpi-row` — **no** canvas; colors via host CSS vars |
 
-**line**
-
-```html
-<canvas id="c1" width="1100" height="560"></canvas>
-<script>
-new Chart(document.getElementById('c1'),{type:'line',data:{labels:['Q1','Q2','Q3'],datasets:[{label:'Запросы',data:[1400,2100,3100],borderColor:'#0F3D3E',backgroundColor:'rgba(46,196,182,0.34)',fill:true,tension:0.28,borderWidth:3,pointRadius:4,pointBackgroundColor:'#F07A3A'}]},options:{plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,grid:{color:'rgba(15,61,62,0.10)'}},x:{grid:{display:false}}},animation:false}});
-window.__CASE3_CHART_READY=true;
-</script>
-```
-
-**donut** (Chart.js type `doughnut`) — center % + valued legend (host CSS hooks)
-
-```html
-<div class="chart-card donut-layout">
-  <div class="donut-viz">
-    <div class="donut-center"><div class="pct">50%</div><div class="lbl">A</div></div>
-    <canvas id="c1" width="520" height="520"></canvas>
-  </div>
-  <ul class="valued-legend">
-    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#F07A3A"></span><span class="valued-legend__label">A</span><span class="valued-legend__pct">50%</span><span class="valued-legend__abs">50</span></li>
-    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#2EC4B6"></span><span class="valued-legend__label">B</span><span class="valued-legend__pct">30%</span><span class="valued-legend__abs">30</span></li>
-    <li class="valued-legend__row"><span class="valued-legend__swatch" style="background:#E8B84A"></span><span class="valued-legend__label">C</span><span class="valued-legend__pct">20%</span><span class="valued-legend__abs">20</span></li>
-  </ul>
-</div>
-<script>
-new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['A','B','C'],datasets:[{data:[50,30,20],backgroundColor:['#F07A3A','#2EC4B6','#E8B84A'],borderWidth:2,borderColor:'#ffffff'}]},options:{plugins:{legend:{display:false}},cutout:'60%',animation:false}});
-window.__CASE3_CHART_READY=true;
-</script>
-```
-
-**horizontal_bar** — `type:'bar'`, `indexAxis:'y'`, same ink colors, `borderRadius:6`.
-
-**grouped_bar** — datasets in `#F07A3A` / `#2EC4B6` / `#3D5C60` (not purple).
-
-**stacked_bar** — stacked scales + ink palette; optional header:
-
-```html
-<div class="chart-card">
-  <div class="chart-kpi-header"><div class="eyebrow">Итого</div><div class="big">152</div><div class="context">за период · из Source</div></div>
-  <canvas id="c1" width="1100" height="480"></canvas>
-</div>
-<script>/* stacked bar Chart.js… animation:false; __CASE3_CHART_READY */</script>
-```
-
-**area** — line + `fill:true` with `rgba(46,196,182,0.34)`.
-
-**scatter** — points `#F07A3A` / `#0F3D3E`, clear axis titles in options if helpful.
-
-**kpi** (HTML cards; host `.kpi` uses CSS vars from palette — do not hardcode orange)
-
-```html
-<div class="kpi"><div class="value">28</div><div class="label">Клиенты 2025</div></div>
-<script>window.__CASE3_CHART_READY=true;</script>
-```
-
-Host frame loads Chart.js offline, sets DPR for sharpness, disables animation. Still set `__CASE3_CHART_READY`. No Chart.js plugins.
+Host frame sets DPR, fonts, default bar radius. Still set `__CASE3_CHART_READY`.
 
 # When to add charts / figures
 

@@ -128,7 +128,6 @@ export default function App() {
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [folders, setFolders] = useState<HistoryFolder[]>(() => loadFolders());
   const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(
@@ -1417,8 +1416,6 @@ export default function App() {
           healthHint={paradeHint}
           history={history}
           folders={folders}
-          historyOpen={historyOpen}
-          onHistoryOpen={setHistoryOpen}
           onNew={startNewReport}
           onOpenHistory={openHistoryItem}
           onTogglePin={(runId) => setHistory(togglePinHistory(runId))}

@@ -144,50 +144,53 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
     return out
 
 
-# Vivid luminance ladders (print ≈ Liber preview). No purple/indigo slop.
-# atelier = Liber olive primary, punchier than soft-premium mist.
+# Four chromatic presets from published datavis schemes (no purple/indigo).
+# Sources: Okabe–Ito CUD · Paul Tol vibrant/bright · Tableau 10 categorical.
+# mono kept as greyscale print option. Same-hue ladders rejected (Mary-blue mush).
 _PALETTES: dict[str, dict[str, Any]] = {
+    # Tableau 10 categorical (soft multi-hue) — skip pink/purple #B07AA1 / #FF9DA7.
     "editorial": {
         "label": "Editorial",
-        "primary": "#0F3D3E",
-        "accents": ["#F07A3A", "#2EC4B6", "#E8B84A", "#3D5C60"],
+        "primary": "#4E79A7",
+        "accents": ["#F28E2B", "#76B7B2", "#E15759", "#59A14F", "#EDC948", "#9C755F"],
         "muted": "#8A9AAB",
-        "area": "rgba(46,196,182,0.34)",
-        "grid": "rgba(15,61,62,0.10)",
+        "area": "rgba(118,183,178,0.34)",
+        "grid": "rgba(78,121,167,0.12)",
     },
+    # Okabe–Ito (Nature Methods / CUD) — skip reddish-purple #CC79A7.
     "ocean": {
         "label": "Ocean",
-        "primary": "#0B4F8C",
-        "accents": ["#1E8AD4", "#2EC4E0", "#5ED4F0", "#9AE8F5"],
+        "primary": "#0072B2",
+        "accents": ["#56B4E9", "#009E73", "#E69F00", "#D55E00", "#F0E442"],
         "muted": "#7A90A8",
-        "area": "rgba(46,196,224,0.34)",
-        "grid": "rgba(11,79,140,0.10)",
+        "area": "rgba(86,180,233,0.34)",
+        "grid": "rgba(0,114,178,0.12)",
     },
+    # Paul Tol bright (warm-first) — skip purple #AA3377.
     "sunset": {
         "label": "Sunset",
-        "primary": "#8B2E4A",
-        "accents": ["#F04545", "#FF8C2A", "#F0C040", "#4A6070"],
+        "primary": "#EE6677",
+        "accents": ["#CCBB44", "#4477AA", "#228833", "#66CCEE", "#BBBBBB"],
         "muted": "#A09090",
-        "area": "rgba(255,140,42,0.34)",
-        "grid": "rgba(139,46,74,0.10)",
+        "area": "rgba(238,102,119,0.34)",
+        "grid": "rgba(68,119,170,0.12)",
     },
     "mono": {
         "label": "Mono",
         "primary": "#1A1F28",
-        "accents": ["#3A4250", "#5C6570", "#8B939E", "#B0B6BE"],
+        "accents": ["#2C3340", "#5C6570", "#8B7355", "#A8B0BA", "#6B7280"],
         "muted": "#9CA3AF",
         "area": "rgba(26,31,40,0.18)",
         "grid": "rgba(26,31,40,0.09)",
     },
-    # Punchy olive→chartreuse mist (Liber hues — no purple).
+    # Paul Tol vibrant (TensorBoard-family) — skip magenta #EE3377; Liber ink = dark teal.
     "atelier": {
         "label": "Atelier",
-        "primary": "#2E4208",
-        "accents": ["#4F6B14", "#7A9A28", "#B8D45A", "#D5DEC0"],
-        # Axis/legend ink — readable on cream paper.
-        "muted": "#6A7160",
-        "area": "rgba(122,154,40,0.34)",
-        "grid": "rgba(46,66,8,0.10)",
+        "primary": "#004D47",
+        "accents": ["#0077BB", "#EE7733", "#009988", "#CC3311", "#33BBEE"],
+        "muted": "#5A706C",
+        "area": "rgba(0,153,136,0.34)",
+        "grid": "rgba(0,77,71,0.12)",
     },
 }
 

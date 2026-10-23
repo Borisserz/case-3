@@ -314,7 +314,7 @@ function GlyphScatter() {
           key={`${x}-${y}`}
           cx={x}
           cy={y}
-          r="4"
+          r="6"
           fill={i % 3 === 0 ? ACCENT : OLIVE}
           opacity="0.9"
         />

@@ -420,20 +420,6 @@ export function ReportView({
                       </span>
                     </div>
                   )}
-                  {onJumpToPdf && !isEditing && (
-                    <button
-                      type="button"
-                      className="report-fig-pdf"
-                      title="Показать в вкладке PDF"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        jumpPdf();
-                      }}
-                    >
-                      в PDF
-                    </button>
-                  )}
                   {isPhoto && b.url && !isEditing && (
                     <button
                       type="button"
