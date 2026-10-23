@@ -241,8 +241,8 @@ export function PresentationPane({
             ))}
           </ol>
           <p className="presentation-pending-hint">
-            Обычно 30–90 с (Julius board update ~1–2 мин). Вкладка остаётся
-            открытой — Export появится, когда готово.
+            Обычно полторы–две минуты. Вкладка остаётся открытой — Export
+            появится, когда готово.
           </p>
         </div>
       </div>
