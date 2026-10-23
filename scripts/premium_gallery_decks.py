@@ -209,18 +209,6 @@ PREMIUM_DECKS: dict[str, tuple[str, list[dict]]] = {
             },
             {
                 "id": "s07",
-                "layout": "scorecard",
-                "kicker": "CONVERSION",
-                "title": "Conversion is the next source of leverage",
-                "kpis": [
-                    {"label": "MQLs", "value": "2,400", "delta": "96% of goal", "status": "flat"},
-                    {"label": "SQLs", "value": "720", "delta": "30% MQL→SQL", "status": "flat"},
-                    {"label": "Opps", "value": "240", "delta": "33% SQL→opp", "status": "up"},
-                    {"label": "Pipe / spend", "value": "8.0×", "delta": "+0.9", "status": "up"},
-                ],
-            },
-            {
-                "id": "s08",
                 "layout": "callout",
                 "kicker": "WINS / MISSES",
                 "title": "Wins to repeat. Misses to correct.",
@@ -229,7 +217,7 @@ PREMIUM_DECKS: dict[str, tuple[str, list[dict]]] = {
                 "body": "CORRECT — Field & events 25% of spend / 16% of pipeline · APAC $300K below goal.",
             },
             {
-                "id": "s08b",
+                "id": "s08",
                 "layout": "section",
                 "chapter": 2,
                 "kicker": "PLAN",

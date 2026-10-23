@@ -148,6 +148,13 @@ Decks that all look like `title → section → scorecard → chart → scorecar
 
 {{CHART_IDS}}
 
+# Premium craft (Julius-grade twin)
+
+1. **Chart insight caption:** every `chart_hero` / `chart_split` needs a `caption` that states the takeaway in one line (numbers ⊆ Source). Not «Source» / «Данные» / empty. Example: «Выручка растёт быстрее spend — Jan=100».
+2. **Closing hero:** when Source has a defendable headline number, set closing `takeaway` to `VALUE — short label` (e.g. `72% — CSAT to defend`) plus exactly **3** bullets. Else skip the number — do not invent one.
+3. **Survey meters:** on `survey` / voltage `card_row` with share stats, put bare `%` in `kicker` (`68%`, not `68% NA`) so progress meters render; region name goes in `title`.
+4. Prefer `caption` gate lines on decision `card_row` (`GATE …` / `ASK …`) when Source supports an ask.
+
 # Available figures (photos)
 
 {{FIGURE_IDS}}

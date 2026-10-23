@@ -8,7 +8,9 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from case3.chart_style import normalize_palette_id
+from case3.chart_html import sanitize_chart_html
+from case3.chart_style import apply_hex_series_to_html, normalize_palette_id
+from case3.charts import render_chart_png
 from case3.deck_theme import resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.slides_chart_data import series_from_figures_json
@@ -390,6 +392,103 @@ def run_slides_job(
         )
 
 
+def _chart_ids_in_deck(deck: dict[str, Any]) -> set[str]:
+    out: set[str] = set()
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        for key in ("chart_id", "media_id"):
+            mid = str(s.get(key) or "").strip()
+            if mid.startswith("cht_"):
+                out.add(mid)
+    return out
+
+
+def _recolor_deck_charts(
+    out_dir: Path,
+    deck: dict[str, Any],
+    *,
+    slides_dir: Path,
+) -> dict[str, Path]:
+    """Re-render deck-referenced charts with pack ``chart_series`` colors.
+
+    Report figures/ stay untouched; deck copies live under ``slides/charts/``.
+    """
+    style = deck.get("style") if isinstance(deck.get("style"), dict) else {}
+    series = [
+        str(x)
+        for x in (style.get("chart_series") or [])
+        if str(x).strip()
+    ]
+    if not series:
+        return {}
+    colors = style.get("colors") if isinstance(style.get("colors"), dict) else {}
+    muted = str(colors.get("muted") or "") or None
+    motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
+    pack = str(style.get("pack_id") or deck.get("theme_id") or "")
+    dark = pack in ("signal", "ink", "voltage", "botanical") or str(
+        motif.get("atmosphere") or ""
+    ) == "dark"
+    foil = str(colors.get("foil") or colors.get("accent") or series[0])
+    ink = str(colors.get("ink") or ("#F7F5F0" if dark else "#14161A"))
+    bg = str(colors.get("paper") or colors.get("sheet") or ("#161618" if dark else "#FFFCF7"))
+    # Soft area/grid from first series
+    fr, fg, fb = (
+        int(foil.lstrip("#")[0:2], 16),
+        int(foil.lstrip("#")[2:4], 16),
+        int(foil.lstrip("#")[4:6], 16),
+    )
+    area = f"rgba({fr},{fg},{fb},0.28)"
+    grid = (
+        "rgba(255,255,255,0.10)" if dark else f"rgba({fr},{fg},{fb},0.12)"
+    )
+
+    needed = _chart_ids_in_deck(deck)
+    if not needed:
+        return {}
+    fj = load_figures_json(out_dir)
+    html_by_id: dict[str, str] = {}
+    for ch in fj.get("charts") or []:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        if cid in needed and str(ch.get("html") or "").strip():
+            html_by_id[cid] = str(ch.get("html") or "")
+
+    dest_dir = slides_dir / "charts"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    work_root = slides_dir / "chart_work"
+    work_root.mkdir(parents=True, exist_ok=True)
+    out_map: dict[str, Path] = {}
+    for cid, html in html_by_id.items():
+        try:
+            remapped = apply_hex_series_to_html(
+                sanitize_chart_html(html),
+                series,
+                muted=muted,
+                area=area,
+                grid=grid,
+            )
+            if dark:
+                remapped = (
+                    f"<style>html,body,#mount{{background:{bg}!important;"
+                    f"color:{ink}!important}}</style>"
+                    + remapped
+                )
+            dest = dest_dir / f"{cid}.png"
+            render_chart_png(
+                {"html": remapped},
+                dest,
+                work_dir=work_root / cid,
+            )
+            if dest.is_file():
+                out_map[cid] = dest
+                log.info("deck chart recolor ok %s → %s", cid, dest.name)
+        except (OSError, RuntimeError, ValueError) as exc:
+            log.warning("deck chart recolor skipped %s: %s", cid, exc)
+    return out_map
+
+
 def _materialize_deck_artifacts(
     out_dir: Path,
     meta: dict[str, Any],
@@ -428,6 +527,12 @@ def _materialize_deck_artifacts(
             needed_ids=needed_dias,
         )
         media_map.update(dia_pngs)
+
+    _set_slides(out_dir, meta, status="running", stage="charts", logs_dir=logs_dir)
+    try:
+        media_map.update(_recolor_deck_charts(out_dir, deck, slides_dir=slides_dir))
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("deck chart recolor batch failed: %s", exc)
 
     _set_slides(out_dir, meta, status="running", stage="render", logs_dir=logs_dir)
     work_root = slides_dir / "work"

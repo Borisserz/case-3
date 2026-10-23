@@ -28,22 +28,28 @@ def _fmt_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
-def apply_palette_to_html(html: str, palette_id: str) -> str:
-    """Remap #hex / rgb(a) colors in chart HTML onto a named palette.
+def apply_hex_series_to_html(
+    html: str,
+    series_hexes: list[str],
+    *,
+    muted: str | None = None,
+    area: str = "",
+    grid: str = "",
+) -> str:
+    """Remap #hex / rgb(a) chart colors onto an ordered hex series (deck packs).
 
-    Keeps alpha channels. ``auto`` leaves HTML unchanged. Data arrays are
-    untouched because only color tokens are rewritten.
+    First hex ≈ primary; remaining ≈ accents. Keeps alpha. Near-white unchanged.
     """
-    pid = normalize_palette_id(palette_id)
-    if pid == "auto" or pid not in _PALETTES:
+    targets = [
+        f"#{h.lstrip('#').upper()}"
+        for h in series_hexes
+        if h and re.match(r"^#?[0-9A-Fa-f]{6}$", str(h).strip())
+    ]
+    if not targets or not (html or "").strip():
         return html
-    p = _PALETTES[pid]
-    targets: list[str] = [p["primary"], *list(p["accents"])]
-    # Include area/grid as soft colors for low-alpha remaps
-    area = str(p.get("area") or "")
-    grid = str(p.get("grid") or "")
-
-    muted = str(p.get("muted") or "").upper()
+    muted_u = (muted or "").upper()
+    if muted_u and not muted_u.startswith("#"):
+        muted_u = f"#{muted_u}"
     src = html or ""
 
     def _is_near_white(hx: str) -> bool:
@@ -56,7 +62,6 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
             return False
         return 40 <= _lum(r, g, b) <= 190
 
-    # Nearest Chart.js color prop — avoid mistaking labels.color for borderColor.
     _PROP_NEAR = re.compile(
         r"(backgroundcolor|bordercolor|pointbackgroundcolor|pointbordercolor|"
         r"fillcolor|(?<![a-z])color)\s*[:=]",
@@ -79,8 +84,6 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
             return False
         return matches[-1].group(1).lower() in _SERIES_PROPS
 
-    # Collect unique hex colors (order of first appearance). Skip near-white
-    # so Chart.js segment borders stay clean.
     seen: list[str] = []
     series: set[str] = set()
     for m in _HEX.finditer(src):
@@ -94,19 +97,18 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
     if not seen:
         return html
 
-    # Darkest series/ink → primary; series → accents; label greys → muted.
     ranked = sorted(seen, key=lambda h: _lum(*_parse_hex(h)))
     mapping: dict[str, str] = {}
     if ranked:
-        mapping[ranked[0]] = targets[0].upper()
+        mapping[ranked[0]] = targets[0]
         accent_i = 1
         for hx in seen:
             if hx in mapping:
                 continue
-            if muted and _is_ink_grey(hx) and hx not in series:
-                mapping[hx] = muted
+            if muted_u and _is_ink_grey(hx) and hx not in series:
+                mapping[hx] = muted_u
                 continue
-            mapping[hx] = targets[min(accent_i, len(targets) - 1)].upper()
+            mapping[hx] = targets[min(accent_i, len(targets) - 1)]
             accent_i += 1
 
     def _sub_hex(m: re.Match[str]) -> str:
@@ -140,8 +142,27 @@ def apply_palette_to_html(html: str, palette_id: str) -> str:
             return f"rgb({nr},{ng},{nb})"
         return f"rgba({nr},{ng},{nb},{a})"
 
-    out = _RGBA.sub(_sub_rgba, out)
-    return out
+    return _RGBA.sub(_sub_rgba, out)
+
+
+def apply_palette_to_html(html: str, palette_id: str) -> str:
+    """Remap #hex / rgb(a) colors in chart HTML onto a named palette.
+
+    Keeps alpha channels. ``auto`` leaves HTML unchanged. Data arrays are
+    untouched because only color tokens are rewritten.
+    """
+    pid = normalize_palette_id(palette_id)
+    if pid == "auto" or pid not in _PALETTES:
+        return html
+    p = _PALETTES[pid]
+    targets: list[str] = [p["primary"], *list(p["accents"])]
+    return apply_hex_series_to_html(
+        html,
+        targets,
+        muted=str(p.get("muted") or "") or None,
+        area=str(p.get("area") or ""),
+        grid=str(p.get("grid") or ""),
+    )
 
 
 # Four chromatic presets from published datavis schemes (no purple/indigo).

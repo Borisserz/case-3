@@ -910,6 +910,78 @@ def _layout_bullets(
     )
 
 
+def _layout_closing(
+    slide,
+    s: dict[str, Any],
+    colors: dict[str, RGBColor],
+    *,
+    style: dict[str, Any] | None = None,
+) -> None:
+    """Closing with optional Julius hero number from takeaway + bullets."""
+    _apply_pack_bg(slide, colors, style)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
+    _brand(slide, colors)
+    takeaway = str(s.get("takeaway") or "").strip()
+    metrics = parse_hero_metrics(takeaway)
+    hero_value = ""
+    hero_label = ""
+    if metrics:
+        hero_value, hero_label = metrics[0]
+    elif takeaway and len(takeaway) <= 24 and "\n" not in takeaway:
+        hero_value = takeaway
+    head = dict(s)
+    if hero_value:
+        head = {**s, "takeaway": ""}
+    y_in = _kicker_title(
+        slide,
+        colors,
+        kicker=str(head.get("kicker") or ""),
+        title=str(head.get("title") or ""),
+        takeaway=str(head.get("takeaway") or ""),
+        chapter=head.get("chapter") if isinstance(head.get("chapter"), int) else None,
+    )
+    y = Inches(max(y_in + 0.1, 1.85))
+    foil = colors.get("foil", colors["accent"])
+    if hero_value:
+        _add_textbox(
+            slide,
+            _MARGIN_X,
+            y,
+            Inches(11.5),
+            Inches(1.15),
+            hero_value,
+            size_pt=54,
+            bold=True,
+            color=foil if _is_dark_pack(style) else colors["ink"],
+        )
+        y = y + Inches(1.05)
+        if hero_label:
+            _add_textbox(
+                slide,
+                _MARGIN_X,
+                y,
+                Inches(11.5),
+                Inches(0.45),
+                hero_label,
+                size_pt=16,
+                color=colors["muted"],
+            )
+            y = y + Inches(0.55)
+    bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()][:3]
+    if bullets:
+        _add_bullets(
+            slide,
+            _MARGIN_X,
+            y,
+            Inches(11.5),
+            Inches(3.8),
+            bullets,
+            size_pt=18,
+            color=colors["ink2"],
+        )
+
+
 def _layout_card_row(
     slide,
     s: dict[str, Any],
@@ -1206,12 +1278,13 @@ def _layout_media(
             _add_textbox(
                 slide,
                 pic_left,
-                Inches(6.55),
+                Inches(6.45),
                 pic_w,
-                Inches(0.5),
+                Inches(0.55),
                 cap,
-                size_pt=11,
-                color=colors["muted"],
+                size_pt=14,
+                bold=True,
+                color=colors["ink"],
             )
     else:
         y_in = _kicker_title(
@@ -1251,12 +1324,13 @@ def _layout_media(
             _add_textbox(
                 slide,
                 _MARGIN_X,
-                Inches(6.4),
+                Inches(6.35),
                 Inches(11.9),
                 Inches(0.55),
                 cap,
-                size_pt=12,
-                color=colors["muted"],
+                size_pt=15,
+                bold=True,
+                color=colors["ink"],
             )
 
 
@@ -1340,7 +1414,7 @@ def build_native_pptx(
                     media_path=media.get(mid),
                 )
             else:
-                _layout_bullets(slide, s, colors, closing=True, style=style)
+                _layout_closing(slide, s, colors, style=style)
         elif layout == "bullets":
             _layout_bullets(slide, s, colors, style=style)
         elif layout == "card_row":
