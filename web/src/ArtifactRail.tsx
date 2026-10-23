@@ -21,6 +21,7 @@ import { ExportMenu } from "./ExportMenu";
 import { PresentationPane } from "./PresentationPane";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
+import { modeSurfaces } from "./liberModes";
 import { SourcePane } from "./SourcePane";
 import {
   RAIL_WIDTH_DEFAULT,
@@ -70,6 +71,8 @@ type ReportBundle = {
   slidePngs?: string[];
   deck?: import("./deckTypes").DeckIR | null;
   deckPdfMode?: string | null;
+  /** Liber composer mode for this run — gates rail tabs. */
+  outputMode?: string | null;
   onDeckUpdated?: (
     deck: import("./deckTypes").DeckIR,
     slidePngs: string[],
@@ -142,23 +145,29 @@ export function ArtifactRail({
   const activeDiagram =
     diagrams.find((d) => d.id === activeDiagramId) || diagrams[0] || null;
   const showDiagramSurface = tab === "diagram" && Boolean(activeDiagram);
-  const hasPreview = Boolean(report?.preview?.blocks?.length);
-  const hasPdf = Boolean(report?.downloads?.pdf);
-  const hasDiagrams = diagrams.length > 0;
+  const surfaces = modeSurfaces(report?.outputMode);
+  const hasPreview =
+    surfaces.showReportPreview && Boolean(report?.preview?.blocks?.length);
+  const hasPdf =
+    surfaces.showReportPdf && Boolean(report?.downloads?.pdf);
+  const hasDiagrams = surfaces.showDiagram && diagrams.length > 0;
   const slidesStatus = isReport ? report?.slidesStatus || null : null;
   /* Show tab only when deck exists or failed — never open rail mid-build. */
   const hasPresentationTab =
+    surfaces.showPresentation &&
     isReport &&
     Boolean(
       slidesStatus === "ok" ||
         slidesStatus === "error" ||
         (report?.slidePngs && report.slidePngs.length > 0),
     );
-  const hasSource = Boolean(
-    (sourceText && sourceText.length > 0) ||
-      artifact.kind === "source" ||
-      artifact.kind === "intent",
-  );
+  const hasSource =
+    surfaces.showSource &&
+    Boolean(
+      (sourceText && sourceText.length > 0) ||
+        artifact.kind === "source" ||
+        artifact.kind === "intent",
+    );
 
   const displaySource =
     artifact.kind === "source" || artifact.kind === "intent"
@@ -207,6 +216,13 @@ export function ArtifactRail({
     ];
     return all.filter((t) => t.show);
   }, [isReport, hasPreview, hasPdf, hasDiagrams, hasPresentationTab, hasSource]);
+
+  /* If mode hid the active tab (e.g. presentation run opened on preview), snap. */
+  useEffect(() => {
+    if (!isReport || visibleTabs.length === 0) return;
+    if (visibleTabs.some((t) => t.id === tab)) return;
+    onTab(visibleTabs[0].id);
+  }, [isReport, tab, visibleTabs, onTab]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

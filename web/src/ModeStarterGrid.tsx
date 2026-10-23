@@ -1,4 +1,4 @@
-/** Quiet starter cards under sheet composer (report / diagram empty home). */
+/** Quiet system-prompt cards under sheet composer (all Liber modes). */
 
 import { startersForMode } from "./modeStarters";
 import type { LiberWorkMode } from "./liberModes";
@@ -14,7 +14,11 @@ export function ModeStarterGrid({ workMode, busy = false, onPick }: Props) {
   if (!items.length) return null;
 
   const heading =
-    workMode === "diagram" ? "Идеи для схемы" : "Идеи для отчёта";
+    workMode === "diagram"
+      ? "Идеи для схемы"
+      : workMode === "presentation"
+        ? "Идеи для презентации"
+        : "Идеи для отчёта";
 
   return (
     <div className="mode-starter-grid" aria-label={heading}>

@@ -12,7 +12,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -424,7 +424,9 @@ def _bg_run_pipeline(
     max_charts: int,
     max_diagrams: int = 0,
     user_figures: list[dict[str, Any]] | None = None,
+    output_mode: str = "auto",
 ) -> None:
+    log.info("pipeline thread start run_id=%s", run_id)
     try:
         run_pipeline(
             src_path,
@@ -437,6 +439,7 @@ def _bg_run_pipeline(
             max_diagrams=max_diagrams,
             run_id=run_id,
             user_figures=user_figures,
+            output_mode=output_mode,
         )
     except PipelineError:
         # meta already written with status=error
@@ -458,6 +461,43 @@ def _bg_run_pipeline(
         out.mkdir(parents=True, exist_ok=True)
         (logs / "meta.json").write_text(payload, encoding="utf-8")
         (out / "meta.json").write_text(payload, encoding="utf-8")
+
+
+def _kick_pipeline_thread(
+    src_path: Path,
+    *,
+    run_id: str,
+    formats: set[str],
+    dry_run: bool,
+    intent: str,
+    max_images: int,
+    max_charts: int,
+    max_diagrams: int = 0,
+    user_figures: list[dict[str, Any]] | None = None,
+    output_mode: str = "auto",
+) -> None:
+    """Start report pipeline on a daemon thread.
+
+    BackgroundTasks + asyncio.to_thread can stall on Windows (same bug as slides);
+    Liber then polls 200 forever with status=running, stage=queued, error=null.
+    """
+    threading.Thread(
+        target=_bg_run_pipeline,
+        kwargs={
+            "src_path": src_path,
+            "run_id": run_id,
+            "formats": formats,
+            "dry_run": dry_run,
+            "intent": intent,
+            "max_images": max_images,
+            "max_charts": max_charts,
+            "max_diagrams": max_diagrams,
+            "user_figures": user_figures,
+            "output_mode": output_mode,
+        },
+        name=f"case3-pipeline-{run_id}",
+        daemon=True,
+    ).start()
 
 
 async def _quick_photo_edit(
@@ -555,7 +595,6 @@ async def api_photo_edit(
 
 @app.post("/api/run")
 async def api_run(
-    background_tasks: BackgroundTasks,
     source: UploadFile | None = File(None),
     source_text: str | None = Form(None),
     intent: str = Form(""),
@@ -613,8 +652,10 @@ async def api_run(
         max_diagrams = max(1, max_diagrams)
         formats = "none"
     # Composer «Презентация»: no print PDF/DOCX — slides job builds the deck.
+    # Liber Mermaid diagrams[] stay off so UI shows only PPTX + deck PDF.
     if out_mode == "presentation":
         formats = "none"
+        max_diagrams = 0
 
     # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
     upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
@@ -723,24 +764,18 @@ async def api_run(
     (logs_dir / "meta.json").write_text(payload0, encoding="utf-8")
     (out_dir / "meta.json").write_text(payload0, encoding="utf-8")
 
-    async def _spawn() -> None:
-        # Keep the asyncio loop free; Playwright/LLM run in a worker thread.
-        await asyncio.to_thread(
-            partial(
-                _bg_run_pipeline,
-                src_path,
-                run_id=run_id,
-                formats=fmt_set,
-                dry_run=is_dry,
-                intent=full_intent,
-                max_images=max_images,
-                max_charts=max_charts,
-                max_diagrams=max_diagrams,
-                user_figures=user_figures,
-            )
-        )
-
-    background_tasks.add_task(_spawn)
+    _kick_pipeline_thread(
+        src_path,
+        run_id=run_id,
+        formats=fmt_set,
+        dry_run=is_dry,
+        intent=full_intent,
+        max_images=max_images,
+        max_charts=max_charts,
+        max_diagrams=max_diagrams,
+        user_figures=user_figures,
+        output_mode=out_mode,
+    )
 
     return JSONResponse(
         status_code=202,
@@ -1477,7 +1512,6 @@ class SlidesIrPatchBody(BaseModel):
 async def patch_slides_ir(
     run_id: str,
     body: SlidesIrPatchBody,
-    background_tasks: BackgroundTasks,
 ) -> JSONResponse:
     """Patch deck text fields and rebuild native PPTX + twin preview."""
     if not _RUN_ID_OK.match(run_id):
@@ -1533,7 +1567,11 @@ async def patch_slides_ir(
             except Exception:
                 pass
 
-    background_tasks.add_task(_bg)
+    threading.Thread(
+        target=_bg,
+        name=f"case3-slides-patch-{run_id}",
+        daemon=True,
+    ).start()
     return JSONResponse(
         {
             "run_id": run_id,

@@ -10,25 +10,15 @@
   scroll-padding-bottom: 6.5rem;
 }
 
-/* Julius chat rename — sticky in column only (not sidebar brand) */
+/* Session title — top of transcript, scrolls with chat (not pinned over cards) */
 .chat-session-head {
-  position: sticky;
-  top: 0;
-  z-index: 4;
+  position: relative;
+  z-index: 1;
   width: min(100%, var(--chat-column));
   max-width: min(100%, var(--chat-column));
   align-self: center;
-  margin: -0.35rem 0 0.15rem;
-  padding: 0.65rem 0.15rem 0.75rem;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface) 96%, transparent) 55%,
-      color-mix(in srgb, var(--surface) 40%, transparent) 100%
-    );
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+  margin: 0 0 0.35rem;
+  padding: 0.15rem 0.15rem 0.55rem;
   box-sizing: border-box;
 }
 
@@ -1960,12 +1950,12 @@
   z-index: 1;
 }
 
-/* 24px mark — present but quiet (Julius-clean, not logo-forward) */
+/* 36px mark — readable on empty hero, still quiet vs serif H2 */
 .empty-hero .liber-mark {
   margin-bottom: var(--space-3);
-  width: 22px;
-  height: 22px;
-  opacity: 0.38;
+  width: 36px;
+  height: 36px;
+  opacity: 0.5;
   color: var(--primary);
 }
 
@@ -3499,6 +3489,252 @@
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+/* —— PDF twin gallery (view-only slides; no download) —— */
+.deck-pdf-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--sheet) 88%, #1a2e1a) 0%,
+      color-mix(in srgb, var(--paper) 92%, var(--sheet)) 42%,
+      var(--sheet) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 55%, transparent) inset,
+    0 10px 28px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.deck-pdf-gallery.is-empty {
+  padding: 1.1rem 1.15rem 1.25rem;
+}
+
+.deck-pdf-gallery-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.05rem 0.55rem;
+}
+
+.deck-pdf-gallery-eyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 88%, var(--primary));
+}
+
+.deck-pdf-gallery-title {
+  margin: 0.12rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.deck-pdf-gallery-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.deck-pdf-gallery-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: none;
+}
+
+.deck-pdf-gallery-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--ink-2, var(--ink));
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sheet) 70%, #fff);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.deck-pdf-gallery-keys {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.deck-pdf-gallery-stage {
+  position: relative;
+  padding: 0.35rem 0.95rem 0.55rem;
+}
+
+.deck-pdf-gallery-frame {
+  margin: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0c1610;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent),
+    0 14px 36px color-mix(in srgb, var(--ink) 14%, transparent);
+  aspect-ratio: 16 / 9;
+}
+
+.deck-pdf-gallery-hero {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0c1610;
+  animation: deck-pdf-fade 0.28s var(--ease-out, ease) both;
+}
+
+@keyframes deck-pdf-fade {
+  from {
+    opacity: 0.55;
+    transform: scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-pdf-gallery-hero {
+    animation: none;
+  }
+}
+
+.deck-pdf-gallery-nav {
+  position: absolute;
+  inset: 0.35rem 0.95rem 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  padding: 0 0.35rem;
+}
+
+.deck-pdf-gallery-nav-btn {
+  pointer-events: auto;
+  width: 2.15rem;
+  height: 2.15rem;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sheet) 82%, transparent);
+  color: var(--ink);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 16%, transparent);
+  opacity: 0;
+  transition: opacity 0.18s ease, background 0.15s ease;
+}
+
+.deck-pdf-gallery-stage:hover .deck-pdf-gallery-nav-btn,
+.deck-pdf-gallery-stage:focus-within .deck-pdf-gallery-nav-btn {
+  opacity: 1;
+}
+
+.deck-pdf-gallery-nav-btn:hover:not(:disabled) {
+  background: #fff;
+}
+
+.deck-pdf-gallery-nav-btn:disabled {
+  opacity: 0 !important;
+  cursor: default;
+}
+
+.deck-pdf-gallery-strip {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.55rem 0.95rem 0.85rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+}
+
+.deck-pdf-gallery-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 88px;
+  height: 50px;
+  padding: 0;
+  border: 1.5px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0c1610;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.deck-pdf-gallery-thumb:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+}
+
+.deck-pdf-gallery-thumb.is-active {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 6px 14px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.deck-pdf-gallery-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deck-pdf-gallery-thumb-n {
+  position: absolute;
+  left: 4px;
+  bottom: 3px;
+  min-width: 1.05rem;
+  padding: 0.05rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.deck-pdf-gallery-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 1.05rem 0.85rem;
+}
+
+.deck-pdf-gallery-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--primary) 85%, var(--ink));
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.deck-pdf-gallery-open:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .deck-file-card-foot {

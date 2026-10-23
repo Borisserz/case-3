@@ -469,6 +469,7 @@ button:disabled {
   -webkit-overflow-scrolling: touch;
 }
 
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage),
 .desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) {
   /* stretch + margin-auto on stage — align-items:center was left-pinning the gallery */
   justify-content: flex-start;
@@ -492,7 +493,7 @@ button:disabled {
   max-width: min(100%, var(--chat-column));
 }
 
-/* Active chat: messages + composer share one centered reading column */
+/* Active chat: keep composer at stage width (do not shrink vs empty-home) */
 .desk.chat-desk:not(.is-empty-home) {
   align-items: center;
 }
@@ -503,8 +504,8 @@ button:disabled {
 }
 
 .desk.chat-desk:not(.is-empty-home) .composer-wrap {
-  width: min(100%, calc(var(--chat-column) + 2.3rem));
-  max-width: 100%;
+  width: min(100%, var(--deck-stage-max));
+  max-width: min(100%, var(--deck-stage-max));
   align-self: center;
   margin-inline: auto;
   padding-left: 1.15rem;
@@ -514,8 +515,8 @@ button:disabled {
 
 .desk.chat-desk:not(.is-empty-home) .composer-wrap > .composer-stack {
   width: 100%;
-  max-width: var(--chat-column);
-  margin-inline: auto;
+  max-width: 100%;
+  margin-inline: 0;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -527,40 +528,38 @@ button:disabled {
   min-width: 0;
 }
 
-/* Deck / starters home: quieter hero so gallery|ideas stay in first viewport */
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .messages,
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-starters-home) .messages {
+/* Empty stage (report/diagram/presentation): quieter hero */
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .messages,
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .messages {
   padding-top: var(--space-4);
 }
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero,
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-starters-home) .empty-hero {
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .empty-hero,
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero {
   padding: var(--space-3) var(--space-4) var(--space-1);
 }
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero h2,
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-starters-home) .empty-hero h2 {
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-empty-stage) .empty-hero h2,
+.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .empty-hero h2 {
   font-size: clamp(1.4rem, 2.3vw, 1.75rem);
 }
-.desk.chat-desk.is-empty-home:has(.composer-wrap.is-deck-home) .composer-wrap.is-deck-home {
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage,
+.desk.chat-desk.is-empty-home .composer-wrap.is-deck-home {
   padding-top: var(--space-1);
 }
 
+/* Empty home: always stage-wide (even with no pill selected) */
 .desk.chat-desk.is-empty-home .composer-wrap {
   flex: 0 0 auto;
-  width: min(100%, var(--composer-max));
-  max-width: 100%;
+  width: min(100%, var(--deck-stage-max));
+  max-width: min(100%, var(--deck-stage-max));
+  margin-inline: auto;
   align-self: center;
   border-top: none;
-  padding: var(--space-2) var(--space-4) var(--space-6);
+  padding: var(--space-3) var(--space-5) var(--space-7);
   background: transparent;
   box-sizing: border-box;
 }
 
-/* Report/diagram ideas — same column as sheet (not deck-stage-max) */
-.desk.chat-desk.is-empty-home .composer-wrap.is-starters-home {
-  width: min(100%, var(--composer-max));
-  padding: var(--space-2) var(--space-4) var(--space-6);
-}
-
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage,
 .desk.chat-desk.is-empty-home .composer-wrap.is-deck-home {
   width: min(100%, var(--deck-stage-max));
   max-width: min(100%, var(--deck-stage-max));
@@ -570,7 +569,7 @@ button:disabled {
   box-sizing: border-box;
 }
 
-/* Presentation home: sheet + templates share the same stage width */
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage .composer-stack,
 .desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .composer-stack {
   width: 100%;
   max-width: 100%;
@@ -581,22 +580,22 @@ button:disabled {
   box-sizing: border-box;
 }
 
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage .composer-stack .composer,
 .desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .composer-stack .composer {
   width: 100%;
   max-width: 100%;
   margin-inline: 0;
 }
 
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage .mode-starter-grid,
+.desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .mode-starter-grid,
+.desk.chat-desk.is-empty-home .composer-wrap.is-empty-stage .composer-deck-gallery-anchor,
 .desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .composer-deck-gallery-anchor,
 .desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .deck-template-gallery {
   width: 100%;
+  max-width: 100%;
   margin-inline: 0;
   box-sizing: border-box;
-}
-
-.desk.chat-desk.is-empty-home .composer-wrap.is-deck-home .composer-palette {
-  width: 100%;
-  margin-inline: 0;
 }
 
 .desk-head {

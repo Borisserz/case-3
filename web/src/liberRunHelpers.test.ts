@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { modeSurfaces } from "./liberModes";
 import {
   formatRunStatusError,
   provisionalSessionTitle,
@@ -49,6 +50,25 @@ describe("liberRunHelpers", () => {
     assert.equal(provisionalSessionTitle("report"), "Новый отчёт");
     assert.equal(provisionalSessionTitle("diagram"), "Новая схема");
     assert.equal(provisionalSessionTitle("presentation"), "Новая презентация");
+  });
+
+  it("modeSurfaces gates artifacts by Liber mode", () => {
+    const report = modeSurfaces("report");
+    assert.equal(report.showReportPreview, true);
+    assert.equal(report.showDiagram, true);
+    assert.equal(report.showPresentation, false);
+    assert.equal(report.showDeckMake, false);
+
+    const diagram = modeSurfaces("diagram");
+    assert.equal(diagram.showReportPreview, false);
+    assert.equal(diagram.showReportPdf, false);
+    assert.equal(diagram.showDiagram, true);
+    assert.equal(diagram.showPresentation, false);
+
+    const deck = modeSurfaces("presentation");
+    assert.equal(deck.showReportPreview, false);
+    assert.equal(deck.showDiagram, false);
+    assert.equal(deck.showPresentation, true);
   });
 
   it("formatRunStatusError includes chart + TeX tail", () => {

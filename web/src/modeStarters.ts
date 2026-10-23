@@ -1,4 +1,4 @@
-/** Quiet empty-home starters under the sheet composer (report / diagram). */
+/** Quiet empty-home starters under the sheet composer (all Liber modes). */
 
 import type { LiberWorkMode } from "./liberModes";
 
@@ -73,8 +73,40 @@ export const DIAGRAM_STARTERS: ModeStarter[] = [
   },
 ];
 
+export const PRESENTATION_STARTERS: ModeStarter[] = [
+  {
+    id: "board-update",
+    title: "Обновление совету",
+    blurb: "KPI + 1 график + takeaways из Source.",
+    prompt:
+      "Собери презентацию для совета по Source: KPI-слайды, один line/bar-график, короткие takeaways, палитра atelier, без выдуманных цифр.",
+  },
+  {
+    id: "funnel-pilot",
+    title: "Воронка пилота",
+    blurb: "Лиды → win по городам и CAC/LTV.",
+    prompt:
+      "Презентация воронки из Source: таблица по городам, bar CAC/LTV, 1–2 фото сцены, без выдуманных метрик.",
+  },
+  {
+    id: "quarter-review",
+    title: "Квартальный обзор",
+    blurb: "Тренд + доли + next steps.",
+    prompt:
+      "Квартальный обзор-дек: тренд по неделям, donut/bar долей, слайд next steps — только цифры Source.",
+  },
+  {
+    id: "pitch-short",
+    title: "Короткий питч",
+    blurb: "Проблема → решение → цифры → CTA.",
+    prompt:
+      "Короткий питч: проблема → решение Liber → цифры из Source → CTA. Pack atelier, без воды.",
+  },
+];
+
 export function startersForMode(mode: LiberWorkMode): ModeStarter[] {
   if (mode === "report") return REPORT_STARTERS;
   if (mode === "diagram") return DIAGRAM_STARTERS;
+  if (mode === "presentation") return PRESENTATION_STARTERS;
   return [];
 }

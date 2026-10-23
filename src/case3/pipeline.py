@@ -168,6 +168,7 @@ def run_pipeline(
     run_id: str | None = None,
     on_stage: Callable[[str, str | None], None] | None = None,
     user_figures: list[dict[str, Any]] | None = None,
+    output_mode: str = "auto",
 ) -> Path:
     formats = formats or {"pdf"}
     root = project_root.resolve()
@@ -186,6 +187,9 @@ def run_pipeline(
         if max_diagrams is None
         else max(0, min(int(max_diagrams), 3))
     )
+    mode = (output_mode or "auto").strip().lower()
+    if mode not in {"report", "diagram", "presentation", "auto"}:
+        mode = "auto"
     user_figs = list(user_figures or [])
     # Uploads always need figure budget even if UI had «без фото» half-checked
     if user_figs:
@@ -202,6 +206,7 @@ def run_pipeline(
         "source": str(text_path),
         "intent": intent,
         "formats": sorted(formats),
+        "output_mode": mode,
         "dry_run": dry_run,
         "max_images": images_budget,
         "max_charts": charts_budget,

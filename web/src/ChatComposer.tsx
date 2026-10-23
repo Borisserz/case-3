@@ -126,13 +126,12 @@ export function ChatComposer({
     return () => window.clearInterval(t);
   }, [busy]);
 
+  /** Stable stage width: empty home (any/no pill) + never shrink mid-chat */
+  const isEmptyStage = Boolean(showModes);
   const isDeckHome = Boolean(showPackPresets);
-  const isStartersHome = Boolean(
-    showModes && (workMode === "report" || workMode === "diagram"),
-  );
   return (
     <div
-      className={`composer-wrap${isDeckHome ? " is-deck-home" : ""}${isStartersHome ? " is-starters-home" : ""}`}
+      className={`composer-wrap is-stage-wide${isEmptyStage ? " is-empty-stage" : ""}${isDeckHome ? " is-deck-home" : ""}`}
     >
       {/* Same width column as .composer — plaque/Working can't drift left of the sheet */}
       <div className="composer-stack">
@@ -289,9 +288,7 @@ export function ChatComposer({
         </div>
       </div>
 
-      {showModes &&
-      onPickStarter &&
-      (workMode === "report" || workMode === "diagram") ? (
+      {showModes && onPickStarter && workMode ? (
         <ModeStarterGrid
           workMode={workMode}
           busy={busy}

@@ -473,9 +473,8 @@
   gap: 0.45rem;
   align-items: stretch;
   width: 100%;
-  /* Julius empty-home column; active chat re-widens via shell .chat-column rule */
-  max-width: min(100%, 40rem);
-  margin-inline: auto;
+  max-width: 100%;
+  margin-inline: 0;
   padding: 0.85rem 0.95rem 0.7rem;
   border: 1px solid color-mix(in srgb, var(--border) 85%, var(--primary));
   border-radius: 16px;
@@ -484,15 +483,20 @@
   transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast);
 }
 
-/* Prefer token when wrap already constrains; keep ~40rem Julius feel on empty home */
-.composer-wrap .composer {
-  max-width: min(100%, var(--composer-max), 40rem);
-}
-
-/* Presentation: sheet width = template grid width (same deck stage) */
+/* Sheet always fills the stage wrap (empty + mid-chat) — no 40rem shrink */
+.composer-wrap.is-stage-wide .composer,
+.composer-wrap.is-empty-stage .composer,
 .composer-wrap.is-deck-home .composer {
   max-width: 100%;
   margin-inline: 0;
+}
+
+.composer-wrap.is-stage-wide .mode-starter-grid,
+.composer-wrap.is-empty-stage .mode-starter-grid {
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .composer:focus-within {
@@ -592,10 +596,10 @@ button.send.is-busy {
 
 
 
-/* Editorial starters — hairline tiles, same column as composer sheet */
+/* Editorial starters — same width as composer sheet */
 .mode-starter-grid {
   width: 100%;
-  max-width: min(100%, var(--composer-max));
+  max-width: 100%;
   margin: var(--space-5) 0 0;
   padding: 0 0.15rem var(--space-2);
   box-sizing: border-box;

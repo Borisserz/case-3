@@ -42,7 +42,7 @@
 }
 
 .desk-split.is-open .desk.chat-desk .composer-wrap {
-  width: min(100%, var(--chat-column));
+  width: min(100%, var(--deck-stage-max));
   max-width: 100%;
   padding-left: 0;
   padding-right: 0;

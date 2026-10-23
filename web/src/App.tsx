@@ -439,11 +439,18 @@ export default function App() {
   }
 
   function openReportArtifact(msgId: string, result: RunResult, tab?: ArtifactTab) {
-    const preferPdf = Boolean(result.downloads?.pdf);
+    const mode = result.output_mode || "auto";
     const preferPreview = Boolean(result.preview?.blocks?.length);
-    const nextTab: ArtifactTab =
+    const preferPdf = Boolean(result.downloads?.pdf);
+    let nextTab: ArtifactTab =
       tab ??
-      (preferPdf ? "pdf" : preferPreview ? "preview" : "source");
+      (preferPreview ? "preview" : preferPdf ? "pdf" : "source");
+    // Mode-locked defaults (report → preview; diagram → schema; presentation → deck).
+    if (!tab) {
+      if (mode === "diagram" && result.diagrams?.[0]) nextTab = "diagram";
+      else if (mode === "presentation") nextTab = "presentation";
+      else if (mode === "report" && preferPreview) nextTab = "preview";
+    }
     setRailExiting(false);
     setActiveArtifact({
       kind: "report",
@@ -598,6 +605,18 @@ export default function App() {
           if (slidesStatus === "ok") {
             setDownloadsPulseMsgId(msgId);
             window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
+            const merged: RunResult = {
+              ...result,
+              downloads: { ...result.downloads, ...downloads },
+              slides_status: slidesStatus,
+              slides_stage: slidesStage,
+              slides_error: slidesError,
+              slide_pngs: slidePngs,
+              deck: deckIr ?? result.deck,
+              deck_pdf_mode: deckPdfMode ?? result.deck_pdf_mode,
+              output_mode: result.output_mode || "presentation",
+            };
+            openPresentationArtifact(msgId, merged);
           }
           break;
         }
@@ -1032,6 +1051,10 @@ export default function App() {
         fd.set("forbid_images", "true");
         fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
       }
+      if (outMode === "presentation") {
+        // Liber Mermaid UI schemas off — deck only (PPTX + PDF twin).
+        fd.set("max_diagrams", "0");
+      }
     }
 
     try {
@@ -1201,11 +1224,18 @@ export default function App() {
         }
       }
 
+      // Pipeline may omit output_mode if an older worker rewrote meta — stamp from send.
+      result = {
+        ...result,
+        output_mode: result.output_mode || outMode || "auto",
+      };
+
       try {
         setChatTitle(reportTitle(result));
         if (
           result.preview?.blocks?.length ||
           result.downloads?.pdf ||
+          result.downloads?.pptx ||
           (result.diagrams && result.diagrams.length > 0)
         ) {
           rememberRun(result);
@@ -1239,12 +1269,21 @@ export default function App() {
       const isPresentationOnly =
         outMode === "presentation" || result.output_mode === "presentation";
       if (isPresentationOnly && result.run_id) {
-        // makePresentation owns busy until deck finishes
+        // makePresentation owns busy until deck finishes; opens presentation rail on ok
         void makePresentation(pendingId, result);
       } else {
         setBusy(false);
+        // Open the mode's primary surface so the user sees the right artifact.
+        if (result.output_mode === "diagram" && result.diagrams?.[0]) {
+          openDiagramArtifact(pendingId, result, result.diagrams[0].id);
+        } else if (
+          result.output_mode === "report" ||
+          result.output_mode === "auto" ||
+          !result.output_mode
+        ) {
+          openReportArtifact(pendingId, result);
+        }
       }
-      // Julius: keep artifacts in-chat; rail opens only via ArtifactCard click.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setMsgs((m) =>
@@ -1510,6 +1549,7 @@ export default function App() {
                         slidePngs: activeReport.slide_pngs,
                         deck: activeReport.deck,
                         deckPdfMode: activeReport.deck_pdf_mode,
+                        outputMode: activeReport.output_mode,
                         onDeckUpdated: (deck, pngs) => {
                           if (!activeReportMsg || activeReportMsg.role !== "bot")
                             return;
@@ -1568,7 +1608,9 @@ export default function App() {
                   railArtifact.kind === "report" ? selectDiagram : undefined
                 }
                 onMakePresentation={
-                  railArtifact.kind === "report" && activeReport
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.output_mode === "presentation"
                     ? () =>
                         void makePresentation(
                           railArtifact.msgId,

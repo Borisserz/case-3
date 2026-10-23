@@ -2,6 +2,8 @@
 
 import { DeckFileCard } from "./DeckFileCard";
 import { DeckMakeSplit } from "./DeckMakeSplit";
+import { DeckPdfGallery } from "./DeckPdfGallery";
+import { modeSurfaces } from "./liberModes";
 
 type DiagramChip = { id: string; title: string; type?: string };
 
@@ -18,6 +20,8 @@ type Props = {
   slidesStage?: string | null;
   /** Twin preview thumbs (HTML→PNG); same tokens as PPTX. */
   slidePngs?: string[];
+  /** Liber run mode — gates which cards/CTAs appear. */
+  outputMode?: string | null;
   onView: () => void;
   onOpenDiagram?: (id: string) => void;
   onMakePresentation?: () => void;
@@ -141,33 +145,40 @@ export function ArtifactCard({
   slidesStatus = null,
   slidesStage = null,
   slidePngs = [],
+  outputMode = null,
   onView,
   onOpenDiagram,
   onMakePresentation,
   onOpenPresentation,
   onDeckStyle,
 }: Props) {
+  const surfaces = modeSurfaces(outputMode);
   const slidesBusy =
-    slidesStatus === "running" || slidesStatus === "queued";
-  const slidesReady = slidesStatus === "ok";
+    surfaces.showPresentation &&
+    (slidesStatus === "running" || slidesStatus === "queued");
+  const slidesReady = surfaces.showPresentation && slidesStatus === "ok";
   const hero = slidesReady && slidePngs.length > 0 ? slidePngs[0] : null;
+  const allowMake = surfaces.showDeckMake && Boolean(onMakePresentation);
   const hasDeckCta =
-    Boolean(onMakePresentation) || (slidesReady && Boolean(onOpenPresentation));
-  const reportPdfHref = pdfUrl || downloads?.pdf || null;
+    allowMake || (slidesReady && Boolean(onOpenPresentation));
+  const reportPdfHref = surfaces.showReportPdf
+    ? pdfUrl || downloads?.pdf || null
+    : null;
+  const visibleDiagrams = surfaces.showDiagram ? diagrams : [];
   const hasDeckFiles =
     slidesReady && Boolean(downloads?.pptx || downloads?.deck_pdf);
   const pptxName = downloads?.pptx
     ? fileNameFromUrl(downloads.pptx, "deck.pptx")
     : "deck.pptx";
-  const deckPdfName = downloads?.deck_pdf
-    ? fileNameFromUrl(downloads.deck_pdf, "deck.pdf")
-    : "deck.pdf";
   const reportPdfName = reportPdfHref
     ? fileNameFromUrl(reportPdfHref, "report.pdf")
     : "report.pdf";
+  const showPdfGallery =
+    surfaces.showPresentation &&
+    (Boolean(downloads?.deck_pdf) || slidePngs.length > 0);
 
   const showDeckMake =
-    hasDeckCta && (slidesBusy || !hasDeckFiles || Boolean(onMakePresentation));
+    hasDeckCta && (slidesBusy || !hasDeckFiles || allowMake);
 
   const shellClass = [
     "artifact-card",
@@ -187,7 +198,7 @@ export function ArtifactCard({
           {downloads?.pptx ? (
             <section className="artifact-card-block">
               <p className="artifact-card-quiet-label">
-                Презентация
+                PPTX · редактировать
                 {slidePngs.length > 0
                   ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
                   : ""}
@@ -200,23 +211,16 @@ export function ArtifactCard({
                 fileLabel={pptxName}
                 onPrimary={onOpenPresentation}
                 primaryLabel="Изменить"
-                filmstrip={slidePngs}
                 footerHint="Открыть редактор слайдов →"
               />
             </section>
           ) : null}
-          {downloads?.deck_pdf ? (
+          {showPdfGallery ? (
             <section className="artifact-card-block">
-              <p className="artifact-card-quiet-label">PDF twin</p>
-              <DeckFileCard
-                kind="deck_pdf"
-                href={downloads.deck_pdf}
-                previewUrl={hero}
-                pdfUrl={downloads.deck_pdf}
-                fileLabel={deckPdfName}
-                onPrimary={onOpenPresentation}
-                primaryLabel="Открыть"
-                footerHint="Открыть PDF twin →"
+              <p className="artifact-card-quiet-label">PDF · только слайды</p>
+              <DeckPdfGallery
+                slides={slidePngs}
+                onOpenViewer={onOpenPresentation}
               />
             </section>
           ) : null}
@@ -253,13 +257,13 @@ export function ArtifactCard({
             />
           </section>
         </div>
-        {diagrams.length > 1 && onOpenDiagram ? (
+        {visibleDiagrams.length > 1 && onOpenDiagram ? (
           <div
             className="artifact-card-diagrams is-quiet"
             role="group"
             aria-label="Схемы"
           >
-            {diagrams.map((d) => (
+            {visibleDiagrams.map((d) => (
               <button
                 key={d.id}
                 type="button"
@@ -270,13 +274,13 @@ export function ArtifactCard({
               </button>
             ))}
           </div>
-        ) : diagrams.length === 1 && onOpenDiagram ? (
+        ) : visibleDiagrams.length === 1 && onOpenDiagram ? (
           <button
             type="button"
             className="artifact-card-diagram-link"
-            onClick={() => onOpenDiagram(diagrams[0].id)}
+            onClick={() => onOpenDiagram(visibleDiagrams[0].id)}
           >
-            Схема: {diagrams[0].title || diagrams[0].id}
+            Схема: {visibleDiagrams[0].title || visibleDiagrams[0].id}
           </button>
         ) : null}
         {slidesBusy ? (
@@ -298,9 +302,9 @@ export function ArtifactCard({
   }
 
   /* 3) Diagrams only — one primary card + quiet list if many */
-  if (diagrams.length > 0 && onOpenDiagram) {
-    const primary = diagrams[0];
-    const rest = diagrams.slice(1);
+  if (visibleDiagrams.length > 0 && onOpenDiagram) {
+    const primary = visibleDiagrams[0];
+    const rest = visibleDiagrams.slice(1);
     return (
       <div className={shellClass}>
         <div

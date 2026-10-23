@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -13,6 +14,8 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
+
+log = logging.getLogger("case3.llm")
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
 
@@ -248,6 +251,13 @@ class LLMClient:
         )
         data = json.dumps(body).encode("utf-8")
         headers = self._headers()
+        log.info(
+            "LLM POST %s model=%s bytes=%d timeout_s=%.0f",
+            self.config.endpoint,
+            self.config.model or "(default)",
+            len(data),
+            self.config.timeout_s,
+        )
 
         error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
@@ -258,6 +268,11 @@ class LLMClient:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
                     text, finish = _content(json.loads(resp.read().decode("utf-8")))
                     self.last_finish_reason = finish
+                    log.info(
+                        "LLM OK chars=%d finish_reason=%s",
+                        len(text),
+                        finish or "-",
+                    )
                     return text
             except urllib.error.HTTPError as exc:
                 error = LLMError(f"HTTP {exc.code} from {self.config.endpoint}: {_http_body(exc)}")

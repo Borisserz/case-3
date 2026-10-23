@@ -40,7 +40,7 @@ export function EmptyState({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduce ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
-      <IconLiberMark size={24} />
+      <IconLiberMark size={36} />
       <h2>{title}</h2>
       <p>{subtitle}</p>
       {hasStoredReport && (

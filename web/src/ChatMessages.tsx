@@ -177,6 +177,7 @@ export function ChatMessages({
                       slidesStatus={m.result.slides_status}
                       slidesStage={m.result.slides_stage}
                       slidePngs={m.result.slide_pngs}
+                      outputMode={m.result.output_mode}
                       onView={() => {
                         const r = m.result!;
                         const diagramOnly =
@@ -184,27 +185,28 @@ export function ChatMessages({
                           (!r.downloads?.pdf && Boolean(r.diagrams?.length));
                         if (diagramOnly && r.diagrams?.[0]) {
                           onOpenDiagram(m.id, r, r.diagrams[0].id);
+                        } else if (r.output_mode === "presentation") {
+                          onOpenPresentation(m.id, r);
                         } else {
                           onOpenReport(m.id, r);
                         }
                       }}
-                      onOpenDiagram={(id) =>
-                        onOpenDiagram(m.id, m.result!, id)
-                      }
-                      onMakePresentation={
-                        m.result.output_mode === "diagram"
+                      onOpenDiagram={
+                        m.result.output_mode === "presentation"
                           ? undefined
-                          : () => onMakePresentation(m.id, m.result!)
+                          : (id) => onOpenDiagram(m.id, m.result!, id)
                       }
+                      onMakePresentation={undefined}
                       onOpenPresentation={
-                        m.result.output_mode === "diagram"
-                          ? undefined
-                          : () => onOpenPresentation(m.id, m.result!)
+                        m.result.output_mode === "presentation" ||
+                        m.result.slides_status === "ok"
+                          ? () => onOpenPresentation(m.id, m.result!)
+                          : undefined
                       }
                       onDeckStyle={
-                        m.result.output_mode === "diagram"
-                          ? undefined
-                          : onDeckStyle
+                        m.result.output_mode === "presentation"
+                          ? onDeckStyle
+                          : undefined
                       }
                     />
                     {m.result.warnings?.length ? (

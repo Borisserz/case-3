@@ -12,24 +12,54 @@ export const LIBER_MODE_PILLS: {
   {
     id: "presentation",
     label: "Презентация",
-    hint: "Только дек PPTX — без PDF/превью отчёта",
+    hint: "Только PPTX + PDF twin — без отчёта и схем",
   },
 ];
 
 /** Visible nudge under pills on empty desk. */
 export function modeNudge(mode: LiberWorkMode): string {
   if (mode === "presentation") {
-    return "Шаблон подставит бриф в чат — правьте и отправляйте; Source по желанию.";
+    return "Только дек: PPTX + PDF twin. Без отчёта и схем Liber.";
   }
   if (mode === "diagram") {
-    return "Короткий или длинный запрос — без PDF, только схема.";
+    return "Только Mermaid-схема — без PDF/DOCX и презентации.";
   }
   if (mode === "report") {
-    return "Вставьте Source или опишите задачу — соберём PDF/DOCX.";
+    return "Превью + PDF/DOCX; схема — если появится в отчёте.";
   }
   return "Сначала выберите режим: Отчёт · Схема · Презентация.";
 }
 
 export function modeToOutputMode(mode: LiberWorkMode): string {
   return mode ?? "auto";
+}
+
+export type LiberOutputMode = "report" | "diagram" | "presentation" | "auto";
+
+export function normalizeOutputMode(
+  mode?: string | null,
+): LiberOutputMode {
+  if (mode === "diagram" || mode === "presentation" || mode === "report") {
+    return mode;
+  }
+  return "auto";
+}
+
+/** Surfaces allowed per Liber work mode (rail tabs + in-chat cards). */
+export function modeSurfaces(mode?: string | null) {
+  const m = normalizeOutputMode(mode);
+  return {
+    mode: m,
+    /** TeX/block preview of the report */
+    showReportPreview: m === "report" || m === "auto",
+    /** Print PDF / DOCX of the report */
+    showReportPdf: m === "report" || m === "auto",
+    /** Mermaid schema tab / cards */
+    showDiagram: m === "diagram" || m === "report" || m === "auto",
+    /** PPTX + deck PDF twin */
+    showPresentation: m === "presentation" || m === "auto",
+    /** Cross-sell «собрать презентацию» under a report — off (use Presentation mode) */
+    showDeckMake: false,
+    showSource: true,
+  };
 }
