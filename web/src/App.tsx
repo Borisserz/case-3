@@ -50,10 +50,18 @@ import type {
   SourceDraft,
 } from "./liberTypes";
 import {
+  createFolder,
+  deleteFolder,
+  loadFolders,
   loadHistory,
   loadHistoryPayload,
+  moveHistoryToFolder,
   pushHistory,
+  renameFolder,
   saveRunPayload,
+  togglePinHistory,
+  type HistoryFolder,
+  type HistoryItem,
 } from "./reportHistory";
 import { DeckStyleSheet } from "./DeckStyleSheet";
 import {
@@ -66,7 +74,7 @@ import {
 } from "./deckStyle";
 import { starterPromptForStructure } from "./deckTemplates";
 import { SettingsModal } from "./SettingsModal";
-import { Sidebar, type HistoryItem } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import { loadRailWidth } from "./railWidth";
 import { useLiberDevPreviews } from "./useLiberDevPreviews";
 
@@ -120,8 +128,9 @@ export default function App() {
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
+  const [folders, setFolders] = useState<HistoryFolder[]>(() => loadFolders());
   const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(
     null,
   );
@@ -759,7 +768,6 @@ export default function App() {
     setActiveArtifact(null);
     setPlaqueDismissed(false);
     setEditError(null);
-    setHistoryOpen(false);
     chatRef.current?.focus();
   }
 
@@ -782,7 +790,6 @@ export default function App() {
         result,
       },
     ]);
-    setHistoryOpen(false);
   }
 
   function rememberRun(result: RunResult) {
@@ -1158,8 +1165,10 @@ export default function App() {
             const summaryStatus = body.summary_status as string | undefined;
             const shouldStream =
               !summaryStreamStarted &&
+              outMode !== "diagram" &&
               (stage === "latex" ||
                 stage === "docx" ||
+                stage === "summary" ||
                 summaryStatus === "streaming" ||
                 summaryStatus === "ok");
             if (shouldStream) {
@@ -1407,10 +1416,22 @@ export default function App() {
           healthLabel={healthReady ? "готово" : health ? "сервисы" : "…"}
           healthHint={paradeHint}
           history={history}
+          folders={folders}
           historyOpen={historyOpen}
           onHistoryOpen={setHistoryOpen}
           onNew={startNewReport}
           onOpenHistory={openHistoryItem}
+          onTogglePin={(runId) => setHistory(togglePinHistory(runId))}
+          onMoveToFolder={(runId, folderId) =>
+            setHistory(moveHistoryToFolder(runId, folderId))
+          }
+          onCreateFolder={(name) => setFolders(createFolder(name))}
+          onRenameFolder={(id, name) => setFolders(renameFolder(id, name))}
+          onDeleteFolder={(id) => {
+            const next = deleteFolder(id);
+            setFolders(next.folders);
+            setHistory(next.history);
+          }}
           onSettings={() => setSettingsOpen(true)}
           busy={busy}
         />
@@ -1649,6 +1670,40 @@ export default function App() {
                           activeReport.run_id,
                           req,
                         )
+                    : undefined
+                }
+                onDiagramsUpdated={
+                  railArtifact.kind === "report" && activeReportMsg
+                    ? (diagrams) => {
+                        const mid = activeReportMsg.id;
+                        setMsgs((list) =>
+                          list.map((msg) => {
+                            if (
+                              msg.id !== mid ||
+                              msg.role !== "bot" ||
+                              !msg.result
+                            )
+                              return msg;
+                            const next = {
+                              ...msg,
+                              result: { ...msg.result, diagrams },
+                            };
+                            if (next.result) rememberRun(next.result);
+                            return next;
+                          }),
+                        );
+                        setActiveArtifact((prev) => {
+                          if (!prev || prev.kind !== "report") return prev;
+                          const keep =
+                            diagrams.find((d) => d.id === prev.activeDiagramId)
+                              ?.id ??
+                            diagrams[0]?.id ??
+                            null;
+                          return { ...prev, activeDiagramId: keep };
+                        });
+                        setToast("Схема обновлена");
+                        window.setTimeout(() => setToast(null), 2200);
+                      }
                     : undefined
                 }
               />

@@ -22,11 +22,13 @@ export const FALLBACK_TYPES = [
 export const STAGE_LABELS: Record<string, string> = {
   queued: "В очереди…",
   llm: "Думаю над структурой…",
+  diagram_repair: "Уточняю схему по Source…",
   charts: "Рисую графики…",
   images: "Готовлю иллюстрации…",
   inject: "Вставляю рисунки в текст…",
   latex: "Собираю PDF…",
   docx: "Собираю DOCX…",
+  summary: "Краткое описание…",
   ok: "Готово",
   error: "Ошибка",
 };

@@ -661,20 +661,21 @@
 }
 
 .artifact-rail-close {
+  display: grid;
+  place-items: center;
   border: none;
   background: transparent;
   color: var(--muted);
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  font-size: 1.25rem;
-  line-height: 1;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
   cursor: pointer;
+  padding: 0;
 }
 
 .artifact-rail-close:hover {
   color: var(--ink);
-  background: color-mix(in srgb, var(--secondary) 50%, transparent);
+  background: var(--surface, color-mix(in srgb, var(--secondary) 50%, transparent));
 }
 
 .artifact-rail-body {

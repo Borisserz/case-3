@@ -2,6 +2,8 @@
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
+**Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. **В PDF/DOCX схем нет** (только графики/фото); print-truth = PDF.
+
 **Память проекта (агенты и люди):** [`docs/MEMORY.md`](docs/MEMORY.md) · [`AGENTS.md`](AGENTS.md)
 
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
@@ -52,6 +54,7 @@ scripts\smoke.cmd
 |--|--|
 | `VISION_API_BASE_URL` | Qwen |
 | `CASE3_MAX_CHARTS` | потолок графиков (0 = off) |
+| `CASE3_MAX_DIAGRAMS` | потолок Mermaid-схем Liber UI (0–3, default 2; не в PDF) |
 | `IMAGE_API_BASE_URL` | офисный Image API (`/generate`, `/edit`) |
 | `IMAGE_MAX_IMAGES` | потолок фото (0 = off) |
 | `CASE3_IMAGE` | `case-3:tex` |

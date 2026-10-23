@@ -245,7 +245,8 @@ def edit_chart_in_run(
             # KPI cards use CSS vars from palette (frame .kpi / --kpi-value).
             new_html = apply_kpi_palette_vars(new_html, palette_id)
             modes.append("local_palette")
-    elif bool(style_notes) or type_changed:
+    elif bool(style_notes):
+        # Free-text restyle always needs the model.
         modes.append("llm_style")
         if type_changed:
             modes.append("type_change")
@@ -253,8 +254,7 @@ def edit_chart_in_run(
             new_html = rewrite_chart_html_with_llm(
                 html,
                 palette_id=palette_id,
-                style_notes=style_notes
-                or (f"смени тип графика на {want_type}" if type_changed else ""),
+                style_notes=style_notes,
                 chart_type=current_type,
                 target_type=want_type,
                 llm=llm,
@@ -272,6 +272,22 @@ def edit_chart_in_run(
             chart["type"] = want_type
             chart = apply_type_to_chart(chart, want_type)
             new_html = str(chart.get("html") or "")
+    elif type_changed:
+        # Type/palette only — same local coerce as /preview (no 20s LLM).
+        modes.append("type_change")
+        modes.append("local_type")
+        chart["html"] = html
+        chart["type"] = want_type
+        chart = apply_type_to_chart(chart, want_type)
+        new_html = str(chart.get("html") or "")
+        if palette_id != "auto":
+            if want_type == "kpi" or 'class="kpi"' in new_html:
+                new_html = apply_kpi_palette_vars(new_html, palette_id)
+            else:
+                new_html = sanitize_chart_html(
+                    apply_palette_to_html(new_html, palette_id)
+                )
+            modes.append("local_palette")
     else:
         if palette_id == "auto":
             raise ChartEditError("укажите палитру, тип или текст «как изменить»")

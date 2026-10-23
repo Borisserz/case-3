@@ -7,8 +7,8 @@ export const LIBER_MODE_PILLS: {
   label: string;
   hint: string;
 }[] = [
-  { id: "report", label: "Отчёт", hint: "PDF и DOCX из Source" },
-  { id: "diagram", label: "Схема", hint: "Только Mermaid + краткое описание" },
+  { id: "report", label: "Отчёт", hint: "Превью · Схема · PDF/DOCX" },
+  { id: "diagram", label: "Схема", hint: "Только схема — без отчёта" },
   {
     id: "presentation",
     label: "Презентация",
@@ -22,10 +22,10 @@ export function modeNudge(mode: LiberWorkMode): string {
     return "Только дек: PPTX + PDF twin. Без отчёта и схем Liber.";
   }
   if (mode === "diagram") {
-    return "Только Mermaid-схема — без PDF/DOCX и презентации.";
+    return "Только схема Liber — без PDF/DOCX и презентации.";
   }
   if (mode === "report") {
-    return "Превью + PDF/DOCX; схема — если появится в отчёте.";
+    return "Документ: Превью · Схема · PDF рядом в панели.";
   }
   return "Сначала выберите режим: Отчёт · Схема · Презентация.";
 }
@@ -60,6 +60,7 @@ export function modeSurfaces(mode?: string | null) {
     showPresentation: m === "presentation" || m === "auto",
     /** Cross-sell «собрать презентацию» under a report — off (use Presentation mode) */
     showDeckMake: false,
-    showSource: true,
+    /** Diagram mode: schema only in rail (no Source clutter). */
+    showSource: m !== "diagram",
   };
 }

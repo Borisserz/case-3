@@ -95,6 +95,7 @@ export function ChatComposer({
   onPickStarter,
 }: Props) {
   const galleryRef = useRef<HTMLDivElement>(null);
+  const busyStartedAt = useRef<number | null>(null);
   const [busySec, setBusySec] = useState(0);
   const placeholder =
     workMode === "diagram"
@@ -116,13 +117,23 @@ export function ChatComposer({
     return () => window.clearTimeout(t);
   }, [showPackPresets]);
 
+  /* Total job elapsed (report→slides etc.), not per-stage — keep anchor while busy. */
   useEffect(() => {
     if (!busy) {
+      busyStartedAt.current = null;
       setBusySec(0);
       return;
     }
-    setBusySec(0);
-    const t = window.setInterval(() => setBusySec((s) => s + 1), 1000);
+    if (busyStartedAt.current == null) {
+      busyStartedAt.current = Date.now();
+    }
+    const tick = () => {
+      const start = busyStartedAt.current;
+      if (start == null) return;
+      setBusySec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    };
+    tick();
+    const t = window.setInterval(tick, 1000);
     return () => window.clearInterval(t);
   }, [busy]);
 

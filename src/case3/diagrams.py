@@ -38,14 +38,59 @@ _FENCE = re.compile(r"^```(?:mermaid)?\s*\n([\s\S]*?)\n?```\s*$", re.I)
 _MAX_BODY = 6000
 _MAX_TITLE = 80
 _FIRST_TOKEN = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
+_HEX_COLOR = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
+_CLICK_LINE = re.compile(r"(?im)^\s*click\s+.*$")
+
+# Liber soft-premium fallbacks (atelier) — never purple neon.
+_SAFE_FILL = "#dce8df"
+_SAFE_STROKE = "#6b8f76"
 
 
 class DiagramError(ValueError):
     """Invalid Mermaid diagram payload."""
 
 
+def _expand_hex(h: str) -> tuple[int, int, int]:
+    raw = h.lstrip("#")
+    if len(raw) == 3:
+        raw = "".join(c * 2 for c in raw)
+    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+
+def _is_purple_hex(hex_color: str) -> bool:
+    """Reject purple / violet neon (product: no нейрослоп)."""
+    try:
+        r, g, b = _expand_hex(hex_color)
+    except ValueError:
+        return True
+    # High R+B with suppressed G → purple/magenta family.
+    if b >= 110 and r >= 90 and g <= min(r, b) * 0.78 and ((r + b) / 2 - g) >= 36:
+        return True
+    # Saturated violet: B dominant, R mid, G low.
+    if b > r >= g and (b - g) >= 70 and r >= 60:
+        return True
+    return False
+
+
+def _rewrite_unsafe_colors(mermaid: str) -> str:
+    """Swap purple fills/strokes in style/classDef to Liber sage."""
+
+    def repl(m: re.Match[str]) -> str:
+        full = m.group(0)
+        if not _is_purple_hex(full):
+            return full
+        before = mermaid[max(0, m.start() - 16) : m.start()].lower()
+        return _SAFE_STROKE if "stroke" in before else _SAFE_FILL
+
+    return _HEX_COLOR.sub(repl, mermaid)
+
+
 def sanitize_mermaid(text: str) -> str:
-    """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart."""
+    """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart.
+
+    Keeps model ``classDef`` / ``:::role`` / ``style`` coloring. Strips ``click``
+    lines; rewrites purple hex fills to Liber sage.
+    """
     raw = (text or "").strip()
     if not raw:
         raise DiagramError("empty mermaid")
@@ -63,6 +108,9 @@ def sanitize_mermaid(text: str) -> str:
         raise DiagramError(f"mermaid too long ({len(raw)} > {_MAX_BODY})")
     # Mermaid accepts `graph` as alias of flowchart — normalize for Liber + type gate.
     raw = re.sub(r"(?i)^graph(\s+)", r"flowchart\1", raw, count=1)
+    raw = _CLICK_LINE.sub("", raw)
+    raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
+    raw = _rewrite_unsafe_colors(raw)
     return raw
 
 

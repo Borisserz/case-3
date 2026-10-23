@@ -768,17 +768,19 @@ button:disabled {
   width: 100%;
   margin-bottom: 0.75rem;
   padding: 0.55rem 0.8rem;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-radius: 12px;
-  background: var(--primary);
-  color: #fffcf7;
+  background: color-mix(in srgb, var(--sheet) 72%, var(--secondary));
+  color: var(--ink-2);
   font-size: 0.86rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
-  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 12%, transparent) inset;
+  box-shadow: none;
   transition:
     background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out),
     width var(--dur-slow) var(--ease-out),
     height var(--dur-slow) var(--ease-out),
@@ -787,8 +789,10 @@ button:disabled {
 }
 
 .liber-sidebar-new:hover:not(:disabled) {
-  background: var(--primary-hover);
-  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 8%, transparent) inset;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fffcf7;
+  box-shadow: 0 1px 0 color-mix(in srgb, #fffcf7 10%, transparent) inset;
 }
 
 .liber-sidebar-new:disabled {
@@ -860,15 +864,9 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-
-.liber-sidebar-history ul {
-  list-style: none;
-  margin: 0;
-  padding: 0.1rem 0;
   display: flex;
   flex-direction: column;
-  gap: 0.12rem;
+  gap: 0.35rem;
 }
 
 .liber-sidebar-history-empty {
@@ -878,23 +876,315 @@ button:disabled {
   line-height: 1.4;
 }
 
-.liber-sidebar-history-item {
+.liber-hist-toolbar {
+  padding: 0.1rem 0.15rem 0.35rem;
+}
+
+.liber-hist-add-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  border: 1px dashed color-mix(in srgb, var(--primary) 28%, var(--border));
+  background: color-mix(in srgb, var(--sheet) 55%, transparent);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 550;
+  cursor: pointer;
+  padding: 0.42rem 0.55rem;
+  border-radius: 11px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.liber-hist-add-folder:hover {
+  color: var(--primary);
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--secondary) 55%, #fff);
+}
+
+.liber-hist-add-ico {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
+
+.liber-hist-create {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.35rem 0.4rem 0.35rem 0.45rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, #fff 90%, var(--sheet)) 0%,
+      color-mix(in srgb, var(--secondary) 32%, #fff) 100%
+    );
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 70%, transparent) inset,
+    0 6px 16px color-mix(in srgb, var(--ink) 5%, transparent);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.liber-hist-create:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 70%, transparent) inset,
+    0 0 0 3px color-mix(in srgb, var(--secondary) 70%, transparent),
+    0 8px 18px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.liber-hist-create-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--primary);
+  opacity: 0.85;
+}
+
+.liber-hist-create input,
+.liber-hist-rename {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 8px;
+  padding: 0.32rem 0.35rem;
+  font: inherit;
+  font-size: 0.8rem;
+  background: transparent !important;
+  color: var(--ink);
+  resize: none;
+}
+
+.liber-hist-create input::placeholder {
+  color: var(--muted-2);
+}
+
+.liber-hist-create input:focus,
+.liber-hist-create input:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.liber-hist-rename {
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  padding: 0.28rem 0.45rem;
+}
+
+.liber-hist-rename:focus {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary) 70%, transparent) !important;
+}
+
+.liber-hist-create-go {
+  flex: none;
+  border: none;
+  border-radius: 999px;
+  padding: 0.32rem 0.7rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: #fffcf7;
+  background: var(--primary);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.liber-hist-create-go:hover:not(:disabled) {
+  background: var(--primary-hover, color-mix(in srgb, var(--primary) 88%, #000));
+}
+
+.liber-hist-create-go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.liber-hist-create-cancel {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.55rem;
+  height: 1.55rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.liber-hist-create-cancel:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--secondary) 50%, transparent);
+}
+
+.liber-hist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0 0.05rem 0.35rem;
+}
+
+.liber-hist-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0 0.1rem;
+}
+
+.liber-hist-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.4rem;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-align: left;
+}
+
+.liber-hist-group-toggle:hover {
+  background: color-mix(in srgb, var(--secondary) 40%, transparent);
+}
+
+.liber-hist-chev {
+  display: inline-flex;
+  transition: transform 0.18s ease;
+  opacity: 0.55;
+  color: var(--muted);
+}
+
+.liber-hist-chev.is-open {
+  transform: rotate(90deg);
+}
+
+.liber-hist-group-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.liber-hist-group-count {
+  margin-left: auto;
+  min-width: 1.1rem;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--secondary) 55%, transparent);
+}
+
+.liber-hist-group-tools {
+  display: flex;
+  gap: 0.05rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.liber-hist-group-head:hover .liber-hist-group-tools,
+.liber-hist-group-head:focus-within .liber-hist-group-tools {
+  opacity: 1;
+}
+
+.liber-hist-list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0.15rem;
   display: flex;
   flex-direction: column;
   gap: 0.12rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sheet) 40%, transparent);
+}
+
+.liber-hist-empty-folder {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.72rem;
+  color: var(--muted-2);
+  font-style: italic;
+}
+
+.liber-hist-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+  border-radius: 10px;
+  transition: background 0.12s ease;
+}
+
+.liber-hist-row:hover,
+.liber-hist-row:focus-within {
+  background: color-mix(in srgb, #fff 70%, var(--secondary));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+.liber-hist-row.is-pinned .liber-sidebar-history-title {
+  font-weight: 600;
+}
+
+.liber-sidebar-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
   width: 100%;
-  padding: 0.48rem 0.65rem;
+  min-width: 0;
+  padding: 0.5rem 0.55rem;
   border: none;
   border-radius: 10px;
   background: transparent;
   text-align: left;
   cursor: pointer;
   color: var(--ink);
-  transition: background 0.15s var(--ease-out);
 }
 
-.liber-sidebar-history-item:hover {
-  background: color-mix(in srgb, var(--secondary) 42%, transparent);
+.liber-sidebar-history-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.liber-hist-pin-mark {
+  position: absolute;
+  left: 0.4rem;
+  top: 0.58rem;
+  color: var(--primary);
+  opacity: 0.8;
+}
+
+.liber-hist-row.is-pinned .liber-sidebar-history-item {
+  padding-left: 1.2rem;
 }
 
 .liber-sidebar-history-title {
@@ -903,18 +1193,112 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-2);
+  color: var(--ink);
 }
 
 .liber-sidebar-history-meta {
-  font-size: 0.66rem;
+  font-size: 0.65rem;
   color: var(--muted-2);
+  letter-spacing: 0.01em;
+}
+
+.liber-hist-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  padding-right: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.liber-hist-row:hover .liber-hist-actions,
+.liber-hist-row:focus-within .liber-hist-actions {
+  opacity: 1;
+}
+
+.liber-hist-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.liber-hist-act-glyph {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.liber-hist-act:hover,
+.liber-hist-act.is-on {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--secondary) 60%, #fff);
+}
+
+.liber-hist-act-danger:hover {
+  color: #8b3a3a;
+  background: color-mix(in srgb, #f0d4d0 55%, #fff);
+}
+
+.liber-hist-menu-wrap {
+  position: relative;
+}
+
+.liber-hist-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 10rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, #fff 94%, var(--sheet));
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 12%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.liber-hist-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.42rem 0.55rem;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.liber-hist-menu button:hover,
+.liber-hist-menu button.is-active {
+  background: color-mix(in srgb, var(--secondary) 55%, transparent);
+  color: var(--primary);
 }
 
 .liber-sidebar-foot {
   margin-top: auto;
   padding-top: var(--space-2);
   border-top: 1px solid color-mix(in srgb, var(--border) 32%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.liber-sidebar-settings {
+  margin-bottom: 0.15rem;
 }
 
 .liber-sidebar-foot-label {

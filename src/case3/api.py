@@ -22,12 +22,17 @@ from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
 from case3.deck_theme import list_public_packs, normalize_pack_id
+from case3.diagram_edit import (
+    DiagramEditError,
+    edit_diagram_in_run,
+    regenerate_diagrams_in_run,
+)
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.generate import max_images_from_env, resolve_text_file
 from case3.image_api import ImageApiConfig, edit_png, image_api_configured
-from case3.llm_client import LLMConfigError, LLMError
+from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
@@ -220,7 +225,9 @@ def build_intent_from_ui(
         )
         req.append(
             "- diagrams[].type: flowchart|sequence|mindmap|timeline|stateDiagram; "
-            "первая строка mermaid соответствует type; id узлов ASCII, подписи RU из Source"
+            "первая строка mermaid соответствует type; id узлов ASCII, подписи RU из Source; "
+            "для flowchart: каждый узел :::start|process|decision|ok|warn|data + classDef "
+            "(Liber hex, без фиолетового); цвета задаёт модель"
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()
@@ -1044,6 +1051,15 @@ class ChartPreviewBody(BaseModel):
     chart_type: str | None = Field(default="")
 
 
+class DiagramEditBody(BaseModel):
+    mermaid: str = Field(default="")
+    title: str | None = Field(default=None)
+
+
+class DiagramRegenBody(BaseModel):
+    palette: str | None = Field(default="atelier")
+
+
 class FigureEditBody(BaseModel):
     """mode=generate → POST /generate; mode=edit → POST /edit with current PNG."""
 
@@ -1105,6 +1121,59 @@ def preview_run_chart(
         )
     except ChartEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/diagrams/{diagram_id}/edit")
+async def edit_run_diagram(
+    run_id: str, diagram_id: str, body: DiagramEditBody
+) -> dict[str, Any]:
+    """Save edited Mermaid for one Liber diagram (no PDF/TeX)."""
+    if not _FILE_OK.match(diagram_id):
+        raise HTTPException(400, detail="invalid diagram_id")
+    out_dir = _resolve_run_dir(run_id)
+    try:
+        diagram = await asyncio.to_thread(
+            partial(
+                edit_diagram_in_run,
+                out_dir,
+                diagram_id,
+                mermaid=body.mermaid or "",
+                title=body.title,
+            )
+        )
+    except DiagramEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    return {
+        "diagram": diagram,
+        "diagrams": _load_diagrams_from_out(out_dir),
+    }
+
+
+@app.post("/api/runs/{run_id}/diagrams/regenerate")
+async def regenerate_run_diagrams(
+    run_id: str, body: DiagramRegenBody | None = None
+) -> dict[str, Any]:
+    """Full LLM regenerate of diagrams[] (+ repair). No TeX/PDF."""
+    out_dir = _resolve_run_dir(run_id)
+    palette = normalize_palette_id((body.palette if body else None) or "atelier")
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                regenerate_diagrams_in_run,
+                out_dir,
+                palette=palette,
+                client=LLMClient(LLMConfig.from_env()),
+            )
+        )
+    except DiagramEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except (LLMError, LLMConfigError) as exc:
+        raise HTTPException(502, detail=str(exc)) from exc
+    return {
+        "diagrams": result.get("diagrams") or _load_diagrams_from_out(out_dir),
+        "diagrams_repaired": bool(result.get("diagrams_repaired")),
+        "diagrams_ok": int(result.get("diagrams_ok") or 0),
+    }
 
 
 @app.post("/api/runs/{run_id}/charts/{chart_id}/edit")

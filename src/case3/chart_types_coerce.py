@@ -439,6 +439,68 @@ def _force_square_canvas(html: str, *, size: int = 520) -> str:
     return re.sub(r"<canvas(\s[^>]*)?>", _repl, html or "", count=1, flags=re.I)
 
 
+def _hide_legend_if_unnamed_dataset(html: str) -> str:
+    """Donut→bar leaves datasets without ``label`` → Chart.js legend shows «undefined»."""
+    src = html or ""
+    # Count dataset objects that already have an explicit label key.
+    ds_blocks = re.findall(r"datasets\s*:\s*\[([^\]]*)\]", src, flags=re.I)
+    if not ds_blocks:
+        return src
+    body = ds_blocks[0]
+    # Multiple labeled series keep the legend; unlabeled single series → hide.
+    labeled = len(re.findall(r"""\blabel\s*:\s*['"]""", body))
+    series = len(re.findall(r"\{", body))
+    if series >= 2 and labeled >= 1:
+        return src
+    if re.search(r"legend\s*:\s*\{[^}]*display\s*:", src, flags=re.I):
+        return re.sub(
+            r"(legend\s*:\s*\{[^}]*?display\s*:\s*)[^,}\s]+",
+            r"\1false",
+            src,
+            count=1,
+        )
+    if re.search(r"legend\s*:\s*\{", src, flags=re.I):
+        return re.sub(r"legend\s*:\s*\{", "legend:{display:false,", src, count=1)
+    if re.search(r"plugins\s*:\s*\{", src, flags=re.I):
+        return re.sub(
+            r"plugins\s*:\s*\{",
+            "plugins:{legend:{display:false},",
+            src,
+            count=1,
+        )
+    if re.search(r"options\s*:\s*\{", src, flags=re.I):
+        return re.sub(
+            r"options\s*:\s*\{",
+            "options:{plugins:{legend:{display:false}},",
+            src,
+            count=1,
+        )
+    return src
+
+
+def _landscape_canvas_if_square(html: str, *, width: int = 1100, height: int = 560) -> str:
+    """Donut print uses 520×520 — after leaving donut, restore a landscape bitmap."""
+
+    def _repl(m: re.Match[str]) -> str:
+        attrs = m.group(1) or ""
+        wm = re.search(r"\bwidth\s*=\s*[\"']?(\d+)", attrs, flags=re.I)
+        hm = re.search(r"\bheight\s*=\s*[\"']?(\d+)", attrs, flags=re.I)
+        if not wm or not hm:
+            return m.group(0)
+        try:
+            w, h = int(wm.group(1)), int(hm.group(1))
+        except ValueError:
+            return m.group(0)
+        if w != h or w > 640:
+            return m.group(0)
+        attrs = re.sub(r"\s*width\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = re.sub(r"\s*height\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = attrs.rstrip()
+        return f'<canvas{attrs} width="{width}" height="{height}">'
+
+    return re.sub(r"<canvas(\s[^>]*)?>", _repl, html or "", count=1, flags=re.I)
+
+
 def polish_charts(
     charts: list[dict[str, Any]],
     *,
@@ -484,11 +546,21 @@ def apply_type_to_chart(chart: dict[str, Any], want: str) -> dict[str, Any]:
     c = dict(chart)
     html = str(c.get("html") or "")
     if want == "kpi":
+        # KPI cards are not Chart.js — drop donut chrome if present.
+        html = _unwrap_donut_layout(html) if "donut-layout" in html.lower() else html
+        c["html"] = html
         if not _is_kpi_html(html):
             c["html"] = _kpi_html_from_chart(c)
             log.info("forced kpi markup on %s (was type=%s)", c.get("id"), chart.get("type"))
         c["type"] = "kpi"
         return c
+    # Leaving donut (or any leftover Mary wrap) → plain canvas+script first.
+    left_donut = False
+    if want != "donut" and html and re.search(r"donut-layout", html, flags=re.I):
+        html = _unwrap_donut_layout(html)
+        html = _landscape_canvas_if_square(html)
+        c["html"] = html
+        left_donut = True
     if html and not html_matches_type(html, want):
         c["html"] = _rewrite_js_type(html, want)
         log.info(
@@ -506,7 +578,14 @@ def apply_type_to_chart(chart: dict[str, Any], want: str) -> dict[str, Any]:
             want,
         )
     c["type"] = want
-    c["html"] = harden_chart_html(str(c.get("html") or ""), want)
+    html_out = str(c.get("html") or "")
+    if want == "donut" and html_out:
+        html_out = enhance_donut_html(html_out)
+    elif left_donut or (
+        want in {"bar", "horizontal_bar", "line", "area"} and html_out
+    ):
+        html_out = _hide_legend_if_unnamed_dataset(html_out)
+    c["html"] = harden_chart_html(html_out, want)
     return c
 
 

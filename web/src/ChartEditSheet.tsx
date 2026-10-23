@@ -1,7 +1,11 @@
 /** Liber desk: tune one chart — type chips, palette, notes. Preview swaps the figure above (G9). */
 
 import { useEffect, useRef, useState } from "react";
-import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
+import {
+  ChartTypeChip,
+  chartTypeChipLabel,
+  type ChartTypeId,
+} from "./ChartTypePreview";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type PaletteInfo = {
@@ -195,9 +199,10 @@ export function ChartEditSheet({
               typeId={t as ChartTypeId}
               className={`chip${chartType === t ? " on" : ""}`}
               disabled={busy}
+              preview={false}
               onClick={() => setChartType(t)}
             >
-              {t}
+              {chartTypeChipLabel(t)}
             </ChartTypeChip>
           ))}
         </div>

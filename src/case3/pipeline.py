@@ -110,6 +110,22 @@ def _attach_error_diagnostics(
     return out
 
 
+def _diagram_chat_blurb(diagrams: list[dict[str, Any]] | None) -> str:
+    """Short Liber chat line without a second Vision round-trip."""
+    items = [d for d in (diagrams or []) if isinstance(d, dict)]
+    if not items:
+        return "Схема готова — откройте вкладку «Схема» в панели."
+    titles = [
+        str(d.get("title") or d.get("id") or "схема").strip() for d in items
+    ]
+    titles = [t for t in titles if t]
+    if len(titles) == 1:
+        return f"Готово: схема «{titles[0]}». Ниже — превью Mermaid."
+    shown = ", ".join(f"«{t}»" for t in titles[:3])
+    more = f" и ещё {len(titles) - 3}" if len(titles) > 3 else ""
+    return f"Готово: {len(titles)} схем — {shown}{more}."
+
+
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (logs / "meta.json").write_text(payload, encoding="utf-8")
@@ -250,6 +266,28 @@ def run_pipeline(
                 fj = {}
         else:
             fj = {}
+
+        # Mode «Схема»: always enrich Mermaid from Source (soft-fail → draft).
+        if mode == "diagram" and diagrams and not dry_run:
+            bump("diagram_repair")
+            from case3.diagram_repair import repair_diagrams
+            from case3.llm_client import LLMClient, LLMConfig
+
+            fj["diagrams_draft"] = diagrams
+            source_text = text_path.read_text(encoding="utf-8")
+            from case3.chart_style import palette_from_intent
+
+            diagrams, repair_meta = repair_diagrams(
+                diagrams,
+                source=source_text,
+                intent=intent or "",
+                max_diagrams=diagrams_budget,
+                client=LLMClient(LLMConfig.from_env()),
+                palette=palette_from_intent(intent or ""),
+            )
+            meta["diagrams_repaired"] = bool(repair_meta.get("diagrams_repaired"))
+            meta["diagrams_draft_slop"] = bool(repair_meta.get("diagrams_draft_slop"))
+
         fj["figures"] = figures
         fj["charts"] = charts
         fj["diagrams"] = diagrams
@@ -403,12 +441,20 @@ def run_pipeline(
                 )
             )
         elif skip_print:
-            meta["summary_status"] = "streaming"
-            meta["chat_summary"] = ""
-            _write_meta(meta, out, logs)
-            BUS.start(run_id)
-            summary_text, summary_status = _do_summary()
+            # Diagram mode: skip second Vision call — Liber already has Mermaid.
+            # A local blurb finishes in ms; LLM summary was the long “Фиксирую граф…” tail.
             artifacts = {}
+            BUS.start(run_id)
+            if mode == "diagram":
+                bump("summary")
+                summary_text = _diagram_chat_blurb(diagrams)
+                summary_status = "ok"
+                BUS.finish(run_id, summary_text, summary_status)
+            else:
+                meta["summary_status"] = "streaming"
+                meta["chat_summary"] = ""
+                _write_meta(meta, out, logs)
+                summary_text, summary_status = _do_summary()
             meta["chat_summary"] = summary_text or ""
             meta["summary_status"] = summary_status
             if summary_text:

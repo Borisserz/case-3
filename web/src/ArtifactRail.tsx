@@ -21,6 +21,7 @@ import { ExportMenu } from "./ExportMenu";
 import { PresentationPane } from "./PresentationPane";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
+import { IconPanelRight } from "./icons";
 import { modeSurfaces } from "./liberModes";
 import { SourcePane } from "./SourcePane";
 import {
@@ -105,6 +106,7 @@ type Props = {
   onEditCancel?: () => void;
   onMakePresentation?: () => void;
   makingPresentation?: boolean;
+  onDiagramsUpdated?: (diagrams: DiagramInfo[]) => void;
 };
 
 export function ArtifactRail({
@@ -132,6 +134,7 @@ export function ArtifactRail({
   onEditCancel,
   onMakePresentation,
   makingPresentation = false,
+  onDiagramsUpdated,
 }: Props) {
   const reduceMotion = useReducedMotion();
   const tab = artifact.tab;
@@ -203,10 +206,13 @@ export function ArtifactRail({
   );
 
   const visibleTabs = useMemo(() => {
+    // Peer order for documents: Превью · Схема · PDF (schema sits next to preview).
+    const diagramLabel =
+      diagrams.length > 1 ? `Схема · ${diagrams.length}` : "Схема";
     const all: { id: ArtifactTab; label: string; show: boolean }[] = [
       { id: "preview", label: "Превью", show: isReport && hasPreview },
+      { id: "diagram", label: diagramLabel, show: isReport && hasDiagrams },
       { id: "pdf", label: "PDF", show: isReport && hasPdf },
-      { id: "diagram", label: "Схема", show: isReport && hasDiagrams },
       {
         id: "presentation",
         label: "Презентация",
@@ -215,7 +221,15 @@ export function ArtifactRail({
       { id: "source", label: "Source", show: hasSource },
     ];
     return all.filter((t) => t.show);
-  }, [isReport, hasPreview, hasPdf, hasDiagrams, hasPresentationTab, hasSource]);
+  }, [
+    isReport,
+    hasPreview,
+    hasPdf,
+    hasDiagrams,
+    hasPresentationTab,
+    hasSource,
+    diagrams.length,
+  ]);
 
   /* If mode hid the active tab (e.g. presentation run opened on preview), snap. */
   useEffect(() => {
@@ -511,10 +525,11 @@ export function ArtifactRail({
             <button
               type="button"
               className="artifact-rail-close"
-              aria-label="Закрыть панель"
+              aria-label="Свернуть панель"
+              title="Свернуть"
               onClick={onClose}
             >
-              ×
+              <IconPanelRight size={16} />
             </button>
           </div>
         </header>
@@ -548,6 +563,8 @@ export function ArtifactRail({
                   diagram={activeDiagram}
                   siblings={diagrams.length > 1 ? diagrams : undefined}
                   onSelectSibling={onSelectDiagram}
+                  runId={report?.runId}
+                  onDiagramsUpdated={onDiagramsUpdated}
                 />
               ) : null}
 

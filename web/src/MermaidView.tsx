@@ -2,11 +2,19 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import mermaid from "mermaid";
+import {
+  applyMermaidRoleHighlight,
+  mermaidNodeIdFromElement,
+} from "./mermaidSvgInteract";
 
 type Props = {
   source: string;
   className?: string;
   onSvgReady?: (svg: SVGSVGElement | null) => void;
+  /** Highlight these Mermaid node ids; others dim. null = clear. */
+  highlightNodeIds?: Set<string> | null;
+  /** Double-click a flowchart node → id */
+  onNodeDblClick?: (nodeId: string) => void;
 };
 
 let mermaidReady = false;
@@ -31,14 +39,23 @@ function ensureMermaid() {
   mermaidReady = true;
 }
 
-export function MermaidView({ source, className, onSvgReady }: Props) {
+export function MermaidView({
+  source,
+  className,
+  onSvgReady,
+  highlightNodeIds = null,
+  onNodeDblClick,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onSvgReady);
   onReadyRef.current = onSvgReady;
+  const dblRef = useRef(onNodeDblClick);
+  dblRef.current = onNodeDblClick;
   const reactId = useId().replace(/:/g, "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rawOpen, setRawOpen] = useState(false);
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +65,7 @@ export function MermaidView({ source, className, onSvgReady }: Props) {
     setLoading(true);
     if (!src) {
       host.innerHTML = "";
+      svgRef.current = null;
       onReadyRef.current?.(null);
       setError("Пустая схема");
       setLoading(false);
@@ -62,12 +80,22 @@ export function MermaidView({ source, className, onSvgReady }: Props) {
         hostRef.current.innerHTML = svg;
         setError(null);
         const el = hostRef.current.querySelector("svg");
+        svgRef.current = el;
+        if (el) {
+          el.querySelectorAll("g.node").forEach((g) => {
+            (g as SVGElement).style.cursor = dblRef.current
+              ? "pointer"
+              : "";
+          });
+        }
         onReadyRef.current?.(el);
+        applyMermaidRoleHighlight(el, highlightNodeIds);
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
         if (hostRef.current) hostRef.current.innerHTML = "";
+        svgRef.current = null;
         onReadyRef.current?.(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -76,7 +104,26 @@ export function MermaidView({ source, className, onSvgReady }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [source, reactId]);
+  }, [source, reactId]); // eslint-disable-line react-hooks/exhaustive-deps -- highlight applied below
+
+  useEffect(() => {
+    applyMermaidRoleHighlight(svgRef.current, highlightNodeIds ?? null);
+  }, [highlightNodeIds]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !onNodeDblClick) return;
+    const onDbl = (e: MouseEvent) => {
+      const id = mermaidNodeIdFromElement(e.target as Element);
+      if (id) {
+        e.preventDefault();
+        e.stopPropagation();
+        dblRef.current?.(id);
+      }
+    };
+    host.addEventListener("dblclick", onDbl);
+    return () => host.removeEventListener("dblclick", onDbl);
+  }, [onNodeDblClick, loading, source]);
 
   return (
     <div className={`mermaid-view${className ? ` ${className}` : ""}`}>

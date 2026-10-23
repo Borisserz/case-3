@@ -1,12 +1,13 @@
 /** Portal fullscreen overlay for a Mermaid diagram. */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DiagramZoomView } from "./DiagramZoomView";
 import {
   downloadDiagramPng,
   slugDiagramFilename,
 } from "./downloadDiagramPng";
+import { nodeIdsForRole, parseDiagramLegend } from "./diagramLegend";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type DiagramInfo = {
@@ -26,7 +27,17 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [activeRole, setActiveRole] = useState<string | null>(null);
   useFocusTrap(dialogRef, { active: true });
+
+  const legend = useMemo(
+    () => parseDiagramLegend(diagram.mermaid || ""),
+    [diagram.mermaid],
+  );
+  const highlightNodeIds = useMemo(() => {
+    if (!activeRole) return null;
+    return nodeIdsForRole(diagram.mermaid || "", activeRole);
+  }, [activeRole, diagram.mermaid]);
 
   const onSvgReady = useCallback((el: SVGSVGElement | null) => {
     svgRef.current = el;
@@ -35,7 +46,7 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
   const onDownload = useCallback(async () => {
     const el = svgRef.current;
     if (!el) {
-      setErr("Схема ещё не готова");
+      setErr("Схема ещё не готова — подождите секунду");
       return;
     }
     setBusy(true);
@@ -82,13 +93,13 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
           <div>
             <h2 className="diagram-fullscreen-title">{diagram.title}</h2>
             <p className="diagram-fullscreen-sub">
-              Только в Liber · не в PDF
+              Блок = шт на этапе · стрелка = % или отвал · PNG только Liber
             </p>
           </div>
           <div className="diagram-fullscreen-actions">
             <button
               type="button"
-              className="btn ghost"
+              className="btn primary"
               disabled={busy}
               onClick={() => void onDownload()}
             >
@@ -110,7 +121,44 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
           </p>
         ) : null}
         <div className="diagram-fullscreen-body">
-          <DiagramZoomView source={diagram.mermaid} onSvgReady={onSvgReady} />
+          <DiagramZoomView
+            source={diagram.mermaid}
+            onSvgReady={onSvgReady}
+            className="is-centered"
+            fitViewport
+            highlightNodeIds={highlightNodeIds}
+          />
+          {legend.length > 0 ? (
+            <ul
+              className="diagram-legend is-interactive diagram-fullscreen-legend"
+              aria-label="Легенда ролей"
+            >
+              {legend.map((item) => {
+                const on = activeRole === item.role;
+                return (
+                  <li key={item.role}>
+                    <button
+                      type="button"
+                      className={`diagram-legend-item${on ? " is-active" : ""}`}
+                      aria-pressed={on}
+                      onClick={() =>
+                        setActiveRole((r) =>
+                          r === item.role ? null : item.role,
+                        )
+                      }
+                    >
+                      <span
+                        className="diagram-legend-swatch"
+                        style={{ background: item.fill }}
+                        aria-hidden
+                      />
+                      <span className="diagram-legend-label">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
         </div>
       </div>
     </div>,

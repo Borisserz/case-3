@@ -10,6 +10,7 @@ import {
 } from "./ChartEditSheet";
 import { ChartCard } from "./ChartCard";
 import { ChartLivePane } from "./ChartLivePane";
+import { chartTypeChipLabel } from "./ChartTypePreview";
 import {
   ImageEditModal,
   type ImageEditRequest,
@@ -408,7 +409,8 @@ export function ReportView({
                       aria-hidden
                     >
                       <span className="report-fig-intent-badge">
-                        будет: {intent.chartType}
+                        будет:{" "}
+                        {chartTypeChipLabel(intent.chartType) || intent.chartType}
                         {intent.paletteLabel
                           ? ` · ${intent.paletteLabel}`
                           : ""}
@@ -699,14 +701,16 @@ export function ReportPending({
   label = "Набираю отчёт на столе…",
   stage,
   detail,
+  mode = "report",
 }: {
   label?: string;
   stage?: string | null;
   detail?: string | null;
+  mode?: "report" | "diagram" | "presentation" | string | null;
 }) {
   return (
     <div className="report-pending">
-      <PipelineFlow stage={stage} label={label} detail={detail} />
+      <PipelineFlow stage={stage} label={label} detail={detail} mode={mode} />
     </div>
   );
 }

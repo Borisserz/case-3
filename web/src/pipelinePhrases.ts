@@ -69,6 +69,14 @@ const LLM_DIAGRAM = [
   "Держу один главный поток сверху вниз…",
 ];
 
+const DIAGRAM_REPAIR = [
+  "Уточняю схему по Source — убираю пустые «этапы»…",
+  "Добавляю развилки и роли из текста…",
+  "Проверяю, что каждый узел назван по факту…",
+  "Сжимаю линейный черновик в осмысленный граф…",
+  "Сверяю подписи с Source ещё раз…",
+];
+
 const LLM_DECK = [
   "Собираю каркас слайдов из Source…",
   "Решаю, сколько кадров и какой ритм…",
@@ -234,11 +242,16 @@ const BEATS_REPORT: BeatMap = {
 const BEATS_DIAGRAM: BeatMap = {
   queued: QUEUED_DIAGRAM,
   llm: LLM_DIAGRAM,
+  diagram_repair: DIAGRAM_REPAIR,
   images: IMAGES,
   charts: CHARTS_DIAGRAM,
   inject: [
     "Связываю схему с описанием…",
     "Проверяю, что граф самодостаточен…",
+  ],
+  summary: [
+    "Кладу схему в чат…",
+    "Открываю превью Mermaid…",
   ],
   latex: [
     "Схема готова в Liber — без PDF-ветки…",
@@ -452,9 +465,11 @@ export function stageLabelForMode(
     diagram: {
       queued: "В очереди…",
       llm: "Собираю схему…",
+      diagram_repair: "Уточняю схему по Source…",
       charts: "Сверяю числа со схемой…",
       images: "Медиа для схемы…",
       inject: "Связываю граф…",
+      summary: "Кладу схему в чат…",
       latex: "Фиксирую схему…",
       docx: "Почти готово…",
     },

@@ -3,9 +3,10 @@
 import { DeckFileCard } from "./DeckFileCard";
 import { DeckMakeSplit } from "./DeckMakeSplit";
 import { DeckPdfGallery } from "./DeckPdfGallery";
+import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
 import { modeSurfaces } from "./liberModes";
 
-type DiagramChip = { id: string; title: string; type?: string };
+type DiagramChip = DiagramChatItem;
 
 type Props = {
   title: string;
@@ -112,28 +113,6 @@ function DeckBuildCard({ stage }: { stage?: string | null }) {
   );
 }
 
-function DiagramSketch() {
-  return (
-    <svg
-      className="deck-file-card-diagram-sketch"
-      viewBox="0 0 280 160"
-      width="280"
-      height="160"
-      aria-hidden
-    >
-      <rect x="88" y="10" width="104" height="28" rx="7" className="dsk-node" />
-      <path d="M140 38v14" className="dsk-edge" />
-      <rect x="72" y="52" width="136" height="28" rx="7" className="dsk-node is-mid" />
-      <path d="M140 80v12" className="dsk-edge" />
-      <path d="M140 92l28 20H112l28-20Z" className="dsk-diamond" />
-      <path d="M112 112l-36 14" className="dsk-edge" />
-      <path d="M168 112l36 14" className="dsk-edge" />
-      <rect x="36" y="126" width="72" height="24" rx="6" className="dsk-node is-warn" />
-      <rect x="172" y="126" width="72" height="24" rx="6" className="dsk-node is-ok" />
-    </svg>
-  );
-}
-
 export function ArtifactCard({
   title,
   subtitle,
@@ -190,6 +169,23 @@ export function ArtifactCard({
     .filter(Boolean)
     .join(" ");
 
+  /* 0) Diagram mode — Julius: live Mermaid + snippet (never PDF/report card) */
+  if (
+    surfaces.mode === "diagram" &&
+    visibleDiagrams.length > 0 &&
+    onOpenDiagram
+  ) {
+    return (
+      <div className={shellClass}>
+        <DiagramChatCard
+          diagram={visibleDiagrams[0]}
+          siblings={visibleDiagrams}
+          onOpen={onOpenDiagram}
+        />
+      </div>
+    );
+  }
+
   /* 1) Deck ready → large PPTX / deck PDF stack only */
   if (hasDeckFiles) {
     return (
@@ -230,14 +226,14 @@ export function ArtifactCard({
     );
   }
 
-  /* 2) Report PDF → one large preview card */
+  /* 2) Report PDF → document card; schema is peer artifact #3 when present */
   if (reportPdfHref) {
     return (
       <div className={shellClass}>
         <div
           className="artifact-card-deck-stack"
           role="group"
-          aria-label="Отчёт PDF"
+          aria-label="Артефакты отчёта"
         >
           <section className="artifact-card-block">
             {updated || subtitle ? (
@@ -246,7 +242,9 @@ export function ArtifactCard({
                 {updated && subtitle ? " · " : null}
                 {subtitle || null}
               </p>
-            ) : null}
+            ) : (
+              <p className="artifact-card-quiet-label">Отчёт · PDF</p>
+            )}
             <DeckFileCard
               kind="pdf"
               href={reportPdfHref}
@@ -256,33 +254,22 @@ export function ArtifactCard({
               primaryLabel="Открыть"
             />
           </section>
+          {visibleDiagrams.length > 0 && onOpenDiagram ? (
+            <section className="artifact-card-block is-diagram-peer">
+              <p className="artifact-card-quiet-label">
+                Схема
+                {visibleDiagrams.length > 1
+                  ? ` · ${visibleDiagrams.length}`
+                  : ""}
+              </p>
+              <DiagramChatCard
+                diagram={visibleDiagrams[0]}
+                siblings={visibleDiagrams}
+                onOpen={onOpenDiagram}
+              />
+            </section>
+          ) : null}
         </div>
-        {visibleDiagrams.length > 1 && onOpenDiagram ? (
-          <div
-            className="artifact-card-diagrams is-quiet"
-            role="group"
-            aria-label="Схемы"
-          >
-            {visibleDiagrams.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                className="artifact-card-diagram-chip"
-                onClick={() => onOpenDiagram(d.id)}
-              >
-                {d.title || d.id}
-              </button>
-            ))}
-          </div>
-        ) : visibleDiagrams.length === 1 && onOpenDiagram ? (
-          <button
-            type="button"
-            className="artifact-card-diagram-link"
-            onClick={() => onOpenDiagram(visibleDiagrams[0].id)}
-          >
-            Схема: {visibleDiagrams[0].title || visibleDiagrams[0].id}
-          </button>
-        ) : null}
         {slidesBusy ? (
           <DeckBuildCard stage={slidesStage} />
         ) : showDeckMake ? (
@@ -301,136 +288,15 @@ export function ArtifactCard({
     );
   }
 
-  /* 3) Diagrams only — one primary card + quiet list if many */
+  /* 3) Diagrams only (or report with schemas, no PDF) — live Mermaid + snippet */
   if (visibleDiagrams.length > 0 && onOpenDiagram) {
-    const primary = visibleDiagrams[0];
-    const rest = visibleDiagrams.slice(1);
     return (
       <div className={shellClass}>
-        <div
-          className="artifact-card-deck-stack"
-          role="group"
-          aria-label="Схемы"
-        >
-          <section className="artifact-card-block">
-            <p className="artifact-card-quiet-label">Схема</p>
-            <article className="deck-file-card is-diagram">
-              <header className="deck-file-card-head">
-                <span className="deck-file-card-mark" aria-hidden>
-                  <svg
-                    className="deck-file-card-glyph"
-                    width="22"
-                    height="22"
-                    viewBox="0 0 22 22"
-                  >
-                    <rect
-                      x="3"
-                      y="3"
-                      width="7"
-                      height="5"
-                      rx="1.4"
-                      fill="currentColor"
-                      opacity="0.18"
-                    />
-                    <rect
-                      x="12"
-                      y="8"
-                      width="7"
-                      height="5"
-                      rx="1.4"
-                      fill="currentColor"
-                      opacity="0.18"
-                    />
-                    <rect
-                      x="3"
-                      y="14"
-                      width="7"
-                      height="5"
-                      rx="1.4"
-                      fill="currentColor"
-                      opacity="0.18"
-                    />
-                    <path
-                      d="M6.5 8v3.5h5.5M6.5 14v-2.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="deck-file-card-badge">Схема</span>
-                </span>
-                <span className="deck-file-card-meta">
-                  <span className="deck-file-card-path" title={primary.title}>
-                    {primary.title || primary.id}
-                  </span>
-                  <span className="deck-file-card-hint">
-                    {primary.type || "flowchart"}
-                  </span>
-                </span>
-                <span className="deck-file-card-actions">
-                  <button
-                    type="button"
-                    className="deck-file-card-action is-strong is-pill"
-                    onClick={() => onOpenDiagram(primary.id)}
-                  >
-                    Открыть
-                  </button>
-                </span>
-              </header>
-              <button
-                type="button"
-                className="deck-file-card-preview is-diagram"
-                onClick={() => onOpenDiagram(primary.id)}
-                aria-label={`Открыть схему: ${primary.title || primary.id}`}
-              >
-                <span className="deck-file-card-mat">
-                  <span className="deck-file-card-sheet is-diagram-sheet">
-                    <span className="deck-file-card-diagram-hero">
-                      <DiagramSketch />
-                      <span className="deck-file-card-diagram-title">
-                        {primary.title || title || "Схема"}
-                      </span>
-                    </span>
-                  </span>
-                </span>
-                <span className="deck-file-card-veil" aria-hidden>
-                  <span className="deck-file-card-veil-label">
-                    Открыть
-                    <span className="deck-file-card-veil-arrow">→</span>
-                  </span>
-                </span>
-              </button>
-              <footer className="deck-file-card-foot">
-                <button
-                  type="button"
-                  className="deck-file-card-foot-link"
-                  onClick={() => onOpenDiagram(primary.id)}
-                >
-                  Открыть схему в панели →
-                </button>
-              </footer>
-            </article>
-          </section>
-        </div>
-        {rest.length > 0 ? (
-          <div
-            className="artifact-card-diagrams is-quiet"
-            role="group"
-            aria-label="Другие схемы"
-          >
-            {rest.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                className="artifact-card-diagram-chip"
-                onClick={() => onOpenDiagram(d.id)}
-              >
-                {d.title || d.id}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <DiagramChatCard
+          diagram={visibleDiagrams[0]}
+          siblings={visibleDiagrams}
+          onOpen={onOpenDiagram}
+        />
       </div>
     );
   }

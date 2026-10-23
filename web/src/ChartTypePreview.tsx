@@ -31,59 +31,74 @@ export type ChartTypeId =
 
 const META: Record<
   ChartTypeId,
-  { title: string; blurb: string; Glyph: () => ReactNode }
+  { title: string; chip: string; blurb: string; Glyph: () => ReactNode }
 > = {
   auto: {
     title: "На усмотрение",
+    chip: "авто",
     blurb: "Модель сама подберёт тип под данные Source",
     Glyph: GlyphAuto,
   },
   area: {
     title: "Area",
+    chip: "area",
     blurb: "Тренд с заливкой под линией",
     Glyph: GlyphArea,
   },
   bar: {
-    title: "Bar",
+    title: "Столбцы",
+    chip: "столбцы",
     blurb: "Сравнение категорий по высоте",
     Glyph: GlyphBar,
   },
   donut: {
-    title: "Donut",
+    title: "Кольцо",
+    chip: "кольцо",
     blurb: "Доли и структура целого",
     Glyph: GlyphDonut,
   },
   grouped_bar: {
-    title: "Grouped bar",
+    title: "Группы",
+    chip: "группы",
     blurb: "Несколько серий рядом",
     Glyph: GlyphGrouped,
   },
   horizontal_bar: {
-    title: "Horizontal bar",
+    title: "Горизонт",
+    chip: "горизонт",
     blurb: "Рейтинг / топ‑N слева направо",
     Glyph: GlyphHBar,
   },
   kpi: {
     title: "KPI",
+    chip: "KPI",
     blurb: "Одна крупная цифра с подписью",
     Glyph: GlyphKpi,
   },
   line: {
-    title: "Line",
+    title: "Линия",
+    chip: "линия",
     blurb: "Динамика во времени",
     Glyph: GlyphLine,
   },
   scatter: {
-    title: "Scatter",
+    title: "Точки",
+    chip: "точки",
     blurb: "Связь двух числовых осей",
     Glyph: GlyphScatter,
   },
   stacked_bar: {
-    title: "Stacked bar",
+    title: "Стек",
+    chip: "стек",
     blurb: "Состав столбца по слоям",
     Glyph: GlyphStacked,
   },
 };
+
+/** Short Liber label for type chips / badges. */
+export function chartTypeChipLabel(typeId: string): string {
+  return metaFor(typeId).chip;
+}
 
 function Frame({ children }: { children: ReactNode }) {
   return (
@@ -391,6 +406,7 @@ function metaFor(typeId: string): (typeof META)[ChartTypeId] {
   if (typeId in META) return META[typeId as ChartTypeId];
   return {
     title: typeId || "Chart",
+    chip: typeId || "chart",
     blurb: "Тип из каталога Liber",
     Glyph: GlyphBar,
   };
@@ -402,7 +418,8 @@ export function ChartTypeChip({
   className = "",
   disabled,
   onClick,
-}: Props) {
+  preview = true,
+}: Props & { /** Hover glyph card; off inside dense edit sheets. */ preview?: boolean }) {
   const meta = metaFor(typeId);
   const Glyph = meta.Glyph;
   const tipId = useId();
@@ -434,11 +451,11 @@ export function ChartTypeChip({
   }, []);
 
   const show = useCallback(() => {
-    if (disabled) return;
+    if (disabled || !preview) return;
     clearHide();
     place();
     setOpen(true);
-  }, [disabled, place, clearHide]);
+  }, [disabled, preview, place, clearHide]);
 
   const hide = useCallback(() => {
     clearHide();

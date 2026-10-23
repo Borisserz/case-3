@@ -103,11 +103,51 @@ export function IconHistory(p: IconProps) {
   );
 }
 
+export function IconPin(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path
+        {...stroke}
+        d="M12 17v5M9.2 10.2l-2.4 1.1 4.1 4.1 1.1-2.4M15.5 4.5l4 4-6.2 2.6L9.9 7.7 15.5 4.5z"
+      />
+    </svg>
+  );
+}
+
+export function IconFolder(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path
+        {...stroke}
+        d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l1.8 1.8H19.5A1.5 1.5 0 0 1 21 9.3v8.2a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-10z"
+      />
+    </svg>
+  );
+}
+
+export function IconChevron(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 export function IconPanelLeft(p: IconProps) {
   return (
     <svg {...base(p)}>
       <rect x="3" y="4" width="18" height="16" rx="2" {...stroke} />
       <path {...stroke} d="M9 4v16" />
+    </svg>
+  );
+}
+
+/** Mirror of left rail — strip on the right (close/collapse right panel). */
+export function IconPanelRight(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" {...stroke} />
+      <path {...stroke} d="M15 4v16" />
     </svg>
   );
 }

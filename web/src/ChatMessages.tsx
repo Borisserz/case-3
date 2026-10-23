@@ -241,6 +241,7 @@ export function ChatMessages({
                       label={thinkingLabel || m.text || undefined}
                       stage={m.pendingStage || "queued"}
                       detail={m.pendingDetail}
+                      mode={m.thinkingMode || workMode || "report"}
                     />
                     <ThinkingFold
                       lines={m.thinking || []}

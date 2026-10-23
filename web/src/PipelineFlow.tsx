@@ -21,19 +21,30 @@ type NodeDef = {
   stages: string[];
 };
 
-const NODES: NodeDef[] = [
+const REPORT_NODES: NodeDef[] = [
   { id: "desk", label: "Стол", stages: ["queued"] },
   { id: "think", label: "Текст", stages: ["llm"] },
   { id: "viz", label: "Фигуры", stages: ["images", "charts"] },
   { id: "bind", label: "Вёрстка", stages: ["inject"] },
-  { id: "print", label: "Печать", stages: ["latex", "docx"] },
+  { id: "print", label: "Печать", stages: ["latex", "docx", "summary"] },
 ];
 
-function activeIndex(stage?: string | null): number {
+/** No Печать — diagram finishes on Схема (Mermaid only). */
+const DIAGRAM_NODES: NodeDef[] = [
+  { id: "desk", label: "Стол", stages: ["queued"] },
+  { id: "think", label: "Текст", stages: ["llm"] },
+  {
+    id: "schema",
+    label: "Схема",
+    stages: ["inject", "images", "charts", "summary", "latex", "docx"],
+  },
+];
+
+function activeIndex(nodes: NodeDef[], stage?: string | null): number {
   if (!stage || stage === "queued") return 0;
-  if (stage === "ok") return NODES.length; // all complete
+  if (stage === "ok") return nodes.length; // all complete
   if (stage === "error") return -1;
-  const i = NODES.findIndex((n) => n.stages.includes(stage));
+  const i = nodes.findIndex((n) => n.stages.includes(stage));
   return i >= 0 ? i : 0;
 }
 
@@ -41,15 +52,19 @@ type Props = {
   stage?: string | null;
   label?: string;
   detail?: string | null;
+  /** Liber mode — diagram uses a short track without Печать. */
+  mode?: "report" | "diagram" | "presentation" | string | null;
 };
 
 export function PipelineFlow({
   stage = "queued",
   label,
   detail,
+  mode = "report",
 }: Props) {
   const reduce = useReducedMotion();
-  const idx = activeIndex(stage);
+  const nodes = mode === "diagram" ? DIAGRAM_NODES : REPORT_NODES;
+  const idx = activeIndex(nodes, stage);
   const failed = stage === "error";
   const done = stage === "ok";
 
@@ -58,10 +73,12 @@ export function PipelineFlow({
       className={`pipeline-flow${failed ? " is-error" : ""}${done ? " is-done" : ""}`}
       role="status"
       aria-live="polite"
-      aria-label={label || "Сборка отчёта"}
+      aria-label={
+        label || (mode === "diagram" ? "Сборка схемы" : "Сборка отчёта")
+      }
     >
       <div className="pipeline-flow-track" aria-hidden>
-        {NODES.map((node, i) => {
+        {nodes.map((node, i) => {
           const complete = done || (idx > i && idx !== -1);
           const active = !done && !failed && idx === i;
           const upcoming = !complete && !active && !failed;

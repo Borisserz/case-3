@@ -19,6 +19,7 @@ describe("liberRunHelpers", () => {
 
   it("stageLabel scales by thinking mode", () => {
     assert.match(stageLabel("llm", null, "diagram"), /схем/i);
+    assert.match(stageLabel("diagram_repair", null, "diagram"), /Source|схем/i);
     assert.match(stageLabel("llm", null, "presentation"), /слайд/i);
     assert.match(stageLabel("slides_render", null, "presentation"), /twin|превью/i);
   });
@@ -64,6 +65,7 @@ describe("liberRunHelpers", () => {
     assert.equal(diagram.showReportPdf, false);
     assert.equal(diagram.showDiagram, true);
     assert.equal(diagram.showPresentation, false);
+    assert.equal(diagram.showSource, false);
 
     const deck = modeSurfaces("presentation");
     assert.equal(deck.showReportPreview, false);
