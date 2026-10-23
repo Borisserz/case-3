@@ -9,6 +9,14 @@ dist/
 build/
 .local-tests/
 
+# Local-only knowledge / tests (keep on disk, not in remote)
+.agents/
+docs/
+fixtures/
+tests/
+AGENTS.md
+notes.txt
+
 # all run artifacts under one tree
 runs/work/
 runs/uploads/
