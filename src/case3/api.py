@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import threading
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -1298,13 +1299,50 @@ def download_file(run_id: str, name: str) -> FileResponse:
     return FileResponse(path, media_type=media, filename=path.name)
 
 
+def _write_slides_crash(run_id: str, message: str) -> None:
+    """Persist slides_status=error so UI does not sit on queued forever."""
+    out = ROOT / "runs" / "out" / run_id
+    logs = ROOT / "runs" / "logs" / run_id
+    meta_path = out / "meta.json"
+    meta: dict[str, Any] = {"run_id": run_id}
+    if meta_path.is_file():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, json.JSONDecodeError):
+            pass
+    meta["slides_status"] = "error"
+    meta["slides_stage"] = "error"
+    meta["slides_error"] = message
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        logs.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(payload, encoding="utf-8")
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+    except OSError:
+        log.exception("could not write slides crash meta run_id=%s", run_id)
+
+
 def _bg_run_slides(run_id: str) -> None:
     from case3.slides_job import run_slides_job
 
     try:
         run_slides_job(run_id, root=ROOT)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         log.exception("slides background job crashed run_id=%s", run_id)
+        _write_slides_crash(run_id, f"slides crashed: {exc}")
+
+
+def _kick_slides_thread(run_id: str) -> None:
+    """Start slides job on a daemon thread (BackgroundTasks+to_thread can stall on Windows)."""
+    threading.Thread(
+        target=_bg_run_slides,
+        args=(run_id,),
+        name=f"case3-slides-{run_id}",
+        daemon=True,
+    ).start()
 
 
 class SlidesStartBody(BaseModel):
@@ -1324,7 +1362,6 @@ def deck_themes() -> dict[str, Any]:
 @app.post("/api/runs/{run_id}/slides")
 async def start_slides(
     run_id: str,
-    background_tasks: BackgroundTasks,
     body: SlidesStartBody | None = Body(default=None),
 ) -> JSONResponse:
     if not _RUN_ID_OK.match(run_id):
@@ -1339,6 +1376,7 @@ async def start_slides(
         raise HTTPException(500, detail="corrupt meta.json") from exc
     if meta.get("status") != "ok":
         raise HTTPException(409, detail="report run is not ok")
+    # Live worker — do not start a second thread. Stuck "queued" (old bug) is retriable.
     if meta.get("slides_status") == "running":
         return JSONResponse(
             {
@@ -1363,24 +1401,22 @@ async def start_slides(
     }
     meta["slides_theme_pack"] = pack
     meta["slides_structure_id"] = structure_id
-    meta["slides_status"] = "queued"
-    meta["slides_stage"] = "queued"
+    # Mark running before kick so a dead BackgroundTask cannot leave meta at queued.
+    meta["slides_status"] = "running"
+    meta["slides_stage"] = "starting"
     meta["slides_error"] = None
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (out_dir / "meta.json").write_text(payload, encoding="utf-8")
     logs = ROOT / "runs" / "logs" / run_id
     logs.mkdir(parents=True, exist_ok=True)
     (logs / "meta.json").write_text(payload, encoding="utf-8")
-    async def _spawn_slides() -> None:
-        await asyncio.to_thread(_bg_run_slides, run_id)
-
-    background_tasks.add_task(_spawn_slides)
+    _kick_slides_thread(run_id)
     return JSONResponse(
         {
             "run_id": run_id,
             "status": "started",
-            "slides_status": "queued",
-            "slides_stage": "queued",
+            "slides_status": "running",
+            "slides_stage": "starting",
             "slides_style": meta["slides_style"],
         },
         status_code=202,

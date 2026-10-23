@@ -11,6 +11,7 @@
 9. **Image edit fallback** — worker may regenerate without ref photo.  
 10. **Fonts** — PDF DejaVu; DOCX Liberation via `reference.docx` (D1).  
 11. **PPTX / deck** — on-demand slides job; keys `pptx` + `deck_pdf` (not report `pdf`). `deck_pdf` prefers LibreOffice convert of PPTX (`CASE3_SOFFICE`); else PNG stitch. See ADR-0008 / KI-liber-deck.  
+    If `slides_status` stuck at **`queued`** with null slides — job never started (old BackgroundTasks path). Fixed: daemon thread + `running/starting` before kick; crashes write `slides_error`. Restart `api.cmd`, retry Make presentation.  
 12. **`\textbf{…**` / unclosed `\textbf{`** — LLM closes bold with Markdown or drops `}`; microtype → `Runaway argument` / `MT@prot@check@F@` / fake `enumerate ended by end{document}`. Fixed by `fix_markdown_bold_leaks` + `fix_unclosed_textbf` in `tex_prose.py`.  
 13. **`figures failed/skipped: fig_*`** — Image worker (`IMAGE_API_BASE_URL`, usually `:8787`) was down during the run; slots strip from TeX. Start `workers/case3-image` before local runs; load `.env` so `KANDINSKY_MAX_IMAGES≥1`. Deck can still show `cht_*` / `dia_*`.  
 14. **Tiny `dia_*` on 16:9** — Prefer `flowchart LR` + multiline labels (`<br/>`); capture crops to ink (see `slides_media.render_mermaid_png`). TD flows look like a thin column on `media_hero`.  

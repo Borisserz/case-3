@@ -47,6 +47,33 @@ def _seed_ok_run(
     return out
 
 
+def test_slides_crash_writes_error(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = "run_slides_crash"
+    _seed_ok_run(tmp_path, run_id)
+
+    def _boom(rid: str, **_kw: object) -> None:
+        raise RuntimeError("simulated slides crash")
+
+    monkeypatch.setattr("case3.slides_job.run_slides_job", _boom)
+
+    r = client.post(f"/api/runs/{run_id}/slides")
+    assert r.status_code == 202, r.text
+
+    import time
+
+    body: dict = {}
+    for _ in range(80):
+        st = client.get(f"/api/runs/{run_id}/status")
+        body = st.json()
+        if body.get("slides_status") == "error":
+            break
+        time.sleep(0.05)
+    assert body.get("slides_status") == "error"
+    assert "simulated slides crash" in (body.get("slides_error") or "")
+
+
 def test_slides_409_when_not_ok(client: TestClient, tmp_path: Path) -> None:
     run_id = "run_bad"
     out = tmp_path / "runs" / "out" / run_id
@@ -126,13 +153,21 @@ def test_slides_202_and_offline_job(
 
     r = client.post(f"/api/runs/{run_id}/slides")
     assert r.status_code == 202, r.text
-    assert r.json()["slides_status"] == "queued"
+    assert r.json()["slides_status"] == "running"
+    assert r.json()["slides_stage"] == "starting"
 
-    # TestClient runs background tasks inline
-    st = client.get(f"/api/runs/{run_id}/status")
-    assert st.status_code == 200
-    body = st.json()
-    assert body.get("slides_status") == "ok"
+    # Daemon thread — poll until job finishes (TestClient no longer awaits BackgroundTasks).
+    import time
+
+    body: dict = {}
+    for _ in range(80):
+        st = client.get(f"/api/runs/{run_id}/status")
+        assert st.status_code == 200
+        body = st.json()
+        if body.get("slides_status") in {"ok", "error"}:
+            break
+        time.sleep(0.05)
+    assert body.get("slides_status") == "ok", body.get("slides_error") or body
     assert "pptx" in (body.get("downloads") or {})
     assert "deck_pdf" in (body.get("downloads") or {})
     assert "pdf" in (body.get("downloads") or {})

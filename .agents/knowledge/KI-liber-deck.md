@@ -40,6 +40,7 @@
 
 ## Gotchas
 
+- Slides job starts on a **daemon thread** (`_kick_slides_thread`); meta flips to `running`/`starting` before kick. Crash → `slides_error` (never leave forever-`queued`).
 - Capture must use home Playwright browsers if sandbox `PLAYWRIGHT_BROWSERS_PATH` is broken.
 - Mermaid needs `web/node_modules/mermaid/dist/mermaid.min.js` (npm install in web/).
 - Do not screenshot the Vite rail — fixed static HTML only.
