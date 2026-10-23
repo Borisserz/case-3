@@ -1,21 +1,19 @@
 {
   "id": "campaign",
   "label": "Campaign Status",
-  "blurb": "Spend → ROAS → winners/pauses → creatives → next week → ask",
+  "blurb": "Week KPI → winners table → bets → Friday review",
   "default_pack": "atelier",
   "tone": "light",
-  "slides": [10, 12],
+  "slides": [8, 10],
   "arc": [
     "title",
     "scorecard",
+    "table_hero",
     "chart_hero",
-    "table_hero",
-    "chart_split",
     "card_row",
-    "table_hero",
-    "callout",
     "bullets",
-    "card_row",
+    "callout",
     "closing"
-  ]
+  ],
+  "signature": "ops short · table + bullets · olive paper"
 }

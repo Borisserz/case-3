@@ -1,21 +1,20 @@
 {
   "id": "survey",
-  "label": "Survey Readout",
-  "blurb": "Method → findings → themes → quotes → actions → next pulse",
-  "default_pack": "relay",
-  "tone": "light",
-  "slides": [10, 12],
+  "label": "Survey / Feedback",
+  "blurb": "Method → % cards → quotes → NOW/NEXT",
+  "default_pack": "voltage",
+  "tone": "dark",
+  "slides": [9, 11],
   "arc": [
     "title",
-    "section",
+    "callout",
     "scorecard",
     "card_row",
-    "chart_hero",
-    "callout",
     "card_row",
+    "callout",
     "table_hero",
-    "bullets",
     "card_row",
     "closing"
-  ]
+  ],
+  "signature": "callouts + % meters · few charts"
 }

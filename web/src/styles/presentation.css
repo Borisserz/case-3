@@ -645,6 +645,102 @@
   color: var(--deck-muted);
   letter-spacing: 0.16em;
 }
+.deck-cv[data-pack="botanical"]::before {
+  display: none;
+}
+.deck-cv[data-pack="botanical"] .deck-cv-kpi,
+.deck-cv[data-pack="botanical"] .deck-cv-narr-card {
+  border: 1px solid color-mix(in srgb, var(--deck-foil) 45%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+/* Northstar Board */
+.deck-cv[data-pack="board"]::before {
+  height: 4px;
+  background: var(--deck-accent);
+}
+.deck-cv[data-pack="board"] .deck-cv-kicker { color: var(--deck-accent); }
+.deck-cv[data-pack="board"] .deck-cv-kpi {
+  border-left: 3px solid var(--deck-accent);
+  background: var(--deck-paper);
+}
+
+/* Creative Voltage */
+.deck-cv[data-pack="voltage"]::before {
+  height: 4px;
+  background: var(--deck-foil, var(--deck-accent));
+}
+.deck-cv[data-pack="voltage"] .deck-cv-kicker {
+  color: var(--deck-foil, var(--deck-accent));
+}
+.deck-cv[data-pack="voltage"] .deck-cv-kpi {
+  background: var(--deck-paper);
+  border-left: 3px solid var(--deck-foil, var(--deck-accent));
+}
+.deck-cv[data-pack="voltage"] .deck-cv-kpi-val {
+  color: var(--deck-foil, var(--deck-accent));
+  font-family: var(--deck-font-body, system-ui, sans-serif);
+  font-weight: 700;
+}
+
+/* Workshop Studio */
+.deck-cv[data-pack="studio"]::before {
+  height: 3px;
+  background: var(--deck-accent);
+}
+.deck-cv[data-pack="studio"] .deck-cv-kpi,
+.deck-cv[data-pack="studio"] .deck-cv-narr-card {
+  border: none;
+  border-radius: 12px;
+  background: var(--deck-paper);
+}
+
+/* Bold Signal — orange foil bar + dark cards */
+.deck-cv[data-pack="signal"]::before {
+  height: 5px;
+  background: var(--deck-foil, var(--deck-accent));
+}
+.deck-cv[data-pack="signal"] .deck-cv-kicker {
+  color: var(--deck-foil, var(--deck-accent));
+}
+.deck-cv[data-pack="signal"] .deck-cv-kpi {
+  background: var(--deck-paper);
+  border: 1px solid var(--deck-rule);
+  border-left: 3px solid var(--deck-foil, var(--deck-accent));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+/* Relay Ink — electric blue hairline */
+.deck-cv[data-pack="ink"]::before {
+  height: 3px;
+  background: var(--deck-accent);
+}
+.deck-cv[data-pack="ink"] .deck-cv-kicker {
+  color: color-mix(in srgb, var(--deck-accent) 80%, var(--deck-muted));
+}
+.deck-cv[data-pack="ink"] .deck-cv-kpi {
+  background: var(--deck-paper);
+  border: 1px solid var(--deck-rule);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.deck-cv[data-pack="ink"] .deck-cv-h1 {
+  letter-spacing: -0.025em;
+}
+
+/* Split Pastel — no top bar; soft cards */
+.deck-cv[data-pack="relay"]::before,
+.deck-cv[data-pack="pastel"]::before {
+  display: none;
+}
+.deck-cv[data-pack="relay"] .deck-cv-kpi,
+.deck-cv[data-pack="pastel"] .deck-cv-kpi,
+.deck-cv[data-pack="relay"] .deck-cv-narr-card,
+.deck-cv[data-pack="pastel"] .deck-cv-narr-card {
+  border: none;
+  border-radius: 14px;
+  box-shadow: none;
+}
 .deck-edit-toolbar {
   position: fixed;
   z-index: 90;

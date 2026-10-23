@@ -1,4 +1,4 @@
-/** Empty-state presentation starters — Liber 6-slide twin preview + gallery thumbs. */
+/** Empty-state presentation starters — Liber twin preview + gallery thumbs. */
 
 import type { CSSProperties } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -39,7 +39,10 @@ function cardTone(packId: string, structureId: string): "light" | "dark" {
   if (
     packId === "botanical" ||
     packId === "signal" ||
+    packId === "ink" ||
+    packId === "voltage" ||
     structureId === "performance" ||
+    structureId === "investor" ||
     structureId === "survey" ||
     structureId === "launch"
   ) {
@@ -69,7 +72,7 @@ function slideClass(slide: PreviewSlide, structureId: string): string {
   return base.join(" ");
 }
 
-/** Rich mock frame — used for gallery thumb (slide 0) and modal stack. */
+/** Rich mock frame — used for gallery thumb (slide 0) and modal fallback. */
 export function PreviewSlideFrame({
   slide,
   structureId,
@@ -231,6 +234,7 @@ type PreviewState = {
   card: DeckTemplateCard;
   pack: DeckThemePackInfo;
   swatches: string[];
+  tone: "light" | "dark";
 };
 
 export function DeckTemplateGallery({
@@ -244,7 +248,7 @@ export function DeckTemplateGallery({
   const reduce = useReducedMotion();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const filmRef = useRef<HTMLDivElement>(null);
   const [activeSlide, setActiveSlide] = useState(0);
   useFocusTrap(panelRef, { active: Boolean(preview) });
 
@@ -267,12 +271,29 @@ export function DeckTemplateGallery({
         : [],
     [preview],
   );
-  const useRaster = previewPngs.length === 6;
+  const useRaster = previewPngs.length >= 6;
+  const slideCount = useRaster ? previewPngs.length : previewFrames.length;
+  const activeIndex = Math.min(activeSlide, Math.max(0, slideCount - 1));
 
   useEffect(() => {
     if (!preview) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPreview(null);
+      if (e.key === "Escape") {
+        setPreview(null);
+        return;
+      }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveSlide((i) => Math.min(i + 1, Math.max(0, slideCount - 1)));
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveSlide((i) => Math.max(i - 1, 0));
+      }
+      if (e.key === "Enter" && !busy) {
+        e.preventDefault();
+        applyPreviewRef.current();
+      }
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -282,26 +303,19 @@ export function DeckTemplateGallery({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [preview]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply via ref
+  }, [preview, slideCount, busy]);
 
-  function onScrollStack() {
-    const el = scrollRef.current;
-    if (!el || !previewFrames.length) return;
-    const kids = Array.from(el.querySelectorAll<HTMLElement>("[data-preview-slide]"));
-    if (!kids.length) return;
-    const mid = el.scrollTop + el.clientHeight * 0.35;
-    let best = 0;
-    let bestDist = Infinity;
-    kids.forEach((kid, i) => {
-      const top = kid.offsetTop;
-      const d = Math.abs(top - mid + kid.offsetHeight * 0.2);
-      if (d < bestDist) {
-        bestDist = d;
-        best = i;
-      }
+  useEffect(() => {
+    const el = filmRef.current?.querySelector<HTMLElement>(
+      `[data-film-slide="${activeIndex}"]`,
+    );
+    el?.scrollIntoView({
+      behavior: reduce ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
     });
-    setActiveSlide(best);
-  }
+  }, [activeIndex, reduce, preview]);
 
   function openPreview(card: DeckTemplateCard) {
     const pack =
@@ -309,7 +323,12 @@ export function DeckTemplateGallery({
       FALLBACK_DECK_PACKS.find((p) => p.id === card.packId);
     if (!pack) return;
     const swatches = pack.swatches || ["#2E4208", "#4F6B14", "#FFFCF7", "#14161a"];
-    setPreview({ card, pack, swatches });
+    setPreview({
+      card,
+      pack,
+      swatches,
+      tone: cardTone(card.packId, card.structureId),
+    });
   }
 
   function applyPreview() {
@@ -328,6 +347,9 @@ export function DeckTemplateGallery({
     setPreview(null);
   }
 
+  const applyPreviewRef = useRef(applyPreview);
+  applyPreviewRef.current = applyPreview;
+
   const packVars = (swatches: string[]): CSSProperties =>
     ({
       ["--pack-primary" as string]: swatches[0],
@@ -336,11 +358,21 @@ export function DeckTemplateGallery({
       ["--pack-ink" as string]: swatches[3] || "#14161a",
     }) as CSSProperties;
 
+  function goSlide(next: number) {
+    if (slideCount <= 0) return;
+    setActiveSlide(Math.max(0, Math.min(next, slideCount - 1)));
+  }
+
   return (
     <div className="deck-template-gallery" aria-label="Шаблоны презентаций">
       <div className="deck-template-gallery-head">
         <div className="deck-template-gallery-title-row">
-          <h3>Шаблоны</h3>
+          <div className="deck-template-gallery-lead">
+            <h3>Шаблоны</h3>
+            <p className="deck-template-gallery-hint">
+              Выбери DNA → смотри слайды → возьми в чат
+            </p>
+          </div>
           <div className="deck-template-tone" role="group" aria-label="Тон">
             {(
               [
@@ -372,9 +404,12 @@ export function DeckTemplateGallery({
             deckStyle.themePack === card.packId &&
             deckStyle.structureId === card.structureId;
           const thumb = previewSlidesFor(card.structureId)[0];
-          const thumbPng = hasPreviewPngs(card.structureId)
-            ? previewPngUrls(card.structureId)[0]
-            : null;
+          const pngs = hasPreviewPngs(card.structureId)
+            ? previewPngUrls(card.structureId)
+            : [];
+          const thumbPng = pngs[0] || null;
+          const strip = pngs.slice(0, 3);
+          const toneLabel = cardTone(card.packId, card.structureId);
           return (
             <motion.button
               key={card.id}
@@ -415,9 +450,31 @@ export function DeckTemplateGallery({
                     compact
                   />
                 ) : null}
+                <span className="deck-template-thumb-veil">
+                  <span className="deck-template-thumb-cta">Смотреть слайды</span>
+                </span>
+                <span
+                  className={`deck-template-tone-chip is-${toneLabel}`}
+                >
+                  {toneLabel === "dark" ? "Тёмный" : "Светлый"}
+                </span>
+                {on ? (
+                  <span className="deck-template-selected-chip">Выбран</span>
+                ) : null}
               </div>
+              {strip.length >= 2 ? (
+                <span className="deck-template-strip" aria-hidden>
+                  {strip.map((src) => (
+                    <img key={src} src={src} alt="" loading="lazy" decoding="async" />
+                  ))}
+                  {pngs.length > 3 ? (
+                    <span className="deck-template-strip-more">+{pngs.length - 3}</span>
+                  ) : null}
+                </span>
+              ) : null}
               <span className="deck-template-caption">
                 <span className="deck-template-name">{card.title}</span>
+                <span className="deck-template-blurb">{card.blurb}</span>
               </span>
             </motion.button>
           );
@@ -436,11 +493,24 @@ export function DeckTemplateGallery({
         >
           <div className="deck-template-preview-panel" ref={panelRef}>
             <header className="deck-template-preview-head">
-              <div>
+              <div className="deck-template-preview-head-copy">
                 <p className="deck-template-preview-eyebrow">
                   {preview.pack.label}
+                  <span className="deck-template-preview-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className={`deck-template-tone-chip is-${preview.tone} is-inline`}>
+                    {preview.tone === "dark" ? "Тёмный" : "Светлый"}
+                  </span>
                 </p>
                 <h2 id={titleId}>{preview.card.title}</h2>
+                <p className="deck-template-preview-arc">{preview.card.arc}</p>
+                <p className="deck-template-preview-blurb">{preview.card.blurb}</p>
+                <div className="deck-template-preview-swatches" aria-hidden>
+                  {preview.swatches.slice(0, 4).map((c) => (
+                    <i key={c} style={{ background: c }} />
+                  ))}
+                </div>
               </div>
               <button
                 type="button"
@@ -452,74 +522,97 @@ export function DeckTemplateGallery({
               </button>
             </header>
 
-            <div className="deck-template-preview-body">
+            <div className="deck-template-preview-stage-wrap" style={packVars(preview.swatches)}>
+              <div className="deck-template-preview-nav">
+                <button
+                  type="button"
+                  className="deck-template-preview-nav-btn"
+                  aria-label="Предыдущий слайд"
+                  disabled={activeIndex <= 0}
+                  onClick={() => goSlide(activeIndex - 1)}
+                >
+                  ‹
+                </button>
+                <span className="deck-template-preview-count" aria-live="polite">
+                  {String(activeIndex + 1).padStart(2, "0")}
+                  <span aria-hidden> / </span>
+                  {String(slideCount).padStart(2, "0")}
+                </span>
+                <button
+                  type="button"
+                  className="deck-template-preview-nav-btn"
+                  aria-label="Следующий слайд"
+                  disabled={activeIndex >= slideCount - 1}
+                  onClick={() => goSlide(activeIndex + 1)}
+                >
+                  ›
+                </button>
+              </div>
+
               <div
-                className="deck-template-preview-scroll"
-                ref={scrollRef}
-                onScroll={onScrollStack}
-                style={packVars(preview.swatches)}
+                className={`deck-template-preview-stage${useRaster ? " is-raster" : ""}`}
+                data-tone={
+                  useRaster
+                    ? "raster"
+                    : previewFrames[activeIndex]?.dark
+                      ? "dark"
+                      : "light"
+                }
+              >
+                {useRaster ? (
+                  <img
+                    className="deck-template-preview-stage-img"
+                    src={previewPngs[activeIndex]}
+                    alt={`Слайд ${activeIndex + 1}`}
+                    key={previewPngs[activeIndex]}
+                  />
+                ) : previewFrames[activeIndex] ? (
+                  <PreviewSlideFrame
+                    slide={previewFrames[activeIndex]}
+                    structureId={preview.card.structureId}
+                  />
+                ) : null}
+              </div>
+
+              <div
+                className="deck-template-preview-film"
+                ref={filmRef}
+                role="tablist"
+                aria-label="Слайды шаблона"
               >
                 {(useRaster ? previewPngs : previewFrames).map((item, i) => (
-                  <div
-                    key={useRaster ? `png-${i}` : `${(item as PreviewSlide).kind}-${i}`}
-                    className={`deck-template-preview-frame${useRaster ? " is-raster" : ""}`}
-                    data-preview-slide={i}
-                    data-tone={
-                      useRaster
-                        ? "raster"
-                        : (item as PreviewSlide).dark
-                          ? "dark"
-                          : "light"
-                    }
-                    aria-label={`Слайд ${i + 1} из 6`}
-                  >
-                    {useRaster ? (
-                      <span className="deck-template-preview-mat">
-                        <img
-                          className="deck-template-preview-img"
-                          src={item as string}
-                          alt=""
-                          loading={i < 2 ? "eager" : "lazy"}
-                          decoding="async"
-                        />
-                      </span>
-                    ) : (
-                      <PreviewSlideFrame
-                        slide={item as PreviewSlide}
-                        structureId={preview.card.structureId}
-                      />
-                    )}
-                    <span className="deck-template-preview-num" aria-hidden>
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div
-                className="deck-template-preview-dots"
-                role="tablist"
-                aria-label="Слайды превью"
-              >
-                {[0, 1, 2, 3, 4, 5].map((i) => (
                   <button
-                    key={i}
+                    key={useRaster ? `png-${i}` : `${(item as PreviewSlide).kind}-${i}`}
                     type="button"
                     role="tab"
-                    aria-selected={activeSlide === i}
-                    className={`deck-template-preview-dot${
-                      activeSlide === i ? " is-on" : ""
+                    data-film-slide={i}
+                    aria-selected={activeIndex === i}
+                    className={`deck-template-preview-film-item${
+                      activeIndex === i ? " is-on" : ""
                     }`}
                     aria-label={`Слайд ${i + 1}`}
-                    onClick={() => {
-                      const el = scrollRef.current?.querySelectorAll<HTMLElement>(
-                        "[data-preview-slide]",
-                      )[i];
-                      el?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-                      setActiveSlide(i);
-                    }}
-                  />
+                    onClick={() => goSlide(i)}
+                  >
+                    {useRaster ? (
+                      <img src={item as string} alt="" loading="lazy" decoding="async" />
+                    ) : (
+                      <span className="deck-template-preview-film-mock" style={packVars(preview.swatches)}>
+                        <PreviewSlideFrame
+                          slide={item as PreviewSlide}
+                          structureId={preview.card.structureId}
+                          compact
+                        />
+                      </span>
+                    )}
+                    <span className="deck-template-preview-film-num" aria-hidden>
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                  </button>
                 ))}
               </div>
+              <p className="deck-template-preview-keys" aria-hidden>
+                ← → листать · Enter взять · Esc закрыть
+              </p>
             </div>
 
             <footer className="deck-template-preview-foot">

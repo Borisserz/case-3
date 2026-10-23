@@ -150,7 +150,7 @@ export function DeckStyleSheet({
                     aria-pressed={on}
                   >
                     <span
-                      className={`deck-style-pack-thumb${p.id === "botanical" ? " is-botanical" : ""}${p.id === "relay" || p.id === "pastel" ? " is-split" : ""}`}
+                      className={`deck-style-pack-thumb${p.id === "botanical" ? " is-botanical" : ""}${p.id === "relay" || p.id === "pastel" ? " is-split" : ""}${p.id === "ink" || p.id === "voltage" ? " is-ink" : ""}`}
                       style={{
                         background: bg,
                         color: ink,
@@ -162,11 +162,19 @@ export function DeckStyleSheet({
                       <span className="deck-style-pack-thumb-title">
                         {p.id === "botanical"
                           ? "A softer close"
-                          : p.id === "relay"
-                            ? "Quarterly review"
-                            : p.id === "signal"
-                              ? "Signal brief"
-                              : "Board update"}
+                          : p.id === "voltage"
+                            ? "Less friction"
+                            : p.id === "studio"
+                              ? "Owned outputs"
+                              : p.id === "ink"
+                                ? "Growth with signal"
+                                : p.id === "relay"
+                                  ? "Quarterly review"
+                                  : p.id === "signal"
+                                    ? "Signal brief"
+                                    : p.id === "atelier"
+                                      ? "Campaign week"
+                                      : "Board update"}
                       </span>
                       {p.id === "botanical" ? (
                         <span className="deck-style-pack-thumb-fern" aria-hidden />

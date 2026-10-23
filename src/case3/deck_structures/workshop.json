@@ -1,21 +1,20 @@
 {
   "id": "workshop",
   "label": "Workshop",
-  "blurb": "Goals → agenda → exercises → outputs → parking lot → follow-ups",
-  "default_pack": "relay",
+  "blurb": "Goals → agenda table → exercises → owners",
+  "default_pack": "studio",
   "tone": "light",
-  "slides": [10, 12],
+  "slides": [9, 11],
   "arc": [
     "title",
     "section",
-    "bullets",
+    "scorecard",
     "table_hero",
     "card_row",
     "card_row",
     "callout",
-    "card_row",
-    "bullets",
     "table_hero",
     "closing"
-  ]
+  ],
+  "signature": "agenda table · exercise cards · ice indigo"
 }

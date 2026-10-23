@@ -220,14 +220,19 @@
       Chart.defaults.plugins.tooltip.padding = 12;
       Chart.defaults.plugins.tooltip.cornerRadius = 8;
       Chart.defaults.plugins.tooltip.displayColors = true;
-      Chart.defaults.elements.bar.borderRadius = 6;
+      Chart.defaults.elements.bar.borderRadius = 8;
       Chart.defaults.elements.bar.borderSkipped = false;
-      Chart.defaults.elements.line.borderWidth = 3;
+      Chart.defaults.elements.line.borderWidth = 4;
+      Chart.defaults.elements.line.tension = 0.32;
       Chart.defaults.elements.point.radius = 5;
       Chart.defaults.elements.point.hoverRadius = 7;
       Chart.defaults.elements.point.hitRadius = 10;
-      Chart.defaults.scale.grid.color = "rgba(26,74,75,0.08)";
+      Chart.defaults.scale.grid.color = "rgba(26,74,75,0.10)";
+      Chart.defaults.scale.grid.lineWidth = 1.25;
       Chart.defaults.scale.grid.drawBorder = false;
+      Chart.defaults.scale.border = { display: true, width: 2, color: "rgba(26,74,75,0.18)" };
+      Chart.defaults.scale.ticks.padding = 8;
+      Chart.defaults.scale.ticks.font = { size: 15, weight: "600" };
     }
   </script>
 </head>

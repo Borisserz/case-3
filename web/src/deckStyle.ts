@@ -42,7 +42,7 @@ export const FALLBACK_DECK_PACKS: DeckThemePackInfo[] = [
   {
     id: "board",
     label: "Board",
-    swatches: ["#172D40", "#087F8C", "#FFFFFF", "#172D40"],
+    swatches: ["#142C40", "#087F8C", "#FFFFFF", "#142C40"],
   },
   {
     id: "signal",
@@ -55,9 +55,24 @@ export const FALLBACK_DECK_PACKS: DeckThemePackInfo[] = [
     swatches: ["#416650", "#E8E0F2", "#FBF9F4", "#29352F"],
   },
   {
+    id: "ink",
+    label: "Relay Ink",
+    swatches: ["#2448FF", "#2448FF", "#111118", "#FFFFFF"],
+  },
+  {
+    id: "voltage",
+    label: "Creative Voltage",
+    swatches: ["#2438EB", "#E8FF35", "#11121A", "#F6F5F0"],
+  },
+  {
+    id: "studio",
+    label: "Workshop Studio",
+    swatches: ["#1B1F3B", "#4F5BD5", "#F7F8FC", "#1B1F3B"],
+  },
+  {
     id: "botanical",
     label: "Dark Botanical",
-    swatches: ["#101F1A", "#C2A66C", "#192D25", "#F0EADD"],
+    swatches: ["#101F19", "#C4AD7A", "#1A3026", "#EEE9DB"],
   },
 ];
 

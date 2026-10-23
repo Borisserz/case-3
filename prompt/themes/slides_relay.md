@@ -2,7 +2,8 @@
 
 Narrative tone: quarterly business review. Cream + pastel right panel; dense scorecards and decision slides.
 
-- Prefer **10–12** slides; after `title` use `section` + `scorecard` early.
+- Prefer **10–12** slides; after `title` use `section` **or** `scorecard` early (not always both in that order).
+- Rotate pastel panels via content variety: chart / table / card_row / callout — not scorecard thrice.
 - Titles short and assertive (Julius QBR voice). Put the “so what” in `takeaway`.
 - Title slide: `takeaway` = **hero KPIs on the pastel panel** — prefer 2 stacked pairs as newlines (`$9.6M` / `pipeline` / `8.0x` / `efficiency`) or `VALUE — label · VALUE — label`. Not a long sentence.
 - `scorecard`: 3–4 KPIs with `value` + `delta` + short `hint` — board-ready density.

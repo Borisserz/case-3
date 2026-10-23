@@ -1,18 +1,17 @@
-# Structure — QBR (Julius Split Pastel marketing QBR DNA)
+# Structure — Marketing QBR (Split Pastel / Relay)
 
-Quarterly business review (≈10–12). Facts ⊆ Source.
+**Signature:** **two `section` chapters** · pastel scorecards · decision cards.  
+Cream panels. Numbers ⊆ Source.
 
-1. `title` — period + function
-2. `section` — thesis takeaway («growth improved; attainment did not»)
-3. `scorecard` — efficient growth vs misses
-4. `chart_hero` — time series that explains the quarter
-5. `chart_split` — channels / programs that earned the next dollar
-6. `chart_hero` or `card_row` — region / segment contrast
-7. Conversion leverage — `callout` or `scorecard`
-8. Wins to repeat / misses to correct — `card_row`
-9. Testable decisions — `bullets`
-10. Next-quarter plan table — `table_hero`
-11. Goals with owners/gates — `card_row`
-12. `closing` — approve the shift / protect learning loop
+1. `title` — Q thesis + 2 hero KPIs on pastel panel
+2. `section` — chapter 01 thesis
+3. `scorecard` — efficient growth
+4. `chart_hero` + `chart_split` — time / channel
+5. `card_row` — regions or wins
+6. `callout` — wins to repeat / misses
+7. `section` — chapter 02 plan
+8. `table_hero` — Q+1 plan or decisions
+9. `card_row` — goals & gates + DECISION caption
+10. `closing` — ask + hero $
 
-Prefer ≥3 chart layouts when Source has series. Takeaway titles mandatory.
+Pastel soft cards (no left bars). ≥5 layouts when ≥8 slides.

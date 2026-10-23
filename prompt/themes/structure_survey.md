@@ -1,16 +1,16 @@
-# Structure — Survey readout
+# Structure — Survey / Product Feedback (Creative Voltage DNA)
 
-Findings → actions (≈10–12). Hard max 12. **n and scores only from Source.**
+**Signature:** method/voice `callout` · `%` `card_row` meters · **≤1 chart**.  
+Electric lime foil. Facts ⊆ Source.
 
-1. `title` — takeaway headline
-2. `section` — method / who answered
-3. `scorecard` — n, CSAT/NPS/effort from Source
-4. `card_row` — top findings (3)
-5. `chart_hero` — distribution if Source has series
-6. `callout` — sharp quote or tension
-7. Themes — `card_row`
-8. `table_hero` — priority matrix (action / owner / when)
-9. `bullets` — risks of inaction
-10. `card_row` — two ships before next pulse
-11. `closing` — re-field timing
-12. Optional appendix — question list only if Source includes it
+1. `title` — three-beat thesis
+2. `callout` — method / n / caveats
+3. `scorecard` — headline CSAT/NPS (optional)
+4. `card_row` — loves with **% kickers** (meters)
+5. `card_row` — friction with **% kickers**
+6. `callout` — quote (Source only)
+7. `table_hero` — requests map (optional)
+8. `card_row` — NOW / NEXT / LATER + gate caption
+9. `closing` — hero % + 3 bets
+
+Avoid board-style bridge tables and chart stacks. ≥5 layouts when ≥8 slides.

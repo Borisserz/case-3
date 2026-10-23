@@ -18,7 +18,7 @@ from pptx.oxml.ns import nsdecls, qn
 from pptx.util import Emu, Inches, Pt
 
 from case3.chart_style import _PALETTES, normalize_palette_id
-from case3.slides_html import parse_hero_metrics
+from case3.slides_html import _pct_from_kicker, parse_hero_metrics
 
 _SLIDE_W = Inches(13.333)
 _SLIDE_H = Inches(7.5)
@@ -189,12 +189,38 @@ def _add_bullets(
         p.space_after = Pt(8)
 
 
-def _top_bar(slide, colors: dict[str, RGBColor]) -> None:
+def _wants_top_bar(style: dict[str, Any] | None) -> bool:
+    """Accent hairline: signal/ink/board/atelier. Not relay split or botanical fern."""
+    pack = str((style or {}).get("pack_id") or "") if style else ""
+    if pack in ("relay", "pastel", "botanical"):
+        return False
+    return True
+
+
+def _top_bar(
+    slide,
+    colors: dict[str, RGBColor],
+    style: dict[str, Any] | None = None,
+) -> None:
+    pack = str((style or {}).get("pack_id") or "") if style else ""
+    # Julius DNA: signal orange; ink/cobalt blue; voltage lime; else primary.
+    if pack == "signal":
+        bar_color = colors.get("foil", colors["accent"])
+        height = Inches(0.055)
+    elif pack in ("ink", "voltage"):
+        bar_color = colors["accent"] if pack == "ink" else colors.get("foil", colors["accent"])
+        height = Inches(0.04)
+    elif pack == "board":
+        bar_color = colors["accent"]
+        height = Inches(0.05)
+    else:
+        bar_color = colors["primary"]
+        height = Inches(0.08)
     shape = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), _SLIDE_W, Inches(0.08)
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), _SLIDE_W, height
     )
     shape.fill.solid()
-    shape.fill.fore_color.rgb = colors["primary"]
+    shape.fill.fore_color.rgb = bar_color
     shape.line.fill.background()
 
 
@@ -281,7 +307,7 @@ def _kicker_title(
 def _is_dark_pack(style: dict[str, Any] | None) -> bool:
     if not isinstance(style, dict):
         return False
-    if str(style.get("pack_id") or "") in ("botanical", "signal"):
+    if str(style.get("pack_id") or "") in ("botanical", "signal", "ink", "voltage"):
         return True
     motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
     return str(motif.get("atmosphere") or "") == "dark"
@@ -574,8 +600,8 @@ def _layout_title(
                 bold=True,
                 color=colors["ink"],
             )
-    else:
-        _top_bar(slide, colors)
+    elif _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     kicker = str(s.get("kicker") or "").strip()
     y = Inches(2.2)
@@ -658,8 +684,8 @@ def _layout_section(
     slide_index: int = 0,
 ) -> None:
     _apply_pack_bg(slide, colors, style)
-    if not _is_dark_pack(style):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     chapter = s.get("chapter")
     ch = f"{int(chapter):02d}" if isinstance(chapter, int) else "—"
@@ -714,12 +740,9 @@ def _layout_callout(
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
 ) -> None:
-    pack = str((style or {}).get("pack_id") or "") if style else ""
     _apply_pack_bg(slide, colors, style)
-    if pack not in ("relay", "pastel", "botanical", "signal", "board", "atelier"):
-        _top_bar(slide, colors)
-    elif pack in ("board", "atelier") and not _motif_dict(style).get("panels"):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     y_in = _kicker_title(
         slide,
@@ -798,8 +821,8 @@ def _layout_table(
     from case3.slides_pptx_tables import add_native_table
 
     _apply_pack_bg(slide, colors, style)
-    if not _is_dark_pack(style):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     y_in = _kicker_title(
         slide,
@@ -863,8 +886,8 @@ def _layout_bullets(
     style: dict[str, Any] | None = None,
 ) -> None:
     _apply_pack_bg(slide, colors, style)
-    if not _is_dark_pack(style):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     y_in = _kicker_title(
         slide,
@@ -896,12 +919,9 @@ def _layout_card_row(
     slide_index: int = 0,
 ) -> None:
     """Julius VESPER 3-up narrative cards + optional gold gate caption."""
-    pack = str((style or {}).get("pack_id") or "") if style else ""
     _apply_pack_bg(slide, colors, style)
-    if pack not in ("botanical", "relay", "pastel", "signal") and not _motif_dict(style).get(
-        "panels"
-    ):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     y_in = _kicker_title(
         slide,
@@ -917,8 +937,8 @@ def _layout_card_row(
     usable = Inches(11.9)
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
-    top = Inches(max(y_in + 0.1, 2.85))
-    card_h = Inches(2.85)
+    top = Inches(max(y_in + 0.12, 2.15))
+    card_h = Inches(3.55)
     foil = colors.get("foil", colors["accent"])
     for i, c in enumerate(cards):
         shape = slide.shapes.add_shape(
@@ -932,19 +952,44 @@ def _layout_card_row(
             shape.line.fill.background()
         y_t = top + Inches(0.22)
         kicker = str(c.get("kicker") or "").strip()
+        pct = _pct_from_kicker(kicker)
         if kicker:
             _add_textbox(
                 slide,
                 Emu(int(left) + int(Inches(0.22))),
                 y_t,
                 Emu(int(card_w) - int(Inches(0.4))),
-                Inches(0.35),
-                kicker.upper(),
-                size_pt=11,
+                Inches(0.55) if pct is not None else Inches(0.35),
+                kicker if pct is not None else kicker.upper(),
+                size_pt=28 if pct is not None else 11,
                 bold=True,
                 color=foil,
             )
-            y_t = y_t + Inches(0.4)
+            y_t = y_t + (Inches(0.62) if pct is not None else Inches(0.4))
+        if pct is not None:
+            track_w = Emu(int(card_w) - int(Inches(0.44)))
+            track = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Emu(int(left) + int(Inches(0.22))),
+                y_t,
+                track_w,
+                Inches(0.09),
+            )
+            track.fill.solid()
+            track.fill.fore_color.rgb = colors.get("rule", colors["muted"])
+            track.line.fill.background()
+            fill_w = Emu(max(1, int(int(track_w) * (pct / 100.0))))
+            fill = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Emu(int(left) + int(Inches(0.22))),
+                y_t,
+                fill_w,
+                Inches(0.09),
+            )
+            fill.fill.solid()
+            fill.fill.fore_color.rgb = foil
+            fill.line.fill.background()
+            y_t = y_t + Inches(0.28)
         _add_textbox(
             slide,
             Emu(int(left) + int(Inches(0.22))),
@@ -992,14 +1037,13 @@ def _layout_kpi(
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
 ) -> None:
-    pack = str((style or {}).get("pack_id") or "") if style else ""
     _apply_pack_bg(slide, colors, style)
     use_pastel = False
     if isinstance(style, dict):
         motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
         use_pastel = bool(motif.get("panels"))
-    if not use_pastel and not _foil_cards(style):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     y_in = _kicker_title(
         slide,
@@ -1015,11 +1059,9 @@ def _layout_kpi(
     usable = Inches(11.9)
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
-    card_h = Inches(2.8)
-    # Vertically center the card row in the content band (Julius calm density).
-    content_top = Inches(max(y_in + 0.15, 1.85))
-    content_bottom = Inches(6.6)
-    top = Emu(int(content_top) + max(0, (int(content_bottom) - int(content_top) - int(card_h)) // 2))
+    # Pin cards under the title (HTML twin) — avoid floating mid-slide void.
+    card_h = Inches(3.35)
+    top = Inches(max(y_in + 0.18, 2.05))
     for i, k in enumerate(kpis):
         shape = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE, left, top, card_w, card_h
@@ -1052,7 +1094,7 @@ def _layout_kpi(
         p0.alignment = PP_ALIGN.LEFT
         r0 = p0.add_run()
         r0.text = str(k.get("value") or "")
-        _set_run(r0, size_pt=28, bold=True, color=colors["ink"])
+        _set_run(r0, size_pt=32, bold=True, color=colors["ink"])
         p1 = tf.add_paragraph()
         r1 = p1.add_run()
         r1.text = str(k.get("label") or "")
@@ -1062,15 +1104,15 @@ def _layout_kpi(
             p_d = tf.add_paragraph()
             r_d = p_d.add_run()
             r_d.text = delta
-            _set_run(r_d, size_pt=12, bold=True, color=colors["accent"])
+            _set_run(r_d, size_pt=13, bold=True, color=colors["accent"])
         hint = str(k.get("hint") or "").strip()
         if hint:
             p2 = tf.add_paragraph()
             r2 = p2.add_run()
             r2.text = hint
             _set_run(r2, size_pt=11, color=colors["muted"])
-        tf.margin_left = Inches(0.25)
-        tf.margin_top = Inches(0.3)
+        tf.margin_left = Inches(0.28)
+        tf.margin_top = Inches(0.38)
         left = Emu(int(left) + int(card_w) + int(gap))
 
 
@@ -1086,8 +1128,8 @@ def _layout_media(
     style: dict[str, Any] | None = None,
 ) -> None:
     _apply_pack_bg(slide, colors, style)
-    if not _is_dark_pack(style):
-        _top_bar(slide, colors)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
     _brand(slide, colors)
     kicker = str(s.get("kicker") or "")
     title = str(s.get("title") or "")

@@ -13,86 +13,87 @@ export type DeckTemplateCard = {
   starterPrompt: string;
 };
 
+/** Eight unique DNA pairs — each pack + structure is distinct. */
 export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
   {
     id: "board-update",
     structureId: "board_update",
     packId: "board",
-    title: "Обновление для совета",
-    blurb: "Scorecard → рост → cash → план → решения",
-    arc: "Scorecard → ARR → cash → Q+1 → решения",
+    title: "Northstar — совет",
+    blurb: "Ask callout → scorecard → bridge tables → decisions",
+    arc: "Callout → scorecard → tables → board ask",
     starterPrompt:
-      "Собери презентацию для совета директоров: scorecard KPI, рост и выручка, cash/runway, план на следующий период и слайд решений. Цифры и факты только из Source или из этого брифа — ничего не выдумывай.",
+      "Собери board update в духе Northstar: thesis + hero KPI, scorecard actual vs plan, ARR trajectory и bridge, GTM constraint, NRR/cash, Q+1 plan с owners и явный board ask. Цифры только из Source или брифа.",
   },
   {
     id: "performance",
     structureId: "performance",
     packId: "signal",
-    title: "Маркетинг и каналы",
-    blurb: "Spend/return → каналы → перераспределение → 90 дней",
-    arc: "Сигнал → эффективность → realloc → roadmap",
+    title: "Bold Signal — каналы",
+    blurb: "Chart-first → tables → realloc → 90-day roadmap",
+    arc: "Charts → tables → card_row → close",
     starterPrompt:
-      "Собери маркетинговую презентацию: spend vs return, разрез по каналам, что усилить/паузить, перераспределение бюджета и план на 90 дней. Только числа из Source или брифа.",
+      "Собери marketing performance в духе Bold Signal: scorecard spend/revenue/ROAS, spend vs return, channel/region/campaign tables, realloc как тест (±pp), 3 recommendations + 90-day roadmap. Только Source/бриф.",
   },
   {
     id: "qbr",
     structureId: "qbr",
     packId: "relay",
-    title: "Квартальный обзор",
-    blurb: "Тезис → графики → wins/misses → план Q+1",
-    arc: "Тезис → scorecard → истории → план",
+    title: "Split Pastel — QBR",
+    blurb: "2× section chapters → pastel scorecards → Q ask",
+    arc: "Section → scorecard → charts → decisions",
     starterPrompt:
-      "Собери квартальный обзор (QBR): главный тезис квартала, scorecard, wins и misses, истории с цифрами и план на Q+1. Без выдуманных метрик — только Source/бриф.",
+      "Собери QBR в духе Split Pastel: hero KPI на титуле, тезис квартала, scorecard, 2–3 графика, wins/misses, testable decisions, план Q+1 и goals с gates. Без выдуманных метрик.",
   },
   {
     id: "survey",
     structureId: "survey",
-    packId: "relay",
-    title: "Результаты опроса",
-    blurb: "Метод → findings → темы → действия",
-    arc: "Метод → findings → actions",
+    packId: "voltage",
+    title: "Voltage — feedback",
+    blurb: "Method callout → % meters → quotes → NOW/NEXT",
+    arc: "Callouts + % cards · almost no charts",
     starterPrompt:
-      "Собери презентацию по результатам опроса: метод и выборка, ключевые findings, темы/кластеры и конкретные действия. Цитаты и % только из Source или брифа.",
+      "Собери product-feedback readout в духе Creative Voltage: punchy thesis, n/CSAT/NPS, method caveats, loves vs friction, quotes из Source, NOW/NEXT/LATER bets с gates. % только из Source/брифа.",
   },
   {
     id: "investor",
     structureId: "investor",
-    packId: "botanical",
-    title: "Инвесторский апдейт",
-    blurb: "Тезис → драйверы → качество → риски → ask",
-    arc: "Тезис → engines → quality → ask",
+    packId: "ink",
+    title: "Relay Ink — инвесторы",
+    blurb: "Section thesis → one scorecard → ask callout",
+    arc: "Sparse ink · chart · ask · risks",
     starterPrompt:
-      "Собери инвесторский апдейт: тезис, драйверы роста, качество метрик, риски и явный ask. Числа строго из Source или этого брифа.",
+      "Собери investor update в духе Relay Ink: one-sentence quarter, compounding ARR, engines, quality, GTM/CAC, cash/runway, Q+1 bets и risks. Числа строго из Source/брифа.",
   },
   {
     id: "launch",
     structureId: "launch",
     packId: "botanical",
-    title: "Запуск продукта",
-    blurb: "История → аудитория → каналы → инвестиции → решение",
-    arc: "Story → audience → channels → decision",
+    title: "Vesper — запуск",
+    blurb: "Bleed photo → story callout → media → roadmap",
+    arc: "Photo · story · table · soft foil",
     starterPrompt:
-      "Собери презентацию запуска продукта: история/проблема, аудитория, каналы go-to-market, инвестиции и решение к действию. Без выдуманных KPI — только Source/бриф.",
+      "Собери product launch в духе Dark Botanical / Vesper: soft thesis, story/tension, product callout, audience triad, GTM, roadmap table, investment scorecard, learning gates и closing ask. KPI только из Source/брифа.",
   },
   {
     id: "campaign",
     structureId: "campaign",
     packId: "atelier",
-    title: "Статус кампании",
-    blurb: "KPI → winners/pauses → ставки на неделю",
-    arc: "KPI → winners → next week",
+    title: "Atelier — кампания",
+    blurb: "Week scorecard → winners table → bullets → Friday",
+    arc: "Short ops · table + bullets",
     starterPrompt:
-      "Собери статус кампании: KPI недели, winners и pauses, ставки/бюджет на следующую неделю. Метрики только из Source или брифа.",
+      "Собери weekly campaign status в духе Atelier: KPI недели, creative scale/pause table, channel chart, next-week bets, flat-total realloc и Friday review. Метрики только из Source/брифа.",
   },
   {
     id: "workshop",
     structureId: "workshop",
-    packId: "relay",
-    title: "Воркшоп",
-    blurb: "Цели → упражнения → outputs → follow-ups",
-    arc: "Goals → exercises → follow-ups",
+    packId: "studio",
+    title: "Studio — воркшоп",
+    blurb: "Goals scorecard → agenda table → exercise cards",
+    arc: "Agenda · exercises · owners table",
     starterPrompt:
-      "Собери deck для воркшопа: цели, повестка/упражнения, ожидаемые outputs и follow-ups. Детали только из Source или этого брифа.",
+      "Собери facilitation deck в духе Workshop Studio: goals, timeboxed agenda, framing + force-rank exercises, outputs/norms и follow-ups с owners. Детали только из Source/брифа.",
   },
 ];
 

@@ -1,16 +1,16 @@
-# Structure — Workshop facilitator pack
+# Structure — Workshop (Studio)
 
-Facilitator deck (≈10–12). Hard max 12. No invented exercise timings if Source omits them.
+**Signature:** goals scorecard · agenda `table_hero` · exercise `card_row` · owners table.  
+Ice + indigo. No invented timings.
 
-1. `title` — workshop outcome in one line
-2. `section` — goals / success criteria
-3. `bullets` — constraints & ground rules
-4. `table_hero` — timed agenda blocks
+1. `title` — outcome + duration/seats/outputs in takeaway
+2. `section` — why we’re here
+3. `scorecard` — three outcomes
+4. `table_hero` — timeboxed agenda
 5. `card_row` — exercise A
-6. `card_row` — exercise B
-7. `callout` — decision gate mid-session
-8. `card_row` — force-rank / converge
-9. `bullets` — outputs expected today
-10. `table_hero` — owners + dates
-11. Parking lot — `bullets` or `callout`
-12. `closing` — follow-ups / next ritual
+6. `card_row` — exercise B (different kickers)
+7. `callout` — mid-gate (dashed studio chrome)
+8. `table_hero` — owners / follow-ups
+9. `closing` — hero “owned outputs” + 3 close beats
+
+Facilitation rhythm — not dark signal charts.

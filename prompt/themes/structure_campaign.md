@@ -1,18 +1,15 @@
-# Structure — Campaign / paid status
+# Structure — Campaign / paid status (Atelier)
 
-Weekly or campaign status (≈10–12). Spend/ROAS ⊆ Source. Hard max 12.
+**Signature:** short ops · scorecard + winners `table` + `bullets` · Friday close.  
+Olive paper. Numbers ⊆ Source.
 
-1. `title` — campaign / period takeaway
-2. `scorecard` — spend, ROAS, pipeline, CPA
-3. `chart_hero` — trend
-4. `table_hero` — winners vs pauses
-5. `chart_split` or `table_hero` — creative / geo cut
-6. `card_row` — 3 bets for next week
-7. Audience / funnel — `table_hero` if Source has rows
-8. Risk / watchouts — `callout`
-9. `bullets` — actions with owners
-10. Budget shift — `card_row` or `scorecard`
-11. `closing` — ask / approval
-12. Optional appendix — definitions only if Source defines terms
+1. `title` — week thesis + hero KPIs
+2. `scorecard` — this week snapshot
+3. `table_hero` — scale / pause / hold
+4. `chart_hero` — trend (one chart is enough)
+5. `card_row` — next-week bets + ask caption
+6. `bullets` — ops checklist
+7. `callout` — watch / trigger
+8. `closing` — Friday review + hero ROAS
 
-Short, operational. Prefer ≥1 chart + ≥1 table when Source supports.
+Keep it ≤10 slides when Source is a weekly brief. Not investor narrative.

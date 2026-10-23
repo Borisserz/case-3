@@ -1,0 +1,38 @@
+{
+  "id": "ink",
+  "label": "Relay Ink",
+  "colors": {
+    "primary": "#2448FF",
+    "accent": "#2448FF",
+    "ink": "#FFFFFF",
+    "ink2": "#AEB3C2",
+    "muted": "#646875",
+    "paper": "#1A1A24",
+    "sheet": "#111118",
+    "rule": "#2A2A36",
+    "foil": "#2448FF",
+    "background": "#111118",
+    "text": "#FFFFFF",
+    "panel": "#1A1A24"
+  },
+  "fonts": {
+    "title": "Arial",
+    "body": "Arial",
+    "fallback_pptx": "Arial"
+  },
+  "chart_series": ["#2448FF", "#FFFFFF", "#646875", "#AEB3C2", "#3D5CFF"],
+  "table": {
+    "header_fill": "#2448FF",
+    "header_ink": "#FFFFFF",
+    "body_fill": "#1A1A24",
+    "grid": "#2A2A36"
+  },
+  "brand_mark": "RELAY · INK",
+  "motif": {
+    "atmosphere": "dark",
+    "hero_bleed": false,
+    "foil_cards": true,
+    "card_fill": "#1A1A24",
+    "panels": ["#1A1A24", "#22222E", "#1E1E2A", "#252532"]
+  }
+}

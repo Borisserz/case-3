@@ -8,7 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-PACK_IDS = ("atelier", "board", "signal", "relay", "pastel", "botanical")
+PACK_IDS = (
+    "atelier",
+    "board",
+    "signal",
+    "relay",
+    "pastel",
+    "ink",
+    "voltage",
+    "studio",
+    "botanical",
+)
 
 _HEX = re.compile(r"^#?[0-9A-Fa-f]{6}$")
 _PACK_CACHE: dict[str, dict[str, Any]] | None = None
@@ -41,8 +51,16 @@ def normalize_pack_id(raw: str | None) -> str:
     key = (raw or "atelier").strip().lower()
     if key in ("pastel", "split_pastel", "qbr"):
         key = "relay"
+    if key in ("relay_ink", "investor_ink", "ice_blue", "northstar_ink"):
+        key = "ink"
+    if key in ("creative_voltage", "flowspace", "feedback"):
+        key = "voltage"
+    if key in ("workshop_studio", "facilitate"):
+        key = "studio"
     if key in ("vesper", "dark_botanical", "verdara"):
         key = "botanical"
+    if key in ("northstar", "board_northstar"):
+        key = "board"
     packs = _load_packs()
     if key in packs:
         return key
@@ -228,7 +246,16 @@ def list_public_packs() -> list[dict[str, Any]]:
     """UI catalog: id, label, swatches."""
     out: list[dict[str, Any]] = []
     packs = _load_packs()
-    for pid in ("atelier", "board", "signal", "relay", "botanical"):
+    for pid in (
+        "atelier",
+        "board",
+        "signal",
+        "relay",
+        "ink",
+        "voltage",
+        "studio",
+        "botanical",
+    ):
         raw = packs.get(pid)
         if not raw:
             continue

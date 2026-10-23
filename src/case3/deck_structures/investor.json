@@ -1,22 +1,20 @@
 {
   "id": "investor",
   "label": "Investor Update",
-  "blurb": "One-liner → growth engines → quality → GTM → cash → risks → ask",
-  "default_pack": "botanical",
+  "blurb": "Thesis section → compounding chart → ask callout",
+  "default_pack": "ink",
   "tone": "dark",
-  "slides": [10, 12],
+  "slides": [9, 11],
   "arc": [
     "title",
     "section",
     "chart_hero",
     "scorecard",
-    "kpi_row",
     "chart_split",
-    "card_row",
-    "scorecard",
-    "bullets",
-    "card_row",
+    "table_hero",
     "callout",
+    "card_row",
     "closing"
-  ]
+  ],
+  "signature": "sparse ink · one scorecard · ask callout"
 }

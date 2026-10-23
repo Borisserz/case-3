@@ -1,10 +1,11 @@
-# Theme overlay — signal (bold marketing / performance)
+# Theme overlay — signal (Bold Signal / marketing performance)
 
-Narrative tone: bold performance read-out. Sharp chapters, punchy callouts. Dark sheet + orange foil — same craft density as botanical (not empty black).
+Narrative tone: bold performance read-out. Charcoal sheet `#202020` + orange foil `#FF5B23`. Sharp chapters, punchy callouts — same craft density as Julius Bold Signal.
 
-- Prefer **10–12** slides; `section` chapter splashes between story beats (2 sections ok).
-- Lead with `title` (`hero_bleed` / media when a figure exists) then `scorecard` or hero chart; put the sharpest claim in a `callout` (`term` + `definition`).
+- Prefer **10–12** slides; chapter kickers like `01 / EXECUTIVE SIGNAL` (use `kicker`, not only `section`).
+- Lead with `title` (Spend. Return. Next move.), then **either** `scorecard` **or** `chart_hero` — do not always pick scorecard.
+- Mix `table_hero` + `card_row` + ≥1 `callout`; avoid three scorecards in a row.
 - Titles short and assertive; `takeaway` carries the “so what”.
-- Use **`card_row`** for reallocation / 90-day bets + orange `caption` gate.
-- ≥1 `table_hero` for channel/campaign rows; media as proof (`media_hero`), not decoration.
-- Closing: 3 action bullets — what to do next week.
+- Heavy on `table_hero` (channel · region · campaign · reallocation · 90-day gates).
+- Use **`card_row`** for recommendations (scale / lifecycle / proof) + orange `caption` gate.
+- Closing: data & definitions caveats from Source — not a fluffy summary.

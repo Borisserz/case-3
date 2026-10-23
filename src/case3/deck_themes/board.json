@@ -1,37 +1,37 @@
 {
   "id": "board",
-  "label": "Board (Northstar)",
+  "label": "Northstar Board",
   "colors": {
-    "primary": "#172D40",
+    "primary": "#142C40",
     "accent": "#087F8C",
     "ink": "#142C40",
-    "ink2": "#647586",
-    "muted": "#647586",
-    "paper": "#EAF0F4",
+    "ink2": "#647686",
+    "muted": "#647686",
+    "paper": "#EDF4F6",
     "sheet": "#FFFFFF",
-    "rule": "#EAF0F4",
+    "rule": "#D5DEE6",
     "foil": "#087F8C",
     "background": "#FFFFFF",
-    "text": "#172D40",
-    "panel": "#EAF0F4"
+    "text": "#142C40",
+    "panel": "#EDF4F6"
   },
   "fonts": {
-    "title": "Aptos",
-    "body": "Aptos",
+    "title": "Calibri",
+    "body": "Calibri",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#172D40", "#087F8C", "#647586", "#B54D40", "#EAF0F4"],
+  "chart_series": ["#142C40", "#087F8C", "#60D1CB", "#BE5147", "#B7CCD8"],
   "table": {
-    "header_fill": "#172D40",
+    "header_fill": "#142C40",
     "header_ink": "#FFFFFF",
     "body_fill": "#F4F8FA",
     "grid": "#D5DEE6"
   },
-  "brand_mark": "BOARD UPDATE",
+  "brand_mark": "NORTHSTAR · BOARD",
   "motif": {
     "atmosphere": "light",
     "foil_cards": true,
     "card_fill": "#F4F8FA",
-    "panels": ["#EAF0F4", "#E2EBF1", "#D8E4EC", "#EEF3F6"]
+    "panels": ["#EDF4F6", "#E2EBF1", "#D8E4EC", "#EEF3F6"]
   }
 }

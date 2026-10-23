@@ -1,18 +1,15 @@
-# Structure — Investor Update (Julius Relay DNA)
+# Structure — Investor Update (Relay Ink DNA)
 
-Investor narrative (≈10–12). Numbers ⊆ Source only.
+**Signature:** sparse ink · section thesis · **one** scorecard · ask callout.  
+Do **not** spam scorecards (max 1–2 total). Numbers ⊆ Source.
 
-1. `title` — company + period + one-line thesis
-2. `section` — «The quarter in one sentence» (takeaway = the sentence)
-3. `chart_hero` — revenue / ARR compounding (not a spike story)
-4. `scorecard` — growth engines (new logo vs expansion) with deltas
-5. `kpi_row` or `scorecard` — growth quality (NRR, churn, logos)
-6. `chart_split` — GTM / channel mix if Source has series
-7. `card_row` — conversion / CAC / efficiency triad
-8. Cash / runway — `scorecard`
-9. Since last close / momentum — `bullets` or `card_row`
-10. Next quarter priorities — `card_row` (3 bets)
-11. Risks & responses — `callout` or `card_row`
-12. `closing` — ask + definitions pointer (no invented terms)
+1. `title` — quarter thesis; takeaway 2 hero KPIs if known
+2. `section` — one-sentence quarter
+3. `chart_hero` — compounding curve
+4. **one** `scorecard` — four carry numbers
+5. `chart_split` or `table_hero` — GTM / conversion
+6. `callout` — **the ask** (raise / gates ⊆ Source)
+7. `card_row` — risks (threat / response / trigger)
+8. `closing` — hero number + 3 caveats
 
-Tone: confident, sparse. Prefer charts over long bullets.
+Tone: confident, ice-blue, lots of air. ≥5 layouts when ≥8 slides.

@@ -1,22 +1,20 @@
 {
   "id": "board_update",
   "label": "Board Update",
-  "blurb": "Scorecard → ARR → retention → GTM → cash → Q+1 plan → decisions",
+  "blurb": "Ask → scorecard → bridge tables → decisions",
   "default_pack": "board",
-  "tone": "dark",
+  "tone": "light",
   "slides": [10, 12],
   "arc": [
     "title",
+    "callout",
     "scorecard",
     "chart_hero",
     "table_hero",
     "chart_split",
     "table_hero",
     "card_row",
-    "chart_hero",
-    "table_hero",
-    "card_row",
-    "callout",
     "closing"
-  ]
+  ],
+  "signature": "callout-first · tables · board ask"
 }

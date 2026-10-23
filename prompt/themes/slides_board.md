@@ -4,6 +4,7 @@ Visual/tone: cool boardroom blues, dense chapters, scorecards first. Match botan
 
 - Prefer **10–12** slides when Source supports it.
 - Numbered kickers (`01 / …`) + `chapter` when using board_update structure.
+- Title takeaway: 2–3 `VALUE — label` lines. Vary beat 2 (scorecard / callout / chart). Cap consecutive scorecards at 2.
 - Use insight **titles** (not bland labels); `takeaway` under title.
 - Open with `title` then `scorecard` / `kpi_row` with teal foil cards; include ≥1 `chart_hero` and ≥1 `table_hero` when Source has series/rows.
 - Use **`card_row`** for 3 owned priorities + gold/teal `caption` gate (e.g. BOARD ASK…).

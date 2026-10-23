@@ -5,4 +5,5 @@ Visual/tone: olive paper, brass foil, calm editorial. Same card density as botan
 - Prefer **10–12** slides when Source is rich.
 - Insight titles; `scorecard` / `card_row` with brass foil; ≥1 chart + ≥1 table when Source supports.
 - Campaign / ops decks: winners vs pauses as `table_hero`; next bets as `card_row` + caption gate.
+- Alternate opening: trend `chart_hero` before scorecard when a series exists — editorial, not dashboard-only.
 - Closing: clear ask, not a summary dump.

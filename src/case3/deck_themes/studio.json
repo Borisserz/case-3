@@ -1,0 +1,37 @@
+{
+  "id": "studio",
+  "label": "Workshop Studio",
+  "colors": {
+    "primary": "#1B1F3B",
+    "accent": "#4F5BD5",
+    "ink": "#1B1F3B",
+    "ink2": "#4A5168",
+    "muted": "#6B728A",
+    "paper": "#EEF0F8",
+    "sheet": "#F7F8FC",
+    "rule": "#E0E3EF",
+    "foil": "#4F5BD5",
+    "background": "#F7F8FC",
+    "text": "#1B1F3B",
+    "panel": "#E8EAF6"
+  },
+  "fonts": {
+    "title": "Arial",
+    "body": "Arial",
+    "fallback_pptx": "Calibri"
+  },
+  "chart_series": ["#4F5BD5", "#1B1F3B", "#8B93D8", "#C5C9E8", "#F0A86B"],
+  "table": {
+    "header_fill": "#1B1F3B",
+    "header_ink": "#F7F8FC",
+    "body_fill": "#EEF0F8",
+    "grid": "#E0E3EF"
+  },
+  "brand_mark": "LIBER · STUDIO",
+  "motif": {
+    "atmosphere": "light",
+    "foil_cards": false,
+    "card_fill": "#EEF0F8",
+    "panels": ["#E8EAF6", "#DDE1F5", "#F0E6DA", "#E4F0EA"]
+  }
+}

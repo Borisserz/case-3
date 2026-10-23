@@ -236,50 +236,56 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
   ],
   investor: [
     {
-      kind: "split",
-      kicker: "INVESTOR UPDATE",
-      title: "One-sentence quarter",
-      subtitle: "Growth engines · quality · ask",
+      kind: "title",
+      kicker: "RELAY / INVESTOR UPDATE",
+      title: "Growth, with more signal.",
+      subtitle: "One-liner → engines → cash → ask",
+      dark: true,
     },
     {
       kind: "scorecard",
-      kicker: "QUALITY",
-      title: "Unit economics held",
+      kicker: "ONE SENTENCE",
+      title: "Marketing scaled the engine",
       cells: [
-        { label: "ARR", value: "$18.4M", delta: "+24%" },
-        { label: "NRR", value: "117%" },
-        { label: "Gross", value: "76%", delta: "+1pt" },
-        { label: "Runway", value: "30 mo" },
+        { label: "Revenue", value: "$2.08M", delta: "+21% QoQ" },
+        { label: "ARR", value: "$12.0M", delta: "+25%" },
+        { label: "Mkt-sourced", value: "70%" },
+        { label: "NRR", value: "112%", delta: "+3pt" },
       ],
+      dark: true,
     },
     {
       kind: "chart",
-      kicker: "ENGINES",
-      title: "Where growth compounds",
-      bars: [45, 60, 55, 70, 82],
+      kicker: "COMPOUNDING",
+      title: "Revenue compounds — not spikes",
+      bars: [40, 48, 55, 68, 82],
+      dark: true,
     },
     {
       kind: "table",
-      kicker: "GTM",
-      title: "Motion quality",
+      kicker: "CONVERSION",
+      title: "Better conversion. Lower CAC.",
       rows: [
-        ["Motion", "Pipe", "Win"],
-        ["Product-led", "$3.1M", "32%"],
-        ["Sales-led", "$5.4M", "21%"],
-        ["Partner", "$1.2M", "27%"],
+        ["Metric", "Prior", "Now"],
+        ["Opps", "180", "240"],
+        ["Customers", "36", "48"],
+        ["CAC", "$29k", "$26k"],
       ],
+      dark: true,
     },
     {
       kind: "cards",
-      kicker: "RISKS",
-      title: "Watch + mitigate",
-      cards: ["Enterprise cycle length", "Competitor pricing", "Key hire lag"],
+      kicker: "Q+1",
+      title: "Three owned bets",
+      cards: ["Grow efficiently", "Deepen product", "Protect runway"],
+      dark: true,
     },
     {
       kind: "closing",
-      kicker: "THE ASK",
-      title: "Extend runway narrative + intro list",
-      subtitle: "Definitions in appendix if Source has them",
+      kicker: "ASK",
+      title: "Approve operating plan gates",
+      subtitle: "Definitions ⊆ Source on real runs",
+      dark: true,
     },
   ],
   launch: [
@@ -433,11 +439,28 @@ export function previewSlidesFor(structureId: string): PreviewSlide[] {
   return TEMPLATE_PREVIEW_SLIDES[structureId] || TEMPLATE_PREVIEW_SLIDES.board_update;
 }
 
+/** Premium four packs ship 11–12 Liber twin PNGs; others keep 6. */
+export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
+  board_update: 11,
+  performance: 11,
+  qbr: 12,
+  survey: 10,
+  investor: 12,
+  launch: 12,
+  campaign: 10,
+  workshop: 11,
+};
+
+/** Bust browser cache when Liber twins are re-rendered. */
+const PREVIEW_CACHE_BUST = "20261024v4";
+
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {
   const id = TEMPLATE_PREVIEW_SLIDES[structureId] ? structureId : "board_update";
-  return [1, 2, 3, 4, 5, 6].map(
-    (n) => `/deck/previews/${id}/${String(n).padStart(2, "0")}.png`,
+  const n = PREMIUM_PREVIEW_COUNTS[id] ?? 6;
+  return Array.from({ length: n }, (_, i) => i + 1).map(
+    (k) =>
+      `/deck/previews/${id}/${String(k).padStart(2, "0")}.png?v=${PREVIEW_CACHE_BUST}`,
   );
 }
 

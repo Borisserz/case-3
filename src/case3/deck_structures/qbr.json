@@ -1,7 +1,7 @@
 {
   "id": "qbr",
   "label": "QBR",
-  "blurb": "Thesis → scorecard → funnel charts → wins/misses → Q+1 plan → ask",
+  "blurb": "Section chapters → pastel scorecards → decisions",
   "default_pack": "relay",
   "tone": "light",
   "slides": [10, 12],
@@ -11,12 +11,12 @@
     "scorecard",
     "chart_hero",
     "chart_split",
-    "chart_hero",
-    "callout",
     "card_row",
-    "bullets",
+    "callout",
+    "section",
     "table_hero",
     "card_row",
     "closing"
-  ]
+  ],
+  "signature": "two sections · pastel panels · Q ask"
 }

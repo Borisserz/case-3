@@ -1,18 +1,16 @@
-# Structure — Product Launch (Julius VESPER / botanical DNA)
+# Structure — Product Launch (Dark Botanical / Vesper)
 
-Launch story (≈10–12). No invented traction metrics.
+**Signature:** bleed photo title · story callout · `media_hero` · soft foil.  
+Not an ops weekly. Numbers ⊆ Source.
 
-1. `title` — product launch frame
-2. `section` — product story / problem
-3. `media_hero` or `callout` — the product
-4. Positioning — `callout` (term/definition) or `card_row`
-5. Audience — `card_row` (3 segments)
-6. Brand / experience — `media_split` if photos; else `card_row`
-7. `section` — launch architecture
-8. Channel strategy — `card_row`
-9. Early traction goals — `scorecard` (only Source targets)
-10. Investment — `table_hero`
-11. Learning agenda — `bullets`
-12. `closing` — the launch decision / ask
+1. `title` + `media_id` hero when figure exists
+2. `section` — chapter / tension
+3. `callout` — product / positioning line
+4. `card_row` — audience triad + validation gate
+5. `media_hero` — ritual / product frame
+6. `table_hero` — roadmap windows
+7. `scorecard` — investment (once)
+8. `card_row` — learning gates
+9. `closing` — media bleed + 3 asks
 
-Prefer media layouts when `fig_*` / `usr_*` exist. Mood: editorial, chaptered.
+Prefer story over dashboards. ≥5 layouts when ≥8 slides.

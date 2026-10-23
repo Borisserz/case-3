@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -113,7 +114,7 @@ def _wants_split_title(style: dict[str, Any] | None) -> bool:
 def _is_dark_pack(style: dict[str, Any] | None) -> bool:
     if not isinstance(style, dict):
         return False
-    if str(style.get("pack_id") or "") in ("botanical", "signal"):
+    if str(style.get("pack_id") or "") in ("botanical", "signal", "ink", "voltage"):
         return True
     motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
     return str(motif.get("atmosphere") or "") == "dark"
@@ -127,33 +128,58 @@ def _motif_panels(style: dict[str, Any] | None) -> list[str]:
     return [str(p) for p in raw if str(p).strip()]
 
 
+def _pct_from_kicker(kicker: str) -> int | None:
+    """Parse leading ``68%`` / ``104% NA`` kickers for narr-card meters."""
+    m = re.match(r"^(\d{1,3})\s*%", (kicker or "").strip())
+    if not m:
+        return None
+    return max(0, min(100, int(m.group(1))))
+
+
 def parse_hero_metrics(takeaway: str) -> list[tuple[str, str]]:
     """Julius title-panel KPIs: stacked (value, label) from takeaway.
 
-    Accepts newline pairs, or ``VALUE — label · VALUE — label``.
+    Accepts:
+    - one ``VALUE — label`` per line (2–4 lines),
+    - alternating bare lines ``value\\nlabel\\nvalue\\nlabel``,
+    - or ``VALUE — label · VALUE — label`` on one line.
     """
     raw = (takeaway or "").strip()
     if not raw:
         return []
-    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-    if len(lines) >= 2 and len(lines) % 2 == 0:
-        return [(lines[i], lines[i + 1]) for i in range(0, len(lines), 2)]
-    # Single-line: split on middle dot / pipe, then em/en dash.
-    chunks = [c.strip() for c in raw.replace("|", "·").split("·") if c.strip()]
-    out: list[tuple[str, str]] = []
-    for ch in chunks:
+
+    def _split_pair(ch: str) -> tuple[str, str] | None:
         for sep in (" — ", " – ", " - ", ": "):
             if sep in ch:
                 left, right = ch.split(sep, 1)
                 if left.strip() and right.strip():
-                    out.append((left.strip(), right.strip()))
-                    break
-        else:
-            # bare value without label
-            if ch:
-                out.append((ch, ""))
+                    return left.strip(), right.strip()
+        return None
+
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    # Prefer per-line VALUE — label (works for 2, 3, or 4 metrics).
+    if len(lines) >= 2:
+        dashed = [_split_pair(ln) for ln in lines]
+        if all(p is not None for p in dashed):
+            return [p for p in dashed if p is not None][:4]
+        # Alternating bare value / label lines.
+        if len(lines) >= 2 and len(lines) % 2 == 0 and all(
+            _split_pair(ln) is None for ln in lines
+        ):
+            return [(lines[i], lines[i + 1]) for i in range(0, len(lines), 2)][:4]
+
+    chunks = [c.strip() for c in raw.replace("|", "·").split("·") if c.strip()]
+    out: list[tuple[str, str]] = []
+    for ch in chunks:
+        pair = _split_pair(ch)
+        if pair:
+            out.append(pair)
+        elif ch:
+            out.append((ch, ""))
     if len(out) >= 2:
         return out[:4]
+    if len(out) == 1 and out[0][1]:
+        return out[:1]
     return []
 
 
@@ -291,10 +317,34 @@ def _body_for_slide(
                 style=style,
                 slide_index=slide_index,
             )
+        takeaway = str(slide.get("takeaway") or "").strip()
+        metrics = parse_hero_metrics(takeaway)
+        hero_html = ""
+        if metrics:
+            value, label = metrics[0]
+            lab = (
+                f'<p class="closing-hero__label">{_esc(label)}</p>' if label else ""
+            )
+            hero_html = (
+                f'<div class="closing-hero">'
+                f'<p class="closing-hero__value">{_esc(value)}</p>'
+                f"{lab}</div>"
+            )
+        elif takeaway and len(takeaway) <= 24:
+            hero_html = (
+                f'<div class="closing-hero">'
+                f'<p class="closing-hero__value">{_esc(takeaway)}</p>'
+                f"</div>"
+            )
+        # Head without takeaway when it became the hero number.
+        head = dict(slide)
+        if hero_html:
+            head = {**slide, "takeaway": ""}
         return (
             f'<div class="slide-inner closing-stage">'
             f"{brand}"
-            f"{_section_head(slide)}"
+            f"{_section_head(head)}"
+            f"{hero_html}"
             f"{_bullets_html(slide.get('bullets') or [])}"
             f"</div>"
         )
@@ -366,9 +416,19 @@ def _body_for_slide(
             if not isinstance(c, dict):
                 continue
             kicker = str(c.get("kicker") or "").strip()
+            pct = _pct_from_kicker(kicker)
             kicker_html = (
                 f'<p class="narr-card__kicker">{_esc(kicker)}</p>' if kicker else ""
             )
+            meter_html = ""
+            if pct is not None:
+                meter_html = (
+                    f'<div class="narr-meter" style="--pct:{pct}" aria-hidden="true">'
+                    f"<i></i></div>"
+                )
+                kicker_html = (
+                    f'<p class="narr-card__kicker is-pct">{_esc(kicker)}</p>'
+                )
             body = str(c.get("body") or "").strip()
             body_html = (
                 f'<p class="narr-card__body">{_esc(body)}</p>' if body else ""
@@ -377,9 +437,11 @@ def _body_for_slide(
             if panels:
                 hx = panels[i % len(panels)]
                 pastel = f' style="background:{_esc(hx)}"'
+            card_cls = "narr-card is-metered" if pct is not None else "narr-card"
             cards_html.append(
-                f'<article class="narr-card"{pastel}>'
+                f'<article class="{card_cls}"{pastel}>'
                 f"{kicker_html}"
+                f"{meter_html}"
                 f'<p class="narr-card__title">{_esc(str(c.get("title") or ""))}</p>'
                 f"{body_html}"
                 f"</article>"
@@ -425,11 +487,19 @@ def _body_for_slide(
     if layout == "chart_hero":
         img = _media_img(media_png_href, kind="chart")
         cap = str(slide.get("caption") or "").strip()
-        cap_html = f'<p class="caption">{_esc(cap)}</p>' if cap else ""
+        takeaway = str(slide.get("takeaway") or "").strip()
+        # Caption = insight under the chart; promote takeaway when caption empty.
+        head = slide
+        if not cap and takeaway:
+            cap = takeaway
+            head = {**slide, "takeaway": ""}
+        cap_html = (
+            f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap else ""
+        )
         return (
             f'<div class="slide-inner chart-hero">'
             f"{brand}"
-            f"{_section_head(slide, compact=True)}"
+            f"{_section_head(head, compact=True)}"
             f'<div class="chart-stage">{img}</div>'
             f"{cap_html}"
             f"</div>"
@@ -441,11 +511,18 @@ def _body_for_slide(
         body_html = f'<p class="body">{_esc(body)}</p>' if body else ""
         bullets = _bullets_html(slide.get("bullets") or [])
         cap = str(slide.get("caption") or "").strip()
-        cap_html = f'<p class="caption">{_esc(cap)}</p>' if cap else ""
+        takeaway = str(slide.get("takeaway") or "").strip()
+        head = slide
+        if not cap and takeaway:
+            cap = takeaway
+            head = {**slide, "takeaway": ""}
+        cap_html = (
+            f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap else ""
+        )
         return (
             f'<div class="slide-inner">'
             f"{brand}"
-            f"{_section_head(slide, compact=True)}"
+            f"{_section_head(head, compact=True)}"
             f'<div class="chart-split">'
             f'<div class="copy">{body_html}{bullets}</div>'
             f'<div class="chart-col">'

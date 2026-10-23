@@ -20,11 +20,27 @@ sys.path.insert(0, str(ROOT / "src"))
 from case3.deck_theme import resolve_deck_theme  # noqa: E402
 from case3.slides_render import render_deck_pngs  # noqa: E402
 
+# Prefer repo scripts/ on sys.path for premium decks
+sys.path.insert(0, str(ROOT / "scripts"))
+from premium_gallery_decks import PREMIUM_DECKS  # noqa: E402
+
 OUT_PUBLIC = ROOT / "web" / "public" / "deck" / "previews"
 WORK = ROOT / "runs" / "atelier_visual" / "template_preview_render"
-CHART = ROOT / "runs" / "atelier_visual" / "atelier_bar.png"
-CHART2 = ROOT / "runs" / "atelier_visual" / "atelier_line.png"
+CHART_FALLBACK = ROOT / "runs" / "atelier_visual" / "atelier_bar.png"
+CHART2_FALLBACK = ROOT / "runs" / "atelier_visual" / "atelier_line.png"
+GALLERY_CHARTS = ROOT / "runs" / "atelier_visual" / "gallery_charts"
 HERO = ROOT / "runs" / "atelier_visual" / "botanical_smoke" / "figures" / "fig_hero.png"
+
+
+def _pack_charts(pack: str) -> dict[str, Path]:
+    """Prefer pack-colored gallery charts; fall back to atelier placeholders."""
+    bar = GALLERY_CHARTS / f"{pack}_bar.png"
+    line = GALLERY_CHARTS / f"{pack}_line.png"
+    bar_p = bar if bar.is_file() else CHART_FALLBACK
+    line_p = line if line.is_file() else (
+        CHART2_FALLBACK if CHART2_FALLBACK.is_file() else bar_p
+    )
+    return {"cht_bar": bar_p, "cht_line": line_p}
 
 
 def _deck(pack: str, slides: list[dict]) -> dict:
@@ -116,59 +132,64 @@ DECKS: dict[str, tuple[str, list[dict]]] = {
             {
                 "id": "s01",
                 "layout": "title",
-                "kicker": "SIGNAL",
-                "title": "Spend vs return — reallocate in 90 days",
-                "takeaway": "Liber Bold Signal twin",
+                "kicker": "BOLD SIGNAL · GROWTH INTELLIGENCE",
+                "title": "Spend. Return. Next move.",
+                "takeaway": "Scale the strongest signals · Liber Bold Signal twin",
             },
             {
                 "id": "s02",
                 "layout": "scorecard",
-                "kicker": "SPEND / RETURN",
-                "title": "Channel efficiency this period",
+                "kicker": "01 / EXECUTIVE SIGNAL",
+                "title": "More return. Better efficiency.",
                 "kpis": [
-                    {"label": "Spend", "value": "$420k", "delta": "+8%"},
-                    {"label": "ROAS", "value": "3.4x", "delta": "+0.4"},
-                    {"label": "CAC", "value": "$182", "delta": "−12%"},
-                    {"label": "Pipe", "value": "$2.1M", "delta": "+19%"},
+                    {"label": "Media spend", "value": "$2.09M", "delta": "+32%"},
+                    {"label": "Attr. revenue", "value": "$6.99M", "delta": "+57%"},
+                    {"label": "Blended ROAS", "value": "3.34×", "delta": "+0.3"},
+                    {"label": "Channels", "value": "6", "delta": "3 regions"},
                 ],
             },
             {
                 "id": "s03",
                 "layout": "chart_hero",
-                "kicker": "TREND",
-                "title": "Weekly return by channel",
+                "kicker": "02 / SPEND & RETURN",
+                "title": "Revenue is growing faster than spend",
                 "chart_id": "cht_line",
+                "takeaway": "Indexed Jan=100 — gallery twin series",
             },
             {
                 "id": "s04",
                 "layout": "table_hero",
-                "kicker": "REALLOCATION",
-                "title": "Move budget as a test",
+                "kicker": "04 / CHANNEL COMPARISON",
+                "title": "Search anchors scale. CRM leads ROAS.",
                 "rows": [
-                    ["From", "To", "Δ"],
-                    ["Display", "Search", "+$40k"],
-                    ["Social", "Partner", "+$25k"],
-                    ["Brand", "Hold", "—"],
+                    ["Channel", "Spend", "ROAS"],
+                    ["Paid Search", "$660k", "4.2×"],
+                    ["Email / CRM", "$96k", "7.1×"],
+                    ["Paid Social", "$410k", "2.8×"],
                 ],
             },
             {
                 "id": "s05",
                 "layout": "card_row",
-                "kicker": "90 DAYS",
-                "title": "Roadmap bets",
+                "kicker": "08 / RECOMMENDATIONS",
+                "title": "Make the next dollar measurable",
                 "cards": [
-                    {"title": "Cut bottom 20%", "kicker": "CREATIVE", "body": "Pause losers; fund Hook A geo."},
-                    {"title": "Double winner geo", "kicker": "MEDIA", "body": "Scale only where ROAS ≥ 4x."},
-                    {"title": "Partner co-op", "kicker": "TEST", "body": "One co-funded campaign this quarter."},
+                    {"title": "Scale selectively", "kicker": "01", "body": "Search + affiliates; watch marginal ROAS."},
+                    {"title": "Build lifecycle", "kicker": "02", "body": "CRM journeys with holdout proof."},
+                    {"title": "Fund a test", "kicker": "03", "body": "Move ±5pp — not a wholesale shift."},
                 ],
-                "caption": "DECISION Approve reallocation this week",
+                "caption": "GATE Prove incremental return before scaling",
             },
             {
                 "id": "s06",
                 "layout": "closing",
-                "kicker": "NEXT",
-                "title": "Owners assigned · review in 30 days",
-                "bullets": ["Shift $65k as a test", "Kill Hook B", "Re-check CAC Friday"],
+                "kicker": "10 / DATA & DEFINITIONS",
+                "title": "Read the signal with the right caveats",
+                "bullets": [
+                    "Numbers ⊆ Source on real runs",
+                    "Attributed revenue as defined in brief",
+                    "90-day gates before next realloc",
+                ],
             },
         ],
     ),
@@ -178,58 +199,59 @@ DECKS: dict[str, tuple[str, list[dict]]] = {
             {
                 "id": "s01",
                 "layout": "title",
-                "kicker": "QUARTERLY BUSINESS REVIEW",
-                "title": "Thesis → the shift that compounds",
-                "takeaway": "Wins · misses · Q+1 — Liber Relay",
+                "kicker": "MARKETING · Q3",
+                "title": "More pipeline. Better efficiency.",
+                "takeaway": "$9.6M — marketing-sourced pipeline\n8.0× — pipeline / marketing spend",
             },
             {
                 "id": "s02",
-                "layout": "scorecard",
-                "kicker": "SCORECARD",
-                "title": "Quarter snapshot",
-                "kpis": [
-                    {"label": "Revenue", "value": "$4.8M", "delta": "+11%"},
-                    {"label": "Margin", "value": "62%", "delta": "+2pt"},
-                    {"label": "NPS", "value": "54", "delta": "+6"},
-                    {"label": "Churn", "value": "2.1%", "delta": "−0.4"},
-                ],
+                "layout": "section",
+                "kicker": "THESIS",
+                "title": "Growth improved; target attainment did not",
+                "subtitle": "Reallocate, then prove — Liber Split Pastel",
             },
             {
                 "id": "s03",
-                "layout": "chart_hero",
-                "kicker": "STORY 1",
-                "title": "Where growth actually came from",
-                "chart_id": "cht_bar",
+                "layout": "scorecard",
+                "kicker": "SCORECARD",
+                "title": "Efficient growth, narrow misses",
+                "kpis": [
+                    {"label": "Spend", "value": "$1.20M", "delta": "−4% vs goal"},
+                    {"label": "Pipeline", "value": "$9.6M", "delta": "96% of goal"},
+                    {"label": "Efficiency", "value": "8.0×", "delta": "+0.9"},
+                    {"label": "SQLs", "value": "720", "delta": "30% MQL→SQL"},
+                ],
             },
             {
                 "id": "s04",
-                "layout": "card_row",
-                "kicker": "WINS / MISSES",
-                "title": "Keep / kill / learn",
-                "cards": [
-                    {"title": "Keep expansion", "kicker": "WIN", "body": "Expansion motion beat new logo."},
-                    {"title": "Kill unused SKU", "kicker": "MISS", "body": "Low attach — sunset in Q+1."},
-                    {"title": "Learn onboarding", "kicker": "LAG", "body": "Activation still too slow."},
-                ],
+                "layout": "chart_hero",
+                "kicker": "CHANNELS",
+                "title": "Search and webinars earned the next dollar",
+                "chart_id": "cht_bar",
+                "takeaway": "56% of pipeline from 45% of spend",
             },
             {
                 "id": "s05",
-                "layout": "table_hero",
-                "kicker": "Q+1",
-                "title": "Operating plan with owners",
-                "rows": [
-                    ["Bet", "Owner", "Target"],
-                    ["Activation", "Product", "+8pt"],
-                    ["Enterprise", "Sales", "$1.2M"],
-                    ["Margin", "Ops", "64%"],
+                "layout": "card_row",
+                "kicker": "WINS / MISSES",
+                "title": "Wins to repeat. Misses to correct.",
+                "cards": [
+                    {"title": "Search + webinars", "kicker": "REPEAT", "body": "10.0× pipeline / spend each."},
+                    {"title": "North America", "kicker": "REPEAT", "body": "Above pipeline goal."},
+                    {"title": "Field & events", "kicker": "CORRECT", "body": "25% spend → 16% pipeline."},
                 ],
+                "caption": "DECISION Shift $120K · keep total $1.20M",
             },
             {
                 "id": "s06",
                 "layout": "closing",
-                "kicker": "APPROVE",
-                "title": "Protect the learning loop",
-                "bullets": ["Shift budget", "Keep test cadence", "Revisit in 30 days"],
+                "kicker": "ASK",
+                "title": "Approve the shift. Protect the learning loop.",
+                "bullets": [
+                    "Approve $120K event → search/webinars",
+                    "Commit to SQL quality gates",
+                    "Success = pipeline + SQLs, not leads alone",
+                ],
             },
         ],
     ),
@@ -297,66 +319,69 @@ DECKS: dict[str, tuple[str, list[dict]]] = {
         ],
     ),
     "investor": (
-        "botanical",
+        "ink",
         [
             {
                 "id": "s01",
                 "layout": "title",
-                "kicker": "INVESTOR UPDATE",
-                "title": "One-sentence quarter",
-                "takeaway": "Growth engines · quality · ask — Liber Botanical",
-                "media_id": "fig_hero",
+                "kicker": "RELAY / INVESTOR UPDATE",
+                "title": "Growth, with more signal.",
+                "takeaway": "Q3 · Liber Relay Ink twin",
             },
             {
                 "id": "s02",
                 "layout": "scorecard",
-                "kicker": "QUALITY",
-                "title": "Unit economics held",
+                "kicker": "THE QUARTER IN ONE SENTENCE",
+                "title": "Marketing scaled the engine. Expansion increased the yield.",
                 "kpis": [
-                    {"label": "ARR", "value": "$18.4M", "delta": "+24%"},
-                    {"label": "NRR", "value": "117%"},
-                    {"label": "Gross", "value": "76%", "delta": "+1pt"},
-                    {"label": "Runway", "value": "30 mo"},
+                    {"label": "Q3 revenue", "value": "$2.08M", "delta": "+20.9% QoQ"},
+                    {"label": "Ending ARR", "value": "$12.0M", "delta": "+25.0% QoQ"},
+                    {"label": "Mkt-sourced", "value": "70%", "delta": "of new ARR"},
+                    {"label": "NRR", "value": "112%", "delta": "+3pt"},
                 ],
             },
             {
                 "id": "s03",
                 "layout": "chart_hero",
-                "kicker": "ENGINES",
-                "title": "Where growth compounds",
+                "kicker": "COMPOUNDING",
+                "title": "Revenue is compounding — not spiking",
                 "chart_id": "cht_bar",
+                "takeaway": "+20.9% QoQ · +96% YoY — gallery twin",
             },
             {
                 "id": "s04",
                 "layout": "table_hero",
-                "kicker": "GTM",
-                "title": "Motion quality",
+                "kicker": "CONVERSION",
+                "title": "Better conversion. Lower acquisition cost.",
                 "rows": [
-                    ["Motion", "Pipe", "Win"],
-                    ["Product-led", "$3.1M", "32%"],
-                    ["Sales-led", "$5.4M", "21%"],
-                    ["Partner", "$1.2M", "27%"],
+                    ["Metric", "Prior", "Now"],
+                    ["Qualified opps", "180", "240"],
+                    ["New customers", "36", "48"],
+                    ["Blended CAC", "$29k", "$26k"],
                 ],
             },
             {
                 "id": "s05",
                 "layout": "card_row",
-                "kicker": "RISKS",
-                "title": "Watch + mitigate",
+                "kicker": "Q+1 PRIORITIES",
+                "title": "Turn momentum into repeatability",
                 "cards": [
-                    {"title": "Cycle length", "kicker": "ENTERPRISE", "body": "Mitigate with proof packs."},
-                    {"title": "Pricing pressure", "kicker": "COMPETITOR", "body": "Hold value narrative."},
-                    {"title": "Key hire lag", "kicker": "TEAM", "body": "Close VP Sales search."},
+                    {"title": "Grow efficiently", "kicker": "01", "body": "ARR $14.0–14.5M · CAC ≤$26K."},
+                    {"title": "Deepen product", "kicker": "02", "body": "Analytics GA · NRR ≥112%."},
+                    {"title": "Protect runway", "kicker": "03", "body": "Burn ≤$600K · margin ≥80%."},
                 ],
-                "caption": "THE ASK Extend runway narrative + intro list",
+                "caption": "ASK Approve operating plan gates",
             },
             {
                 "id": "s06",
                 "layout": "closing",
-                "kicker": "CLOSE",
-                "title": "Definitions in appendix if Source has them",
-                "media_id": "fig_hero",
-                "bullets": ["Protect NRR", "Fund partner motion", "Name the ask"],
+                "kicker": "DEFINITIONS",
+                "title": "Sample-data basis on gallery twin",
+                "bullets": [
+                    "ARR = contracted recurring at period end",
+                    "NRR trailing-12m with expansion",
+                    "Real runs: numbers ⊆ Source only",
+                ],
             },
         ],
     ),
@@ -556,17 +581,14 @@ DECKS: dict[str, tuple[str, list[dict]]] = {
     ),
 }
 
+# Premium Julius-DNA decks (10–12 slides) override short stubs for the four packs.
+DECKS.update(PREMIUM_DECKS)
+
 
 def main() -> int:
-    if not CHART.is_file():
-        print("missing chart", CHART, file=sys.stderr)
+    if not CHART_FALLBACK.is_file() and not GALLERY_CHARTS.is_dir():
+        print("missing charts — run scripts/render_premium_gallery_charts.py", file=sys.stderr)
         return 1
-    media = {
-        "cht_bar": CHART,
-        "cht_line": CHART2 if CHART2.is_file() else CHART,
-    }
-    if HERO.is_file():
-        media["fig_hero"] = HERO
 
     if WORK.exists():
         shutil.rmtree(WORK)
@@ -575,6 +597,9 @@ def main() -> int:
 
     for structure_id, (pack, slides) in DECKS.items():
         print(f"== {structure_id} · {pack} ==")
+        media = _pack_charts(pack)
+        if HERO.is_file():
+            media = {**media, "fig_hero": HERO}
         deck = _deck(pack, slides)
         case_dir = WORK / structure_id
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -592,9 +617,10 @@ def main() -> int:
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True)
-        for i, src in enumerate(pngs[:6], start=1):
+        # Gallery filmstrip: up to 12 Liber twins (premium four packs are 11–12).
+        for i, src in enumerate(pngs[:12], start=1):
             shutil.copy2(src, dest / f"{i:02d}.png")
-        print(f"  wrote {len(list(dest.glob('*.png')))} → {dest}")
+        print(f"  wrote {len(list(dest.glob('*.png')))}/{len(pngs)} → {dest}")
     print("done — Liber twins only (no Julius rasters)")
     return 0
 

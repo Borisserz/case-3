@@ -1,0 +1,38 @@
+{
+  "id": "voltage",
+  "label": "Creative Voltage",
+  "colors": {
+    "primary": "#2438EB",
+    "accent": "#E8FF35",
+    "ink": "#F6F5F0",
+    "ink2": "#BFC3D8",
+    "muted": "#BFC3D8",
+    "paper": "#171A37",
+    "sheet": "#11121A",
+    "rule": "#2A2D42",
+    "foil": "#E8FF35",
+    "background": "#11121A",
+    "text": "#F6F5F0",
+    "panel": "#171A37"
+  },
+  "fonts": {
+    "title": "Arial Black",
+    "body": "Arial",
+    "fallback_pptx": "Arial"
+  },
+  "chart_series": ["#E8FF35", "#2438EB", "#F6F5F0", "#8D97D8", "#C5D839"],
+  "table": {
+    "header_fill": "#2438EB",
+    "header_ink": "#F6F5F0",
+    "body_fill": "#171A37",
+    "grid": "#2A2D42"
+  },
+  "brand_mark": "VOLTAGE · RESEARCH",
+  "motif": {
+    "atmosphere": "dark",
+    "hero_bleed": false,
+    "foil_cards": true,
+    "card_fill": "#171A37",
+    "panels": ["#171A37", "#1C2040", "#1A1F3A", "#222848"]
+  }
+}
