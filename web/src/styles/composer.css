@@ -1,0 +1,450 @@
+.composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem 1rem;
+  border-top: 1px solid transparent;
+  background: transparent;
+}
+
+.composer-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.composer-photo-chip {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.composer-photo-chip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-photo-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 72%, transparent);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.15rem 0.05rem 0;
+}
+
+.composer-toolbar .composer-palette-btn {
+  width: 2.45rem;
+  height: 2.45rem;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.composer-toolbar .composer-palette-btn.is-on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--sheet));
+  color: var(--accent);
+}
+
+.composer-modes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0;
+  flex: 0 1 auto;
+  border: none;
+  background: transparent;
+}
+
+.composer-mode-pill {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 550;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+}
+
+.composer-mode-pill:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--sheet));
+}
+
+.composer-mode-pill.is-on {
+  background: var(--sheet);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: var(--shadow-card);
+}
+
+.composer-mode-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-mode-nudge {
+  margin: 0.15rem auto 0;
+  max-width: min(100%, var(--composer-max));
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.composer-deck-hint {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: min(100%, var(--composer-max));
+  margin: 0 auto;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--sheet));
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 550;
+  line-height: 1.35;
+}
+
+.composer-deck-hint-x {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer-deck-hint-x:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.composer-source-gate {
+  margin: 0 auto;
+  width: min(100%, var(--composer-max));
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--primary) 70%, var(--muted));
+  line-height: 1.4;
+  text-align: center;
+}
+
+.composer-deck-gallery-anchor {
+  width: 100%;
+}
+
+.composer-palette-btn {
+  flex: 0 0 auto;
+  width: 2.35rem;
+  height: 2.35rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.composer-palette-btn:hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.composer-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.composer-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.composer-palette-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.composer-palette-swatch input[type="color"] {
+  width: 2.4rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.composer-palette-fonts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.composer-palette-fonts label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.composer-palette-fonts select {
+  min-width: 8rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.composer-packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.25rem, 1fr));
+  gap: 0.5rem;
+  padding: 0 0 0.35rem;
+}
+
+.composer-pack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: stretch;
+  padding: 0.55rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--sheet);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.composer-pack-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 28%, var(--border));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.composer-pack-card.is-on {
+  border-color: var(--ink);
+  background: var(--sheet);
+}
+
+.composer-pack-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  height: 1.55rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.composer-pack-swatches > span {
+  display: block;
+  min-width: 0;
+}
+
+.composer-pack-label {
+  font-size: 0.72rem;
+  font-weight: 560;
+  color: var(--ink);
+  line-height: 1.2;
+  text-align: center;
+}
+
+.composer-summary {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.composer-file-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.4rem 1.85rem 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--foil) 40%, var(--rule));
+  background: color-mix(in srgb, var(--secondary) 40%, var(--sheet));
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+
+.composer-file-chip .composer-photo-x {
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  transform: translateY(-50%);
+}
+
+.composer-attach {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2.45rem;
+  height: 2.45rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.05rem;
+  touch-action: manipulation;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+
+.composer-attach:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.composer-attach:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-gear {
+  font-size: 0;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: end;
+  padding: 0.4rem 0.45rem 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast);
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--shadow-card), var(--focus-ring);
+}
+
+.composer input[type="text"],
+.composer-input {
+  border-radius: 0;
+  padding: 0.55rem 0.35rem;
+  border: none;
+  background: transparent;
+  resize: none;
+  min-height: 2.45rem;
+  max-height: 7rem; /* ~4 lines — дальше скролл внутри */
+  line-height: 1.45;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.composer-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+button.send {
+  display: grid;
+  place-items: center;
+  width: 2.45rem;
+  height: 2.45rem;
+  padding: 0;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background var(--dur-mid) var(--ease-out), opacity var(--dur-fast),
+    transform var(--dur-fast);
+  white-space: nowrap;
+}
+
+button.send:not(:disabled):hover {
+  background: var(--primary);
+}
+
+button.send:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+button.send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+

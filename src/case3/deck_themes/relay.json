@@ -1,0 +1,35 @@
+{
+  "id": "relay",
+  "label": "Split Pastel (QBR)",
+  "colors": {
+    "primary": "#416650",
+    "accent": "#416650",
+    "ink": "#29352F",
+    "ink2": "#59675E",
+    "muted": "#59675E",
+    "paper": "#FBF9F4",
+    "sheet": "#FBF9F4",
+    "rule": "#E4E0D8",
+    "foil": "#416650",
+    "background": "#FBF9F4",
+    "text": "#29352F",
+    "panel": "#E8E0F2"
+  },
+  "fonts": {
+    "title": "Aptos Display",
+    "body": "Aptos",
+    "fallback_pptx": "Calibri"
+  },
+  "chart_series": ["#416650", "#A9B99E", "#BCACD0", "#DDEADB", "#F6DDD0"],
+  "table": {
+    "header_fill": "#DDEADB",
+    "header_ink": "#29352F",
+    "grid": "#E4E0D8"
+  },
+  "brand_mark": "LIBER · RELAY",
+  "motif": {
+    "split": 0.55,
+    "panel_key": "panel",
+    "panels": ["#E8E0F2", "#DDEADB", "#F6DDD0", "#DDEAF0"]
+  }
+}

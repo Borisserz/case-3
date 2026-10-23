@@ -42,6 +42,12 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
   if (fromResult) return fromResult;
   const fromStream = (streamed || "").trim();
   if (fromStream) return fromStream;
+  if (result?.output_mode === "diagram" || result?.diagrams?.length) {
+    const n = result.diagrams?.length || 0;
+    return n
+      ? `Схема готова (${n}). Краткое описание — в чате; полный вид справа.`
+      : "Схема готова";
+  }
   return "Отчёт готов";
 }
 

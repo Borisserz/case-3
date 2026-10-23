@@ -1,6 +1,7 @@
 /** Liber desk: regenerate or img2img-edit one photo — inline sheet (как графики). */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type ImageEditMode = "generate" | "edit";
 
@@ -35,6 +36,8 @@ export function ImageEditModal({
   const [mode, setMode] = useState<ImageEditMode>("generate");
   const [prompt, setPrompt] = useState("");
   const [caption, setCaption] = useState("");
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(sheetRef, { active: open });
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +58,12 @@ export function ImageEditModal({
   const canApply = Boolean(prompt.trim() && caption.trim()) && !busy;
 
   return (
-    <div className="chart-edit-sheet img-edit-sheet" role="region" aria-label="Изменить фото">
+    <div
+      ref={sheetRef}
+      className="chart-edit-sheet img-edit-sheet"
+      role="region"
+      aria-label="Изменить фото"
+    >
       <header className="chart-edit-head">
         <div>
           <p className="chart-edit-eyebrow">живая правка · фото · Image API</p>

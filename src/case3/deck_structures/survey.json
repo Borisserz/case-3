@@ -1,0 +1,21 @@
+{
+  "id": "survey",
+  "label": "Survey Readout",
+  "blurb": "Method → findings → themes → quotes → actions → next pulse",
+  "default_pack": "relay",
+  "tone": "light",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "scorecard",
+    "card_row",
+    "chart_hero",
+    "callout",
+    "card_row",
+    "table_hero",
+    "bullets",
+    "card_row",
+    "closing"
+  ]
+}

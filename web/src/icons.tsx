@@ -89,6 +89,21 @@ export function IconCopy(p: IconProps) {
   );
 }
 
+export function IconPalette(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path
+        {...stroke}
+        d="M12 3a9 9 0 0 0 0 18c.7 0 1.2-.5 1.2-1.2 0-.3-.1-.6-.3-.8l-.2-.3a1.4 1.4 0 0 1 1.1-2.3H16a5 5 0 0 0 0-10H12z"
+      />
+      <circle cx="7.5" cy="10" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="10.5" cy="7.2" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="14.2" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="7.8" cy="13.5" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconLiberMark({ size = 28 }: { size?: number }) {
   return (
     <svg

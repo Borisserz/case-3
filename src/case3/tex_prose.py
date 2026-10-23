@@ -4,6 +4,73 @@ from __future__ import annotations
 
 import re
 
+# LLM often closes \\textbf{…} with Markdown ** — microtype then sees \\par
+# inside an unfinished argument (Runaway argument / MT@prot@check@F@).
+_TEXTBF_MARKDOWN_CLOSE = re.compile(
+    r"\\textbf\{([^{}\n]*?)\*\*(?!\*)",
+)
+_MARKDOWN_BOLD = re.compile(r"(?<!\\)\*\*([^*\n]{1,200}?)\*\*")
+
+
+_ITEM_OR_END = re.compile(r"\n[ \t]*\\(item|end|begin|section|subsection|chapter)\b")
+
+
+def fix_unclosed_textbf(tex: str) -> str:
+    """Close ``\\textbf{…`` that never gets ``}`` before next ``\\item`` / env / EOF.
+
+    LLM often drops the closing brace mid-question; microtype then runaway-parses
+    into the rest of the document (``MT@prot@check@F@`` / fake enumerate error).
+    """
+    if not tex or r"\textbf{" not in tex:
+        return tex
+    out: list[str] = []
+    i = 0
+    needle = r"\textbf{"
+    while i < len(tex):
+        if tex.startswith(needle, i):
+            out.append(needle)
+            i += len(needle)
+            depth = 1
+            while i < len(tex) and depth > 0:
+                ch = tex[i]
+                if ch == "{":
+                    depth += 1
+                    out.append(ch)
+                    i += 1
+                elif ch == "}":
+                    depth -= 1
+                    out.append(ch)
+                    i += 1
+                elif ch == "\n" and depth == 1:
+                    # Next structural token → close bold before it.
+                    if _ITEM_OR_END.match(tex, i) or tex.startswith("\n\n", i):
+                        out.append("}")
+                        depth = 0
+                        break
+                    out.append(ch)
+                    i += 1
+                else:
+                    out.append(ch)
+                    i += 1
+            if depth > 0:
+                out.append("}")
+        else:
+            out.append(tex[i])
+            i += 1
+    return "".join(out)
+
+
+def fix_markdown_bold_leaks(tex: str) -> str:
+    """Repair ``\\textbf{…**``, leftover ``**…**``, and unclosed ``\\textbf{``."""
+    if not tex:
+        return tex
+    out = tex
+    if "**" in out:
+        out = _TEXTBF_MARKDOWN_CLOSE.sub(r"\\textbf{\1}", out)
+        out = _MARKDOWN_BOLD.sub(r"\\textbf{\1}", out)
+    return fix_unclosed_textbf(out)
+
+
 # Environments whose body must not be rewritten.
 _SKIP_ENVS = (
     "itemize",

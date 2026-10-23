@@ -1,0 +1,22 @@
+{
+  "id": "performance",
+  "label": "Performance",
+  "blurb": "Signal → spend/return → channels → campaigns → reallocation → roadmap",
+  "default_pack": "signal",
+  "tone": "dark",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "chart_hero",
+    "scorecard",
+    "chart_split",
+    "table_hero",
+    "card_row",
+    "table_hero",
+    "callout",
+    "bullets",
+    "card_row",
+    "closing"
+  ]
+}

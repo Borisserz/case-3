@@ -18,6 +18,7 @@ import type { ImageEditRequest } from "./ImageEditModal";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { ExportMenu } from "./ExportMenu";
+import { PresentationPane } from "./PresentationPane";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
 import { SourcePane } from "./SourcePane";
@@ -32,7 +33,7 @@ const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
 );
 
-export type ArtifactTab = "preview" | "pdf" | "source" | "diagram";
+export type ArtifactTab = "preview" | "pdf" | "source" | "diagram" | "presentation";
 
 export type ActiveArtifact =
   | {
@@ -63,6 +64,16 @@ type ReportBundle = {
   runId?: string;
   warnings?: string[];
   diagrams?: DiagramInfo[];
+  slidesStatus?: string | null;
+  slidesStage?: string | null;
+  slidesError?: string | null;
+  slidePngs?: string[];
+  deck?: import("./deckTypes").DeckIR | null;
+  deckPdfMode?: string | null;
+  onDeckUpdated?: (
+    deck: import("./deckTypes").DeckIR,
+    slidePngs: string[],
+  ) => void;
 };
 
 type Props = {
@@ -89,6 +100,8 @@ type Props = {
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
+  onMakePresentation?: () => void;
+  makingPresentation?: boolean;
 };
 
 export function ArtifactRail({
@@ -114,6 +127,8 @@ export function ArtifactRail({
   onEditFigure,
   onEditImage,
   onEditCancel,
+  onMakePresentation,
+  makingPresentation = false,
 }: Props) {
   const reduceMotion = useReducedMotion();
   const tab = artifact.tab;
@@ -130,6 +145,18 @@ export function ArtifactRail({
   const hasPreview = Boolean(report?.preview?.blocks?.length);
   const hasPdf = Boolean(report?.downloads?.pdf);
   const hasDiagrams = diagrams.length > 0;
+  const slidesStatus = isReport ? report?.slidesStatus || null : null;
+  const hasPresentationTab =
+    isReport &&
+    Boolean(
+      slidesStatus === "ok" ||
+        slidesStatus === "running" ||
+        slidesStatus === "queued" ||
+        slidesStatus === "error" ||
+        makingPresentation ||
+        (report?.slidePngs && report.slidePngs.length > 0) ||
+        onMakePresentation,
+    );
   const hasSource = Boolean(
     (sourceText && sourceText.length > 0) ||
       artifact.kind === "source" ||
@@ -174,16 +201,22 @@ export function ArtifactRail({
       { id: "preview", label: "Превью", show: isReport && hasPreview },
       { id: "pdf", label: "PDF", show: isReport && hasPdf },
       { id: "diagram", label: "Схема", show: isReport && hasDiagrams },
+      {
+        id: "presentation",
+        label: "Презентация",
+        show: Boolean(hasPresentationTab),
+      },
       { id: "source", label: "Source", show: hasSource },
     ];
     return all.filter((t) => t.show);
-  }, [isReport, hasPreview, hasPdf, hasDiagrams, hasSource]);
+  }, [isReport, hasPreview, hasPdf, hasDiagrams, hasPresentationTab, hasSource]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       // Diagram fullscreen owns Esc while open.
       if (document.querySelector(".diagram-fullscreen")) return;
+      if (document.querySelector(".presentation-fullscreen")) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -546,6 +579,22 @@ export function ArtifactRail({
                     onPageChange={(p) => setPdfPage(p)}
                   />
                 </Suspense>
+              ) : null}
+
+              {!showDiagramSurface && tab === "presentation" && report?.runId ? (
+                <PresentationPane
+                  runId={report.runId}
+                  slidePngs={report.slidePngs || []}
+                  deck={report.deck}
+                  status={report.slidesStatus}
+                  stage={report.slidesStage}
+                  error={report.slidesError}
+                  downloads={report.downloads}
+                  deckPdfMode={report.deckPdfMode}
+                  onMakePresentation={onMakePresentation}
+                  making={makingPresentation}
+                  onDeckUpdated={report.onDeckUpdated}
+                />
               ) : null}
 
               {!showDiagramSurface && tab === "source" ? (

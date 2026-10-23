@@ -1,0 +1,21 @@
+{
+  "id": "workshop",
+  "label": "Workshop",
+  "blurb": "Goals → agenda → exercises → outputs → parking lot → follow-ups",
+  "default_pack": "relay",
+  "tone": "light",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "bullets",
+    "table_hero",
+    "card_row",
+    "card_row",
+    "callout",
+    "card_row",
+    "bullets",
+    "table_hero",
+    "closing"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "qbr",
+  "label": "QBR",
+  "blurb": "Thesis → scorecard → funnel charts → wins/misses → Q+1 plan → ask",
+  "default_pack": "relay",
+  "tone": "light",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "scorecard",
+    "chart_hero",
+    "chart_split",
+    "chart_hero",
+    "callout",
+    "card_row",
+    "bullets",
+    "table_hero",
+    "card_row",
+    "closing"
+  ]
+}

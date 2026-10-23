@@ -1,0 +1,365 @@
+/* —— Image edit sheet (same shell as chart-edit) —— */
+.img-edit-sheet {
+  background:
+    radial-gradient(ellipse 80% 40% at 100% 0%, rgba(200, 220, 240, 0.45), transparent 55%),
+    var(--sheet);
+}
+
+.img-edit-preview-inline {
+  margin: 0 0 0.85rem;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  max-height: 140px;
+  background: var(--paper);
+}
+
+.img-edit-preview-inline img {
+  display: block;
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+}
+
+.img-edit-modes {
+  margin-top: 0.35rem;
+}
+
+.img-edit-textarea {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  min-height: 4.5rem;
+  margin-top: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  font: inherit;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.img-edit-textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 1px;
+}
+
+/* Photo regen animation */
+.fig-photo-spin {
+  width: min(160px, 55%);
+  aspect-ratio: 4 / 3;
+}
+
+.fig-photo-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--rule));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--secondary) 80%, var(--sheet)),
+      var(--sheet) 55%,
+      color-mix(in srgb, var(--primary) 12%, var(--sheet))
+    );
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: fig-photo-pulse 1.6s ease-in-out infinite;
+}
+
+.fig-photo-shutter {
+  position: absolute;
+  inset: 18% 14%;
+  border-radius: 6px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--rule));
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  animation: fig-shutter 1.45s ease-in-out infinite;
+}
+
+.fig-photo-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ink) 18%, transparent) 0.6px,
+    transparent 0.7px
+  );
+  background-size: 4px 4px;
+  animation: fig-grain 0.9s steps(2) infinite;
+}
+
+@keyframes fig-photo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: saturate(1);
+  }
+  50% {
+    transform: scale(1.02);
+    filter: saturate(1.15);
+  }
+}
+
+@keyframes fig-shutter {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scaleY(1);
+  }
+  45% {
+    opacity: 0.15;
+    transform: scaleY(0.08);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes fig-grain {
+  to {
+    transform: translate(1px, -1px);
+  }
+}
+
+/* ——— Settings modal (chat-first) ——— */
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(20, 22, 26, 0.38);
+  backdrop-filter: blur(5px);
+  animation: lb-fade 0.2s ease-out;
+}
+
+.settings-modal-sheet {
+  width: min(520px, 100%);
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
+  border-radius: calc(var(--radius) + 2px);
+  border: 1px solid color-mix(in srgb, var(--foil) 40%, var(--rule));
+  background:
+    radial-gradient(ellipse 90% 50% at 0% 0%, rgba(228, 237, 208, 0.7), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, var(--foil-soft), transparent 50%),
+    var(--sheet);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+  animation: report-in 0.35s var(--ease-out);
+}
+
+.settings-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.15rem 1.2rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.settings-modal-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.settings-modal-title {
+  margin: 0.2rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.settings-modal-x {
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.settings-modal-x:hover {
+  background: var(--secondary);
+  border-color: var(--primary);
+  color: var(--ink);
+}
+
+.settings-modal-body {
+  overflow: auto;
+  padding: 0.85rem 1.2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.settings-block-title {
+  margin: 0 0 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.settings-block .field {
+  margin-top: 0.55rem;
+}
+
+.settings-modal-foot {
+  padding: 0.75rem 1.2rem 1rem;
+  border-top: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--secondary) 18%, var(--sheet));
+}
+
+.settings-modal-done {
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  min-height: 2.55rem;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(63, 82, 16, 0.25);
+}
+
+.settings-modal-done:hover {
+  background: var(--primary-hover);
+}
+
+@media (max-width: 520px) {
+  .composer {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
+/* Julius-like deck export sheet */
+.deck-export-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(12, 14, 16, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+.deck-export-sheet {
+  width: min(92vw, 420px);
+  max-height: min(88vh, 720px);
+  overflow: auto;
+  border-radius: 18px;
+  background: var(--sheet, #fffcf7);
+  border: 1px solid var(--border);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+  padding: 1rem 1.1rem 1.15rem;
+}
+.deck-export-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.deck-export-sheet-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.deck-export-sheet-close {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+}
+.deck-export-sheet-preview {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #fff;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 0.9rem;
+}
+.deck-export-sheet-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.deck-export-sheet-count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(15, 17, 20, 0.72);
+  color: #fffcf7;
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+.deck-export-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.deck-export-sheet-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--sheet));
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.deck-export-sheet-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 6%, var(--sheet));
+}
+.deck-export-sheet-item.is-primary {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--sheet));
+}
+.deck-export-sheet-item-kicker {
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.deck-export-sheet-item-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.deck-export-sheet-item-meta {
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.deck-export-sheet-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}

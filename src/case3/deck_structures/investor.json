@@ -1,0 +1,22 @@
+{
+  "id": "investor",
+  "label": "Investor Update",
+  "blurb": "One-liner → growth engines → quality → GTM → cash → risks → ask",
+  "default_pack": "botanical",
+  "tone": "dark",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "chart_hero",
+    "scorecard",
+    "kpi_row",
+    "chart_split",
+    "card_row",
+    "scorecard",
+    "bullets",
+    "card_row",
+    "callout",
+    "closing"
+  ]
+}

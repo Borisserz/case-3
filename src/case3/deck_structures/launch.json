@@ -1,0 +1,22 @@
+{
+  "id": "launch",
+  "label": "Product Launch",
+  "blurb": "Story → product → audience → channels → goals → investment → decision",
+  "default_pack": "botanical",
+  "tone": "dark",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "section",
+    "media_hero",
+    "callout",
+    "card_row",
+    "media_split",
+    "section",
+    "card_row",
+    "scorecard",
+    "table_hero",
+    "bullets",
+    "closing"
+  ]
+}

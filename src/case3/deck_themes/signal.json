@@ -1,0 +1,38 @@
+{
+  "id": "signal",
+  "label": "Bold Signal",
+  "colors": {
+    "primary": "#202020",
+    "accent": "#FF5B23",
+    "ink": "#F7F5F0",
+    "ink2": "#B6B6B0",
+    "muted": "#B6B6B0",
+    "paper": "#2C2C2C",
+    "sheet": "#202020",
+    "rule": "#3A3A3A",
+    "foil": "#FF5B23",
+    "background": "#202020",
+    "text": "#F7F5F0",
+    "panel": "#2C2C2C"
+  },
+  "fonts": {
+    "title": "Arial",
+    "body": "Arial",
+    "fallback_pptx": "Arial"
+  },
+  "chart_series": ["#FF5B23", "#F7F5F0", "#B6B6B0", "#FF8A5B", "#4A4A4A"],
+  "table": {
+    "header_fill": "#FF5B23",
+    "header_ink": "#202020",
+    "body_fill": "#2C2C2C",
+    "grid": "#3A3A3A"
+  },
+  "brand_mark": "BOLD SIGNAL",
+  "motif": {
+    "atmosphere": "dark",
+    "hero_bleed": true,
+    "foil_cards": true,
+    "card_fill": "#2C2C2C",
+    "panels": ["#2C2C2C", "#323232", "#3A3A3A", "#282828"]
+  }
+}

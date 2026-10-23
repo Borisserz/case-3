@@ -1,0 +1,521 @@
+"""On-demand Liber deck job: LLM IR → PNG capture → image PPTX + deck PDF."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Any, Callable
+
+from case3.chart_style import normalize_palette_id
+from case3.deck_theme import resolve_deck_theme
+from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.slides_chart_data import series_from_figures_json
+from case3.slides_lo import write_deck_pdf
+from case3.slides_pptx_native import build_native_pptx
+from case3.slides_ir import DeckIrError, parse_deck_ir
+from case3.slides_media import (
+    collect_run_media,
+    ensure_diagram_pngs,
+    load_figures_json,
+    numbers_from_media_json,
+)
+from case3.slides_render import render_deck_pngs
+
+log = logging.getLogger("case3.slides_job")
+
+_JSON_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.I)
+_META_WRITE = Callable[[dict[str, Any]], None]
+
+
+def _repo_root() -> Path:
+    here = Path(__file__).resolve()
+    cand = here.parents[2]
+    if (cand / "Dockerfile").is_file() or (cand / "prompt").is_dir():
+        return cand
+    return Path.cwd()
+
+
+def _ids_block(ids: list[str], *, empty: str) -> str:
+    return ", ".join(ids) if ids else empty
+
+
+def _media_catalog_block(out_dir: Path) -> str:
+    """Human catalog so LLM titles match real chart/figure/diagram captions."""
+    fj = load_figures_json(out_dir)
+    lines: list[str] = []
+    for ch in fj.get("charts") or []:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        if not cid:
+            continue
+        cap = str(ch.get("caption") or "").strip() or "(no caption)"
+        ctype = str(ch.get("type") or "").strip()
+        lines.append(f"- chart {cid} [{ctype}]: {cap}")
+    for fig in fj.get("figures") or []:
+        if not isinstance(fig, dict):
+            continue
+        fid = str(fig.get("id") or "").strip()
+        if not fid:
+            continue
+        cap = str(fig.get("caption") or "").strip() or "(no caption)"
+        lines.append(f"- figure {fid}: {cap}")
+    for dia in fj.get("diagrams") or []:
+        if not isinstance(dia, dict):
+            continue
+        did = str(dia.get("id") or "").strip()
+        if not did:
+            continue
+        title = str(dia.get("title") or dia.get("caption") or "").strip() or "(no title)"
+        dtype = str(dia.get("type") or "").strip()
+        lines.append(f"- diagram {did} [{dtype}]: {title}")
+    return "\n".join(lines) if lines else "(no media catalog)"
+
+
+def _theme_overlay(theme_pack: str | None) -> str:
+    """Optional visual/tone overlay from prompt/themes/slides_{pack}.md."""
+    from case3.deck_theme import normalize_pack_id
+
+    pack = normalize_pack_id(theme_pack)
+    path = _repo_root() / "prompt" / "themes" / f"slides_{pack}.md"
+    if not path.is_file():
+        path = _repo_root() / "prompt" / "themes" / "slides_atelier.md"
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def load_slides_system_prompt(
+    *,
+    palette: str,
+    chart_ids: list[str],
+    figure_ids: list[str],
+    diagram_ids: list[str],
+    intent: str,
+    source: str,
+    media_catalog: str = "",
+    theme_pack: str | None = None,
+    structure_id: str | None = None,
+) -> str:
+    from case3.deck_structure import structure_overlay
+
+    path = _repo_root() / "prompt" / "system_slides.md"
+    text = path.read_text(encoding="utf-8")
+    overlay = _theme_overlay(theme_pack)
+    struct = structure_overlay(structure_id)
+    return (
+        text.replace("{{PALETTE}}", palette)
+        .replace("{{THEME_OVERLAY}}", overlay)
+        .replace("{{STRUCTURE_OVERLAY}}", struct)
+        .replace(
+            "{{CHART_IDS}}",
+            _ids_block(chart_ids, empty="(none — do not use chart_hero / chart_split)"),
+        )
+        .replace(
+            "{{FIGURE_IDS}}",
+            _ids_block(figure_ids, empty="(none — no photos)"),
+        )
+        .replace(
+            "{{DIAGRAM_IDS}}",
+            _ids_block(diagram_ids, empty="(none — no diagrams)"),
+        )
+        .replace("{{MEDIA_CATALOG}}", media_catalog or "(no media catalog)")
+        .replace("{{INTENT}}", intent or "")
+        .replace("{{SOURCE}}", source or "")
+    )
+
+
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    text = (raw or "").strip()
+    m = _JSON_FENCE.search(text)
+    if m:
+        text = m.group(1).strip()
+    # Find outermost {…}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        raise DeckIrError("LLM response has no JSON object")
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError as exc:
+        raise DeckIrError(f"invalid JSON from LLM: {exc}") from exc
+    if not isinstance(data, dict):
+        raise DeckIrError("deck IR root must be object")
+    return data
+
+
+def _read_meta(out_dir: Path) -> dict[str, Any]:
+    path = out_dir / "meta.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_meta(out_dir: Path, meta: dict[str, Any], logs_dir: Path | None = None) -> None:
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    if logs_dir is not None:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
+
+
+def _set_slides(
+    out_dir: Path,
+    meta: dict[str, Any],
+    *,
+    status: str,
+    stage: str,
+    error: str | None = None,
+    logs_dir: Path | None = None,
+) -> None:
+    meta["slides_status"] = status
+    meta["slides_stage"] = stage
+    if error is not None:
+        meta["slides_error"] = error
+    elif "slides_error" in meta and status == "ok":
+        meta["slides_error"] = None
+    _write_meta(out_dir, meta, logs_dir)
+
+
+def _load_source_and_intent(out_dir: Path, meta: dict[str, Any]) -> tuple[str, str]:
+    intent = str(meta.get("intent") or "")
+    source = ""
+    src_meta = meta.get("source")
+    if isinstance(src_meta, str) and src_meta.strip():
+        p = Path(src_meta)
+        if p.is_file():
+            source = p.read_text(encoding="utf-8")
+    if not source:
+        for cand in out_dir.glob("*.txt"):
+            if cand.name.endswith(".raw_model.txt"):
+                continue
+            source = cand.read_text(encoding="utf-8")
+            break
+    if not source.strip():
+        # Last resort: copy from uploads path pattern in meta
+        raise RuntimeError("Source text not found for slides job")
+    return source, intent
+
+
+def _chart_ids_and_pngs(out_dir: Path, meta: dict[str, Any]) -> tuple[list[str], dict[str, Path]]:
+    planned = [str(x) for x in (meta.get("charts_planned") or []) if x]
+    figs = out_dir / "figures"
+    by_id: dict[str, Path] = {}
+    for cid in planned:
+        png = figs / f"{cid}.png"
+        if png.is_file():
+            by_id[cid] = png
+    # Also scan figures.json charts list
+    fj = out_dir / "figures.json"
+    if fj.is_file():
+        try:
+            data = json.loads(fj.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        for ch in data.get("charts") or []:
+            if not isinstance(ch, dict):
+                continue
+            cid = str(ch.get("id") or "")
+            if not cid:
+                continue
+            if cid not in planned:
+                planned.append(cid)
+            png = figs / f"{cid}.png"
+            if png.is_file():
+                by_id[cid] = png
+    return planned, by_id
+
+
+def _stem_from_out(out_dir: Path, meta: dict[str, Any]) -> str:
+    for art in sorted(out_dir.glob("*.pdf")):
+        name = art.name
+        if name.endswith("_deck.pdf"):
+            continue
+        return art.stem
+    for art in sorted(out_dir.glob("*.tex")):
+        return art.stem
+    return str(meta.get("run_id") or out_dir.name)
+
+
+def run_slides_job(
+    run_id: str,
+    *,
+    root: Path | None = None,
+    llm: LLMClient | None = None,
+    skip_llm_ir: dict[str, Any] | None = None,
+) -> None:
+    """Generate deck artifacts under ``runs/out/{run_id}/``. Soft-fail into slides_* meta."""
+    root = Path(root) if root is not None else _repo_root()
+    out_dir = (root / "runs" / "out" / run_id).resolve()
+    logs_dir = root / "runs" / "logs" / run_id
+    if not out_dir.is_dir() or not (out_dir / "meta.json").is_file():
+        raise FileNotFoundError(f"run out missing: {out_dir}")
+
+    meta = _read_meta(out_dir)
+    if meta.get("status") != "ok":
+        raise RuntimeError("report run is not ok")
+
+    _set_slides(out_dir, meta, status="running", stage="queued", logs_dir=logs_dir)
+    try:
+        source, intent = _load_source_and_intent(out_dir, meta)
+        (
+            chart_ids,
+            figure_ids,
+            diagram_ids,
+            png_by_id,
+            diagram_specs,
+        ) = collect_run_media(out_dir, meta)
+        palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
+        if palette == "auto":
+            palette = "atelier"
+        from case3.chart_style import palette_from_intent
+
+        parsed = palette_from_intent(intent)
+        if parsed and parsed != "auto":
+            palette = parsed
+
+        # Deck theme (Julius parity) — does not mutate report chart_palette.
+        style_meta = meta.get("slides_style") if isinstance(meta.get("slides_style"), dict) else {}
+        theme_pack = str(
+            style_meta.get("theme_pack")
+            or meta.get("slides_theme_pack")
+            or "atelier"
+        )
+        style_settings = style_meta.get("style_settings")
+        if not isinstance(style_settings, dict):
+            style_settings = None
+        theme_tokens = resolve_deck_theme(theme_pack, style_settings=style_settings)
+        structure_id = str(
+            style_meta.get("structure_id")
+            or meta.get("slides_structure_id")
+            or ""
+        ).strip() or None
+
+        allowed_media = frozenset(chart_ids + figure_ids + diagram_ids)
+        allowed_numbers = numbers_from_media_json(load_figures_json(out_dir))
+
+        _set_slides(out_dir, meta, status="running", stage="llm", logs_dir=logs_dir)
+        if skip_llm_ir is not None:
+            raw_ir = skip_llm_ir
+            deck = parse_deck_ir(
+                raw_ir,
+                source=source,
+                allowed_media_ids=allowed_media,
+                allowed_number_strings=allowed_numbers,
+            )
+        else:
+            system = load_slides_system_prompt(
+                palette=palette,
+                chart_ids=chart_ids,
+                figure_ids=figure_ids,
+                diagram_ids=diagram_ids,
+                intent=intent,
+                source=source,
+                media_catalog=_media_catalog_block(out_dir),
+                theme_pack=theme_tokens.pack_id,
+                structure_id=structure_id,
+            )
+            user = (
+                "Build the executive deck JSON now. "
+                "Follow STRUCTURE overlay arc when present (different templates ≠ only colors). "
+                "Prefer 10–12 slides when Source is rich; use section/scorecard/callout/table_hero when they fit. "
+                "Use available chart/figure/diagram ids only. "
+                "Numbers only from Source or chart captions. "
+                "Return only the JSON object."
+            )
+            client = llm or LLMClient(LLMConfig.from_env())
+            raw_text = client.complete(system=system, user_text=user, reasoning="off")
+            raw_ir = _extract_json_object(raw_text)
+            try:
+                deck = parse_deck_ir(
+                    raw_ir,
+                    source=source,
+                    allowed_media_ids=allowed_media,
+                    allowed_number_strings=allowed_numbers,
+                )
+            except DeckIrError as first_err:
+                log.warning("deck IR rejected, retrying once: %s", first_err)
+                _set_slides(
+                    out_dir, meta, status="running", stage="llm_retry", logs_dir=logs_dir
+                )
+                retry_user = (
+                    f"Previous JSON was rejected: {first_err}. "
+                    "Fix and return ONLY a valid deck JSON. "
+                    "Use available media ids; numbers only from Source/charts; "
+                    "bullets ≤90 chars; title first, closing last."
+                )
+                raw_text = client.complete(
+                    system=system, user_text=retry_user, reasoning="off"
+                )
+                raw_ir = _extract_json_object(raw_text)
+                deck = parse_deck_ir(
+                    raw_ir,
+                    source=source,
+                    allowed_media_ids=allowed_media,
+                    allowed_number_strings=allowed_numbers,
+                )
+        # Freeze theme into IR (overwrite any LLM paint fields).
+        deck["theme_id"] = theme_tokens.pack_id
+        deck["style"] = theme_tokens.as_dict()
+        deck["palette"] = palette
+
+        _materialize_deck_artifacts(
+            out_dir,
+            meta,
+            deck=deck,
+            palette=palette,
+            chart_ids=chart_ids,
+            png_by_id=png_by_id,
+            diagram_specs=diagram_specs,
+            logs_dir=logs_dir,
+        )
+        log.info(
+            "slides ok run_id=%s slides=%s",
+            run_id,
+            (meta.get("slides_artifacts") or {}).get("png_count"),
+        )
+    except (DeckIrError, LLMError, LLMConfigError, OSError, RuntimeError, ValueError) as exc:
+        log.exception("slides failed run_id=%s", run_id)
+        meta = _read_meta(out_dir)
+        _set_slides(
+            out_dir,
+            meta,
+            status="error",
+            stage="error",
+            error=str(exc),
+            logs_dir=logs_dir,
+        )
+
+
+def _materialize_deck_artifacts(
+    out_dir: Path,
+    meta: dict[str, Any],
+    *,
+    deck: dict[str, Any],
+    palette: str,
+    chart_ids: list[str],
+    png_by_id: dict[str, Path],
+    diagram_specs: dict[str, dict[str, str]] | None,
+    logs_dir: Path | None,
+) -> None:
+    """Write deck.json + PNG twin + native PPTX + deck PDF."""
+    slides_dir = out_dir / "slides"
+    slides_dir.mkdir(parents=True, exist_ok=True)
+    (slides_dir / "deck.json").write_text(
+        json.dumps(deck, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    needed_dias: set[str] = set()
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        if s.get("layout") in ("media_hero", "media_split"):
+            mid = str(s.get("media_id") or "")
+            if mid.startswith("dia_"):
+                needed_dias.add(mid)
+
+    _set_slides(out_dir, meta, status="running", stage="diagrams", logs_dir=logs_dir)
+    media_map = dict(png_by_id)
+    if needed_dias:
+        dia_pngs = ensure_diagram_pngs(
+            diagram_specs or {},
+            dest_dir=slides_dir / "diagrams",
+            palette=palette,
+            needed_ids=needed_dias,
+        )
+        media_map.update(dia_pngs)
+
+    _set_slides(out_dir, meta, status="running", stage="render", logs_dir=logs_dir)
+    work_root = slides_dir / "work"
+    pngs = render_deck_pngs(
+        deck,
+        work_root=work_root,
+        out_dir=slides_dir,
+        media_png_by_id=media_map,
+    )
+    if not pngs:
+        raise RuntimeError("no slide PNGs produced")
+
+    _set_slides(out_dir, meta, status="running", stage="pptx", logs_dir=logs_dir)
+    stem = _stem_from_out(out_dir, meta)
+    pptx_path = out_dir / f"{stem}_slides.pptx"
+    pdf_path = out_dir / f"{stem}_deck.pdf"
+    tmp_pptx = out_dir / f".{stem}_slides.pptx.tmp"
+    tmp_pdf = out_dir / f".{stem}_deck.pdf.tmp"
+    fj = load_figures_json(out_dir)
+    chart_series: dict[str, dict[str, Any]] = {}
+    for cid in chart_ids:
+        ir = series_from_figures_json(fj, cid)
+        if ir:
+            chart_series[cid] = ir
+    build_native_pptx(
+        deck,
+        tmp_pptx,
+        media_by_id=media_map,
+        chart_series_by_id=chart_series,
+    )
+    # Julius path: LO-convert native PPTX → PDF; PNG stitch if soffice missing.
+    _, pdf_mode = write_deck_pdf(tmp_pptx, pngs, tmp_pdf)
+    tmp_pptx.replace(pptx_path)
+    tmp_pdf.replace(pdf_path)
+
+    meta["slides_artifacts"] = {
+        "pptx": pptx_path.name,
+        "deck_pdf": pdf_path.name,
+        "deck_pdf_mode": pdf_mode,
+        "ir": "slides/deck.json",
+        "png_count": len(pngs),
+    }
+    _set_slides(out_dir, meta, status="ok", stage="ok", logs_dir=logs_dir)
+
+
+def rebuild_slides_from_deck(
+    run_id: str,
+    deck: dict[str, Any],
+    *,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Re-render PPTX + twin PNGs/PDF from an already-validated deck IR (no LLM)."""
+    root = Path(root) if root is not None else _repo_root()
+    out_dir = (root / "runs" / "out" / run_id).resolve()
+    logs_dir = root / "runs" / "logs" / run_id
+    meta = _read_meta(out_dir)
+    if meta.get("status") != "ok":
+        raise RuntimeError("report run is not ok")
+    (
+        chart_ids,
+        _figure_ids,
+        _diagram_ids,
+        png_by_id,
+        diagram_specs,
+    ) = collect_run_media(out_dir, meta)
+    palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
+    if palette == "auto":
+        palette = "atelier"
+    # Keep frozen style from deck if present.
+    if not isinstance(deck.get("style"), dict):
+        style_meta = meta.get("slides_style") if isinstance(meta.get("slides_style"), dict) else {}
+        theme_tokens = resolve_deck_theme(
+            str(style_meta.get("theme_pack") or "atelier"),
+            style_settings=style_meta.get("style_settings")
+            if isinstance(style_meta.get("style_settings"), dict)
+            else None,
+        )
+        deck = dict(deck)
+        deck["theme_id"] = theme_tokens.pack_id
+        deck["style"] = theme_tokens.as_dict()
+    _materialize_deck_artifacts(
+        out_dir,
+        meta,
+        deck=deck,
+        palette=palette,
+        chart_ids=chart_ids,
+        png_by_id=png_by_id,
+        diagram_specs=diagram_specs,
+        logs_dir=logs_dir,
+    )
+    return _read_meta(out_dir)

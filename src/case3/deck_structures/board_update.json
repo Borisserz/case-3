@@ -1,0 +1,22 @@
+{
+  "id": "board_update",
+  "label": "Board Update",
+  "blurb": "Scorecard → ARR → retention → GTM → cash → Q+1 plan → decisions",
+  "default_pack": "board",
+  "tone": "dark",
+  "slides": [10, 12],
+  "arc": [
+    "title",
+    "scorecard",
+    "chart_hero",
+    "table_hero",
+    "chart_split",
+    "table_hero",
+    "card_row",
+    "chart_hero",
+    "table_hero",
+    "card_row",
+    "callout",
+    "closing"
+  ]
+}

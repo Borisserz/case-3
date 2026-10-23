@@ -66,6 +66,7 @@ L3  Долгосрочная память  docs/adr · .agents/knowledge · docs
 | Plan | `docs/superpowers/plans/` |
 
 Активный UX: soft-premium shell — [`specs/2026-10-21-liber-soft-premium-ui-design.md`](superpowers/specs/2026-10-21-liber-soft-premium-ui-design.md) · ADR-0006.  
+Premium refactor (полный desk): [`specs/2026-10-22-liber-premium-ui-refactor-design.md`](superpowers/specs/2026-10-22-liber-premium-ui-refactor-design.md) · [`plans/2026-10-22-liber-premium-ui-refactor.md`](superpowers/plans/2026-10-22-liber-premium-ui-refactor.md).  
 Parked backlog: [`plans/2026-10-20-liber-ux-polish-roadmap.md`](superpowers/plans/2026-10-20-liber-ux-polish-roadmap.md).
 
 ---
@@ -81,7 +82,7 @@ Parked backlog: [`plans/2026-10-20-liber-ux-polish-roadmap.md`](superpowers/plan
 | Inline схемы в Preview | spec+plan `liber-inline-preview-diagrams` (после Liber refactor: `liberTypes` / rail) |
 | Фото / Image API | KI-image-api → ADR-0004 → specs image-api |
 | Деплой на винду | knowledge/ops-windows.md |
-| «Почему не PPTX» | knowledge/parked-pptx.md |
+| Презентация / PPTX deck | ADR-0008 · KI-liber-deck · structures `2026-10-22-liber-deck-structures-design` (arc ≠ colors) · Julius UX parity · packs + **structure_id** |
 | Полный аудит / top-10 probes | [`docs/audits/`](audits/) |
 
 ---

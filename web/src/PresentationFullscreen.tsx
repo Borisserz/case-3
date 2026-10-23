@@ -1,0 +1,202 @@
+/** Fullscreen Liber deck — PNG or live twin (Julius Present: click-advance, idle chrome). */
+
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
+import { DeckCanvas } from "./DeckCanvas";
+import type { DeckIR } from "./deckTypes";
+import { useFocusTrap } from "./useFocusTrap";
+
+type Props = {
+  slides: string[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+  deck?: DeckIR | null;
+  runId?: string;
+};
+
+const IDLE_MS = 2200;
+
+export function PresentationFullscreen({
+  slides,
+  index,
+  onIndex,
+  onClose,
+  deck = null,
+  runId = "",
+}: Props) {
+  const reduce = useReducedMotion();
+  const live = Boolean(deck?.slides?.length);
+  const n = live ? deck!.slides.length : slides.length;
+  const safe = n ? Math.min(Math.max(index, 0), n - 1) : 0;
+  const src = !live && n ? slides[safe] : null;
+  const [dir, setDir] = useState(0);
+  const [chromeOn, setChromeOn] = useState(true);
+  const idleTimer = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, { active: true });
+
+  const bumpChrome = useCallback(() => {
+    setChromeOn(true);
+    if (idleTimer.current) window.clearTimeout(idleTimer.current);
+    idleTimer.current = window.setTimeout(() => setChromeOn(false), IDLE_MS);
+  }, []);
+
+  const go = useCallback(
+    (delta: number) => {
+      if (!n) return;
+      setDir(delta >= 0 ? 1 : -1);
+      onIndex((safe + delta + n) % n);
+      bumpChrome();
+    },
+    [bumpChrome, n, onIndex, safe],
+  );
+
+  useEffect(() => {
+    bumpChrome();
+    return () => {
+      if (idleTimer.current) window.clearTimeout(idleTimer.current);
+    };
+  }, [bumpChrome]);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      bumpChrome();
+      if (e.key === "Escape") onClose();
+      if (!n) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        go(-1);
+      }
+      if (e.key === "ArrowRight" || e.key === " ") {
+        e.preventDefault();
+        go(1);
+      }
+    };
+    const onMove = () => bumpChrome();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, [bumpChrome, go, n, onClose]);
+
+  const variants = reduce
+    ? { enter: { opacity: 1 }, center: { opacity: 1 }, exit: { opacity: 1 } }
+    : {
+        enter: (d: number) => ({ opacity: 0, x: d >= 0 ? 40 : -40 }),
+        center: { opacity: 1, x: 0 },
+        exit: (d: number) => ({ opacity: 0, x: d >= 0 ? -36 : 36 }),
+      };
+
+  const onStageClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!n) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    // Left third = back; rest = forward (Julius-style click advance).
+    if (x < rect.width * 0.28) go(-1);
+    else go(1);
+  };
+
+  return createPortal(
+    <motion.div
+      ref={dialogRef}
+      className={`presentation-fullscreen${chromeOn ? " is-chrome" : " is-idle"}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Презентация"
+      onClick={onClose}
+      initial={reduce ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <div
+        className="presentation-fullscreen-sheet"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header
+          className="presentation-fullscreen-head"
+          aria-hidden={!chromeOn}
+        >
+          <span className="presentation-fullscreen-count">
+            {n ? `${safe + 1} / ${n}` : "—"}
+          </span>
+          <button
+            type="button"
+            className="presentation-fullscreen-close"
+            onClick={onClose}
+          >
+            Esc
+          </button>
+        </header>
+        <div
+          className="presentation-fullscreen-stage"
+          onClick={onStageClick}
+          role="presentation"
+          title="Клик: вперёд · левая треть: назад"
+        >
+          <AnimatePresence mode="wait" custom={dir}>
+            <motion.div
+              key={live ? deck!.slides[safe]?.id : src || safe}
+              className="presentation-fullscreen-frame"
+              custom={dir}
+              variants={variants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {live && deck && runId ? (
+                <DeckCanvas
+                  runId={runId}
+                  deck={deck}
+                  index={safe}
+                  editing={false}
+                  onDeckChange={() => undefined}
+                  onPatch={async () => undefined}
+                />
+              ) : src ? (
+                <img src={src} alt="" className="presentation-fullscreen-img" />
+              ) : null}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        <div
+          className="presentation-fullscreen-nav"
+          aria-hidden={!chromeOn}
+        >
+          <button
+            type="button"
+            onClick={() => go(-1)}
+            aria-label="Назад"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            onClick={() => go(1)}
+            aria-label="Вперёд"
+          >
+            →
+          </button>
+        </div>
+        <p className="presentation-fullscreen-hint" aria-hidden={!chromeOn}>
+          Клик / Space · Esc выход
+        </p>
+      </div>
+    </motion.div>,
+    document.body,
+  );
+}

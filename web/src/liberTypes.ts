@@ -56,6 +56,16 @@ export type RunResult = {
   media_status?: Record<string, unknown>;
   chat_summary?: string;
   summary_status?: string | null;
+  slides_status?: string | null;
+  slides_stage?: string | null;
+  slides_error?: string | null;
+  slide_pngs?: string[];
+  /** How deck PDF was built: `lo` (LibreOffice) or `png_stitch`. */
+  deck_pdf_mode?: string | null;
+  /** Live deck IR for editable twin canvas */
+  deck?: import("./deckTypes").DeckIR | null;
+  /** Liber composer mode that produced this run */
+  output_mode?: string;
   error?: string;
   detail?: string;
 };

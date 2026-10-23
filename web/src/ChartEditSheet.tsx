@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChartTypeChip, type ChartTypeId } from "./ChartTypePreview";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type PaletteInfo = {
   id: string;
@@ -64,6 +65,8 @@ export function ChartEditSheet({
   const [styleNotes, setStyleNotes] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const previewSeq = useRef(0);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(sheetRef, { active: open });
 
   useEffect(() => {
     if (!open) return;
@@ -151,7 +154,12 @@ export function ChartEditSheet({
   }
 
   return (
-    <div className="chart-edit-sheet" role="region" aria-label="Изменить график">
+    <div
+      ref={sheetRef}
+      className="chart-edit-sheet"
+      role="region"
+      aria-label="Изменить график"
+    >
       <header className="chart-edit-head">
         <div>
           <p className="chart-edit-eyebrow">

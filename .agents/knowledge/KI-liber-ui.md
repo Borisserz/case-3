@@ -9,7 +9,10 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - `ChatMessages.tsx` / `ChatComposer.tsx` / `ComposerPhotoChips.tsx` — transcript + composer UI
 - `useLiberDevPreviews.ts` — `?preview=artifact|flow` bootstraps
 - `Sidebar.tsx` — New / History (sessionStorage) / Settings; collapse
-- `EmptyState.tsx` — hero + ≤3 prompts
+- `EmptyState.tsx` — «Чем займёмся?»; empty desk uses `is-empty-home` (composer centered mid-viewport like Julius)
+- `liberModes.ts` + `ChatComposer` pills: Отчёт · Схема · Презентация — **остаются** после первого сообщения; gallery только empty∧presentation; стиль → `DeckStyleSheet`
+- Template apply: **только** pack+structure (не DNA-промпт в чат); honesty «пример · 6 кадров / 10–12 в деке»; presentation send требует Source или brief ≥48 символов
+- `output_mode=presentation` → `formats=none` (без PDF/DOCX) + после run сразу `makePresentation` и rail tab «Презентация»
 - `ThinkingFold.tsx` + `pipelinePhrases.ts` — collapsible «Размышления» in bot bubble (Flow above); no ThinkingBar; phrases from large pools, seeded per run (`thinkingStartedAt`) so logs don’t repeat the same sequence
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
@@ -31,8 +34,16 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Attach `.txt/.md` or intent >400 chars → plaque + Source tab
 - Rail width persisted in `localStorage` key `liber-rail-width` (dblclick reset)
 - Close rail: keep `activeArtifact` until width→0 (`railExiting` + `onClosed`); don’t null early (snaps user bubble). Guard `onAnimationComplete` until width &lt; 32px.
-- Soft-green tokens in `styles.css`; PDF = print truth (rail hint)
+- Soft-green tokens in `web/src/styles/tokens.css` (split: shell/chat/composer/deck/rail/presentation/modals); PDF = print truth (rail hint)
+- Premium UI refactor 2026-10-22: empty-home desk scrolls; composer send right; deck style only via `DeckStyleSheet`; template gallery Julius-stage mocks; `useFocusTrap` on modals/FS
+- Template preview 2026-10-22: modal = **6-slide vertical scroll**; **PNG-first** Liber twins only (`scripts/render_template_previews.py` → `web/public/deck/previews/{structureId}/01–06.png`); Julius refs = style DNA, not gallery screenshots; CSS mock = fallback
+- Craft floor = botanical (wine): board/signal/atelier now have `motif.foil_cards` + `panels` + `table.body_fill` (`deck_theme` passes through); foil chrome via `_foil_cards()` not botanical-only
+- Specs: `2026-10-22-liber-template-preview-6slides-design.md` · `2026-10-22-liber-template-parity-botanical-bar-design.md`
+- Spec/plan: `docs/superpowers/specs/2026-10-22-liber-premium-ui-refactor-design.md` · `docs/superpowers/plans/2026-10-22-liber-premium-ui-refactor.md`
 - Diagrams are Liber-only (`RunResult.diagrams`); never TeX-injected; Settings «Схемы» 0–3; client PNG download
+- Composer mode **Схема** → `output_mode=diagram` + `formats=none` (no PDF/DOCX); rail opens «Схема» + chat summary as short description
+- Spec: `docs/superpowers/specs/2026-10-22-liber-composer-modes-design.md`
+- Focused workbench: rail default ~62%; card has no Export (rail only); Presentation CTA primary — `docs/superpowers/specs/2026-10-22-liber-focused-workbench-design.md`
 - Schema tab: hint «Только в Liber»; zoom ± / % / Ctrl+wheel + pan; PNG via viewBox + slug(title); fullscreen has own SVG ref
 
 ## Gotchas

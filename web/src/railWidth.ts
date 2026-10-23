@@ -1,9 +1,10 @@
 /** Persistable Artifact rail width (% of desk-split). */
 
 export const RAIL_WIDTH_KEY = "liber-rail-width";
-export const RAIL_WIDTH_DEFAULT = 55;
-export const RAIL_WIDTH_MIN = 34;
-export const RAIL_WIDTH_MAX = 70;
+/** Focused workbench: artifact dominates; chat is the assistant strip. */
+export const RAIL_WIDTH_DEFAULT = 62;
+export const RAIL_WIDTH_MIN = 40;
+export const RAIL_WIDTH_MAX = 74;
 
 export function clampRailWidth(n: number): number {
   return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(n)));
@@ -15,6 +16,8 @@ export function loadRailWidth(): number {
     if (!raw) return RAIL_WIDTH_DEFAULT;
     const n = Number(raw);
     if (!Number.isFinite(n)) return RAIL_WIDTH_DEFAULT;
+    // Migrate prior default (55) → focused-workbench default (62).
+    if (n === 55) return RAIL_WIDTH_DEFAULT;
     return clampRailWidth(n);
   } catch {
     return RAIL_WIDTH_DEFAULT;

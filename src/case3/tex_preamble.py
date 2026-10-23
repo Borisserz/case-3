@@ -635,9 +635,10 @@ def ensure_document_preamble(tex: str) -> str:
     out = harden_wide_tables(out)
     out = harden_tabularx_colcount(out)
     out = strip_orphan_table_markup(out)
-    from case3.tex_prose import harden_prose_lists
+    from case3.tex_prose import fix_markdown_bold_leaks, harden_prose_lists
     from case3.tex_tables import harden_table_rules
 
+    out = fix_markdown_bold_leaks(out)
     out = harden_prose_lists(out)
     return harden_table_rules(out)
 

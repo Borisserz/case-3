@@ -1,6 +1,7 @@
 /** Liber Atelier — report limits + desk health (chart type/style live in edit sheet). */
 
 import { useEffect, useId, useRef } from "react";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type HealthSnapshot = {
   docker_ok: boolean;
@@ -49,7 +50,8 @@ export function SettingsModal({
   paradeHint,
 }: Props) {
   const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, { active: open });
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +61,6 @@ export function SettingsModal({
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panelRef.current?.querySelector<HTMLElement>("input,button")?.focus();
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
@@ -70,6 +71,7 @@ export function SettingsModal({
 
   return (
     <div
+      ref={dialogRef}
       className="settings-modal"
       role="dialog"
       aria-modal="true"
@@ -78,7 +80,7 @@ export function SettingsModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="settings-modal-sheet" ref={panelRef}>
+      <div className="settings-modal-sheet">
         <header className="settings-modal-head">
           <div>
             <p className="settings-modal-eyebrow">atelier · настройки</p>

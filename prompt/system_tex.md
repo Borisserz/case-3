@@ -227,14 +227,29 @@ Only: `bar`, `grouped_bar`, `stacked_bar`, `line`, `horizontal_bar`, `donut`, `k
 Synonyms: pie/круговая/doughnut → `donut`; column/столбцы → `bar`; тренд → `line`; топ-N → `horizontal_bar`; одна цифра → `kpi`.  
 Never emit non-catalog `type`.
 
-## Image API `figures` (photos / illustrations)
+## Image API `figures` (photos / illustrations) — **default ON**
 
-- Use when Intent asks for a photo/illustration **or** Source describes a **concrete visual scene/object/place/process** (not bare numbers).
-- If Intent says «сгенерируй фото / иллюстрацию / рисунок» → emit up to {{MAX_IMAGES}} `figures` with rich English prompts matching that request (still respect the ceiling).
+`{{MAX_IMAGES}}` is a **ceiling**. Showcase Liber: when the budget is ≥ 1, **prefer emitting useful photos** over leaving `"figures": []`.
+
+### Default-on rule (mandatory when {{MAX_IMAGES}} ≥ 1)
+
+Emit **at least one** figure if Source/Intent has **any** of:
+
+- a place, object, product, workplace, tool, or scene a reader can picture;
+- people / roles in a setting (without inventing identifiable faces of real people);
+- process / craft / environment that a photo would clarify better than prose;
+- Intent asks for photo / illustration / рисунок / визуал.
+
+Prefer **{{MAX_IMAGES}} strong figures** when Source has enough distinct visual hooks; otherwise 1 good photo beats 2 generic ones.
+
+Only skip (`"figures": []`) when **all** hold: budget is 0, **or** Intent says «без фото» / «без иллюстраций», **or** Source is pure abstract numbers/tables with **no** scene/object/place to show.
+
+- If Intent says «сгенерируй фото…» → emit up to {{MAX_IMAGES}} with rich English prompts matching that request.
 - `caption`: Russian, what the reader sees.
 - `prompt`: **English only**, high-quality photographic style: subject, setting, lighting, lens feel; no Cyrillic; no watermark; no tiny text overlays; no charts/tables of numbers; no logos unless Source requires.
 - Prefer photorealistic clarity suitable for print (A4). One clear subject per figure.
 - Never use figures for KPI/number comparisons — those are `charts`.
+- Place each `%CASE3_FIG:id%` slot near the prose it illustrates (not dumped at the end).
 - If {{MAX_IMAGES}} is 0 → `"figures": []`, no `%CASE3_FIG:%` slots.
 
 ## Mermaid `diagrams` (Liber UI only) — **default ON**
@@ -266,7 +281,7 @@ First line of `mermaid` **must** match type:
 
 | type | first line starts with |
 |------|-------------------------|
-| flowchart | `flowchart TD` / `flowchart LR` (not `graph` — write `flowchart`) |
+| flowchart | `flowchart LR` or `flowchart TD` (not `graph` — write `flowchart`). For Liber deck: TD if ≤5 steps (fills height); LR for wide pipelines |
 | sequence | `sequenceDiagram` |
 | mindmap | `mindmap` |
 | timeline | `timeline` |

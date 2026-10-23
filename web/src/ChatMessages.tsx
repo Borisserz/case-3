@@ -6,6 +6,7 @@ import { ContextPlaque } from "./ContextPlaque";
 import { EmptyState } from "./EmptyState";
 import { IconCopy, IconLiberMark } from "./icons";
 import { LONG_TEXT_CHARS } from "./liberConstants";
+import type { LiberWorkMode } from "./liberModes";
 import type { Msg, RunResult, SourceAttachment } from "./liberTypes";
 import { reportThumb, reportTitle } from "./liberRunHelpers";
 import { MsgMarkdown } from "./lightMd";
@@ -17,15 +18,18 @@ type Props = {
   reduceMotion: boolean | null;
   hasStoredReport: boolean;
   thinkingLabel?: string;
+  workMode?: LiberWorkMode;
   downloadsPulseMsgId: string | null;
   messagesRef: React.RefObject<HTMLDivElement | null>;
   bottomRef: React.RefObject<HTMLDivElement | null>;
   onRestore: () => void;
-  onPrompt: (text: string) => void;
   onOpenSource: (draft: SourceAttachment) => void;
   onOpenIntent: (text: string) => void;
   onOpenReport: (msgId: string, result: RunResult) => void;
   onOpenDiagram: (msgId: string, result: RunResult, diagramId: string) => void;
+  onMakePresentation: (msgId: string, result: RunResult) => void;
+  onOpenPresentation: (msgId: string, result: RunResult) => void;
+  onDeckStyle?: () => void;
 };
 
 export function ChatMessages({
@@ -33,15 +37,18 @@ export function ChatMessages({
   reduceMotion,
   hasStoredReport,
   thinkingLabel,
+  workMode = null,
   downloadsPulseMsgId,
   messagesRef,
   bottomRef,
   onRestore,
-  onPrompt,
   onOpenSource,
   onOpenIntent,
   onOpenReport,
   onOpenDiagram,
+  onMakePresentation,
+  onOpenPresentation,
+  onDeckStyle,
 }: Props) {
   return (
     <div className="messages" ref={messagesRef}>
@@ -51,14 +58,16 @@ export function ChatMessages({
             <EmptyState
               hasStoredReport={hasStoredReport}
               onRestore={onRestore}
-              onPrompt={onPrompt}
+              workMode={workMode}
             />
           )}
         {msgs.map((m, mi) => {
           const hasArtifact =
             m.role === "bot" &&
             Boolean(
-              m.result?.preview?.blocks?.length || m.result?.downloads?.pdf,
+              m.result?.preview?.blocks?.length ||
+                m.result?.downloads?.pdf ||
+                (m.result?.diagrams && m.result.diagrams.length > 0),
             );
           const userLong =
             m.role === "user" &&
@@ -134,9 +143,36 @@ export function ChatMessages({
                       pulse={downloadsPulseMsgId === m.id}
                       updated={downloadsPulseMsgId === m.id}
                       diagrams={m.result.diagrams}
-                      onView={() => onOpenReport(m.id, m.result!)}
+                      slidesStatus={m.result.slides_status}
+                      slidePngs={m.result.slide_pngs}
+                      onView={() => {
+                        const r = m.result!;
+                        const diagramOnly =
+                          r.output_mode === "diagram" ||
+                          (!r.downloads?.pdf && Boolean(r.diagrams?.length));
+                        if (diagramOnly && r.diagrams?.[0]) {
+                          onOpenDiagram(m.id, r, r.diagrams[0].id);
+                        } else {
+                          onOpenReport(m.id, r);
+                        }
+                      }}
                       onOpenDiagram={(id) =>
                         onOpenDiagram(m.id, m.result!, id)
+                      }
+                      onMakePresentation={
+                        m.result.output_mode === "diagram"
+                          ? undefined
+                          : () => onMakePresentation(m.id, m.result!)
+                      }
+                      onOpenPresentation={
+                        m.result.output_mode === "diagram"
+                          ? undefined
+                          : () => onOpenPresentation(m.id, m.result!)
+                      }
+                      onDeckStyle={
+                        m.result.output_mode === "diagram"
+                          ? undefined
+                          : onDeckStyle
                       }
                     />
                     {m.result.warnings?.length ? (

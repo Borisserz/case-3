@@ -25,6 +25,7 @@ import {
   FALLBACK_TYPES,
   LONG_TEXT_CHARS,
 } from "./liberConstants";
+import { modeToOutputMode, type LiberWorkMode } from "./liberModes";
 import {
   appendBotThinking,
   formatApiDetailError,
@@ -52,6 +53,15 @@ import {
   pushHistory,
   saveRunPayload,
 } from "./reportHistory";
+import { DeckStyleSheet } from "./DeckStyleSheet";
+import {
+  deckStyleToApiPayload,
+  loadDeckStyle,
+  saveDeckStyle,
+  type DeckStyle,
+  type DeckThemePackInfo,
+  FALLBACK_DECK_PACKS,
+} from "./deckStyle";
 import { SettingsModal } from "./SettingsModal";
 import { Sidebar, type HistoryItem } from "./Sidebar";
 import { loadRailWidth } from "./railWidth";
@@ -70,9 +80,10 @@ export default function App() {
   const docTitle = "";
   const [maxCharts, setMaxCharts] = useState(2);
   const [maxDiagrams, setMaxDiagrams] = useState(2);
-  const [maxImages, setMaxImages] = useState(0);
+  const [maxImages, setMaxImages] = useState(2);
   const [forbidCharts, setForbidCharts] = useState(false);
-  const [forbidImages, setForbidImages] = useState(true);
+  /** Photos on by default; health may raise budget / confirm Image API. */
+  const [forbidImages, setForbidImages] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [chat, setChat] = useState("");
   /** Liber-attached photos for document slots or chat-only /edit */
@@ -95,6 +106,12 @@ export default function App() {
   const [downloadsPulseMsgId, setDownloadsPulseMsgId] = useState<string | null>(
     null,
   );
+  const [deckStyle, setDeckStyle] = useState<DeckStyle>(() => loadDeckStyle());
+  const [deckStyleOpen, setDeckStyleOpen] = useState(false);
+  const [workMode, setWorkMode] = useState<LiberWorkMode>(null);
+  const [deckApplyHint, setDeckApplyHint] = useState<string | null>(null);
+  const [deckPacks, setDeckPacks] =
+    useState<DeckThemePackInfo[]>(FALLBACK_DECK_PACKS);
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -166,6 +183,28 @@ export default function App() {
             docker_error: "API unreachable — scripts\\api.cmd на :8000",
           });
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/deck-themes")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`deck-themes ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const packs = data?.packs;
+        if (Array.isArray(packs) && packs.length) {
+          setDeckPacks(packs as DeckThemePackInfo[]);
+        }
+      })
+      .catch(() => {
+        /* keep FALLBACK_DECK_PACKS */
       });
     return () => {
       cancelled = true;
@@ -402,6 +441,164 @@ export default function App() {
     });
   }
 
+  function openPresentationArtifact(msgId: string, result: RunResult) {
+    openReportArtifact(msgId, result, "presentation");
+  }
+
+  async function makePresentation(msgId: string, result: RunResult) {
+    const runId = result.run_id;
+    if (!runId) return;
+    openReportArtifact(msgId, result, "presentation");
+    setMsgs((m) =>
+      m.map((msg) => {
+        if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+        return {
+          ...msg,
+          result: {
+            ...msg.result,
+            slides_status: "queued",
+            slides_stage: "queued",
+            slides_error: null,
+          },
+        };
+      }),
+    );
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/slides`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(deckStyleToApiPayload(deckStyle)),
+        },
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 202) {
+        throw new Error(
+          typeof body.detail === "string"
+            ? body.detail
+            : body.error || res.statusText,
+        );
+      }
+      const deadline = Date.now() + 10 * 60 * 1000;
+      for (;;) {
+        if (Date.now() > deadline) {
+          throw new Error("таймаут сборки презентации (10 мин)");
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        const st = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/status`,
+        );
+        const stBody = await st.json().catch(() => ({}));
+        if (!st.ok) {
+          throw new Error(
+            typeof stBody.detail === "string"
+              ? stBody.detail
+              : stBody.error || st.statusText,
+          );
+        }
+        const slidesStatus = (stBody.slides_status as string) || "idle";
+        const slidesStage = (stBody.slides_stage as string) || null;
+        const slidesError = (stBody.slides_error as string) || null;
+        const downloads = (stBody.downloads || {}) as Record<string, string>;
+        if (slidesStatus === "ok" || slidesStatus === "error") {
+          let slidePngs: string[] = [];
+          let deckIr: RunResult["deck"] = null;
+          let deckPdfMode: string | null = null;
+          if (slidesStatus === "ok") {
+            const g = await fetch(
+              `/api/runs/${encodeURIComponent(runId)}/slides`,
+            );
+            const gBody = await g.json().catch(() => ({}));
+            if (g.ok && Array.isArray(gBody.slide_pngs)) {
+              slidePngs = gBody.slide_pngs as string[];
+            }
+            if (g.ok && gBody.deck) deckIr = gBody.deck;
+            if (g.ok && typeof gBody.deck_pdf_mode === "string") {
+              deckPdfMode = gBody.deck_pdf_mode;
+            }
+          }
+          if (!deckPdfMode) {
+            const art = stBody.slides_artifacts as
+              | { deck_pdf_mode?: string }
+              | undefined;
+            if (art && typeof art.deck_pdf_mode === "string") {
+              deckPdfMode = art.deck_pdf_mode;
+            }
+          }
+          setMsgs((m) =>
+            m.map((msg) => {
+              if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
+                return msg;
+              return {
+                ...msg,
+                result: {
+                  ...msg.result,
+                  downloads: { ...msg.result.downloads, ...downloads },
+                  slides_status: slidesStatus,
+                  slides_stage: slidesStage,
+                  slides_error: slidesError,
+                  slide_pngs: slidePngs,
+                  deck: deckIr ?? msg.result.deck,
+                  deck_pdf_mode: deckPdfMode ?? msg.result.deck_pdf_mode,
+                },
+              };
+            }),
+          );
+          if (slidesStatus === "ok") {
+            setDownloadsPulseMsgId(msgId);
+            window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
+            // Always surface the deck in the side rail when ready.
+            openReportArtifact(
+              msgId,
+              {
+                ...result,
+                downloads: { ...result.downloads, ...downloads },
+                slides_status: slidesStatus,
+                slides_stage: slidesStage,
+                slides_error: slidesError,
+                slide_pngs: slidePngs,
+                deck: deckIr,
+                deck_pdf_mode: deckPdfMode,
+              },
+              "presentation",
+            );
+          }
+          break;
+        }
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
+              return msg;
+            return {
+              ...msg,
+              result: {
+                ...msg.result,
+                slides_status: slidesStatus,
+                slides_stage: slidesStage,
+              },
+            };
+          }),
+        );
+      }
+    } catch (err) {
+      setMsgs((m) =>
+        m.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          return {
+            ...msg,
+            result: {
+              ...msg.result,
+              slides_status: "error",
+              slides_error:
+                err instanceof Error ? err.message : String(err),
+            },
+          };
+        }),
+      );
+    }
+  }
+
   function openSourceArtifact(draft: {
     title: string;
     text: string;
@@ -537,8 +734,14 @@ export default function App() {
     if (photoMode === "edit") {
       return attachPhotos.length > 0 && chat.trim().length > 0;
     }
-    return Boolean(file) || Boolean(sourceDraft?.text) || chat.trim().length > 0;
-  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft]);
+    const hasSource = Boolean(file) || Boolean(sourceDraft?.text);
+    const chatTrim = chat.trim();
+    // Presentation: need Source (file/paste) or a real brief — not empty Enter after template.
+    if (workMode === "presentation") {
+      return hasSource || chatTrim.length >= 48;
+    }
+    return hasSource || chatTrim.length > 0;
+  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft, workMode]);
 
   const capturePastedSource = useCallback((text: string) => {
     const trimmed = text.trim();
@@ -550,6 +753,7 @@ export default function App() {
     setFile(null);
     setSourceDraft(draft);
     setPlaqueDismissed(false);
+    setDeckApplyHint(null);
     setActiveArtifact({
       kind: "source",
       tab: "source",
@@ -569,6 +773,7 @@ export default function App() {
       ) {
         setFile(f);
         setPlaqueDismissed(false);
+        setDeckApplyHint(null);
         void (async () => {
           try {
             const text = await readTextFile(f);
@@ -616,6 +821,14 @@ export default function App() {
     const chatTrim = chat.trim();
     const draftSnap = sourceDraft;
     const hasSource = Boolean(file) || Boolean(draftSnap?.text);
+    if (workMode === "presentation" && !hasSource && chatTrim.length < 48) {
+      setDeckApplyHint(
+        "Добавьте Source (.txt/.md или длинную вставку) — шаблон уже выбран.",
+      );
+      setToast("Нужен Source для презентации");
+      window.setTimeout(() => setToast(null), 2800);
+      return;
+    }
     const intentText =
       photoMode === "edit"
         ? chatTrim
@@ -624,6 +837,7 @@ export default function App() {
           : chatTrim;
     if (photoMode === "edit" && !intentText) return;
     if (photoMode === "document" && !hasSource && !chatTrim) return;
+    setDeckApplyHint(null);
 
     const attachment: SourceAttachment | undefined = draftSnap?.text
       ? {
@@ -642,20 +856,30 @@ export default function App() {
             : file
               ? `Файл: ${file.name}`
               : chatTrim;
+    const outMode = modeToOutputMode(workMode);
     const userChips = [
       photoMode === "edit" ? "только правка фото" : null,
+      outMode === "diagram"
+        ? "схема"
+        : outMode === "presentation"
+          ? `презентация · ${deckStyle.themePack}`
+          : outMode === "report"
+            ? "отчёт"
+            : null,
       attachPhotos.length ? `фото ×${attachPhotos.length}` : null,
-      photoMode === "document" && forbidCharts
+      photoMode === "document" && outMode !== "diagram" && forbidCharts
         ? "без графиков"
-        : photoMode === "document"
+        : photoMode === "document" && outMode !== "diagram"
           ? `≤${maxCharts} гр.`
           : null,
-      photoMode === "document"
+      photoMode === "document" && outMode !== "diagram"
         ? forbidImages && !attachPhotos.length
           ? "без фото"
           : `≤${Math.max(maxImages, attachPhotos.length)} фото`
         : null,
-      photoMode === "document" ? `≤${maxDiagrams} схем` : null,
+      photoMode === "document"
+        ? `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`
+        : null,
       dryRun ? "dry-run" : null,
     ].filter((x): x is string => Boolean(x));
 
@@ -674,7 +898,13 @@ export default function App() {
           id: pendingId,
           role: "bot",
           text:
-            photoMode === "edit" ? "Править фото…" : "Генерирую документ…",
+            photoMode === "edit"
+              ? "Править фото…"
+              : outMode === "diagram"
+                ? "Собираю схему…"
+                : outMode === "presentation"
+                  ? "Собираю презентацию…"
+                  : "Генерирую документ…",
           pending: true,
           pendingStage: "queued",
           pendingDetail: null,
@@ -735,8 +965,20 @@ export default function App() {
         "forbid_images",
         String(forbidImages && photosSnapshot.length === 0),
       );
-      fd.append("formats", "both");
+      fd.append("output_mode", outMode);
+      fd.append("deck_pack", deckStyle.themePack || "atelier");
+      fd.append(
+        "formats",
+        outMode === "diagram" || outMode === "presentation" ? "none" : "both",
+      );
       fd.append("dry_run", String(dryRun));
+      if (outMode === "diagram") {
+        fd.set("max_charts", "0");
+        fd.set("max_images", "0");
+        fd.set("forbid_charts", "true");
+        fd.set("forbid_images", "true");
+        fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
+      }
     }
 
     try {
@@ -895,7 +1137,11 @@ export default function App() {
       }
 
       try {
-        if (result.preview?.blocks?.length) {
+        if (
+          result.preview?.blocks?.length ||
+          result.downloads?.pdf ||
+          (result.diagrams && result.diagrams.length > 0)
+        ) {
           rememberRun(result);
           setHasStoredReport(true);
         }
@@ -923,7 +1169,19 @@ export default function App() {
           };
         }),
       );
-      if (result.preview?.blocks?.length || result.downloads?.pdf) {
+      const isDiagramOnly =
+        result.output_mode === "diagram" ||
+        (workMode === "diagram" &&
+          Boolean(result.diagrams?.length) &&
+          !result.downloads?.pdf);
+      const isPresentationOnly =
+        outMode === "presentation" || result.output_mode === "presentation";
+      if (isPresentationOnly && result.run_id) {
+        openPresentationArtifact(pendingId, result);
+        void makePresentation(pendingId, result);
+      } else if (isDiagramOnly && result.diagrams?.length) {
+        openDiagramArtifact(pendingId, result, result.diagrams[0].id);
+      } else if (result.preview?.blocks?.length || result.downloads?.pdf) {
         openReportArtifact(pendingId, result);
       }
     } catch (err) {
@@ -1058,24 +1316,26 @@ export default function App() {
             <div
               className={`desk-split${railLayout && !narrowRail ? " is-open" : ""}`}
             >
-              <div className="desk chat-desk">
+              <div
+                className={`desk chat-desk${msgs.length === 0 ? " is-empty-home" : ""}`}
+              >
                 <ChatMessages
                   msgs={msgs}
                   reduceMotion={reduceMotion}
                   hasStoredReport={hasStoredReport}
                   thinkingLabel={thinkingLabel}
+                  workMode={workMode}
                   downloadsPulseMsgId={downloadsPulseMsgId}
                   messagesRef={messagesRef}
                   bottomRef={bottomRef}
                   onRestore={restoreLastReport}
-                  onPrompt={(text) => {
-                    setChat(text);
-                    window.setTimeout(() => chatRef.current?.focus(), 0);
-                  }}
                   onOpenSource={openSourceArtifact}
                   onOpenIntent={openIntentArtifact}
                   onOpenReport={openReportArtifact}
                   onOpenDiagram={openDiagramArtifact}
+                  onMakePresentation={makePresentation}
+                  onOpenPresentation={openPresentationArtifact}
+                  onDeckStyle={() => setDeckStyleOpen(true)}
                 />
 
                 <ChatComposer
@@ -1090,6 +1350,31 @@ export default function App() {
                   chatRef={chatRef}
                   fileRef={fileRef}
                   photoRef={photoRef}
+                  workMode={workMode}
+                  onWorkMode={(mode) => {
+                    setWorkMode(mode);
+                    if (mode !== "presentation") setDeckApplyHint(null);
+                  }}
+                  showModes
+                  showPackPresets={
+                    msgs.length === 0 && workMode === "presentation"
+                  }
+                  deckStyle={deckStyle}
+                  deckPacks={deckPacks}
+                  deckApplyHint={deckApplyHint}
+                  onDismissDeckApplyHint={() => setDeckApplyHint(null)}
+                  onUseDeckTemplate={(next, meta) => {
+                    setDeckStyle(next);
+                    saveDeckStyle(next);
+                    setDeckApplyHint(
+                      `Шаблон «${meta.title}» · ${next.themePack} · не отправлено — добавьте Source`,
+                    );
+                    setToast(`Взяли шаблон «${meta.title}»`);
+                    window.setTimeout(() => setToast(null), 2800);
+                    window.setTimeout(() => chatRef.current?.focus(), 0);
+                  }}
+                  onOpenDeckStyle={() => setDeckStyleOpen(true)}
+                  deckStyleOpen={deckStyleOpen}
                   onChatChange={setChat}
                   onPasteCapture={capturePastedSource}
                   onSend={() => void send()}
@@ -1125,6 +1410,32 @@ export default function App() {
                         runId: activeReport.run_id,
                         warnings: activeReport.warnings,
                         diagrams: activeReport.diagrams,
+                        slidesStatus: activeReport.slides_status,
+                        slidesStage: activeReport.slides_stage,
+                        slidesError: activeReport.slides_error,
+                        slidePngs: activeReport.slide_pngs,
+                        deck: activeReport.deck,
+                        deckPdfMode: activeReport.deck_pdf_mode,
+                        onDeckUpdated: (deck, pngs) => {
+                          if (!activeReportMsg || activeReportMsg.role !== "bot")
+                            return;
+                          const mid = activeReportMsg.id;
+                          setMsgs((m) =>
+                            m.map((msg) => {
+                              if (msg.id !== mid || msg.role !== "bot" || !msg.result)
+                                return msg;
+                              return {
+                                ...msg,
+                                result: {
+                                  ...msg.result,
+                                  deck,
+                                  slide_pngs: pngs,
+                                  slides_status: "ok",
+                                },
+                              };
+                            }),
+                          );
+                        },
                       }
                     : null
                 }
@@ -1162,6 +1473,19 @@ export default function App() {
                 onSelectDiagram={
                   railArtifact.kind === "report" ? selectDiagram : undefined
                 }
+                onMakePresentation={
+                  railArtifact.kind === "report" && activeReport
+                    ? () =>
+                        void makePresentation(
+                          railArtifact.msgId,
+                          activeReport,
+                        )
+                    : undefined
+                }
+                makingPresentation={
+                  activeReport?.slides_status === "queued" ||
+                  activeReport?.slides_status === "running"
+                }
                 onClose={closeArtifact}
                 onEditCancel={() => {
                   if (
@@ -1197,6 +1521,20 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      <DeckStyleSheet
+        open={deckStyleOpen}
+        style={deckStyle}
+        packs={deckPacks}
+        onChange={setDeckStyle}
+        onClose={() => setDeckStyleOpen(false)}
+        onSave={(s) => {
+          setDeckStyle(s);
+          saveDeckStyle(s);
+          setToast("Стиль презентации сохранён");
+          window.setTimeout(() => setToast(null), 2200);
+        }}
+      />
 
       <SettingsModal
         open={settingsOpen}

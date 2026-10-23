@@ -1,4 +1,4 @@
-/** Shared PDF / DOCX download dropdown (rail + chat card). */
+/** Shared download dropdown (rail + chat card): report PDF/DOCX + deck PPTX/PDF. */
 
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -9,6 +9,8 @@ type Props = {
   /** Compact label for cards */
   label?: string;
   pulse?: boolean;
+  /** From slides_artifacts: `lo` | `png_stitch` */
+  deckPdfMode?: string | null;
 };
 
 export function ExportMenu({
@@ -16,13 +18,22 @@ export function ExportMenu({
   className = "",
   label = "Export",
   pulse = false,
+  deckPdfMode = null,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const pdf = downloads?.pdf;
   const docx = downloads?.docx;
-  const hasAny = Boolean(pdf || docx);
+  const pptx = downloads?.pptx;
+  const deckPdf = downloads?.deck_pdf;
+  const hasAny = Boolean(pdf || docx || pptx || deckPdf);
+  const deckPdfLabel =
+    deckPdfMode === "lo"
+      ? "PDF презентации · LibreOffice"
+      : deckPdfMode === "png_stitch"
+        ? "PDF презентации · PNG stitch"
+        : "PDF презентации · twin";
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +81,7 @@ export function ExportMenu({
               className="export-menu-item"
               onClick={() => setOpen(false)}
             >
-              PDF
+              PDF отчёта
             </a>
           )}
           {docx && (
@@ -82,6 +93,33 @@ export function ExportMenu({
               onClick={() => setOpen(false)}
             >
               DOCX
+            </a>
+          )}
+          {pptx && (
+            <a
+              role="menuitem"
+              href={pptx}
+              download
+              className="export-menu-item"
+              onClick={() => setOpen(false)}
+            >
+              PPTX · визуальная истина
+            </a>
+          )}
+          {deckPdf && (
+            <a
+              role="menuitem"
+              href={deckPdf}
+              download
+              className="export-menu-item"
+              title={
+                deckPdfMode
+                  ? `deck_pdf_mode=${deckPdfMode}`
+                  : "PDF twin презентации"
+              }
+              onClick={() => setOpen(false)}
+            >
+              {deckPdfLabel}
             </a>
           )}
         </div>

@@ -7,6 +7,7 @@ import {
   downloadDiagramPng,
   slugDiagramFilename,
 } from "./downloadDiagramPng";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type DiagramInfo = {
   id: string;
@@ -22,8 +23,10 @@ type Props = {
 
 export function DiagramFullscreen({ diagram, onClose }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  useFocusTrap(dialogRef, { active: true });
 
   const onSvgReady = useCallback((el: SVGSVGElement | null) => {
     svgRef.current = el;
@@ -64,6 +67,7 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
 
   return createPortal(
     <div
+      ref={dialogRef}
       className="diagram-fullscreen"
       role="dialog"
       aria-modal="true"

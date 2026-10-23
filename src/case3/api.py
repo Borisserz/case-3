@@ -11,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -20,6 +20,7 @@ from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_ht
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
+from case3.deck_theme import list_public_packs, normalize_pack_id
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
@@ -74,6 +75,18 @@ def root() -> RedirectResponse:
 _CHART_TYPE_LIST = ", ".join(sorted(CHART_TYPES))
 
 
+def parse_formats_form(raw: str | None) -> set[str]:
+    """Parse formats form: pdf|docx|both|none. ``none`` → no print artifacts."""
+    fmt_raw = (raw or "both").strip().lower()
+    if fmt_raw == "both":
+        return {"pdf", "docx"}
+    if fmt_raw in {"pdf", "docx"}:
+        return {fmt_raw}
+    if fmt_raw in {"none", "diagram", "schemas"}:
+        return set()
+    raise ValueError("formats must be pdf|docx|both|none")
+
+
 def build_intent_from_ui(
     *,
     chat: str,
@@ -88,6 +101,8 @@ def build_intent_from_ui(
     chart_style: str = "",
     doc_title: str = "",
     max_diagrams: int = 2,
+    output_mode: str = "auto",
+    deck_pack: str = "",
 ) -> str:
     """Compose Intent from chat + UI controls.
 
@@ -97,12 +112,31 @@ def build_intent_from_ui(
     doc_title → forced \\title (also applied post-LLM).
     max_* are ceilings, not quotas.
     max_diagrams → Liber Mermaid schemas (UI-only); independent of charts.
+    output_mode → report|diagram|presentation|auto (Liber composer pills).
     """
     parts: list[str] = []
     chat = (chat or "").strip()
     if chat:
         parts.append(chat)
+    mode = (output_mode or "auto").strip().lower()
+    if mode not in {"report", "diagram", "presentation", "auto"}:
+        mode = "auto"
     req: list[str] = ["Требования UI:"]
+    if mode == "diagram":
+        req.append(
+            "- РЕЖИМ СХЕМА (output_mode=diagram): только Mermaid diagrams[] (1–3) "
+            "и короткий LaTeX-stub — \\title + 1–2 абзаца описания схем; "
+            "без таблиц KPI, без полного отчёта; PDF/DOCX не нужны"
+        )
+    elif mode == "presentation":
+        pack = (deck_pack or "").strip() or "atelier"
+        req.append(
+            f"- РЕЖИМ ПРЕЗЕНТАЦИЯ: без PDF/DOCX — сразу дек (pack «{pack}»). "
+            "Короткий LaTeX-stub + цифры/графики из Source; "
+            "takeaways и KPI слайдопригодные (slides job соберёт PPTX)"
+        )
+    elif mode == "report":
+        req.append("- РЕЖИМ ОТЧЁТ: полный PDF/DOCX как обычно")
     hints = (chart_hints or "").strip()
     clean = [t for t in chart_types if t in CHART_TYPES]
     auto = bool(chart_auto) or (not clean and not hints)
@@ -162,13 +196,16 @@ def build_intent_from_ui(
         req.append("- без фото/иллюстраций (figures: [])")
     else:
         req.append(
-            f"- до {max_images} фото/иллюстраций (figures): сцена/объект из Source "
-            "или явная просьба в Intent («сгенерируй фото…»)"
+            f"- до {max_images} фото/иллюстраций (figures); DEFAULT-ON: если в Source "
+            "есть место/объект/сцена/процесс/продукт — сделай ≥1 фото (лучше до "
+            f"{max_images}, если визуальных зацепок хватает); пустой figures[] только "
+            "при «без фото» в Intent или чисто числовом Source без сцены"
         )
         req.append(
             "- figures[].caption — русская подпись; "
             "figures[].prompt — English, photorealistic, detailed lighting/subject, "
-            "no Cyrillic/watermark/tiny text; не дублируй числами charts"
+            "no Cyrillic/watermark/tiny text; не дублируй числами charts; "
+            "слот %CASE3_FIG:id% рядом с абзацем, не в конце документа"
         )
     # Liber Mermaid — independent of charts/photos; default-on when budget ≥ 1.
     if md <= 0:
@@ -302,8 +339,24 @@ def _run_result_payload(
 ) -> dict[str, Any]:
     files: dict[str, str] = {}
     for art in out_dir.iterdir():
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            files[art.suffix.lower().lstrip(".")] = f"/api/runs/{run_id}/files/{art.name}"
+        if not art.is_file():
+            continue
+        suf = art.suffix.lower()
+        name = art.name
+        # Report PDF/DOCX only — never map *_deck.pdf onto key "pdf".
+        if suf == ".pdf" and not name.endswith("_deck.pdf"):
+            files["pdf"] = f"/api/runs/{run_id}/files/{name}"
+        elif suf == ".docx":
+            files["docx"] = f"/api/runs/{run_id}/files/{name}"
+
+    slides_art = meta.get("slides_artifacts") or {}
+    if isinstance(slides_art, dict):
+        pptx_name = slides_art.get("pptx")
+        deck_pdf_name = slides_art.get("deck_pdf")
+        if isinstance(pptx_name, str) and (out_dir / pptx_name).is_file():
+            files["pptx"] = f"/api/runs/{run_id}/files/{pptx_name}"
+        if isinstance(deck_pdf_name, str) and (out_dir / deck_pdf_name).is_file():
+            files["deck_pdf"] = f"/api/runs/{run_id}/files/{deck_pdf_name}"
 
     media = meta.get("media_status") or {}
     if not isinstance(media, dict):
@@ -349,6 +402,11 @@ def _run_result_payload(
         "preview": _build_preview_payload(run_id, out_dir, media),
         "chat_summary": chat_summary,
         "summary_status": summary_status or None,
+        "slides_status": meta.get("slides_status") or "idle",
+        "slides_stage": meta.get("slides_stage"),
+        "slides_error": meta.get("slides_error"),
+        "slides_artifacts": meta.get("slides_artifacts"),
+        "output_mode": meta.get("output_mode") or "auto",
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),
     }
@@ -514,6 +572,8 @@ async def api_run(
     formats: str = Form("both"),
     dry_run: str = Form("false"),
     photo_mode: str = Form("document"),
+    output_mode: str = Form("auto"),
+    deck_pack: str = Form(""),
     photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
 ) -> JSONResponse:
@@ -524,6 +584,11 @@ async def api_run(
     mode = (photo_mode or "document").strip().lower()
     if mode not in {"document", "edit"}:
         raise HTTPException(400, detail="photo_mode must be document|edit")
+    out_mode = (output_mode or "auto").strip().lower()
+    if out_mode not in {"report", "diagram", "presentation", "auto"}:
+        raise HTTPException(
+            400, detail="output_mode must be report|diagram|presentation|auto"
+        )
 
     if max_charts is None:
         max_charts = max_charts_from_env()
@@ -538,6 +603,17 @@ async def api_run(
     max_charts = max(0, min(int(max_charts), 8))
     max_images = max(0, min(int(max_images), 8))
     max_diagrams = max(0, min(int(max_diagrams), 3))
+    # Composer «Схема»: Mermaid + short prose only — no charts/photos/PDF.
+    if out_mode == "diagram":
+        max_charts = 0
+        max_images = 0
+        no_charts = True
+        no_images = True
+        max_diagrams = max(1, max_diagrams)
+        formats = "none"
+    # Composer «Презентация»: no print PDF/DOCX — slides job builds the deck.
+    if out_mode == "presentation":
+        formats = "none"
 
     # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
     upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
@@ -592,6 +668,8 @@ async def api_run(
         chart_palette=chart_palette or "atelier",
         chart_style=chart_style or "",
         doc_title=(doc_title or "").strip()[:200],
+        output_mode=out_mode,
+        deck_pack=(deck_pack or "").strip()[:40],
     )
     if user_figures:
         ids = ", ".join(f["id"] for f in user_figures)
@@ -604,13 +682,10 @@ async def api_run(
             + "- дополнительные fig_* через Image API только если остался бюджет картинок"
         )
 
-    fmt_raw = (formats or "both").strip().lower()
-    if fmt_raw == "both":
-        fmt_set = {"pdf", "docx"}
-    elif fmt_raw in {"pdf", "docx"}:
-        fmt_set = {fmt_raw}
-    else:
-        raise HTTPException(400, detail="formats must be pdf|docx|both")
+    try:
+        fmt_set = parse_formats_form(formats)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
 
     src_path = upload_dir / "source.txt"
 
@@ -634,6 +709,7 @@ async def api_run(
         "source": str(resolve_text_file(src_path)),
         "intent": full_intent,
         "formats": sorted(fmt_set),
+        "output_mode": out_mode,
         "dry_run": is_dry,
         "max_images": max_images,
         "max_charts": max_charts,
@@ -671,6 +747,7 @@ async def api_run(
             "run_id": run_id,
             "status": "started",
             "stage": "queued",
+            "output_mode": out_mode,
             "max_charts": max_charts,
             "max_images": max_images,
             "max_diagrams": max_diagrams,
@@ -1169,7 +1246,9 @@ def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
                 if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
             ]
             if failed:
-                warnings.append(f"figures failed/skipped: {', '.join(failed)}")
+                warnings.append(
+                    f"фото не сгенерировались (Image API): {', '.join(failed)}"
+                )
     c_planned = meta.get("charts_planned") or []
     if c_planned:
         failed_c = [
@@ -1204,12 +1283,254 @@ def _safe_run_file(run_id: str, *parts: str) -> Path:
 @app.get("/api/runs/{run_id}/files/{name}")
 def download_file(run_id: str, name: str) -> FileResponse:
     path = _safe_run_file(run_id, name)
-    media = "application/pdf" if path.suffix.lower() == ".pdf" else "application/octet-stream"
-    if path.suffix.lower() == ".docx":
+    suf = path.suffix.lower()
+    media = "application/octet-stream"
+    if suf == ".pdf":
+        media = "application/pdf"
+    elif suf == ".docx":
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    elif path.suffix.lower() == ".png":
+    elif suf == ".png":
         media = "image/png"
+    elif suf == ".pptx":
+        media = (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
     return FileResponse(path, media_type=media, filename=path.name)
+
+
+def _bg_run_slides(run_id: str) -> None:
+    from case3.slides_job import run_slides_job
+
+    try:
+        run_slides_job(run_id, root=ROOT)
+    except Exception:
+        log.exception("slides background job crashed run_id=%s", run_id)
+
+
+class SlidesStartBody(BaseModel):
+    theme_pack: str | None = Field(default=None)
+    structure_id: str | None = Field(default=None)
+    style_settings: dict[str, Any] | None = Field(default=None)
+
+
+@app.get("/api/deck-themes")
+def deck_themes() -> dict[str, Any]:
+    """Public catalog of Liber deck theme packs (deck-only)."""
+    from case3.deck_structure import list_structures
+
+    return {"packs": list_public_packs(), "structures": list_structures()}
+
+
+@app.post("/api/runs/{run_id}/slides")
+async def start_slides(
+    run_id: str,
+    background_tasks: BackgroundTasks,
+    body: SlidesStartBody | None = Body(default=None),
+) -> JSONResponse:
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    try:
+        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
+    if meta.get("status") != "ok":
+        raise HTTPException(409, detail="report run is not ok")
+    if meta.get("slides_status") == "running":
+        return JSONResponse(
+            {
+                "run_id": run_id,
+                "status": "started",
+                "slides_status": "running",
+                "slides_stage": meta.get("slides_stage") or "queued",
+            },
+            status_code=202,
+        )
+    from case3.deck_structure import normalize_structure_id
+
+    pack = normalize_pack_id((body.theme_pack if body else None) or "atelier")
+    structure_id = normalize_structure_id(body.structure_id if body else None)
+    settings = (body.style_settings if body else None) or None
+    if settings is not None and not isinstance(settings, dict):
+        settings = None
+    meta["slides_style"] = {
+        "theme_pack": pack,
+        "structure_id": structure_id,
+        "style_settings": settings,
+    }
+    meta["slides_theme_pack"] = pack
+    meta["slides_structure_id"] = structure_id
+    meta["slides_status"] = "queued"
+    meta["slides_stage"] = "queued"
+    meta["slides_error"] = None
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    logs = ROOT / "runs" / "logs" / run_id
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "meta.json").write_text(payload, encoding="utf-8")
+    async def _spawn_slides() -> None:
+        await asyncio.to_thread(_bg_run_slides, run_id)
+
+    background_tasks.add_task(_spawn_slides)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "queued",
+            "slides_stage": "queued",
+            "slides_style": meta["slides_style"],
+        },
+        status_code=202,
+    )
+
+
+@app.get("/api/runs/{run_id}/slides")
+def get_slides(run_id: str) -> dict[str, Any]:
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    deck = None
+    ir_path = out_dir / "slides" / "deck.json"
+    if ir_path.is_file():
+        try:
+            deck = json.loads(ir_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            deck = None
+    art = meta.get("slides_artifacts") or {}
+    downloads: dict[str, str] = {}
+    deck_pdf_mode: str | None = None
+    if isinstance(art, dict):
+        for key in ("pptx", "deck_pdf"):
+            name = art.get(key)
+            if isinstance(name, str) and (out_dir / name).is_file():
+                downloads[key] = f"/api/runs/{run_id}/files/{name}"
+        mode = art.get("deck_pdf_mode")
+        if isinstance(mode, str) and mode.strip():
+            deck_pdf_mode = mode.strip()
+    return {
+        "run_id": run_id,
+        "slides_status": meta.get("slides_status") or "idle",
+        "slides_stage": meta.get("slides_stage"),
+        "slides_error": meta.get("slides_error"),
+        "deck": deck,
+        "slide_pngs": [
+            f"/api/runs/{run_id}/slides/png/{p.name}"
+            for p in sorted((out_dir / "slides").glob("slide_*.png"))
+        ]
+        if (out_dir / "slides").is_dir()
+        else [],
+        "downloads": downloads,
+        "deck_pdf_mode": deck_pdf_mode,
+    }
+
+
+class SlidesIrPatchBody(BaseModel):
+    """Text-only IR patch — edit existing fields; no add/delete slides."""
+
+    slides: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@app.patch("/api/runs/{run_id}/slides/ir")
+async def patch_slides_ir(
+    run_id: str,
+    body: SlidesIrPatchBody,
+    background_tasks: BackgroundTasks,
+) -> JSONResponse:
+    """Patch deck text fields and rebuild native PPTX + twin preview."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    ir_path = out_dir / "slides" / "deck.json"
+    if not ir_path.is_file():
+        raise HTTPException(404, detail="deck IR not found — generate presentation first")
+    try:
+        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
+    if meta.get("status") != "ok":
+        raise HTTPException(409, detail="report run is not ok")
+    if meta.get("slides_status") == "running":
+        raise HTTPException(409, detail="slides job already running")
+    try:
+        deck = json.loads(ir_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt deck.json") from exc
+
+    from case3.slides_ir import DeckIrError
+    from case3.slides_job import rebuild_slides_from_deck
+    from case3.slides_patch import apply_deck_text_patch
+
+    try:
+        patched = apply_deck_text_patch(deck, {"slides": body.slides})
+    except DeckIrError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    meta["slides_status"] = "running"
+    meta["slides_stage"] = "patch"
+    meta["slides_error"] = None
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+
+    def _bg() -> None:
+        try:
+            rebuild_slides_from_deck(run_id, patched, root=ROOT)
+        except Exception:
+            log.exception("slides IR patch rebuild failed run_id=%s", run_id)
+            try:
+                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+                m["slides_status"] = "error"
+                m["slides_stage"] = "error"
+                m["slides_error"] = "rebuild after edit failed"
+                (out_dir / "meta.json").write_text(
+                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+    background_tasks.add_task(_bg)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "running",
+            "slides_stage": "patch",
+            "deck": patched,
+        },
+        status_code=202,
+    )
+
+
+@app.get("/api/runs/{run_id}/slides/png/{name}")
+def download_slide_png(run_id: str, name: str) -> FileResponse:
+    if not name.lower().endswith(".png") or not _FILE_OK.match(name):
+        raise HTTPException(400, detail="invalid png name")
+    path = _safe_run_file(run_id, "slides", name)
+    return FileResponse(path, media_type="image/png", filename=path.name)
+
+
+@app.get("/api/runs/{run_id}/slides/media/{name}")
+def download_slide_media(run_id: str, name: str) -> FileResponse:
+    """Chart/figure PNG from figures/, or diagram PNG from slides/diagrams/."""
+    if not name.lower().endswith(".png") or not _FILE_OK.match(name):
+        raise HTTPException(400, detail="invalid media name")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    for parts in (("figures", name), ("slides", "diagrams", name)):
+        try:
+            path = _safe_run_file(run_id, *parts)
+            return FileResponse(path, media_type="image/png", filename=path.name)
+        except HTTPException:
+            continue
+    raise HTTPException(404, detail="media not found")
 
 
 @app.get("/api/runs/{run_id}/figures/{name}")
