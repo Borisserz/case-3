@@ -18,4 +18,4 @@
 15. **PPTX Y ≈ 777240"** — `float(Inches(x))` is EMUs, not inches. Always `_as_inches` / `.inches` before arithmetic; PowerPoint then piles text top-left / “[Repaired]”.  
 16. **Dark deck tables white body** — never hardcode `#FFFFFF` body fill; use theme `table.body_fill` / panel (botanical `#243D32`) or light ink vanishes.  
 17. **Composer «Схема»** — `output_mode=diagram` + `formats=none` skips Docker TeX; only Mermaid + chat summary. Don’t expect PDF/DOCX keys.  
-18. **Presentation / diagram send** — do **not** gate on Source length or «≥48 chars». Template «Взять» fills composer with `starterPrompt`; empty chat still needs any non-empty brief or file.
+18. **Presentation / diagram send** — do **not** gate on Source length or «≥48 chars». Template «Взять» fills composer with `starterPrompt` **only if chat is empty**; otherwise keep user text. Empty chat still needs any non-empty brief or file.

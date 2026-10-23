@@ -1359,16 +1359,25 @@ export default function App() {
                     const prompt =
                       meta.starterPrompt ||
                       starterPromptForStructure(next.structureId);
-                    setChat(prompt);
+                    const chatEmpty = !chat.trim();
+                    if (chatEmpty) {
+                      setChat(prompt);
+                    }
                     setDeckApplyHint(null);
-                    setToast(`Шаблон «${meta.title}» — правьте текст и отправьте`);
+                    setToast(
+                      chatEmpty
+                        ? `Шаблон «${meta.title}» — правьте текст и отправьте`
+                        : `Шаблон «${meta.title}» · стиль применён, текст в чате не трогали`,
+                    );
                     window.setTimeout(() => setToast(null), 2800);
                     window.setTimeout(() => {
                       const el = chatRef.current;
                       if (!el) return;
                       el.focus();
-                      el.style.height = "auto";
-                      el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+                      if (chatEmpty) {
+                        el.style.height = "auto";
+                        el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+                      }
                     }, 0);
                   }}
                   onOpenDeckStyle={() => setDeckStyleOpen(true)}
