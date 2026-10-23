@@ -9,20 +9,31 @@ import type { DeckIR, DeckSlide } from "./deckTypes";
 import { ExportMenu } from "./ExportMenu";
 import { PresentationFullscreen } from "./PresentationFullscreen";
 
-function useElapsedSeconds(active: boolean): number {
-  const [sec, setSec] = useState(0);
+/** Survive tab switches: PresentationPane unmounts on Preview/PDF. */
+const slidesTimerStartedAt = new Map<string, number>();
+
+function useElapsedSeconds(active: boolean, runId: string): number {
+  const [sec, setSec] = useState(() => {
+    if (!active || !runId) return 0;
+    const t0 = slidesTimerStartedAt.get(runId);
+    return t0 ? Math.floor((Date.now() - t0) / 1000) : 0;
+  });
   useEffect(() => {
-    if (!active) {
+    if (!active || !runId) {
+      if (runId) slidesTimerStartedAt.delete(runId);
       setSec(0);
       return;
     }
-    setSec(0);
-    const t0 = Date.now();
-    const id = window.setInterval(() => {
-      setSec(Math.floor((Date.now() - t0) / 1000));
-    }, 500);
+    let t0 = slidesTimerStartedAt.get(runId);
+    if (t0 == null) {
+      t0 = Date.now();
+      slidesTimerStartedAt.set(runId, t0);
+    }
+    const tick = () => setSec(Math.floor((Date.now() - t0!) / 1000));
+    tick();
+    const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, [active, runId]);
   return sec;
 }
 
@@ -175,7 +186,7 @@ export function PresentationPane({
   );
 
   const pending = status === "running" || status === "queued" || making;
-  const elapsed = useElapsedSeconds(pending);
+  const elapsed = useElapsedSeconds(pending, runId);
   const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   if (pending) {
