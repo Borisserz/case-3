@@ -12,14 +12,14 @@ export const LIBER_MODE_PILLS: {
   {
     id: "presentation",
     label: "Презентация",
-    hint: "Только PPTX + PDF twin — без отчёта и схем",
+    hint: "Одна преза · PPTX и PDF — без отчёта и схем",
   },
 ];
 
 /** Visible nudge under pills on empty desk. */
 export function modeNudge(mode: LiberWorkMode): string {
   if (mode === "presentation") {
-    return "Только дек: PPTX + PDF twin. Без отчёта и схем Liber.";
+    return "Презентация: PPTX и PDF — одна преза, разные форматы.";
   }
   if (mode === "diagram") {
     return "Только схема Liber — без PDF/DOCX и презентации.";

@@ -144,7 +144,7 @@ function FolderBlock({
   items,
   folders,
   defaultOpen = false,
-  folderId,
+  folderId: _folderId,
   onOpenHistory,
   onTogglePin,
   onMoveToFolder,

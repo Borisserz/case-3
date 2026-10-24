@@ -13,6 +13,7 @@ from case3.chart_style import apply_hex_series_to_html, normalize_palette_id
 from case3.charts import render_chart_png
 from case3.deck_theme import normalize_pack_id, resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.run_cancel import RunCancelled, raise_if_cancelled
 from case3.slides_beat_planner import (
     format_beat_overlay,
     maybe_apply_pack_hint,
@@ -193,6 +194,8 @@ def _set_slides(
     error: str | None = None,
     logs_dir: Path | None = None,
 ) -> None:
+    if status == "running":
+        raise_if_cancelled(out_dir)
     meta["slides_status"] = status
     meta["slides_stage"] = stage
     if error is not None:
@@ -414,7 +417,15 @@ def run_slides_job(
                     log.warning("deck IR reject healed by scrub: %s", err)
                     return deck_h
 
-            raw_text = client.complete(system=system, user_text=user, reasoning="off")
+            def _cancel() -> None:
+                raise_if_cancelled(out_dir)
+
+            raw_text = client.complete(
+                system=system,
+                user_text=user,
+                reasoning="off",
+                cancel_check=_cancel,
+            )
             try:
                 raw_ir = _extract_json_object(raw_text)
                 deck = _parse_or_scrub(raw_ir)
@@ -439,7 +450,10 @@ def run_slides_job(
                     "Do not invent averages or deltas."
                 )
                 raw_text = client.complete(
-                    system=system, user_text=retry_user, reasoning="off"
+                    system=system,
+                    user_text=retry_user,
+                    reasoning="off",
+                    cancel_check=_cancel,
                 )
                 raw_ir = _extract_json_object(raw_text)
                 deck = _parse_or_scrub(raw_ir)
@@ -462,6 +476,17 @@ def run_slides_job(
             "slides ok run_id=%s slides=%s",
             run_id,
             (meta.get("slides_artifacts") or {}).get("png_count"),
+        )
+    except RunCancelled:
+        log.info("slides cancelled run_id=%s", run_id)
+        meta = _read_meta(out_dir)
+        _set_slides(
+            out_dir,
+            meta,
+            status="cancelled",
+            stage="cancelled",
+            error="Остановлено",
+            logs_dir=logs_dir,
         )
     except (DeckIrError, LLMError, LLMConfigError, OSError, RuntimeError, ValueError) as exc:
         log.exception("slides failed run_id=%s", run_id)
@@ -619,6 +644,7 @@ def _materialize_deck_artifacts(
         log.warning("deck chart recolor batch failed: %s", exc)
 
     _set_slides(out_dir, meta, status="running", stage="render", logs_dir=logs_dir)
+    raise_if_cancelled(out_dir)
     work_root = slides_dir / "work"
     pngs = render_deck_pngs(
         deck,
@@ -630,6 +656,7 @@ def _materialize_deck_artifacts(
         raise RuntimeError("no slide PNGs produced")
 
     _set_slides(out_dir, meta, status="running", stage="pptx", logs_dir=logs_dir)
+    raise_if_cancelled(out_dir)
     stem = _stem_from_out(out_dir, meta)
     pptx_path = out_dir / f"{stem}_slides.pptx"
     pdf_path = out_dir / f"{stem}_deck.pdf"
@@ -647,6 +674,7 @@ def _materialize_deck_artifacts(
         media_by_id=media_map,
         chart_series_by_id=chart_series,
     )
+    raise_if_cancelled(out_dir)
     # Julius path: LO-convert native PPTX → PDF; PNG stitch if soffice missing.
     _, pdf_mode = write_deck_pdf(tmp_pptx, pngs, tmp_pdf)
     tmp_pptx.replace(pptx_path)
@@ -697,14 +725,26 @@ def rebuild_slides_from_deck(
         deck = dict(deck)
         deck["theme_id"] = theme_tokens.pack_id
         deck["style"] = theme_tokens.as_dict()
-    _materialize_deck_artifacts(
-        out_dir,
-        meta,
-        deck=deck,
-        palette=palette,
-        chart_ids=chart_ids,
-        png_by_id=png_by_id,
-        diagram_specs=diagram_specs,
-        logs_dir=logs_dir,
-    )
+    try:
+        _materialize_deck_artifacts(
+            out_dir,
+            meta,
+            deck=deck,
+            palette=palette,
+            chart_ids=chart_ids,
+            png_by_id=png_by_id,
+            diagram_specs=diagram_specs,
+            logs_dir=logs_dir,
+        )
+    except RunCancelled:
+        meta = _read_meta(out_dir)
+        _set_slides(
+            out_dir,
+            meta,
+            status="cancelled",
+            stage="cancelled",
+            error="Остановлено",
+            logs_dir=logs_dir,
+        )
+        raise
     return _read_meta(out_dir)

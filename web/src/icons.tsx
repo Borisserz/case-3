@@ -39,6 +39,22 @@ export function IconSend(p: IconProps) {
   );
 }
 
+export function IconStop(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect
+        x="7"
+        y="7"
+        width="10"
+        height="10"
+        rx="1.5"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  );
+}
+
 export function IconPaperclip(p: IconProps) {
   return (
     <svg {...base(p)}>

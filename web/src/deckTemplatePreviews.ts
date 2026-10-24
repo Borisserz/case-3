@@ -439,20 +439,20 @@ export function previewSlidesFor(structureId: string): PreviewSlide[] {
   return TEMPLATE_PREVIEW_SLIDES[structureId] || TEMPLATE_PREVIEW_SLIDES.board_update;
 }
 
-/** Premium four packs ship 11–12 Liber twin PNGs; others keep 6. */
+/** Must match PNG count under web/public/deck/previews/{id}/ (else broken ? thumbs). */
 export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
   board_update: 11,
   performance: 11,
   qbr: 12,
-  survey: 10,
-  investor: 12,
+  survey: 9,
+  investor: 9,
   launch: 9,
-  campaign: 10,
+  campaign: 8,
   workshop: 11,
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261024v5";
+const PREVIEW_CACHE_BUST = "20261024v6";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {

@@ -194,6 +194,23 @@ export function formatRunStatusError(
     .join(" · ");
 }
 
+/** Narrow JSON `downloads` from Record<string, unknown> API bodies. */
+export function asDownloads(
+  v: unknown,
+  fallback: Record<string, string>,
+): Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return fallback;
+  const out: Record<string, string> = { ...fallback };
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val === "string") out[k] = val;
+  }
+  return out;
+}
+
+export function asString(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
 /** FastAPI error body → message string (sync /api/run failures). */
 export function formatApiDetailError(
   data: Record<string, unknown>,

@@ -2,7 +2,6 @@
 
 import { DeckFileCard } from "./DeckFileCard";
 import { DeckMakeSplit } from "./DeckMakeSplit";
-import { DeckPdfGallery } from "./DeckPdfGallery";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
 import { modeSurfaces } from "./liberModes";
 
@@ -27,6 +26,8 @@ type Props = {
   onOpenDiagram?: (id: string) => void;
   onMakePresentation?: () => void;
   onOpenPresentation?: () => void;
+  /** Open vertical Слайды film (deck PDF twin). */
+  onOpenDeckSlides?: () => void;
   onDeckStyle?: () => void;
 };
 
@@ -111,9 +112,6 @@ function DeckBuildCard({ stage }: { stage?: string | null }) {
           </li>
         ))}
       </ol>
-      <p className="deck-build-card-hint">
-        Обычно 1–2 минуты. Остаёмся в чате — карточки появятся здесь.
-      </p>
     </div>
   );
 }
@@ -134,6 +132,7 @@ export function ArtifactCard({
   onOpenDiagram,
   onMakePresentation,
   onOpenPresentation,
+  onOpenDeckSlides,
   onDeckStyle,
 }: Props) {
   const surfaces = modeSurfaces(outputMode);
@@ -199,7 +198,7 @@ export function ArtifactCard({
           {downloads?.pptx ? (
             <section className="artifact-card-block">
               <p className="artifact-card-quiet-label">
-                PPTX · редактировать
+                Презентация · PPTX
                 {slidePngs.length > 0
                   ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
                   : ""}
@@ -210,18 +209,32 @@ export function ArtifactCard({
                 href={downloads.pptx}
                 previewUrl={hero}
                 fileLabel={pptxName}
+                filmstrip={slidePngs}
                 onPrimary={onOpenPresentation}
-                primaryLabel="Изменить"
-                footerHint="Открыть редактор слайдов →"
+                primaryLabel="Просмотр"
               />
             </section>
           ) : null}
-          {showPdfGallery ? (
+          {showPdfGallery && (downloads?.deck_pdf || hero) ? (
             <section className="artifact-card-block">
-              <p className="artifact-card-quiet-label">PDF · только слайды</p>
-              <DeckPdfGallery
-                slides={slidePngs}
-                onOpenViewer={onOpenPresentation}
+              <p className="artifact-card-quiet-label">
+                Презентация · PDF
+                {slidePngs.length > 0
+                  ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
+                  : ""}
+              </p>
+              <DeckFileCard
+                kind="deck_pdf"
+                href={downloads?.deck_pdf || downloads?.pptx || "#"}
+                previewUrl={hero}
+                fileLabel={
+                  downloads?.deck_pdf
+                    ? fileNameFromUrl(downloads.deck_pdf, "deck.pdf")
+                    : "deck.pdf"
+                }
+                filmstrip={slidePngs}
+                onPrimary={onOpenDeckSlides || onOpenPresentation}
+                primaryLabel="Просмотр"
               />
             </section>
           ) : null}

@@ -16,66 +16,6 @@
   box-sizing: border-box;
 }
 
-/* Julius activity strip — olive Liber, not blue chrome; any run (report/diagram/deck) */
-.composer-working {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  width: 100%;
-  min-height: 2.05rem;
-  padding: 0.4rem 0.9rem;
-  margin: 0;
-  border-radius: 11px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--foil));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--sheet) 88%, var(--secondary)) 0%,
-      color-mix(in srgb, var(--surface-2) 94%, var(--paper)) 100%
-    );
-  font-size: 0.8125rem;
-  color: var(--muted);
-  box-sizing: border-box;
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--foil) 22%, transparent);
-}
-
-.composer-working-dot {
-  flex-shrink: 0;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 50%;
-  background: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
-  animation: composer-working-pulse 1.2s ease-in-out infinite;
-}
-
-.composer-working-label {
-  font-weight: 560;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  color: var(--ink-2);
-  font-family: var(--mono), ui-monospace, monospace;
-  font-size: 0.78rem;
-}
-
-@keyframes composer-working-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(0.92);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .composer-working-dot {
-    animation: none;
-  }
-}
-
 .composer-photos {
   display: flex;
   flex-wrap: wrap;
@@ -572,26 +512,24 @@ button.send:disabled {
   box-shadow: none;
 }
 
-button.send.is-busy {
-  animation: send-busy-pulse 1.1s ease-in-out infinite;
+button.send.is-stop {
+  background: color-mix(in srgb, var(--ink) 88%, var(--primary));
+  color: var(--sheet);
+  box-shadow: none;
 }
 
-@keyframes send-busy-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
+button.send.is-stop:hover:not(:disabled) {
+  background: var(--ink);
+}
+
+button.send.is-stop.is-stopping {
+  opacity: 0.72;
+  cursor: wait;
 }
 
 @media (prefers-reduced-motion: reduce) {
   button.send:not(:disabled):active {
     transform: none;
-  }
-  button.send.is-busy {
-    animation: none;
   }
 }
 

@@ -77,9 +77,21 @@ export function ThinkingFold({
         </span>
         {live ? (
           <span className="thinking-fold-live" aria-hidden>
-            <i />
-            <i />
-            <i />
+            <svg
+              className="thinking-fold-live-chevron"
+              width="10"
+              height="10"
+              viewBox="0 0 12 12"
+              fill="none"
+            >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </span>
         ) : null}
       </button>

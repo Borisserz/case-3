@@ -1,4 +1,6 @@
-/** Empty-state presentation starters — Liber twin preview + gallery thumbs. */
+/** Empty-state presentation starters — Liber twin preview + gallery thumbs.
+ *  2026-10-24: no tone chips / light-dark filter on cards.
+ */
 
 import type { CSSProperties } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -17,8 +19,6 @@ import {
   type PreviewSlide,
 } from "./deckTemplatePreviews";
 import { useFocusTrap } from "./useFocusTrap";
-
-type Tone = "all" | "light" | "dark";
 
 type Props = {
   deckStyle: DeckStyle;
@@ -243,7 +243,6 @@ export function DeckTemplateGallery({
   busy = false,
   onApply,
 }: Props) {
-  const [tone, setTone] = useState<Tone>("all");
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const reduce = useReducedMotion();
   const titleId = useId();
@@ -252,13 +251,7 @@ export function DeckTemplateGallery({
   const [activeSlide, setActiveSlide] = useState(0);
   useFocusTrap(panelRef, { active: Boolean(preview) });
 
-  const cards = useMemo(
-    () =>
-      DECK_TEMPLATE_CARDS.filter(
-        (c) => tone === "all" || cardTone(c.packId, c.structureId) === tone,
-      ),
-    [tone],
-  );
+  const cards = DECK_TEMPLATE_CARDS;
 
   const previewFrames = useMemo(
     () => (preview ? previewSlidesFor(preview.card.structureId) : []),
@@ -369,28 +362,6 @@ export function DeckTemplateGallery({
         <div className="deck-template-gallery-title-row">
           <div className="deck-template-gallery-lead">
             <h3>Шаблоны</h3>
-            <p className="deck-template-gallery-hint">
-              Выбери DNA → смотри слайды → возьми в чат
-            </p>
-          </div>
-          <div className="deck-template-tone" role="group" aria-label="Тон">
-            {(
-              [
-                ["all", "Все"],
-                ["light", "Светлые"],
-                ["dark", "Тёмные"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={`deck-template-tone-btn${tone === id ? " is-on" : ""}`}
-                aria-pressed={tone === id}
-                onClick={() => setTone(id)}
-              >
-                {label}
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -409,7 +380,6 @@ export function DeckTemplateGallery({
             : [];
           const thumbPng = pngs[0] || null;
           const strip = pngs.slice(0, 3);
-          const toneLabel = cardTone(card.packId, card.structureId);
           return (
             <motion.button
               key={card.id}
@@ -453,11 +423,6 @@ export function DeckTemplateGallery({
                 <span className="deck-template-thumb-veil">
                   <span className="deck-template-thumb-cta">Смотреть слайды</span>
                 </span>
-                <span
-                  className={`deck-template-tone-chip is-${toneLabel}`}
-                >
-                  {toneLabel === "dark" ? "Тёмный" : "Светлый"}
-                </span>
                 {on ? (
                   <span className="deck-template-selected-chip">Выбран</span>
                 ) : null}
@@ -474,7 +439,6 @@ export function DeckTemplateGallery({
               ) : null}
               <span className="deck-template-caption">
                 <span className="deck-template-name">{card.title}</span>
-                <span className="deck-template-blurb">{card.blurb}</span>
               </span>
             </motion.button>
           );
@@ -496,16 +460,8 @@ export function DeckTemplateGallery({
               <div className="deck-template-preview-head-copy">
                 <p className="deck-template-preview-eyebrow">
                   {preview.pack.label}
-                  <span className="deck-template-preview-sep" aria-hidden>
-                    ·
-                  </span>
-                  <span className={`deck-template-tone-chip is-${preview.tone} is-inline`}>
-                    {preview.tone === "dark" ? "Тёмный" : "Светлый"}
-                  </span>
                 </p>
                 <h2 id={titleId}>{preview.card.title}</h2>
-                <p className="deck-template-preview-arc">{preview.card.arc}</p>
-                <p className="deck-template-preview-blurb">{preview.card.blurb}</p>
                 <div className="deck-template-preview-swatches" aria-hidden>
                   {preview.swatches.slice(0, 4).map((c) => (
                     <i key={c} style={{ background: c }} />

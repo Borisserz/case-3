@@ -29,10 +29,12 @@ export function DeckEditToolbar({
     >
       <span className="deck-edit-toolbar-chip">Text</span>
       <span className="deck-edit-toolbar-label">{label}</span>
-      <span className="deck-edit-toolbar-sep" aria-hidden />
-      <span className="deck-edit-toolbar-hint">
-        {saving ? "Сохраняю…" : "Auto-save → PPTX"}
-      </span>
+      {saving ? (
+        <>
+          <span className="deck-edit-toolbar-sep" aria-hidden />
+          <span className="deck-edit-toolbar-hint">Сохраняю…</span>
+        </>
+      ) : null}
     </div>
   );
 }

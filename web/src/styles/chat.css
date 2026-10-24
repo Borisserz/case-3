@@ -635,7 +635,7 @@
 .report-table-toolbar .report-caption {
   margin: 0;
   text-align: center;
-  /* keep optical center while «Изменить» sits absolute on the right */
+  /* keep optical center while primary CTA sits absolute on the right */
   padding-inline: 6.5rem;
 }
 
@@ -2206,15 +2206,6 @@
   z-index: 1;
 }
 
-/* 72px mark — twice the old hero mark, still quiet vs serif H2 */
-.empty-hero .liber-mark {
-  margin-bottom: var(--space-4);
-  width: 72px;
-  height: 72px;
-  opacity: 0.55;
-  color: var(--primary);
-}
-
 .empty h2 {
   font-family: var(--serif);
   font-size: clamp(1.95rem, 3.4vw, 2.55rem);
@@ -2554,25 +2545,25 @@
 
 .thinking-fold-live {
   display: inline-flex;
-  gap: 0.18rem;
+  align-items: center;
   flex-shrink: 0;
+  color: var(--muted-2);
+  opacity: 0.7;
 }
 
-.thinking-fold-live i {
-  width: 3.5px;
-  height: 3.5px;
-  border-radius: 50%;
-  background: var(--accent-mid);
-  opacity: 0.28;
-  animation: think-pulse 1.1s ease-in-out infinite;
+.thinking-fold-live-chevron {
+  display: block;
+  animation: think-chevron-breathe 1.4s ease-in-out infinite;
 }
 
-.thinking-fold-live i:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.thinking-fold-live i:nth-child(3) {
-  animation-delay: 0.3s;
+@keyframes think-chevron-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .thinking-fold-list {
@@ -2658,7 +2649,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .thinking-fold-spin,
-  .thinking-fold-live i {
+  .thinking-fold-live-chevron {
     animation: none;
   }
   .thinking-fold-line {
@@ -4133,8 +4124,12 @@
   color: color-mix(in srgb, #c2410c 55%, var(--primary));
 }
 
+.deck-file-card.is-deck-pdf .deck-file-card-mark {
+  color: color-mix(in srgb, #334155 62%, var(--primary) 38%);
+}
+
 .deck-file-card.is-report-pdf .deck-file-card-mark,
-.deck-file-card.is-pdf .deck-file-card-mark {
+.deck-file-card.is-pdf:not(.is-deck-pdf) .deck-file-card-mark {
   color: color-mix(in srgb, #b91c1c 58%, var(--primary) 42%);
 }
 
@@ -4958,38 +4953,276 @@
   background: color-mix(in srgb, var(--ink) 55%, transparent);
 }
 
-.deck-pdf-gallery-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 1.05rem 0.85rem;
+/* Compact chat card (open via preview click) */
+.deck-pdf-gallery.is-card {
+  padding-bottom: 0.85rem;
 }
 
-.deck-pdf-gallery-open {
+.deck-pdf-gallery-dl {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.deck-pdf-gallery-dl:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+
+.deck-pdf-gallery-preview {
+  position: relative;
+  display: block;
+  width: calc(100% - 1.9rem);
+  margin: 0.35rem 0.95rem 0;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #0c1610;
+  aspect-ratio: 16 / 9;
+}
+
+.deck-pdf-gallery-preview.is-static {
+  cursor: default;
+}
+
+.deck-pdf-gallery-mat {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.deck-pdf-gallery-mat img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deck-pdf-gallery-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.deck-pdf-gallery-preview:hover .deck-pdf-gallery-veil,
+.deck-pdf-gallery-preview:focus-visible .deck-pdf-gallery-veil {
+  opacity: 1;
+}
+
+.deck-pdf-gallery-veil-label {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  border: none;
-  background: transparent;
-  color: color-mix(in srgb, var(--primary) 85%, var(--ink));
-  font: inherit;
-  font-size: 0.8rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.82rem;
   font-weight: 650;
-  cursor: pointer;
-  padding: 0.2rem 0;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
-.deck-pdf-gallery-open:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.deck-pdf-gallery-veil-arrow {
+  opacity: 0.55;
+}
+
+.deck-pdf-gallery-empty {
+  margin: 0.5rem 1.05rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.deck-pdf-gallery-foot {
+  display: none;
+}
+
+/* —— Vertical Слайды film (rail) —— */
+.deck-slides-film {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: color-mix(in srgb, var(--paper) 88%, var(--sheet));
+}
+
+.deck-slides-film-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 0.7rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  flex-shrink: 0;
+}
+
+.deck-slides-film-eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.deck-slides-film-title {
+  margin: 0.12rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.deck-slides-film-sub {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.deck-slides-film-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.deck-slides-film-count {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+}
+
+.deck-slides-film-dl {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.32rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--ink);
+  color: var(--on-primary, #fff);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.deck-slides-film-dl:hover {
+  filter: brightness(1.08);
+}
+
+.deck-slides-film-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.deck-slides-film-scroller {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 1rem 0.85rem 2.5rem;
+  scroll-behavior: smooth;
+  outline: none;
+}
+
+.deck-slides-film-frame {
+  position: relative;
+  margin: 0 0 1.15rem;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0c1610;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--foil) 40%, transparent),
+    0 12px 28px color-mix(in srgb, var(--ink) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.deck-slides-film-frame.is-active {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent),
+    0 14px 32px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.deck-slides-film-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+}
+
+.deck-slides-film-cap {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0.5rem;
+  margin: 0;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.deck-slides-film-rail {
+  flex: 0 0 2.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.85rem 0.35rem 1.5rem;
+  overflow-y: auto;
+  border-left: 1px solid color-mix(in srgb, var(--rule) 75%, transparent);
+  background: color-mix(in srgb, var(--sheet) 92%, transparent);
+}
+
+.deck-slides-film-anchor {
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.deck-slides-film-anchor:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--foil) 55%, transparent);
+}
+
+.deck-slides-film-anchor.is-on {
+  background: var(--ink);
+  color: var(--on-primary, #fff);
 }
 
 .deck-file-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0.55rem 1rem 0.7rem;
-  border-top: 1px solid color-mix(in srgb, var(--rule, var(--border)) 65%, transparent);
-  background: color-mix(in srgb, var(--sheet) 96%, var(--paper));
+  display: none;
 }
 
 .deck-file-card-foot-link {
@@ -5149,13 +5382,6 @@
   .deck-build-card-steps li.is-now {
     animation: none;
   }
-}
-
-.deck-build-card-hint {
-  margin: 0.85rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: var(--muted);
 }
 
 .artifact-card-filmstrip {

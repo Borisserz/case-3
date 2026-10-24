@@ -477,7 +477,8 @@ button:disabled {
   justify-content: flex-start;
   align-items: stretch;
   gap: var(--space-3);
-  padding-top: clamp(2.75rem, 11vh, 5.25rem);
+  /* Tighter top — no logo above the hero title */
+  padding-top: clamp(1.35rem, 6vh, 3.25rem);
   padding-bottom: min(6vh, 2.5rem);
   box-sizing: border-box;
 }
@@ -486,14 +487,14 @@ button:disabled {
   flex: 0 0 auto;
   width: 100%;
   overflow: visible;
-  padding: var(--space-6) var(--space-4) 0;
+  padding: var(--space-3) var(--space-4) 0;
   box-sizing: border-box;
 }
 
 .desk.chat-desk.is-empty-home .empty,
 .desk.is-empty-home .empty {
   margin: 0 auto;
-  padding: var(--space-4) var(--space-4) var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-1);
   width: min(100%, var(--chat-column));
   max-width: min(100%, var(--chat-column));
 }

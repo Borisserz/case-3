@@ -1,25 +1,23 @@
 /** Liber bottom composer: attach · textarea · send; deck style via DeckStyleSheet. */
 
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ComposerPhotoChips } from "./ComposerPhotoChips";
 import { ContextPlaque } from "./ContextPlaque";
 import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
 import { ModeStarterGrid } from "./ModeStarterGrid";
-import { IconPalette, IconPaperclip, IconSend } from "./icons";
+import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./liberModes";
 import type { SourceDraft } from "./liberTypes";
 
-function formatBusyTimer(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
 type Props = {
   busy: boolean;
+  /** Stop pressed — waiting for server cancelled. */
+  stopping?: boolean;
   canSend: boolean;
+  /** Stop pipeline / slides while busy (UI free + server cancel). */
+  onStop?: () => void;
   chat: string;
   attachPhotos: File[];
   showPlaque: boolean;
@@ -63,7 +61,9 @@ type Props = {
 
 export function ChatComposer({
   busy,
+  stopping = false,
   canSend,
+  onStop,
   chat,
   attachPhotos,
   showPlaque,
@@ -95,8 +95,6 @@ export function ChatComposer({
   onPickStarter,
 }: Props) {
   const galleryRef = useRef<HTMLDivElement>(null);
-  const busyStartedAt = useRef<number | null>(null);
-  const [busySec, setBusySec] = useState(0);
   const placeholder =
     workMode === "diagram"
       ? "Опишите процесс или вставьте Source для схемы…"
@@ -116,26 +114,6 @@ export function ChatComposer({
     }, 80);
     return () => window.clearTimeout(t);
   }, [showPackPresets]);
-
-  /* Total job elapsed (report→slides etc.), not per-stage — keep anchor while busy. */
-  useEffect(() => {
-    if (!busy) {
-      busyStartedAt.current = null;
-      setBusySec(0);
-      return;
-    }
-    if (busyStartedAt.current == null) {
-      busyStartedAt.current = Date.now();
-    }
-    const tick = () => {
-      const start = busyStartedAt.current;
-      if (start == null) return;
-      setBusySec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    };
-    tick();
-    const t = window.setInterval(tick, 1000);
-    return () => window.clearInterval(t);
-  }, [busy]);
 
   /** Stable stage width: empty home (any/no pill) + never shrink mid-chat */
   const isEmptyStage = Boolean(showModes);
@@ -179,15 +157,6 @@ export function ChatComposer({
                 ×
               </button>
             ) : null}
-          </div>
-        ) : null}
-
-        {busy ? (
-          <div className="composer-working" role="status" aria-live="polite">
-            <span className="composer-working-dot" aria-hidden />
-            <span className="composer-working-label">
-              Working · {formatBusyTimer(busySec)}
-            </span>
           </div>
         ) : null}
 
@@ -278,23 +247,35 @@ export function ChatComposer({
             ) : (
               <span className="composer-inner-spacer" aria-hidden />
             )}
-            <button
-              className={`send${busy ? " is-busy" : ""}`}
-              type="button"
-              disabled={!canSend}
-              onClick={onSend}
-              aria-busy={busy || undefined}
-              aria-label={
-                workMode === "diagram"
-                  ? "Собрать схему"
-                  : workMode === "presentation"
-                    ? "Собрать презентацию"
-                    : "Собрать отчёт"
-              }
-              title="Собрать"
-            >
-              <IconSend size={16} />
-            </button>
+            {busy && onStop ? (
+              <button
+                className={`send is-stop${stopping ? " is-stopping" : ""}`}
+                type="button"
+                onClick={onStop}
+                disabled={stopping}
+                aria-label={stopping ? "Останавливаю" : "Остановить"}
+                title={stopping ? "Останавливаю…" : "Остановить"}
+              >
+                <IconStop size={14} />
+              </button>
+            ) : (
+              <button
+                className="send"
+                type="button"
+                disabled={!canSend}
+                onClick={onSend}
+                aria-label={
+                  workMode === "diagram"
+                    ? "Собрать схему"
+                    : workMode === "presentation"
+                      ? "Собрать презентацию"
+                      : "Собрать отчёт"
+                }
+                title="Собрать"
+              >
+                <IconSend size={16} />
+              </button>
+            )}
           </div>
         </div>
       </div>

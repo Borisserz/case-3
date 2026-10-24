@@ -37,6 +37,7 @@ from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, RenderError, ensure_image
+from case3.run_cancel import mark_cancel_requested
 from case3.summary_bus import BUS
 from case3.tex_preview import build_report_preview
 from case3.user_photos import UserPhotoError, save_user_photos
@@ -45,6 +46,11 @@ log = logging.getLogger("case3.api")
 
 _RUN_ID_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
 _FILE_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+# Coalesce concurrent IR patches: latest deck wins, one rebuild worker per run.
+_slides_patch_lock = threading.Lock()
+_slides_patch_pending: dict[str, dict[str, Any]] = {}
+_slides_patch_busy: set[str] = set()
 
 
 def _repo_root() -> Path:
@@ -890,6 +896,21 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "max_images": meta.get("max_images"),
             "chat_summary": str(meta.get("chat_summary") or ""),
             "summary_status": meta.get("summary_status"),
+            "slides_status": meta.get("slides_status") or "idle",
+            "slides_stage": meta.get("slides_stage"),
+            "cancel_requested": bool(meta.get("cancel_requested")),
+        }
+    if status == "cancelled":
+        err = meta.get("error") or "Остановлено"
+        return {
+            "run_id": run_id,
+            "status": "cancelled",
+            "stage": "cancelled",
+            "error": err,
+            "message": err,
+            "slides_status": meta.get("slides_status") or "idle",
+            "slides_stage": meta.get("slides_stage"),
+            "slides_error": meta.get("slides_error"),
         }
     if status == "error":
         err = meta.get("error") or "pipeline failed"
@@ -1501,6 +1522,44 @@ def _write_slides_crash(run_id: str, message: str) -> None:
         log.exception("could not write slides crash meta run_id=%s", run_id)
 
 
+def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: Path) -> bool:
+    """Clear zombie slides_status=running left by API kill / hung LLM (not live patch).
+
+    Returns True if the lock was cleared so a PATCH may proceed.
+    """
+    if meta.get("slides_status") != "running":
+        return False
+    stage = str(meta.get("slides_stage") or "")
+    # Live text-edit rebuild — caller must serialize / 409.
+    if stage == "patch":
+        return False
+    ir = out_dir / "slides" / "deck.json"
+    # No IR yet → real first-time job may still be running.
+    if not ir.is_file() and stage in {"starting", "queued", "llm", "llm_retry", "plan", "ir"}:
+        return False
+    log.warning(
+        "clearing stale slides lock run_id=%s stage=%s (deck exists=%s)",
+        run_id,
+        stage or "?",
+        ir.is_file(),
+    )
+    meta["slides_status"] = "ok" if ir.is_file() else "error"
+    meta["slides_stage"] = "ok" if ir.is_file() else "error"
+    if not ir.is_file():
+        meta["slides_error"] = meta.get("slides_error") or "slides job interrupted"
+    else:
+        meta["slides_error"] = None
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    logs = ROOT / "runs" / "logs" / run_id
+    try:
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
 def _bg_run_slides(run_id: str) -> None:
     from case3.slides_job import run_slides_job
 
@@ -1581,6 +1640,10 @@ async def start_slides(
     meta["slides_status"] = "running"
     meta["slides_stage"] = "starting"
     meta["slides_error"] = None
+    meta.pop("cancel_requested", None)
+    with _slides_patch_lock:
+        _slides_patch_pending.pop(run_id, None)
+        _slides_patch_busy.discard(run_id)
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (out_dir / "meta.json").write_text(payload, encoding="utf-8")
     logs = ROOT / "runs" / "logs" / run_id
@@ -1649,12 +1712,94 @@ class SlidesIrPatchBody(BaseModel):
     slides: list[dict[str, Any]] = Field(default_factory=list)
 
 
+def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
+    """Drain coalesced IR patches — latest deck wins; no 409 on concurrent edits."""
+    from case3.run_cancel import RunCancelled
+    from case3.slides_job import rebuild_slides_from_deck
+
+    while True:
+        with _slides_patch_lock:
+            pending = _slides_patch_pending.pop(run_id, None)
+            if pending is None:
+                _slides_patch_busy.discard(run_id)
+                return
+            deck = pending["deck"]
+            _slides_patch_busy.add(run_id)
+
+        try:
+            meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {"run_id": run_id, "status": "ok"}
+        meta["slides_status"] = "running"
+        meta["slides_stage"] = "patch"
+        meta["slides_error"] = None
+        meta.pop("cancel_requested", None)
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        try:
+            (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+        except OSError:
+            log.exception("slides patch meta write failed run_id=%s", run_id)
+
+        try:
+            rebuild_slides_from_deck(run_id, deck, root=ROOT)
+        except RunCancelled:
+            log.info("slides patch cancelled run_id=%s", run_id)
+            with _slides_patch_lock:
+                _slides_patch_pending.pop(run_id, None)
+                _slides_patch_busy.discard(run_id)
+            return
+        except Exception:
+            log.exception("slides IR patch rebuild failed run_id=%s", run_id)
+            try:
+                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+                m["slides_status"] = "error"
+                m["slides_stage"] = "error"
+                m["slides_error"] = "rebuild after edit failed"
+                (out_dir / "meta.json").write_text(
+                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+        with _slides_patch_lock:
+            if run_id not in _slides_patch_pending:
+                _slides_patch_busy.discard(run_id)
+                return
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str) -> dict[str, Any]:
+    """Cooperative stop: UI frees immediately; pipeline/slides exit between stages."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)):
+        raise HTTPException(404, detail="run not found")
+    logs_dir = ROOT / "runs" / "logs" / run_id
+    if not (out_dir / "meta.json").is_file() and not (logs_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    meta = mark_cancel_requested(out_dir, logs_dir=logs_dir)
+    with _slides_patch_lock:
+        _slides_patch_pending.pop(run_id, None)
+    return {
+        "run_id": run_id,
+        "status": "cancelling",
+        "cancel_requested": True,
+        "pipeline_status": meta.get("status"),
+        "slides_status": meta.get("slides_status"),
+    }
+
+
 @app.patch("/api/runs/{run_id}/slides/ir")
 async def patch_slides_ir(
     run_id: str,
     body: SlidesIrPatchBody,
 ) -> JSONResponse:
-    """Patch deck text fields and rebuild native PPTX + twin preview."""
+    """Patch deck text fields and rebuild native PPTX + twin preview.
+
+    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
+    """
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
     out_dir = (ROOT / "runs" / "out" / run_id).resolve()
@@ -1670,55 +1815,58 @@ async def patch_slides_ir(
         raise HTTPException(500, detail="corrupt meta.json") from exc
     if meta.get("status") != "ok":
         raise HTTPException(409, detail="report run is not ok")
-    if meta.get("slides_status") == "running":
-        raise HTTPException(409, detail="slides job already running")
-    try:
-        deck = json.loads(ir_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(500, detail="corrupt deck.json") from exc
+    # Full LLM slides job (not patch) still blocks — clear zombies first.
+    if meta.get("slides_status") == "running" and meta.get("slides_stage") != "patch":
+        _clear_stale_slides_running(meta, run_id=run_id, out_dir=out_dir)
+        if meta.get("slides_status") == "running":
+            raise HTTPException(409, detail="slides job already running")
 
     from case3.slides_ir import DeckIrError
-    from case3.slides_job import rebuild_slides_from_deck
     from case3.slides_patch import apply_deck_text_patch
 
+    with _slides_patch_lock:
+        base = (_slides_patch_pending.get(run_id) or {}).get("deck")
+    if base is None:
+        try:
+            base = json.loads(ir_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(500, detail="corrupt deck.json") from exc
+    if not isinstance(base, dict):
+        raise HTTPException(500, detail="corrupt deck.json")
+
     try:
-        patched = apply_deck_text_patch(deck, {"slides": body.slides})
+        patched = apply_deck_text_patch(base, {"slides": body.slides})
     except DeckIrError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
 
-    meta["slides_status"] = "running"
-    meta["slides_stage"] = "patch"
-    meta["slides_error"] = None
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    try:
+        ir_path.write_text(
+            json.dumps(patched, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        raise HTTPException(500, detail="could not write deck.json") from exc
 
-    def _bg() -> None:
-        try:
-            rebuild_slides_from_deck(run_id, patched, root=ROOT)
-        except Exception:
-            log.exception("slides IR patch rebuild failed run_id=%s", run_id)
-            try:
-                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-                m["slides_status"] = "error"
-                m["slides_stage"] = "error"
-                m["slides_error"] = "rebuild after edit failed"
-                (out_dir / "meta.json").write_text(
-                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-            except Exception:
-                pass
+    with _slides_patch_lock:
+        _slides_patch_pending[run_id] = {"deck": patched}
+        already = run_id in _slides_patch_busy
+        if not already:
+            _slides_patch_busy.add(run_id)
 
-    threading.Thread(
-        target=_bg,
-        name=f"case3-slides-patch-{run_id}",
-        daemon=True,
-    ).start()
+    if not already:
+        threading.Thread(
+            target=_slides_patch_worker,
+            args=(run_id, out_dir),
+            name=f"case3-slides-patch-{run_id}",
+            daemon=True,
+        ).start()
+
     return JSONResponse(
         {
             "run_id": run_id,
             "status": "started",
             "slides_status": "running",
             "slides_stage": "patch",
+            "queued": already,
             "deck": patched,
         },
         status_code=202,

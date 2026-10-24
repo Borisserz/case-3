@@ -18,7 +18,7 @@ import type { ImageEditRequest } from "./ImageEditModal";
 import type { TableEditRequest } from "./TableEditSheet";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
-import { ExportMenu } from "./ExportMenu";
+import { DeckSlidesFilm } from "./DeckSlidesFilm";
 import { PresentationPane } from "./PresentationPane";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
@@ -36,7 +36,13 @@ const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
 );
 
-export type ArtifactTab = "preview" | "pdf" | "source" | "diagram" | "presentation";
+export type ArtifactTab =
+  | "preview"
+  | "pdf"
+  | "source"
+  | "diagram"
+  | "presentation"
+  | "slides";
 
 export type ActiveArtifact =
   | {
@@ -167,6 +173,13 @@ export function ArtifactRail({
         slidesStatus === "error" ||
         (report?.slidePngs && report.slidePngs.length > 0),
     );
+  const hasSlidesFilmTab =
+    surfaces.showPresentation &&
+    isReport &&
+    Boolean(
+      (report?.slidePngs && report.slidePngs.length > 0) ||
+        report?.downloads?.deck_pdf,
+    );
   const hasSource =
     surfaces.showSource &&
     Boolean(
@@ -218,8 +231,13 @@ export function ArtifactRail({
       { id: "pdf", label: "PDF", show: isReport && hasPdf },
       {
         id: "presentation",
-        label: "Презентация",
+        label: "PPTX",
         show: Boolean(hasPresentationTab),
+      },
+      {
+        id: "slides",
+        label: "PDF",
+        show: Boolean(hasSlidesFilmTab),
       },
       { id: "source", label: "Source", show: hasSource },
     ];
@@ -230,6 +248,7 @@ export function ArtifactRail({
     hasPdf,
     hasDiagrams,
     hasPresentationTab,
+    hasSlidesFilmTab,
     hasSource,
     diagrams.length,
   ]);
@@ -518,13 +537,6 @@ export function ArtifactRail({
             ))}
           </nav>
           <div className="artifact-rail-actions">
-            {isReport && (
-              <ExportMenu
-                downloads={report?.downloads}
-                label="Export"
-                pulse={downloadsPulse}
-              />
-            )}
             <button
               type="button"
               className="artifact-rail-close"
@@ -628,6 +640,13 @@ export function ArtifactRail({
                   onMakePresentation={onMakePresentation}
                   making={makingPresentation}
                   onDeckUpdated={report.onDeckUpdated}
+                />
+              ) : null}
+
+              {!showDiagramSurface && tab === "slides" ? (
+                <DeckSlidesFilm
+                  slides={report?.slidePngs || []}
+                  downloadHref={report?.downloads?.deck_pdf || null}
                 />
               ) : null}
 

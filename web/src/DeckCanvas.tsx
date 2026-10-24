@@ -790,10 +790,13 @@ export function DeckCanvas({
   const [toolbarOn, setToolbarOn] = useState(false);
 
   const flush = useCallback(async () => {
-    const p = pending.current;
-    pending.current = null;
-    if (!p) return;
-    await onPatch([p]);
+    // Drain edits typed while a save was in flight.
+    for (;;) {
+      const p = pending.current;
+      pending.current = null;
+      if (!p) return;
+      await onPatch([p]);
+    }
   }, [onPatch]);
 
   const onField = useCallback(

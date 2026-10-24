@@ -172,6 +172,25 @@ def _http_body(exc: urllib.error.HTTPError) -> str:
         return ""
 
 
+def parse_openrouter_afford(body_txt: str) -> int | None:
+    """Parse OpenRouter 402 «can only afford N» (not «requested up to N»)."""
+    m = re.search(r"afford\s+(\d+)", body_txt or "", flags=re.I)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def credit_clamp_max_tokens(current: int, afford: int, *, margin: int = 64) -> int | None:
+    """Return lower max_tokens if afford allows a useful shrink; else None."""
+    target = max(1024, int(afford) - int(margin))
+    if target < int(current):
+        return target
+    return None
+
+
 def build_body(
     *,
     system: str,
@@ -236,7 +255,14 @@ class LLMClient:
             headers.setdefault("X-Title", "case-3")
         return headers
 
-    def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
+    def complete(
+        self,
+        *,
+        system: str,
+        user_text: str,
+        reasoning: str | None = None,
+        cancel_check: Callable[[], None] | None = None,
+    ) -> str:
         r = reasoning or self.config.reasoning
         if r not in _REASONING:
             raise LLMConfigError(f"reasoning={r!r}: expected {', '.join(_REASONING)}")
@@ -252,10 +278,16 @@ class LLMClient:
         headers = self._headers()
         max_tokens = int(body.get("max_tokens") or self.config.max_tokens)
         error: Exception | None = None
-        credit_clamped = False
-        for attempt in range(self.config.max_retries + 1):
+        # Extra attempts when we shrink max_tokens on OpenRouter 402 (credits move).
+        credit_shrinks = 0
+        attempt = 0
+        while attempt <= self.config.max_retries + credit_shrinks:
+            if cancel_check is not None:
+                cancel_check()
             if attempt:
-                self._sleep(float(attempt))
+                self._sleep(float(min(attempt, 3)))
+                if cancel_check is not None:
+                    cancel_check()
             body["max_tokens"] = max_tokens
             data = json.dumps(body).encode("utf-8")
             log.info(
@@ -284,35 +316,37 @@ class LLMClient:
                 error = LLMError(
                     f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
                 )
-                # OpenRouter 402: request max_tokens exceeds remaining credit.
-                if (
-                    exc.code == 402
-                    and not credit_clamped
-                    and "max_tokens" in body_txt
-                    and "afford" in body_txt
-                ):
-                    m = re.search(r"afford\s+(\d+)", body_txt, flags=re.I)
-                    if m:
-                        afford = max(1024, int(m.group(1)) - 64)
-                        if afford < max_tokens:
-                            log.warning(
-                                "LLM 402 credit clamp max_tokens %d → %d",
-                                max_tokens,
-                                afford,
-                            )
-                            max_tokens = afford
-                            credit_clamped = True
-                            continue
+                # Re-clamp every 402 where afford drops — do not stop after first shrink.
+                if exc.code == 402 and "afford" in body_txt.lower():
+                    afford = parse_openrouter_afford(body_txt)
+                    nxt = (
+                        credit_clamp_max_tokens(max_tokens, afford)
+                        if afford is not None
+                        else None
+                    )
+                    if nxt is not None and credit_shrinks < 4:
+                        log.warning(
+                            "LLM 402 credit clamp max_tokens %d → %d",
+                            max_tokens,
+                            nxt,
+                        )
+                        max_tokens = nxt
+                        credit_shrinks += 1
+                        attempt += 1
+                        continue
                 if exc.code < 500 and exc.code != 429:
                     raise error from exc
             except TimeoutError as exc:
                 raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
             except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:
                 if isinstance(getattr(exc, "reason", None), TimeoutError):
-                    raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+                    raise LLMError(
+                        f"timed out after {self.config.timeout_s:.0f}s"
+                    ) from exc
                 error = LLMError(f"{type(exc).__name__}: {exc}")
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                 raise LLMError(f"invalid JSON from {self.config.endpoint}") from exc
+            attempt += 1
         raise error or LLMError("request failed")
 
     def stream(

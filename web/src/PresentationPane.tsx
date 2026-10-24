@@ -3,10 +3,8 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { DeckCanvas } from "./DeckCanvas";
-import { DeckExportSheet } from "./DeckExportSheet";
 import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
-import { ExportMenu } from "./ExportMenu";
 import { PresentationFullscreen } from "./PresentationFullscreen";
 
 /** Survive tab switches: PresentationPane unmounts on Preview/PDF. */
@@ -59,7 +57,7 @@ export function PresentationPane({
   stage,
   error,
   downloads,
-  deckPdfMode = null,
+  deckPdfMode: _deckPdfMode = null,
   onMakePresentation,
   making = false,
   onDeckUpdated,
@@ -75,7 +73,6 @@ export function PresentationPane({
   const [saving, setSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -167,6 +164,9 @@ export function PresentationPane({
             done = true;
             break;
           }
+          if (gBody.slides_status === "cancelled") {
+            throw new Error("Остановлено");
+          }
           if (gBody.slides_status === "error") {
             throw new Error(
               String(gBody.slides_error || "Не удалось сохранить слайды"),
@@ -235,7 +235,8 @@ export function PresentationPane({
           <div className="presentation-pending-pulse" />
           <p className="presentation-pending">
             <span className="presentation-pending-working" aria-live="polite">
-              Working · {elapsedLabel}
+              Собираю
+              <span className="presentation-pending-time">{elapsedLabel}</span>
             </span>
             <span className="presentation-pending-stage">{stageLabel}</span>
           </p>
@@ -252,10 +253,32 @@ export function PresentationPane({
             ))}
           </ol>
           <p className="presentation-pending-hint">
-            Обычно полторы–две минуты. Вкладка остаётся открытой — Export
+            Обычно полторы–две минуты. Вкладка остаётся открытой — превью
             появится, когда готово.
           </p>
         </div>
+      </div>
+    );
+  }
+
+  if (status === "cancelled") {
+    return (
+      <div className="presentation-pane is-cancelled">
+        <p className="presentation-empty-kicker">Презентация</p>
+        <h3 className="presentation-empty-title">Остановлено</h3>
+        <p className="presentation-empty-copy">
+          Сборку прервали. Карточки в чате не менялись — можно собрать снова.
+        </p>
+        {onMakePresentation ? (
+          <button
+            type="button"
+            className="presentation-cta"
+            onClick={onMakePresentation}
+            disabled={making}
+          >
+            Собрать снова
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -280,16 +303,16 @@ export function PresentationPane({
   if (!n && !live) {
     return (
       <div className="presentation-pane is-empty">
-        <p className="presentation-empty-kicker">Liber deck</p>
-        <h3 className="presentation-empty-title">Презентация 16:9</h3>
+        <p className="presentation-empty-kicker">Презентация</p>
+        <h3 className="presentation-empty-title">16:9 · PPTX и PDF</h3>
         <p className="presentation-empty-copy">
-          Живой twin, editable PPTX и PDF. Стиль (Atelier · Relay · Botanical) —
-          в ⚙ рядом с кнопкой.
+          Одна преза в двух форматах: twin + PPTX и вертикальный PDF. Стиль
+          (Atelier · Relay · Botanical) — в палитре рядом с кнопкой.
         </p>
         <ul className="presentation-empty-points" aria-hidden>
-          <li>Preview-сетка всех слайдов</li>
-          <li>Edit текста → сразу в PPTX</li>
-          <li>Export PPTX / deck PDF</li>
+          <li>Сетка слайдов · live edit</li>
+          <li>Правки текста → сразу в PPTX</li>
+          <li>PDF twin — вкладка PDF в панели</li>
         </ul>
         {onMakePresentation ? (
           <button
@@ -326,17 +349,13 @@ export function PresentationPane({
       <header className="presentation-chrome">
         <div className="presentation-chrome-left">
           <span className="presentation-chrome-kicker">
-            {editing && view === "slide" ? "Live edit · PPTX" : "Editable PowerPoint"}
+            {editing && view === "slide"
+              ? "Презентация · правки"
+              : "Презентация · PPTX"}
           </span>
           <span className="presentation-chrome-title" title={slideTitle}>
             {slideTitle}
           </span>
-          {n > 0 ? (
-            <span className="presentation-chrome-meta">
-              {safeIdx + 1}/{n}
-              {deck?.style?.pack_id ? ` · ${deck.style.pack_id}` : ""}
-            </span>
-          ) : null}
         </div>
         <div className="presentation-chrome-tools">
           <div className="presentation-seg" role="group" aria-label="Режим">
@@ -381,32 +400,22 @@ export function PresentationPane({
           >
             Present
           </button>
-          {downloads?.pptx || downloads?.deck_pdf ? (
-            <button
-              type="button"
-              className="presentation-tool is-export"
-              onClick={() => setExportOpen(true)}
-            >
-              Export
-            </button>
-          ) : (
-            <ExportMenu
-              downloads={downloads}
-              label="Export"
-              deckPdfMode={deckPdfMode}
-            />
-          )}
+        </div>
+        <div className="presentation-chrome-actions">
+          {n > 0 ? (
+            <span className="deck-slides-film-count" aria-live="polite">
+              {safeIdx + 1}
+              <span aria-hidden> / </span>
+              {n}
+            </span>
+          ) : null}
+          {downloads?.pptx ? (
+            <a href={downloads.pptx} download className="deck-slides-film-dl">
+              Скачать
+            </a>
+          ) : null}
         </div>
       </header>
-
-      <DeckExportSheet
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        downloads={downloads}
-        previewUrl={slidePngs[0] || null}
-        deckPdfMode={deckPdfMode}
-        slideCount={n}
-      />
 
       {view === "grid" && slidePngs.length > 0 ? (
         <DeckGallery
@@ -591,13 +600,8 @@ export function PresentationPane({
           >
             Все слайды
           </button>
-          <span className="presentation-hint">← → · E edit · F present</span>
         </div>
-      ) : (
-        <p className="presentation-hint presentation-hint--grid">
-          Клик по слайду → Slide · Edit для правок · Export PPTX / PDF
-        </p>
-      )}
+      ) : null}
 
       {full ? (
         <PresentationFullscreen

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -648,10 +649,12 @@ def generate_document(
     max_images: int | None = None,
     max_charts: int | None = None,
     max_diagrams: int | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Returns (tex_path, figures, charts, diagrams).
 
     max_images / max_charts / max_diagrams: per-request overrides; None → env defaults.
+    cancel_check: optional cooperative stop (raises between LLM attempts).
     """
     from case3.diagrams import max_diagrams_from_env
 
@@ -716,7 +719,9 @@ def generate_document(
 
     cfg = LLMConfig.from_env()
     llm = client or LLMClient(cfg)
-    raw = llm.complete(system=system, user_text=user)
+    raw = llm.complete(
+        system=system, user_text=user, cancel_check=cancel_check
+    )
     finish = getattr(llm, "last_finish_reason", "") or ""
     need_cont = output_looks_truncated(raw or "") or finish == "length"
     if need_cont:
@@ -732,6 +737,7 @@ def generate_document(
                 source=source_text,
                 max_charts=max_charts,
             ),
+            cancel_check=cancel_check,
         )
         raw = merge_continuation(raw or "", cont or "")
         log.info("continuation merged → %d chars", len(raw or ""))

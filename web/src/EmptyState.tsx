@@ -1,7 +1,6 @@
 /** Liber empty hero — modes live in composer inner bar. */
 
 import { motion, useReducedMotion } from "framer-motion";
-import { IconLiberMark } from "./icons";
 import type { LiberWorkMode } from "./liberModes";
 
 type Props = {
@@ -24,11 +23,10 @@ export function EmptyState({ workMode = null }: Props) {
     <motion.div
       className="empty empty-hero"
       key={`empty-${workMode || "auto"}`}
-      initial={reduce ? false : { opacity: 0, y: 16 }}
+      initial={reduce ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduce ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: reduce ? 0 : 0.4, ease: [0.22, 1, 0.36, 1] }}
     >
-      <IconLiberMark size={72} />
       <h2>{title}</h2>
     </motion.div>
   );

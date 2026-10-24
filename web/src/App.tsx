@@ -30,6 +30,8 @@ import {
 import { modeToOutputMode, type LiberWorkMode } from "./liberModes";
 import {
   appendBotThinking,
+  asDownloads,
+  asString,
   formatApiDetailError,
   formatBytes,
   formatRunStatusError,
@@ -42,6 +44,7 @@ import {
   stageLabel,
   uid,
 } from "./liberRunHelpers";
+import type { ReportPreview } from "./ReportView";
 import type {
   Health,
   Msg,
@@ -104,6 +107,8 @@ export default function App() {
   const [photoMode] = useState<"document" | "edit">("document");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
+  /** Stop pressed — waiting for meta cancelled. */
+  const [stopping, setStopping] = useState(false);
   const [editBusy, setEditBusy] = useState<{
     msgId: string;
     figureId: string;
@@ -149,6 +154,10 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const editLock = useRef(false);
+  /** Active pipeline/slides run for Stop → POST /cancel. */
+  const activeRunIdRef = useRef<string | null>(null);
+  const cancelRequestedRef = useRef(false);
+  const pendingBotIdRef = useRef<string | null>(null);
 
   const catalog = useMemo(() => {
     const fromApi = health?.chart_types?.filter(Boolean);
@@ -511,13 +520,19 @@ export default function App() {
             ...msg,
             result: {
               ...msg.result,
-              preview: data.preview ?? msg.result.preview,
-              downloads: data.downloads ?? msg.result.downloads,
+              preview:
+                (data.preview as ReportPreview | undefined) ??
+                msg.result.preview,
+              downloads: asDownloads(data.downloads, msg.result.downloads),
               warnings:
                 Array.isArray(data.warnings) && data.warnings.length
-                  ? data.warnings
+                  ? data.warnings.filter(
+                      (w): w is string => typeof w === "string",
+                    )
                   : msg.result.warnings,
-              media_status: data.media_status ?? msg.result.media_status,
+              media_status:
+                (data.media_status as Record<string, unknown> | undefined) ??
+                msg.result.media_status,
             },
           };
           if (next.result) rememberRun(next.result);
@@ -584,12 +599,101 @@ export default function App() {
     openReportArtifact(msgId, result, "presentation");
   }
 
+  function openDeckSlidesArtifact(msgId: string, result: RunResult) {
+    openReportArtifact(msgId, result, "slides");
+  }
+
+  function stopGeneration() {
+    if (stopping) return;
+    cancelRequestedRef.current = true;
+    const runId = activeRunIdRef.current;
+    const pendingId = pendingBotIdRef.current;
+    setStopping(true);
+    if (pendingId) {
+      setMsgs((m) =>
+        m.map((msg) => {
+          if (msg.id !== pendingId || msg.role !== "bot") return msg;
+          return {
+            ...msg,
+            pending: true,
+            text: "Останавливаю…",
+            error: undefined,
+          };
+        }),
+      );
+    }
+    void (async () => {
+      if (runId) {
+        try {
+          await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
+            method: "POST",
+          });
+        } catch {
+          /* UI still finishes below */
+        }
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          try {
+            const st = await fetch(
+              `/api/runs/${encodeURIComponent(runId)}/status`,
+            );
+            const body = await st.json().catch(() => ({}));
+            const pipe = body.status as string | undefined;
+            const slides = body.slides_status as string | undefined;
+            if (
+              pipe === "cancelled" ||
+              slides === "cancelled" ||
+              (pipe !== "running" &&
+                slides !== "running" &&
+                slides !== "queued")
+            ) {
+              break;
+            }
+          } catch {
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+      if (pendingId) {
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== pendingId || msg.role !== "bot") return msg;
+            return {
+              ...msg,
+              pending: false,
+              text: "Остановлено",
+              error: undefined,
+              result: msg.result
+                ? {
+                    ...msg.result,
+                    slides_status:
+                      msg.result.slides_status === "running" ||
+                      msg.result.slides_status === "queued"
+                        ? "cancelled"
+                        : msg.result.slides_status,
+                    slides_error: "Остановлено",
+                  }
+                : msg.result,
+            };
+          }),
+        );
+      }
+      setStopping(false);
+      setBusy(false);
+      activeRunIdRef.current = null;
+    })();
+  }
+
   async function makePresentation(msgId: string, result: RunResult) {
     const runId = result.run_id;
     if (!runId) return;
     // Julius: deck builds on the main chat — never park progress in the rail.
     setRailExiting(false);
     setActiveArtifact(null);
+    cancelRequestedRef.current = false;
+    activeRunIdRef.current = runId;
+    pendingBotIdRef.current = msgId;
     setBusy(true);
     setMsgs((m) =>
       m.map((msg) => {
@@ -636,10 +740,14 @@ export default function App() {
       }
       const deadline = Date.now() + 10 * 60 * 1000;
       for (;;) {
+        if (cancelRequestedRef.current) {
+          break;
+        }
         if (Date.now() > deadline) {
           throw new Error("таймаут сборки презентации (10 мин)");
         }
         await new Promise((r) => setTimeout(r, 500));
+        if (cancelRequestedRef.current) break;
         const st = await fetch(
           `/api/runs/${encodeURIComponent(runId)}/status`,
         );
@@ -655,7 +763,11 @@ export default function App() {
         const slidesStage = (stBody.slides_stage as string) || null;
         const slidesError = (stBody.slides_error as string) || null;
         const downloads = (stBody.downloads || {}) as Record<string, string>;
-        if (slidesStatus === "ok" || slidesStatus === "error") {
+        if (
+          slidesStatus === "ok" ||
+          slidesStatus === "error" ||
+          slidesStatus === "cancelled"
+        ) {
           let slidePngs: string[] = [];
           let deckIr: RunResult["deck"] = null;
           let deckPdfMode: string | null = null;
@@ -707,20 +819,9 @@ export default function App() {
             }),
           );
           if (slidesStatus === "ok") {
+            // Cards in chat are enough — do not auto-open the artifact rail.
             setDownloadsPulseMsgId(msgId);
             window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
-            const merged: RunResult = {
-              ...result,
-              downloads: { ...result.downloads, ...downloads },
-              slides_status: slidesStatus,
-              slides_stage: slidesStage,
-              slides_error: slidesError,
-              slide_pngs: slidePngs,
-              deck: deckIr ?? result.deck,
-              deck_pdf_mode: deckPdfMode ?? result.deck_pdf_mode,
-              output_mode: result.output_mode || "presentation",
-            };
-            openPresentationArtifact(msgId, merged);
           }
           break;
         }
@@ -750,22 +851,25 @@ export default function App() {
         );
       }
     } catch (err) {
-      setMsgs((m) =>
-        m.map((msg) => {
-          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-          return {
-            ...msg,
-            pending: false,
-            result: {
-              ...msg.result,
-              slides_status: "error",
-              slides_error:
-                err instanceof Error ? err.message : String(err),
-            },
-          };
-        }),
-      );
+      if (!cancelRequestedRef.current) {
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+            return {
+              ...msg,
+              pending: false,
+              result: {
+                ...msg.result,
+                slides_status: "error",
+                slides_error:
+                  err instanceof Error ? err.message : String(err),
+              },
+            };
+          }),
+        );
+      }
     } finally {
+      if (activeRunIdRef.current === runId) activeRunIdRef.current = null;
       setBusy(false);
     }
   }
@@ -1051,6 +1155,9 @@ export default function App() {
           ? ("presentation" as const)
           : ("report" as const);
     const pendingId = uid();
+    cancelRequestedRef.current = false;
+    pendingBotIdRef.current = pendingId;
+    activeRunIdRef.current = null;
     // Presentation builds stay on the chat sheet — close rail if open.
     if (outMode === "presentation") {
       setRailExiting(false);
@@ -1088,6 +1195,7 @@ export default function App() {
       ),
     ]);
     setBusy(true);
+    setStopping(false);
     setChatTitle(provisionalSessionTitle(workMode));
     setChat("");
     if (chatRef.current) chatRef.current.style.height = "44px";
@@ -1175,22 +1283,19 @@ export default function App() {
 
       // Sync photo-edit response (no poll)
       if (data.mode === "photo_edit" && data.status === "ok") {
-        const result = data as RunResult;
-        setChatTitle(
-          (typeof data.caption === "string" && data.caption.trim()) ||
-            "Правка фото",
-        );
+        const result = data as unknown as RunResult;
+        const caption = asString(data.caption, "Фото изменено");
+        setChatTitle(caption.trim() || "Правка фото");
         setMsgs((m) =>
-          m.map((msg) =>
-            msg.id === pendingId
-              ? {
-                  ...msg,
-                  text: data.caption || "Фото изменено",
-                  pending: false,
-                  result,
-                }
-              : msg,
-          ),
+          m.map((msg) => {
+            if (msg.id !== pendingId || msg.role !== "bot") return msg;
+            return {
+              ...msg,
+              text: caption,
+              pending: false,
+              result,
+            };
+          }),
         );
         setToast("Фото изменено");
         window.setTimeout(() => setToast(null), 2800);
@@ -1198,16 +1303,17 @@ export default function App() {
         return;
       }
 
-      let result = data as RunResult;
+      let result = data as unknown as RunResult;
 
       // 202 async job: poll until ok/error
       if (res.status === 202 || data.status === "started" || data.status === "running") {
-        const runId = data.run_id as string;
+        const runId = asString(data.run_id);
         if (!runId) throw new Error("server did not return run_id");
+        activeRunIdRef.current = runId;
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== pendingId || msg.role !== "bot") return msg;
-            const stage = data.stage || "queued";
+            const stage = asString(data.stage, "queued");
             const mode = msg.thinkingMode || "report";
             return appendBotThinking(
               {
@@ -1228,14 +1334,23 @@ export default function App() {
         let stopSummary: (() => void) | null = null;
         let streamedSummary = "";
         let summaryStreamStarted = false;
+        let cancelled = false;
         try {
           for (;;) {
+            if (cancelRequestedRef.current) {
+              cancelled = true;
+              break;
+            }
             if (Date.now() - pollStarted > pollDeadlineMs) {
               throw new Error(
                 `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
               );
             }
             await new Promise((r) => setTimeout(r, 400));
+            if (cancelRequestedRef.current) {
+              cancelled = true;
+              break;
+            }
             const st = await fetch(
               `/api/runs/${encodeURIComponent(runId)}/status`,
             );
@@ -1291,6 +1406,10 @@ export default function App() {
                 },
               );
             }
+            if (body.status === "cancelled") {
+              cancelled = true;
+              break;
+            }
             if (body.status === "running" || body.status === "started") {
               setMsgs((m) =>
                 m.map((msg) => {
@@ -1325,6 +1444,10 @@ export default function App() {
           }
         } finally {
           stopSummary?.();
+        }
+        if (cancelled || cancelRequestedRef.current) {
+          setBusy(false);
+          return;
         }
       }
 
@@ -1370,12 +1493,17 @@ export default function App() {
           };
         }),
       );
+      if (cancelRequestedRef.current) {
+        setBusy(false);
+        return;
+      }
       const isPresentationOnly =
         outMode === "presentation" || result.output_mode === "presentation";
       if (isPresentationOnly && result.run_id) {
         // makePresentation owns busy until deck finishes; opens presentation rail on ok
         void makePresentation(pendingId, result);
       } else {
+        activeRunIdRef.current = null;
         setBusy(false);
         // Open the mode's primary surface so the user sees the right artifact.
         if (result.output_mode === "diagram" && result.diagrams?.[0]) {
@@ -1389,14 +1517,17 @@ export default function App() {
         }
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMsgs((m) =>
-        m.map((msg) =>
-          msg.id === pendingId
-            ? { id: pendingId, role: "bot", text: "Ошибка", error: message }
-            : msg,
-        ),
-      );
+      if (!cancelRequestedRef.current) {
+        const message = err instanceof Error ? err.message : String(err);
+        setMsgs((m) =>
+          m.map((msg) =>
+            msg.id === pendingId
+              ? { id: pendingId, role: "bot", text: "Ошибка", error: message }
+              : msg,
+          ),
+        );
+      }
+      activeRunIdRef.current = null;
       setBusy(false);
     }
   }
@@ -1554,12 +1685,15 @@ export default function App() {
                   onOpenDiagram={openDiagramArtifact}
                   onMakePresentation={makePresentation}
                   onOpenPresentation={openPresentationArtifact}
+                  onOpenDeckSlides={openDeckSlidesArtifact}
                   onDeckStyle={() => setDeckStyleOpen(true)}
                 />
 
                 <ChatComposer
                   busy={busy}
+                  stopping={stopping}
                   canSend={canSend}
+                  onStop={stopGeneration}
                   chat={chat}
                   attachPhotos={attachPhotos}
                   showPlaque={showPlaque}

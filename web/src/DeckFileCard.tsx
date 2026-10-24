@@ -17,7 +17,6 @@ type Props = {
   primaryLabel?: string;
   /** Extra slide thumbs under the hero (deck). */
   filmstrip?: string[];
-  footerHint?: string;
 };
 
 function FileGlyph({ kind }: { kind: Kind }) {
@@ -105,7 +104,6 @@ export function DeckFileCard({
   onPrimary,
   primaryLabel,
   filmstrip = [],
-  footerHint,
 }: Props) {
   const isPptx = kind === "pptx";
   const isReportPdf = kind === "pdf";
@@ -113,30 +111,24 @@ export function DeckFileCard({
     fileLabel ||
     (isPptx ? "deck_slides.pptx" : isReportPdf ? "report.pdf" : "deck.pdf");
   const badge = isPptx ? "PPTX" : "PDF";
+  const isDeckPdf = kind === "deck_pdf";
   const kindHint = isPptx
-    ? "Редактируемая презентация"
+    ? "Презентация · PowerPoint"
     : isReportPdf
       ? "PDF отчёта"
-      : "PDF twin";
-  const defaultPrimary = isPptx ? "Изменить" : "Открыть";
+      : "Презентация · PDF";
+  const defaultPrimary = isPptx || isDeckPdf ? "Просмотр" : "Открыть";
   const actionLabel = primaryLabel || defaultPrimary;
   const kindClass = isPptx
     ? "is-pptx"
     : isReportPdf
       ? "is-pdf is-report-pdf"
-      : "is-pdf";
+      : "is-pdf is-deck-pdf";
   const emptyHint = isPptx
-    ? "Editable PowerPoint"
+    ? "Презентация · PPTX"
     : isReportPdf
       ? "PDF отчёта"
-      : "PDF twin";
-  const foot =
-    footerHint ||
-    (isPptx
-      ? "Открыть редактор слайдов →"
-      : isReportPdf
-        ? "Открыть в панели →"
-        : "Открыть twin →");
+      : "Презентация · PDF";
   const strip = filmstrip.filter(Boolean).slice(0, 6);
   const teaserTitle = (docTitle || "").trim() || title;
 
@@ -199,9 +191,11 @@ export function DeckFileCard({
           <span className="deck-file-card-hint">{kindHint}</span>
         </span>
         <span className="deck-file-card-actions">
-          <a href={href} download className="deck-file-card-action">
-            Скачать
-          </a>
+          {href && href !== "#" ? (
+            <a href={href} download className="deck-file-card-action">
+              Скачать
+            </a>
+          ) : null}
           {onPrimary ? (
             <button
               type="button"
@@ -268,17 +262,6 @@ export function DeckFileCard({
         </div>
       ) : null}
 
-      {onPrimary ? (
-        <footer className="deck-file-card-foot">
-          <button
-            type="button"
-            className="deck-file-card-foot-link"
-            onClick={onPrimary}
-          >
-            {foot}
-          </button>
-        </footer>
-      ) : null}
     </article>
   );
 }

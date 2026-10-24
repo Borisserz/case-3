@@ -19,6 +19,7 @@ from case3.generate import generate_document, max_images_from_env, resolve_text_
 from case3.inject import write_injected
 from case3.image_api import ImageApiConfig, generate_all_figures
 from case3.render import RenderError, render_tex
+from case3.run_cancel import RunCancelled, raise_if_cancelled
 from case3.summary_bus import BUS
 from case3.user_photos import (
     ensure_user_slots_in_tex,
@@ -26,6 +27,13 @@ from case3.user_photos import (
     merge_user_figures,
 )
 log = logging.getLogger("case3.pipeline")
+
+
+def resolve_pipeline_formats(formats: set[str] | None) -> set[str]:
+    """Default print formats. ``None`` → ``{pdf}``; empty set stays empty (none)."""
+    if formats is None:
+        return {"pdf"}
+    return set(formats)
 
 
 class PipelineError(RuntimeError):
@@ -126,6 +134,23 @@ def _diagram_chat_blurb(diagrams: list[dict[str, Any]] | None) -> str:
     return f"Готово: {len(titles)} схем — {shown}{more}."
 
 
+def _presentation_chat_blurb(
+    *,
+    charts: list[dict[str, Any]] | None = None,
+    figures: list[dict[str, Any]] | None = None,
+) -> str:
+    """Local blurb for presentation — skip second LLM; slides job is the product."""
+    n_ch = len([c for c in (charts or []) if isinstance(c, dict)])
+    n_fig = len([f for f in (figures or []) if isinstance(f, dict)])
+    bits: list[str] = []
+    if n_ch:
+        bits.append(f"графиков: {n_ch}")
+    if n_fig:
+        bits.append(f"фото: {n_fig}")
+    media = f" ({', '.join(bits)})" if bits else ""
+    return f"Ок, собираем презентацию{media}…"
+
+
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (logs / "meta.json").write_text(payload, encoding="utf-8")
@@ -186,7 +211,7 @@ def run_pipeline(
     user_figures: list[dict[str, Any]] | None = None,
     output_mode: str = "auto",
 ) -> Path:
-    formats = formats or {"pdf"}
+    formats = resolve_pipeline_formats(formats)
     root = project_root.resolve()
     run_id, text_path, work, out, logs = prepare_run_dirs(
         source, project_root=root, run_id=run_id
@@ -235,6 +260,7 @@ def run_pipeline(
     _write_meta(meta, out, logs)
 
     def bump(stage: str, detail: str | None = None) -> None:
+        raise_if_cancelled(out)
         _set_stage(meta, out, logs, stage, detail=detail)
         if on_stage:
             on_stage(stage, detail)
@@ -253,6 +279,7 @@ def run_pipeline(
             max_images=llm_image_budget,
             max_charts=charts_budget,
             max_diagrams=diagrams_budget,
+            cancel_check=lambda: raise_if_cancelled(out),
         )
         figures = merge_user_figures(figures, user_figs, max_images=images_budget)
         raw_tex = tex_path.read_text(encoding="utf-8")
@@ -441,20 +468,25 @@ def run_pipeline(
                 )
             )
         elif skip_print:
-            # Diagram mode: skip second Vision call — Liber already has Mermaid.
-            # A local blurb finishes in ms; LLM summary was the long “Фиксирую граф…” tail.
+            # Diagram + presentation: no second Vision call (slides/Mermaid are the product).
+            # LLM summary was the long hang after charts/images («В очереди…» forever).
             artifacts = {}
             BUS.start(run_id)
+            bump("summary")
             if mode == "diagram":
-                bump("summary")
                 summary_text = _diagram_chat_blurb(diagrams)
                 summary_status = "ok"
-                BUS.finish(run_id, summary_text, summary_status)
+            elif mode == "presentation":
+                summary_text = _presentation_chat_blurb(
+                    charts=charts, figures=figures
+                )
+                summary_status = "ok"
             else:
                 meta["summary_status"] = "streaming"
                 meta["chat_summary"] = ""
                 _write_meta(meta, out, logs)
                 summary_text, summary_status = _do_summary()
+            BUS.finish(run_id, summary_text or "", summary_status)
             meta["chat_summary"] = summary_text or ""
             meta["summary_status"] = summary_status
             if summary_text:
@@ -502,10 +534,20 @@ def run_pipeline(
                     summary_text, encoding="utf-8"
                 )
 
+        raise_if_cancelled(out)
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
         meta["status"] = "ok"
         meta["stage"] = "ok"
         meta.pop("stage_detail", None)
+        meta.pop("cancel_requested", None)
+    except RunCancelled:
+        meta["status"] = "cancelled"
+        meta["stage"] = "cancelled"
+        meta["error"] = "Остановлено"
+        meta.pop("stage_detail", None)
+        log.info("pipeline cancelled run_id=%s", run_id)
+        _write_meta(meta, out, logs)
+        return out
     except Exception as exc:
         meta["status"] = "error"
         meta["stage"] = "error"
@@ -530,7 +572,7 @@ def run_pipeline(
             meta=meta,
         ) from exc
     finally:
-        if meta.get("status") != "error":
+        if meta.get("status") not in {"error", "cancelled"}:
             _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
