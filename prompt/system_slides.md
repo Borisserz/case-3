@@ -41,7 +41,7 @@ Decks that all look like `title → section → scorecard → chart → scorecar
 4. Prefer **≥1** of each when Source supports: chart layout, `table_hero` or `card_row`, and `callout` or `section`.
 5. Do **not** invent facts to force variety — if Source is thin, shorter deck with honest layouts beats fake KPIs.
 6. Title `takeaway`: split packs → 2–3 lines `VALUE — label`; dark packs → one sharp Source-bound line (numbers only from Source).
-7. **Follow the structure signature** in `{{STRUCTURE_OVERLAY}}` — each template owns a different block mix (do not clone another pack’s arc).
+7. **Follow the BEAT PLAN / structure signature** in `{{STRUCTURE_OVERLAY}}` — when a skeleton is present, emit those layouts in order (do not collapse to scorecard spam).
 
 # Pack / structure signatures (own the mix)
 

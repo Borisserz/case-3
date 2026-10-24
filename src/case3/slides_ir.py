@@ -103,13 +103,59 @@ def _collect_text_blobs(slide: dict[str, Any]) -> list[str]:
     return blobs
 
 
+def _compact_spaced_thousands(text: str) -> str:
+    """Join ``9 330`` / ``9 330`` into ``9330`` before digit gating."""
+    return re.sub(
+        r"(?<=\d)[\s\u00a0\u202f]+(?=\d{3}(?:\D|$))",
+        "",
+        text or "",
+    )
+
+
 def _numbers_in_text(text: str) -> list[str]:
-    return _NUMBER_RUN.findall(text or "")
+    return _NUMBER_RUN.findall(_compact_spaced_thousands(text))
 
 
 def _number_variants(num: str) -> list[str]:
     n = num or ""
     return list({n, n.replace(",", "."), n.replace(".", ",")})
+
+
+def _is_section_index_chrome(num: str) -> bool:
+    """Allow zero-padded kicker indices ``01``…``099`` (not bare Source facts)."""
+    return bool(re.fullmatch(r"0\d{1,2}", num or ""))
+
+
+def _number_in_source(num: str, source_norm: str) -> bool:
+    """Whole-token match — ``38`` must not hitchhike on ``38000``."""
+    if not num or not source_norm:
+        return False
+    for m in re.finditer(re.escape(num), source_norm):
+        start, end = m.span()
+        before = source_norm[start - 1] if start > 0 else ""
+        after = source_norm[end] if end < len(source_norm) else ""
+        # Part of a longer integer/decimal run → reject this hit.
+        if before.isdigit():
+            continue
+        if before in ".," and start >= 2 and source_norm[start - 2].isdigit():
+            continue
+        if after.isdigit():
+            continue
+        if after in ".," and end + 1 < len(source_norm) and source_norm[end + 1].isdigit():
+            continue
+        return True
+    return False
+
+
+def _number_is_allowed(
+    num: str, *, source_norm: str, allowed: frozenset[str]
+) -> bool:
+    if _is_section_index_chrome(num):
+        return True
+    for v in _number_variants(num):
+        if v in allowed or _number_in_source(v, source_norm):
+            return True
+    return False
 
 
 def _assert_numbers_allowed(
@@ -119,16 +165,243 @@ def _assert_numbers_allowed(
     allowed: frozenset[str],
 ) -> None:
     for num in _numbers_in_text(text):
-        ok = False
-        for v in _number_variants(num):
-            if v in allowed or v in source_norm:
-                ok = True
-                break
-        if ok:
+        if _number_is_allowed(num, source_norm=source_norm, allowed=allowed):
             continue
         raise DeckIrError(
             f"number {num!r} not found in Source (and not in allowed chart numbers)"
         )
+
+
+_ORPHAN_UNIT = re.compile(
+    r"(?:°C|°F|℃|℉|%|тыс\.?|млн\.?|млрд\.?|чел\.?|pp|п\.?\s?п\.?)",
+    re.IGNORECASE,
+)
+_ORPHAN_UNIT_ONLY = re.compile(
+    rf"^\s*(?:[-−–—+]?\s*)?(?:{_ORPHAN_UNIT.pattern})\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_orphan_units(text: str) -> str:
+    """Remove unit tokens left after digit scrub (e.g. '— °C', 'тыс. чел.')."""
+    out = text or ""
+    # dash/colon + unit
+    out = re.sub(
+        rf"\s*[-−–—:]\s*(?:{_ORPHAN_UNIT.pattern})\b",
+        "",
+        out,
+        flags=re.IGNORECASE,
+    )
+    # bare unit tokens
+    out = re.sub(
+        rf"(?<![\w./])(?:{_ORPHAN_UNIT.pattern})(?![\w./])",
+        "",
+        out,
+        flags=re.IGNORECASE,
+    )
+    # empty parens left by removed numbers
+    out = re.sub(r"\(\s*\)", "", out)
+    out = re.sub(r"\[\s*\]", "", out)
+    # orphan sign left after scrubbing the digits of −38 → "−"
+    out = re.sub(r"(?<![\d])[-−–+](?!\d)", "", out)
+    out = re.sub(r"\s{2,}", " ", out)
+    out = re.sub(r"\s+([,.;:!?])", r"\1", out)
+    out = re.sub(r"([-−–—,:;])\s*\1+", r"\1", out)
+    out = re.sub(r"^[\s,.;:!?−–—-]+|[\s,.;:!?−–—-]+$", "", out)
+    return out.strip()
+
+
+def _kpi_value_ok(value: str) -> bool:
+    v = (value or "").strip()
+    if not v:
+        return False
+    if _ORPHAN_UNIT_ONLY.match(v):
+        return False
+    # Prefer values that still carry a digit, sign, or word (not only punctuation)
+    if not re.search(r"[\dA-Za-zА-Яа-яЁё]", v):
+        return False
+    return True
+
+
+_BROKEN_SCRUB = re.compile(
+    r"(?:"
+    r"\b(?:на|с|от|до|около|порядка|минус|плюс)\s*$"
+    r"|\bна\s*[;,]|\bна\s+(?:за|с|по|от|до)\b"
+    r"|\b(?:выросла?|вырос|увеличил(?:ась|ся)?|снизил(?:ась|ся)?|сократил(?:ась|ся)?|"
+    r"достигл[аио]?|составил[аио]?)\s+(?:на\s+)?(?:от\s+)?"
+    r"(?:понедельник|вторник|сред|четверг|пятниц|суббот|воскресен|в\b)"
+    r"|\b(?:на|минус|плюс)\s+(?:тыс|млн|млрд|чел|от|до)\b"
+    r"|\(\s*\)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _text_ok_after_scrub(
+    text: str, *, min_len: int = 2, had_digits: bool = False
+) -> bool:
+    t = (text or "").strip()
+    if len(t) < min_len:
+        return False
+    if _ORPHAN_UNIT_ONLY.match(t):
+        return False
+    if _BROKEN_SCRUB.search(t):
+        return False
+    # Invented-number scrub removed the only facts → drop the stub.
+    if had_digits and not re.search(r"\d", t):
+        return False
+    # Quantitative fragments that lost their digits (доля / % / рост).
+    if not re.search(r"\d", t) and re.search(
+        r"\b(?:доля|совокупн\w*|прирост|убыль|рост)\b", t, flags=re.IGNORECASE
+    ):
+        return False
+    return True
+
+
+def scrub_invented_numbers(
+    deck: dict[str, Any],
+    *,
+    source: str,
+    allowed_number_strings: frozenset[str] | None = None,
+) -> dict[str, Any]:
+    """Drop digit runs not present in Source/charts (LLM heal after IR reject)."""
+    source_norm = _norm_ws(source)
+    allowed = frozenset(allowed_number_strings or ())
+
+    def _scrub_text(text: str) -> str:
+        def repl(m: re.Match[str]) -> str:
+            num = m.group(0)
+            if _number_is_allowed(num, source_norm=source_norm, allowed=allowed):
+                return num
+            return ""
+
+        # Compact spaced thousands first so ``9 330`` gates as ``9330``.
+        compacted = _compact_spaced_thousands(text or "")
+        out = _NUMBER_RUN.sub(repl, compacted)
+        out = re.sub(r"\s{2,}", " ", out)
+        out = re.sub(r"\s+([,.;:!?])", r"\1", out)
+        return _strip_orphan_units(out.strip())
+
+    slides_out: list[dict[str, Any]] = []
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        s2 = dict(s)
+        for key in (
+            "title",
+            "subtitle",
+            "caption",
+            "body",
+            "kicker",
+            "takeaway",
+            "term",
+            "definition",
+        ):
+            if isinstance(s2.get(key), str):
+                raw_t = str(s2[key])
+                had = bool(_NUMBER_RUN.search(raw_t))
+                cleaned = _scrub_text(raw_t)
+                if key in ("takeaway", "subtitle", "body", "caption", "definition"):
+                    s2[key] = (
+                        cleaned
+                        if _text_ok_after_scrub(cleaned, had_digits=had)
+                        else ""
+                    )
+                    if not s2[key]:
+                        s2.pop(key, None)
+                else:
+                    s2[key] = cleaned
+        if isinstance(s2.get("bullets"), list):
+            kept: list[str] = []
+            for b in s2["bullets"]:
+                raw_b = str(b)
+                if not raw_b.strip():
+                    continue
+                had = bool(_NUMBER_RUN.search(raw_b))
+                cleaned = _scrub_text(raw_b)
+                if _text_ok_after_scrub(cleaned, had_digits=had):
+                    kept.append(cleaned)
+            s2["bullets"] = kept
+        if isinstance(s2.get("kpis"), list):
+            kpis = []
+            for k in s2["kpis"]:
+                if not isinstance(k, dict):
+                    continue
+                k2 = dict(k)
+                for key in ("label", "value", "hint", "delta"):
+                    if isinstance(k2.get(key), str):
+                        k2[key] = _scrub_text(str(k2[key]))
+                if _kpi_value_ok(str(k2.get("value") or "")) and str(
+                    k2.get("label") or ""
+                ).strip():
+                    kpis.append(k2)
+            s2["kpis"] = kpis
+        if isinstance(s2.get("cards"), list):
+            cards = []
+            for c in s2["cards"]:
+                if not isinstance(c, dict):
+                    continue
+                c2 = dict(c)
+                for key in ("title", "body", "kicker"):
+                    if isinstance(c2.get(key), str):
+                        raw_c = str(c2[key])
+                        had = bool(_NUMBER_RUN.search(raw_c))
+                        cleaned = _scrub_text(raw_c)
+                        if key == "body" and not _text_ok_after_scrub(
+                            cleaned, had_digits=had
+                        ):
+                            c2[key] = ""
+                        else:
+                            c2[key] = cleaned
+                if str(c2.get("title") or "").strip():
+                    cards.append(c2)
+            s2["cards"] = cards
+        if isinstance(s2.get("rows"), list):
+            rows = []
+            for row in s2["rows"]:
+                if not isinstance(row, list):
+                    continue
+                cells = [_scrub_text(str(cell)) or "—" for cell in row]
+                if any(c.strip() and c != "—" for c in cells):
+                    rows.append(cells)
+            # Drop data rows with no remaining digits (facts were invented).
+            if rows:
+                header, data = rows[0], rows[1:]
+                data = [
+                    r
+                    for r in data
+                    if any(re.search(r"\d", c) for c in r)
+                ]
+                rows = [header] + data if data else []
+            s2["rows"] = rows
+        # Demote layouts that lost required payload after scrub → bullets.
+        layout = str(s2.get("layout") or "")
+
+        def _demote_to_bullets(slide: dict[str, Any], fallback: str) -> None:
+            slide["layout"] = "bullets"
+            for key in ("rows", "kpis", "cards", "term", "definition", "body"):
+                slide.pop(key, None)
+            bullets = slide.get("bullets")
+            if not isinstance(bullets, list) or not any(str(b).strip() for b in bullets):
+                slide["bullets"] = [str(slide.get("title") or fallback)]
+
+        if layout == "table_hero" and len(s2.get("rows") or []) < 2:
+            _demote_to_bullets(s2, "Сводка")
+        if layout in ("scorecard", "kpi_row") and len(s2.get("kpis") or []) < 1:
+            _demote_to_bullets(s2, "Показатели")
+        if layout == "card_row" and len(s2.get("cards") or []) < 2:
+            _demote_to_bullets(s2, "Наблюдения")
+        if layout == "callout":
+            title = str(s2.get("title") or "Смысл").strip() or "Смысл"
+            if not str(s2.get("term") or "").strip():
+                s2["term"] = title[:40]
+            if not str(s2.get("definition") or "").strip():
+                body = str(s2.get("body") or "").strip()
+                s2["definition"] = body or title
+        slides_out.append(s2)
+    out = dict(deck)
+    out["slides"] = slides_out
+    return out
 
 
 def _clip_str(val: Any, *, field: str, max_len: int, required: bool = False) -> str:
@@ -412,6 +685,34 @@ def _parse_slide(
     return out
 
 
+def _assert_layout_variety(slides: list[dict[str, Any]]) -> None:
+    """Reject monotone decks (scorecard spam) — mirrors system_slides anti-monotony."""
+    n = len(slides)
+    layouts = [str(s.get("layout") or "") for s in slides]
+    distinct = {x for x in layouts if x}
+    if n >= 8 and len(distinct) < 5:
+        raise DeckIrError(
+            f"layout variety: need ≥5 distinct layouts when ≥8 slides "
+            f"(got {len(distinct)}: {sorted(distinct)})"
+        )
+    if 6 <= n <= 7 and len(distinct) < 4:
+        raise DeckIrError(
+            f"layout variety: need ≥4 distinct layouts when 6–7 slides "
+            f"(got {len(distinct)}: {sorted(distinct)})"
+        )
+    # Cap consecutive scorecard / kpi_row
+    run = 0
+    for lay in layouts:
+        if lay in ("scorecard", "kpi_row"):
+            run += 1
+            if run > 2:
+                raise DeckIrError(
+                    "layout variety: at most 2 consecutive scorecard/kpi_row slides"
+                )
+        else:
+            run = 0
+
+
 def _assert_deck_arc(slides: list[dict[str, Any]]) -> None:
     if not slides:
         raise DeckIrError("slides must be a non-empty list")
@@ -429,6 +730,7 @@ def _assert_deck_arc(slides: list[dict[str, Any]]) -> None:
                 )
         else:
             run = 0
+    _assert_layout_variety(slides)
 
 
 def parse_deck_ir(

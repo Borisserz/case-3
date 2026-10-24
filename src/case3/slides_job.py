@@ -11,12 +11,17 @@ from typing import Any, Callable
 from case3.chart_html import sanitize_chart_html
 from case3.chart_style import apply_hex_series_to_html, normalize_palette_id
 from case3.charts import render_chart_png
-from case3.deck_theme import resolve_deck_theme
+from case3.deck_theme import normalize_pack_id, resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.slides_beat_planner import (
+    format_beat_overlay,
+    maybe_apply_pack_hint,
+    plan_beats,
+)
 from case3.slides_chart_data import series_from_figures_json
 from case3.slides_lo import write_deck_pdf
 from case3.slides_pptx_native import build_native_pptx
-from case3.slides_ir import DeckIrError, parse_deck_ir
+from case3.slides_ir import DeckIrError, parse_deck_ir, scrub_invented_numbers
 from case3.slides_media import (
     collect_run_media,
     ensure_diagram_pngs,
@@ -103,13 +108,14 @@ def load_slides_system_prompt(
     media_catalog: str = "",
     theme_pack: str | None = None,
     structure_id: str | None = None,
+    beat_overlay: str | None = None,
 ) -> str:
     from case3.deck_structure import structure_overlay
 
     path = _repo_root() / "prompt" / "system_slides.md"
     text = path.read_text(encoding="utf-8")
     overlay = _theme_overlay(theme_pack)
-    struct = structure_overlay(structure_id)
+    struct = (beat_overlay or "").strip() or structure_overlay(structure_id)
     return (
         text.replace("{{PALETTE}}", palette)
         .replace("{{THEME_OVERLAY}}", overlay)
@@ -132,6 +138,16 @@ def load_slides_system_prompt(
     )
 
 
+def _repair_json_text(blob: str) -> str:
+    """Best-effort fixes for common LLM JSON slips."""
+    s = blob
+    # Trailing commas before } or ]
+    s = re.sub(r",(\s*[}\]])", r"\1", s)
+    # Smart quotes → plain
+    s = s.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    return s
+
+
 def _extract_json_object(raw: str) -> dict[str, Any]:
     text = (raw or "").strip()
     m = _JSON_FENCE.search(text)
@@ -142,10 +158,14 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
     end = text.rfind("}")
     if start < 0 or end <= start:
         raise DeckIrError("LLM response has no JSON object")
+    blob = text[start : end + 1]
     try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError as exc:
-        raise DeckIrError(f"invalid JSON from LLM: {exc}") from exc
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        try:
+            data = json.loads(_repair_json_text(blob))
+        except json.JSONDecodeError as exc:
+            raise DeckIrError(f"invalid JSON from LLM: {exc}") from exc
     if not isinstance(data, dict):
         raise DeckIrError("deck IR root must be object")
     return data
@@ -281,7 +301,7 @@ def run_slides_job(
 
         # Deck theme (Julius parity) — does not mutate report chart_palette.
         style_meta = meta.get("slides_style") if isinstance(meta.get("slides_style"), dict) else {}
-        theme_pack = str(
+        theme_pack_raw = str(
             style_meta.get("theme_pack")
             or meta.get("slides_theme_pack")
             or "atelier"
@@ -289,12 +309,44 @@ def run_slides_job(
         style_settings = style_meta.get("style_settings")
         if not isinstance(style_settings, dict):
             style_settings = None
-        theme_tokens = resolve_deck_theme(theme_pack, style_settings=style_settings)
         structure_id = str(
             style_meta.get("structure_id")
             or meta.get("slides_structure_id")
             or ""
         ).strip() or None
+        # Freeform: infer beat plan (+ pack hint). Structured: plan from template arc.
+        beat_plan = plan_beats(
+            source=source,
+            intent=intent,
+            chart_ids=chart_ids,
+            figure_ids=figure_ids,
+            diagram_ids=diagram_ids,
+            structure_id=structure_id,
+        )
+        # Pack is "explicit" when UI chose a non-default pack, custom hex, or flag.
+        chosen = normalize_pack_id(theme_pack_raw)
+        pack_explicit = bool(
+            meta.get("slides_pack_explicit")
+            or style_meta.get("pack_explicit")
+            or style_settings
+            or (style_meta.get("theme_pack") and chosen != "atelier")
+        )
+        theme_pack = maybe_apply_pack_hint(
+            structure_id=structure_id,
+            current_pack=theme_pack_raw,
+            plan=beat_plan,
+            pack_explicit=pack_explicit,
+        )
+        theme_tokens = resolve_deck_theme(theme_pack, style_settings=style_settings)
+        beat_overlay = format_beat_overlay(beat_plan)
+        meta["slides_beat"] = {
+            "mode": beat_plan.mode,
+            "pack_hint": beat_plan.pack_hint,
+            "pack_applied": theme_tokens.pack_id,
+            "from_structure": beat_plan.from_structure,
+            "beats": list(beat_plan.beats),
+            "rationale": beat_plan.rationale,
+        }
 
         allowed_media = frozenset(chart_ids + figure_ids + diagram_ids)
         allowed_numbers = numbers_from_media_json(load_figures_json(out_dir))
@@ -319,46 +371,78 @@ def run_slides_job(
                 media_catalog=_media_catalog_block(out_dir),
                 theme_pack=theme_tokens.pack_id,
                 structure_id=structure_id,
+                beat_overlay=beat_overlay,
             )
+            allowed_preview = ", ".join(sorted(allowed_numbers)[:60]) or "(none from charts)"
             user = (
                 "Build the executive deck JSON now. "
-                "Follow STRUCTURE overlay arc when present (different templates ≠ only colors). "
-                "Prefer 10–12 slides when Source is rich; use section/scorecard/callout/table_hero when they fit. "
+                "Follow the BEAT PLAN / STRUCTURE overlay skeleton (layouts in order). "
+                "Prefer 10–12 slides when Source is rich; keep ≥5 distinct layouts when ≥8 slides. "
                 "Use available chart/figure/diagram ids only. "
-                "Numbers only from Source or chart captions. "
+                "Numbers only from Source or this allowed token list "
+                f"(chart captions/HTML): {allowed_preview}. "
+                "Do not invent decimals. "
                 "Return only the JSON object."
             )
             client = llm or LLMClient(LLMConfig.from_env())
+
+            def _parse_or_scrub(raw_ir: dict[str, Any]) -> dict[str, Any]:
+                try:
+                    return parse_deck_ir(
+                        raw_ir,
+                        source=source,
+                        allowed_media_ids=allowed_media,
+                        allowed_number_strings=allowed_numbers,
+                    )
+                except DeckIrError as err:
+                    # Always scrub digits first — also demotes broken tables/KPIs.
+                    healed = scrub_invented_numbers(
+                        raw_ir,
+                        source=source,
+                        allowed_number_strings=allowed_numbers,
+                    )
+                    try:
+                        deck_h = parse_deck_ir(
+                            healed,
+                            source=source,
+                            allowed_media_ids=allowed_media,
+                            allowed_number_strings=allowed_numbers,
+                        )
+                    except DeckIrError:
+                        raise err from None
+                    meta["slides_number_scrub"] = True
+                    log.warning("deck IR reject healed by scrub: %s", err)
+                    return deck_h
+
             raw_text = client.complete(system=system, user_text=user, reasoning="off")
-            raw_ir = _extract_json_object(raw_text)
             try:
-                deck = parse_deck_ir(
-                    raw_ir,
-                    source=source,
-                    allowed_media_ids=allowed_media,
-                    allowed_number_strings=allowed_numbers,
-                )
+                raw_ir = _extract_json_object(raw_text)
+                deck = _parse_or_scrub(raw_ir)
             except DeckIrError as first_err:
                 log.warning("deck IR rejected, retrying once: %s", first_err)
                 _set_slides(
-                    out_dir, meta, status="running", stage="llm_retry", logs_dir=logs_dir
+                    out_dir,
+                    meta,
+                    status="running",
+                    stage="llm_retry",
+                    logs_dir=logs_dir,
                 )
                 retry_user = (
                     f"Previous JSON was rejected: {first_err}. "
-                    "Fix and return ONLY a valid deck JSON. "
-                    "Use available media ids; numbers only from Source/charts; "
-                    "bullets ≤90 chars; title first, closing last."
+                    "Fix and return ONLY a valid deck JSON object (no markdown). "
+                    "Follow the BEAT PLAN skeleton layouts; "
+                    "≥5 distinct layouts when ≥8 slides; "
+                    "at most 2 consecutive scorecard/kpi_row; "
+                    "Use available media ids; "
+                    f"ONLY these number tokens (or Source): {allowed_preview}; "
+                    "bullets ≤90 chars; title first, closing last. "
+                    "Do not invent averages or deltas."
                 )
                 raw_text = client.complete(
                     system=system, user_text=retry_user, reasoning="off"
                 )
                 raw_ir = _extract_json_object(raw_text)
-                deck = parse_deck_ir(
-                    raw_ir,
-                    source=source,
-                    allowed_media_ids=allowed_media,
-                    allowed_number_strings=allowed_numbers,
-                )
+                deck = _parse_or_scrub(raw_ir)
         # Freeze theme into IR (overwrite any LLM paint fields).
         deck["theme_id"] = theme_tokens.pack_id
         deck["style"] = theme_tokens.as_dict()

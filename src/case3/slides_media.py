@@ -60,19 +60,37 @@ _NUMBER_RUN = re.compile(r"\d+(?:[.,]\d+)?")
 
 
 def numbers_from_media_json(fj: dict[str, Any]) -> frozenset[str]:
-    """Digit runs from chart/figure captions + chart HTML (allowed on slides)."""
+    """Digit runs from captions + chart ``data:[…]`` (not canvas/CSS junk)."""
     blobs: list[str] = []
     for key in ("charts", "figures", "diagrams"):
         for item in fj.get(key) or []:
             if not isinstance(item, dict):
                 continue
-            for field in ("caption", "title", "html", "mermaid", "prompt"):
+            for field in ("caption", "title", "mermaid", "prompt"):
                 val = item.get(field)
                 if isinstance(val, str) and val.strip():
                     blobs.append(val)
+            html = item.get("html")
+            if isinstance(html, str) and html.strip():
+                # Prefer dataset values / labels over width/height/color hex noise.
+                for m in re.finditer(
+                    r"data\s*:\s*\[([^\]]+)\]|labels\s*:\s*\[([^\]]+)\]",
+                    html,
+                    flags=re.IGNORECASE,
+                ):
+                    chunk = m.group(1) or m.group(2) or ""
+                    # Split CSV so ``9410,9370`` is two ints, not one decimal.
+                    for part in re.split(r"[,]", chunk):
+                        part = part.strip().strip("'\"")
+                        if part:
+                            blobs.append(part)
+                # Captions embedded in tooltip strings
+                for m in re.finditer(r"['\"]([^'\"]{0,80}\d[^'\"]{0,80})['\"]", html):
+                    s = m.group(1)
+                    if "тыс" in s.lower() or "°" in s or "%" in s or "чел" in s.lower():
+                        blobs.append(s)
     text = "\n".join(blobs)
     found = set(_NUMBER_RUN.findall(text))
-    # also dotted/comma twins
     extra: set[str] = set()
     for n in found:
         extra.add(n.replace(",", "."))

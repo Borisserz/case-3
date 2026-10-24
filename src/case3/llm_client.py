@@ -249,21 +249,26 @@ class LLMClient:
             max_tokens=self.config.max_tokens,
             base_url=self.config.base_url,
         )
-        data = json.dumps(body).encode("utf-8")
         headers = self._headers()
-        log.info(
-            "LLM POST %s model=%s bytes=%d timeout_s=%.0f",
-            self.config.endpoint,
-            self.config.model or "(default)",
-            len(data),
-            self.config.timeout_s,
-        )
-
+        max_tokens = int(body.get("max_tokens") or self.config.max_tokens)
         error: Exception | None = None
+        credit_clamped = False
         for attempt in range(self.config.max_retries + 1):
             if attempt:
                 self._sleep(float(attempt))
-            req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
+            body["max_tokens"] = max_tokens
+            data = json.dumps(body).encode("utf-8")
+            log.info(
+                "LLM POST %s model=%s bytes=%d timeout_s=%.0f max_tokens=%d",
+                self.config.endpoint,
+                self.config.model or "(default)",
+                len(data),
+                self.config.timeout_s,
+                max_tokens,
+            )
+            req = urllib.request.Request(
+                self.config.endpoint, data=data, headers=headers, method="POST"
+            )
             try:
                 with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
                     text, finish = _content(json.loads(resp.read().decode("utf-8")))
@@ -275,7 +280,29 @@ class LLMClient:
                     )
                     return text
             except urllib.error.HTTPError as exc:
-                error = LLMError(f"HTTP {exc.code} from {self.config.endpoint}: {_http_body(exc)}")
+                body_txt = _http_body(exc)
+                error = LLMError(
+                    f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
+                )
+                # OpenRouter 402: request max_tokens exceeds remaining credit.
+                if (
+                    exc.code == 402
+                    and not credit_clamped
+                    and "max_tokens" in body_txt
+                    and "afford" in body_txt
+                ):
+                    m = re.search(r"afford\s+(\d+)", body_txt, flags=re.I)
+                    if m:
+                        afford = max(1024, int(m.group(1)) - 64)
+                        if afford < max_tokens:
+                            log.warning(
+                                "LLM 402 credit clamp max_tokens %d → %d",
+                                max_tokens,
+                                afford,
+                            )
+                            max_tokens = afford
+                            credit_clamped = True
+                            continue
                 if exc.code < 500 and exc.code != 429:
                     raise error from exc
             except TimeoutError as exc:
