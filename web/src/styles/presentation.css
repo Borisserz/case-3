@@ -859,11 +859,15 @@
   padding-bottom: 4%;
 }
 .deck-cv-title--split {
+  position: absolute !important;
   display: grid;
   grid-template-columns: 0.55fr 0.45fr;
-  inset: 0;
-  padding: 0;
+  inset: 0 !important;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
   gap: 0;
+  box-sizing: border-box;
 }
 .deck-cv-title-main {
   display: flex;
@@ -905,13 +909,20 @@
   line-height: 1.35;
 }
 .deck-cv-title--bleed {
-  inset: 0;
+  /* Keep absolute fill — do not let content-height collapse the bleed photo. */
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
   display: block;
+  box-sizing: border-box;
 }
 .deck-cv-bleed {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  z-index: 0;
 }
 .deck-cv-bleed img {
   position: absolute;
@@ -994,11 +1005,12 @@
   position: relative;
   z-index: 1;
   max-width: 58%;
+  height: 100%;
   padding: 8% 5% 10% 6%;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 100%;
+  box-sizing: border-box;
 }
 .deck-cv[data-pack="botanical"] {
   background:
