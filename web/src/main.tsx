@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App from "./app/App";
 /* Direct imports — Vite @import inlining was serving a stale CSS bundle. */
 import "./styles/tokens.css";
 import "./styles/shell.css";
