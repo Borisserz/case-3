@@ -237,6 +237,7 @@ def edit_chart_in_run(
         modes.append("local_kpi")
         if type_changed:
             modes.append("type_change")
+            modes.append("local_type")
         chart["type"] = "kpi"
         chart["html"] = html
         chart = apply_type_to_chart(chart, "kpi")

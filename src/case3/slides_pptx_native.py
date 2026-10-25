@@ -67,8 +67,50 @@ def _palette(palette_id: str) -> dict[str, RGBColor]:
     }
 
 
+def _office_font_name(name: str, default: str) -> str:
+    """Map Liber/web face names to Office-safe families for PPTX latin typeface."""
+    if not name:
+        return default
+    part = name.split(",")[0].strip().strip("\"'")
+    low = part.lower()
+    # Serif / display → Georgia (Liber twin woff2 stays on HTML side).
+    if low in {
+        "liber serif",
+        "fraunces",
+        "iowan old style",
+        "libre baskerville",
+        "playfair display",
+        "playfair",
+        "crimson pro",
+        "crimson text",
+    }:
+        return "Georgia"
+    # Aptos Display is not always installed; Aptos is the Office family.
+    if low in {"aptos display", "aptos"}:
+        return "Aptos"
+    if low in {"arial black"}:
+        return "Arial Black"
+    # Sans / UI → Calibri (consistent Office body).
+    if low in {
+        "liber sans",
+        "source sans 3",
+        "source sans pro",
+        "inter",
+        "dm sans",
+        "manrope",
+        "system-ui",
+        "sans-serif",
+    }:
+        return "Calibri"
+    return part or default
+
+
 def _fonts_from_style(deck: dict[str, Any]) -> tuple[str, str]:
-    """Return (title_font, body_font) for PPTX. Prefer Office-safe fallbacks."""
+    """Return (title_font, body_font) for PPTX.
+
+    Role priority: title ← fonts.title; body ← fonts.body then fallback_pptx.
+    Never prefer fallback_pptx over an explicit body face.
+    """
     style = deck.get("style") if isinstance(deck.get("style"), dict) else None
     title, body = "Georgia", "Calibri"
     if not style:
@@ -76,21 +118,9 @@ def _fonts_from_style(deck: dict[str, Any]) -> tuple[str, str]:
     fonts = style.get("fonts") if isinstance(style.get("fonts"), dict) else {}
     raw_title = str(fonts.get("title") or fonts.get("display") or "").strip()
     raw_body = str(
-        fonts.get("fallback_pptx") or fonts.get("body") or fonts.get("sans") or ""
+        fonts.get("body") or fonts.get("sans") or fonts.get("fallback_pptx") or ""
     ).strip()
-    # Strip CSS stacks → first family; map web fonts to Office-ish names.
-    def _first(name: str, default: str) -> str:
-        if not name:
-            return default
-        part = name.split(",")[0].strip().strip("\"'")
-        low = part.lower()
-        if low in {"fraunces", "iowan old style", "libre baskerville", "playfair display"}:
-            return "Georgia"
-        if low in {"source sans 3", "source sans pro", "inter", "dm sans", "manrope"}:
-            return "Calibri"
-        return part or default
-
-    return _first(raw_title, title), _first(raw_body, body)
+    return _office_font_name(raw_title, title), _office_font_name(raw_body, body)
 
 
 def _colors_from_style(
@@ -132,11 +162,24 @@ def _set_run(
     color: RGBColor | None = None,
     title: bool = False,
 ) -> None:
+    """Set face via python-pptx name (also writes a:latin/@typeface)."""
+    face = _PPTX_TITLE_FONT if title else _PPTX_FONT
     run.font.size = Pt(size_pt)
     run.font.bold = bold
-    run.font.name = _PPTX_TITLE_FONT if title else _PPTX_FONT
+    run.font.name = face
     if color is not None:
         run.font.color.rgb = color
+    # Ensure DrawingML latin typeface matches (PowerPoint quirk / east-asia defaults).
+    try:
+        rPr = run._r.get_or_add_rPr()
+        latin = rPr.find(qn("a:latin"))
+        if latin is None:
+            latin = parse_xml(f'<a:latin {nsdecls("a")} typeface="{face}"/>')
+            rPr.insert(0, latin)
+        else:
+            latin.set("typeface", face)
+    except Exception:  # noqa: BLE001 — non-fatal; name alone is usually enough
+        pass
 
 
 def _add_textbox(

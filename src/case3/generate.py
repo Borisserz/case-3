@@ -187,10 +187,16 @@ def build_user_prompt(
     max_charts: int,
     max_diagrams: int = 0,
 ) -> str:
+    from case3.citations import citation_intent_hint
+
     safe = neutralize_source(source.strip())
+    cite_hint = citation_intent_hint(safe)
+    intent_block = intent.strip() or DEFAULT_INTENT
+    if cite_hint:
+        intent_block = intent_block + "\n- " + cite_hint
     lines = [
         "## Intent",
-        intent.strip() or DEFAULT_INTENT,
+        intent_block,
         "",
         "## Limits",
         f"- max_images (photo slots via Image API /generate): {max_images}",
@@ -203,7 +209,9 @@ def build_user_prompt(
         "- If max_diagrams≥1 → DEFAULT-ON: emit ≥1 Mermaid diagram whenever Source has steps/roles/branches/structure/≥3 sections (JSON only, no TeX slots). Skip only if Intent says «без схем» or Source is pure numbers with no structure.",
         "- Mermaid: ASCII node ids; RU labels in []; first line matches type (flowchart/sequenceDiagram/…); flowchart nodes need :::role + classDef colors.",
         "- Chart colors: follow Intent palette hexes; captions RU; photo prompts EN (sharp, high quality); place FIG slots next to related prose.",
-        "- Page: A4 portrait; wide tables → tabularx{\\textwidth}{…} (no landscape overflow).",
+        "- Page: A4 portrait by default; wide tables → tabularx{\\textwidth}{…}; "
+        "if still too wide (≈6+ cols) wrap that table only in \\begin{landscape}…\\end{landscape}.",
+        "- Footnotes: only if Source has URL/«см. …»/biblio — never invent \\cite/\\footnote.",
         "- Never write case-3/case3 in \\title/\\author/body; topical title; \\author{} if unknown.",
         "- Keep the shared preamble (setspace/fancyhdr/caption); do not invent a different class.",
         "",

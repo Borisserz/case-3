@@ -70,7 +70,8 @@ export function RailToc({
         const top = visible[0]?.target as HTMLElement | undefined;
         if (top?.id) onActiveChange(top.id);
       },
-      { root, rootMargin: "-10% 0px -65% 0px", threshold: [0, 0.2, 1] },
+      // Top band under sticky TOC (~rail-toc height); root = .artifact-rail-body.
+      { root, rootMargin: "-12% 0px -70% 0px", threshold: [0, 0.15, 0.5, 1] },
     );
     for (const n of nodes) io.observe(n);
     return () => io.disconnect();

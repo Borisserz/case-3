@@ -20,6 +20,7 @@ from case3.inject import write_injected
 from case3.image_api import ImageApiConfig, generate_all_figures
 from case3.render import RenderError, render_tex
 from case3.run_cancel import RunCancelled, raise_if_cancelled
+from case3.run_events import EVENTS
 from case3.summary_bus import BUS
 from case3.user_photos import (
     ensure_user_slots_in_tex,
@@ -173,6 +174,10 @@ def _set_stage(
     else:
         meta.pop("stage_detail", None)
     _write_meta(meta, out, logs)
+    run_id = str(meta.get("run_id") or "")
+    if run_id:
+        EVENTS.publish_stage(run_id, stage, detail=detail, scope="pipeline")
+        EVENTS.scan_artifacts(run_id, out)
 
 
 def prepare_run_dirs(
@@ -257,7 +262,9 @@ def run_pipeline(
         "status": "running",
         "stage": "queued",
     }
+    EVENTS.ensure(run_id)
     _write_meta(meta, out, logs)
+    EVENTS.publish_stage(run_id, "queued", scope="pipeline")
 
     def bump(stage: str, detail: str | None = None) -> None:
         raise_if_cancelled(out)
@@ -358,12 +365,17 @@ def run_pipeline(
                 def _img_progress(fid: str) -> None:
                     bump("images", fid)
 
+                from case3.chart_style import palette_from_intent
+
+                pack_for_photos = palette_from_intent(intent or "") or "atelier"
+                meta["image_style_pack"] = pack_for_photos
                 status.update(
                     generate_all_figures(
                         figures,
                         figs_dir,
                         cfg=cfg,
                         on_progress=_img_progress,
+                        pack_id=pack_for_photos,
                     )
                 )
 
@@ -540,6 +552,12 @@ def run_pipeline(
         meta["stage"] = "ok"
         meta.pop("stage_detail", None)
         meta.pop("cancel_requested", None)
+        EVENTS.scan_artifacts(run_id, out)
+        # Presentation: slides job continues on the same bus — defer terminal.
+        if mode != "presentation":
+            EVENTS.publish_terminal(run_id, "ok")
+        else:
+            EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
     except RunCancelled:
         meta["status"] = "cancelled"
         meta["stage"] = "cancelled"
@@ -547,6 +565,7 @@ def run_pipeline(
         meta.pop("stage_detail", None)
         log.info("pipeline cancelled run_id=%s", run_id)
         _write_meta(meta, out, logs)
+        EVENTS.publish_terminal(run_id, "cancelled", error="Остановлено")
         return out
     except Exception as exc:
         meta["status"] = "error"
@@ -564,6 +583,9 @@ def run_pipeline(
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         _write_meta(meta, out, logs)
+        EVENTS.publish_terminal(
+            run_id, "error", error=str(meta.get("error") or exc)
+        )
         raise PipelineError(
             str(meta.get("error") or exc),
             run_id=run_id,

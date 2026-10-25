@@ -20,6 +20,7 @@ REQUIRED_PACKAGES = (
     "titlesec",
     "fancyhdr",
     "caption",
+    "pdflscape",  # C4: landscape page for wide tables only
     "xcolor",  # before hyperref; LLM often emits \definecolor / \color
     "hyperref",
 )
@@ -145,6 +146,100 @@ def harden_wide_tables(tex: str) -> str:
         )
 
     return _TABULAR_BLOCK.sub(_repl, tex)
+
+
+_TABLE_ENV_BLOCK = re.compile(
+    r"\\begin\{table\*?\}.*?\\end\{table\*?\}",
+    re.S,
+)
+_COL_SPEC = re.compile(
+    r"\\begin\{tabularx?\*?\}(?:\{[^}]+\})?\{([^}]+)\}"
+)
+
+
+def _col_count_from_spec(spec: str) -> int:
+    s = (spec or "").strip()
+    # Count X/l/c/r/p{…} roughly
+    n = len(re.findall(r"[Xlcr]", s))
+    n += len(re.findall(r"p\{[^}]*\}", s))
+    return n
+
+
+def table_needs_landscape(table_block: str) -> bool:
+    """True when a table is too wide for portrait A4 even as tabularx."""
+    if r"\begin{landscape}" in (table_block or ""):
+        return False
+    m = _COL_SPEC.search(table_block or "")
+    if not m:
+        return False
+    ncols = _col_count_from_spec(m.group(1))
+    if ncols >= 6:
+        return True
+    # Long average cell text with ≥4 cols
+    if ncols < 4:
+        return False
+    body_m = re.search(
+        r"\\begin\{tabularx?\*?\}(?:\{[^}]+\})?\{[^}]+\}([\s\S]*?)\\end\{tabularx?\*?\}",
+        table_block or "",
+    )
+    if not body_m:
+        return False
+    cells = [
+        c.strip()
+        for row in re.split(r"\\\\", body_m.group(1))
+        for c in row.split("&")
+        if c.strip() and not re.match(r"^\\(?:top|mid|bottom)rule$", c.strip())
+    ]
+    if len(cells) < 4:
+        return False
+    avg = sum(len(c) for c in cells) / len(cells)
+    return avg >= 28 and ncols >= 5
+
+
+def maybe_landscape_wide_tables(tex: str) -> str:
+    """Wrap overly wide ``table`` envs in ``pdflscape`` landscape (once)."""
+    parts: list[str] = []
+    pos = 0
+    for m in re.finditer(
+        r"\\begin\{landscape\}.*?\\end\{landscape\}|"
+        r"\\begin\{table\*?\}.*?\\end\{table\*?\}",
+        tex or "",
+        re.S,
+    ):
+        parts.append(tex[pos : m.start()])
+        chunk = m.group(0)
+        if chunk.lstrip().startswith(r"\begin{landscape}"):
+            parts.append(chunk)
+        elif table_needs_landscape(chunk):
+            parts.append(
+                "\\begin{landscape}\n" + chunk.strip() + "\n\\end{landscape}"
+            )
+        else:
+            parts.append(chunk)
+        pos = m.end()
+    parts.append(tex[pos:] if tex else "")
+    return "".join(parts)
+
+
+_CITE_CMD = re.compile(r"\\cite\{([^}]*)\}")
+_FOOTNOTE_CMD = re.compile(r"\\footnote\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}")
+
+
+def strip_invented_cites(tex: str, *, allowed_keys: set[str] | None = None) -> str:
+    """Drop ``\\cite{key}`` when key is not allowed; keep URL-like footnotes."""
+    allowed = allowed_keys or set()
+
+    def _cite_repl(m: re.Match[str]) -> str:
+        key = (m.group(1) or "").strip()
+        if key in allowed:
+            return m.group(0)
+        return ""
+
+    out = _CITE_CMD.sub(_cite_repl, tex or "")
+    # Collapse leftover double spaces from cite removal
+    out = re.sub(r"[ \t]+\n", "\n", out)
+    out = re.sub(r"  +", " ", out)
+    return out
 
 
 def harden_tabularx_colcount(tex: str) -> str:
@@ -634,13 +729,20 @@ def ensure_document_preamble(tex: str) -> str:
     out = repair_tabularx_row_breaks(out)
     out = harden_wide_tables(out)
     out = harden_tabularx_colcount(out)
+    out = maybe_landscape_wide_tables(out)
     out = strip_orphan_table_markup(out)
+    out = strip_invented_cites(out, allowed_keys=set())
     from case3.tex_prose import fix_markdown_bold_leaks, harden_prose_lists
     from case3.tex_tables import harden_table_rules
 
     out = fix_markdown_bold_leaks(out)
     out = harden_prose_lists(out)
     return harden_table_rules(out)
+
+
+def ensure_preamble(tex: str) -> str:
+    """Public alias used by tests / callers."""
+    return ensure_document_preamble(tex)
 
 
 def strip_orphan_slots(tex: str) -> str:

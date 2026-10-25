@@ -141,16 +141,20 @@ def _inline_to_html(tex_fragment: str) -> str:
     return out
 
 
-def _body(tex: str) -> str:
-    m0 = _BEGIN_DOC.search(tex or "")
+def _body_bounds(tex: str) -> tuple[str, int]:
+    """Return (body_slice, absolute_start_offset in full tex)."""
+    raw = tex or ""
+    m0 = _BEGIN_DOC.search(raw)
     if not m0:
-        return tex or ""
+        return raw, 0
     start = m0.end()
-    m1 = _END_DOC.search(tex, start)
-    end = m1.start() if m1 else len(tex)
-    body = tex[start:end]
-    body = re.sub(r"\\maketitle\s*", "", body)
-    body = re.sub(r"\\tableofcontents\s*", "", body)
+    m1 = _END_DOC.search(raw, start)
+    end = m1.start() if m1 else len(raw)
+    return raw[start:end], start
+
+
+def _body(tex: str) -> str:
+    body, _off = _body_bounds(tex)
     return body
 
 
@@ -236,39 +240,137 @@ def _parse_list_block(env: str, inner: str) -> dict[str, Any] | None:
     }
 
 
+_STRUCT_TOKEN = re.compile(
+    r"(\\maketitle\b|"
+    r"\\tableofcontents\b|"
+    r"\\section\*?\{[^{}]*\}|"
+    r"\\subsection\*?\{[^{}]*\}|"
+    r"\\begin\{table\*?\}|"
+    r"\\begin\{figure\}|"
+    r"\\begin\{landscape\}|"
+    r"\\begin\{itemize\}|"
+    r"\\begin\{enumerate\})",
+)
+
+
+def _paragraph_parts_in_range(
+    body: str, lo: int, hi: int
+) -> list[tuple[int, int, str, str]]:
+    """Yield (start, end, plain_text, html) for prose parts in body[lo:hi]."""
+    out: list[tuple[int, int, str, str]] = []
+    i = lo
+    while i < hi and body[i].isspace():
+        i += 1
+    while i < hi:
+        mblank = re.search(r"\n\s*\n", body[i:hi])
+        part_end = i + mblank.start() if mblank else hi
+        j = part_end
+        while j > i and body[j - 1] in " \t\r\n":
+            j -= 1
+        if j > i:
+            raw_slice = body[i:j]
+            # Mirror _flush_paragraphs filters on a copy
+            text = _LABEL.sub("", raw_slice)
+            text = re.sub(r"\\(?:centering|hfill|vfill|noindent)\s*", "", text)
+            text = _LIST_ENV.sub("", text)
+            raw = text.replace("\n", " ")
+            cleaned = _plain_unescape(raw)
+            if (
+                len(cleaned) >= 2
+                and not cleaned.startswith("%")
+                and not cleaned.startswith(r"\begin")
+            ):
+                # Skip pure command-only leftovers (maketitle already tokenized)
+                if not re.fullmatch(r"\\[a-zA-Z]+\*?", cleaned.strip()):
+                    out.append((i, j, cleaned, _inline_to_html(raw)))
+        if not mblank:
+            break
+        i = i + mblank.end()
+        while i < hi and body[i] in " \t":
+            i += 1
+    return out
+
+
+def find_paragraph_spans(tex: str) -> list[tuple[int, int]]:
+    """Absolute [start, end) spans in ``tex`` for each preview paragraph (para-N)."""
+    body, body_off = _body_bounds(tex)
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while pos < len(body):
+        m = _STRUCT_TOKEN.search(body, pos)
+        if not m:
+            for a, b, _t, _h in _paragraph_parts_in_range(body, pos, len(body)):
+                spans.append((body_off + a, body_off + b))
+            break
+        if m.start() > pos:
+            for a, b, _t, _h in _paragraph_parts_in_range(body, pos, m.start()):
+                spans.append((body_off + a, body_off + b))
+        tok = m.group(1)
+        if tok.startswith(r"\begin{table}"):
+            em = re.search(r"\\end\{table\*?\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        if tok.startswith(r"\begin{figure}"):
+            em = re.search(r"\\end\{figure\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        if tok.startswith(r"\begin{landscape}"):
+            em = re.search(r"\\end\{landscape\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        if tok.startswith(r"\begin{itemize}") or tok.startswith(r"\begin{enumerate}"):
+            env = "itemize" if "itemize" in tok else "enumerate"
+            em = re.search(rf"\\end\{{{env}\}}", body[m.start() :], re.S | re.I)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        pos = m.end()
+    return spans
+
+
 def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
     """Extract title + ordered content blocks from a full document."""
     title_m = _TITLE.search(tex or "")
     title = _plain_unescape(title_m.group(1)) if title_m else ""
     body = _body(tex)
     blocks: list[dict[str, Any]] = []
+    para_n = 0
 
-    # Walk by finding next structural token
     pos = 0
-    token = re.compile(
-        r"(\\section\*?\{[^{}]*\}|"
-        r"\\subsection\*?\{[^{}]*\}|"
-        r"\\begin\{table\}|"
-        r"\\begin\{figure\}|"
-        r"\\begin\{itemize\}|"
-        r"\\begin\{enumerate\})",
-    )
-
     while pos < len(body):
-        m = token.search(body, pos)
+        m = _STRUCT_TOKEN.search(body, pos)
         if not m:
-            para = body[pos:].strip()
-            if para:
-                _flush_paragraphs(para, blocks)
+            for _a, _b, cleaned, html in _paragraph_parts_in_range(
+                body, pos, len(body)
+            ):
+                para_n += 1
+                blocks.append(
+                    {
+                        "type": "paragraph",
+                        "id": f"para-{para_n}",
+                        "text": cleaned,
+                        "html": html,
+                    }
+                )
             break
 
-        # prose before token
         if m.start() > pos:
-            para = body[pos : m.start()].strip()
-            if para:
-                _flush_paragraphs(para, blocks)
+            for _a, _b, cleaned, html in _paragraph_parts_in_range(
+                body, pos, m.start()
+            ):
+                para_n += 1
+                blocks.append(
+                    {
+                        "type": "paragraph",
+                        "id": f"para-{para_n}",
+                        "text": cleaned,
+                        "html": html,
+                    }
+                )
 
         tok = m.group(1)
+        if tok in (r"\maketitle", r"\tableofcontents"):
+            pos = m.end()
+            continue
         if tok.startswith(r"\section") or tok.startswith(r"\subsection"):
             sm = _SECTION.match(tok)
             if sm:
@@ -284,7 +386,7 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             continue
 
         if tok.startswith(r"\begin{table}"):
-            em = re.search(r"\\end\{table\}", body[m.start() :], re.S)
+            em = re.search(r"\\end\{table\*?\}", body[m.start() :], re.S)
             if not em:
                 pos = m.end()
                 continue
@@ -293,6 +395,23 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             if table:
                 blocks.append(table)
             pos = end
+            continue
+
+        if tok.startswith(r"\begin{landscape}"):
+            em = re.search(r"\\end\{landscape\}", body[m.start() :], re.S)
+            if not em:
+                pos = m.end()
+                continue
+            # Preview: unwrap landscape and parse inner table if present
+            inner = body[m.end() : m.start() + em.start()]
+            tm = re.search(
+                r"\\begin\{table\*?\}.*?\\end\{table\*?\}", inner, re.S
+            )
+            if tm:
+                table = _parse_table_block(tm.group(0))
+                if table:
+                    blocks.append(table)
+            pos = m.start() + em.end()
             continue
 
         if tok.startswith(r"\begin{figure}"):
@@ -326,24 +445,6 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
         pos = m.end()
 
     return {"title": title, "blocks": blocks}
-
-
-def _flush_paragraphs(chunk: str, blocks: list[dict[str, Any]]) -> None:
-    # Drop leftover labels / empty commands
-    text = _LABEL.sub("", chunk)
-    text = re.sub(r"\\(?:centering|hfill|vfill|noindent)\s*", "", text)
-    # Strip list envs if any leaked into prose (safety)
-    text = _LIST_ENV.sub("", text)
-    # Split on blank lines
-    for part in re.split(r"\n\s*\n", text):
-        raw = part.replace("\n", " ")
-        cleaned = _plain_unescape(raw)
-        if len(cleaned) < 2:
-            continue
-        if cleaned.startswith("%"):
-            continue
-        html = _inline_to_html(raw)
-        blocks.append({"type": "paragraph", "text": cleaned, "html": html})
 
 
 def build_report_preview(

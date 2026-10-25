@@ -14,6 +14,7 @@ from case3.charts import render_chart_png
 from case3.deck_theme import normalize_pack_id, resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.run_cancel import RunCancelled, raise_if_cancelled
+from case3.run_events import EVENTS
 from case3.slides_beat_planner import (
     format_beat_overlay,
     maybe_apply_pack_hint,
@@ -203,6 +204,20 @@ def _set_slides(
     elif "slides_error" in meta and status == "ok":
         meta["slides_error"] = None
     _write_meta(out_dir, meta, logs_dir)
+    run_id = str(meta.get("run_id") or out_dir.name)
+    if status == "running":
+        EVENTS.publish_stage(run_id, stage, scope="slides")
+        EVENTS.scan_artifacts(run_id, out_dir)
+    elif status == "ok":
+        EVENTS.scan_artifacts(run_id, out_dir)
+        EVENTS.publish_stage(run_id, "ok", scope="slides")
+        EVENTS.publish_terminal(run_id, "ok")
+    elif status == "error":
+        EVENTS.publish_stage(run_id, "error", detail=error, scope="slides")
+        EVENTS.publish_terminal(run_id, "error", error=error)
+    elif status == "cancelled":
+        EVENTS.publish_stage(run_id, "cancelled", scope="slides")
+        EVENTS.publish_terminal(run_id, "cancelled")
 
 
 def _load_source_and_intent(out_dir: Path, meta: dict[str, Any]) -> tuple[str, str]:

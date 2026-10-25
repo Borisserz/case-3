@@ -83,12 +83,17 @@ export function PresentationFullscreen({
       }
     };
     const onMove = () => bumpChrome();
+    const onTouch = () => bumpChrome();
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousemove", onMove);
+    window.addEventListener("touchstart", onTouch, { passive: true });
+    window.addEventListener("touchmove", onTouch, { passive: true });
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("touchstart", onTouch);
+      window.removeEventListener("touchmove", onTouch);
     };
   }, [bumpChrome, go, n, onClose]);
 

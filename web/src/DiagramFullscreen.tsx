@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { DiagramZoomView } from "./DiagramZoomView";
 import {
   downloadDiagramPng,
+  downloadDiagramSvg,
   slugDiagramFilename,
 } from "./downloadDiagramPng";
 import { nodeIdsForRole, parseDiagramLegend } from "./diagramLegend";
@@ -43,7 +44,7 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
     svgRef.current = el;
   }, []);
 
-  const onDownload = useCallback(async () => {
+  const onDownloadPng = useCallback(async () => {
     const el = svgRef.current;
     if (!el) {
       setErr("Схема ещё не готова — подождите секунду");
@@ -54,7 +55,27 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
     try {
       await downloadDiagramPng(
         el,
-        slugDiagramFilename(diagram.title, diagram.id),
+        slugDiagramFilename(diagram.title, diagram.id, "png"),
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [diagram.id, diagram.title]);
+
+  const onDownloadSvg = useCallback(async () => {
+    const el = svgRef.current;
+    if (!el) {
+      setErr("Схема ещё не готова — подождите секунду");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await downloadDiagramSvg(
+        el,
+        slugDiagramFilename(diagram.title, diagram.id, "svg"),
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -93,15 +114,23 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
           <div>
             <h2 className="diagram-fullscreen-title">{diagram.title}</h2>
             <p className="diagram-fullscreen-sub">
-              Блок = шт на этапе · стрелка = % или отвал · PNG только Liber
+              Блок = шт на этапе · стрелка = % или отвал · SVG/PNG Liber
             </p>
           </div>
           <div className="diagram-fullscreen-actions">
             <button
               type="button"
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => void onDownloadSvg()}
+            >
+              {busy ? "…" : "SVG"}
+            </button>
+            <button
+              type="button"
               className="btn primary"
               disabled={busy}
-              onClick={() => void onDownload()}
+              onClick={() => void onDownloadPng()}
             >
               {busy ? "…" : "Скачать PNG"}
             </button>

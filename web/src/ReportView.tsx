@@ -1,6 +1,13 @@
 /** Liber Print Desk — in-chat report: title, prose, tables, figure PNGs + chart edit. */
 
-import { lazy, Suspense, useCallback, useEffect, useId, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   ChartEditSheet,
@@ -20,7 +27,16 @@ import {
   type TableEditDraft,
   type TableEditRequest,
 } from "./TableEditSheet";
+import {
+  ParagraphEditSheet,
+  type ParagraphEditRequest,
+} from "./ParagraphEditSheet";
 import { PipelineFlow } from "./PipelineFlow";
+import {
+  isBlockHiddenByCollapse,
+  loadCollapsedIds,
+  saveCollapsedIds,
+} from "./reportSections";
 
 const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
@@ -28,7 +44,7 @@ const PdfFirstPage = lazy(() =>
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string; html?: string }
+  | { type: "paragraph"; id?: string; text: string; html?: string }
   | {
       type: "list";
       ordered?: boolean;
@@ -93,6 +109,7 @@ type Props = {
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
+  onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
 };
 
@@ -142,12 +159,14 @@ export function ReportView({
   onEditFigure,
   onEditImage,
   onEditTable,
+  onEditParagraph,
   onEditCancel,
 }: Props) {
   const blocks = preview.blocks || [];
   let figN = 0;
   let tabN = 0;
   let headN = 0;
+  let paraN = 0;
   const [lightbox, setLightbox] = useState<{
     url: string;
     caption: string;
@@ -156,9 +175,30 @@ export function ReportView({
   const [imageFor, setImageFor] = useState<string | null>(null);
   const [tableFor, setTableFor] = useState<number | null>(null);
   const [tableDraft, setTableDraft] = useState<TableEditDraft | null>(null);
+  const [paraFor, setParaFor] = useState<number | null>(null);
   const [draft, setDraft] = useState<ChartEditDraft | null>(null);
   const [sheetPreviewHtml, setSheetPreviewHtml] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => loadCollapsedIds(runId || ""),
+  );
   const lbTitle = useId();
+
+  useEffect(() => {
+    setCollapsed(loadCollapsedIds(runId || ""));
+  }, [runId]);
+
+  const toggleSection = useCallback(
+    (headingId: string) => {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        if (next.has(headingId)) next.delete(headingId);
+        else next.add(headingId);
+        saveCollapsedIds(runId || "", next);
+        return next;
+      });
+    },
+    [runId],
+  );
 
   const closeSheet = useCallback(() => {
     setSheetFor(null);
@@ -175,6 +215,11 @@ export function ReportView({
   const closeTable = useCallback(() => {
     setTableFor(null);
     setTableDraft(null);
+    onEditCancel?.();
+  }, [onEditCancel]);
+
+  const closePara = useCallback(() => {
+    setParaFor(null);
     onEditCancel?.();
   }, [onEditCancel]);
 
@@ -240,36 +285,124 @@ export function ReportView({
           const delayStyle = {
             animationDelay: `${Math.min(i * 0.045, 0.55)}s`,
           } as const;
+          const hiddenByCollapse = isBlockHiddenByCollapse(
+            blocks,
+            i,
+            collapsed,
+          );
 
           if (b.type === "heading") {
             headN += 1;
+            const headingId = `rail-h-${headN}`;
+            // Nested under a collapsed ancestor — hide (parent heading stays).
+            if (hiddenByCollapse) return null;
             const Tag = b.level >= 2 ? "h3" : "h2";
+            const expanded = !collapsed.has(headingId);
             return (
-              <Tag
+              <div
                 key={i}
-                id={`rail-h-${headN}`}
-                className={`report-h report-h${b.level} report-block`}
+                className={`report-h-row report-block report-h${b.level}`}
                 style={delayStyle}
               >
-                {b.text}
-              </Tag>
+                <button
+                  type="button"
+                  className="report-h-toggle"
+                  aria-expanded={expanded}
+                  aria-label={
+                    expanded ? `Свернуть «${b.text}»` : `Развернуть «${b.text}»`
+                  }
+                  onClick={() => toggleSection(headingId)}
+                >
+                  <span className="report-h-toggle-chevron" aria-hidden>
+                    ▸
+                  </span>
+                </button>
+                <Tag
+                  id={headingId}
+                  className={`report-h report-h${b.level}`}
+                >
+                  {b.text}
+                </Tag>
+              </div>
             );
           }
+
+          if (hiddenByCollapse) {
+            // Keep fig/tab/para counters stable when section is collapsed.
+            if (b.type === "figure") figN += 1;
+            if (b.type === "table") tabN += 1;
+            if (b.type === "paragraph") paraN += 1;
+            return null;
+          }
+
           if (b.type === "paragraph") {
-            if (b.html) {
-              return (
-                <p
-                  key={i}
-                  className="report-p report-block"
-                  style={delayStyle}
-                  dangerouslySetInnerHTML={{ __html: b.html }}
-                />
-              );
-            }
+            paraN += 1;
+            const idMatch = b.id ? /^para-(\d+)$/.exec(b.id) : null;
+            const n = idMatch ? Number(idMatch[1]) : paraN;
+            if (idMatch) paraN = Math.max(paraN, n);
+            const paraId = `para:${n}`;
+            const isEditingPara = editingFigureId === paraId;
+            const sheetOpen = paraFor === n;
+            const sheetError =
+              sheetOpen && editErrorFigureId === paraId ? editError : null;
             return (
-              <p key={i} className="report-p report-block" style={delayStyle}>
-                {b.text}
-              </p>
+              <div
+                key={i}
+                className={`report-para-wrap report-block${sheetOpen ? " is-tuning" : ""}${isEditingPara ? " is-editing" : ""}`}
+                style={delayStyle}
+              >
+                <div className="report-para-frame">
+                  {b.html ? (
+                    <p
+                      className="report-p"
+                      dangerouslySetInnerHTML={{ __html: b.html }}
+                    />
+                  ) : (
+                    <p className="report-p">{b.text}</p>
+                  )}
+                  {onEditParagraph && !isEditingPara && (
+                    <button
+                      type="button"
+                      className={`report-fig-edit report-para-edit${sheetOpen ? " is-open" : ""}`}
+                      aria-expanded={sheetOpen}
+                      onClick={() => {
+                        if (sheetOpen) closePara();
+                        else {
+                          setSheetFor(null);
+                          setImageFor(null);
+                          setTableFor(null);
+                          setParaFor(n);
+                        }
+                      }}
+                    >
+                      {sheetOpen ? "Закрыть" : "Изменить"}
+                    </button>
+                  )}
+                  {isEditingPara && (
+                    <div className="report-fig-busy" aria-live="polite">
+                      <p className="fig-press-label">Пересобираю абзац…</p>
+                    </div>
+                  )}
+                </div>
+                {sheetOpen && onEditParagraph && (
+                  <ParagraphEditSheet
+                    open
+                    paragraphIndex={n}
+                    initialText={b.text}
+                    busy={isEditingPara}
+                    error={sheetError}
+                    onCancel={() => {
+                      if (!editingFigureId) closePara();
+                    }}
+                    onSubmit={(req) => {
+                      void (async () => {
+                        const ok = await onEditParagraph(req);
+                        if (ok) closePara();
+                      })();
+                    }}
+                  />
+                )}
+              </div>
             );
           }
           if (b.type === "list") {
@@ -342,6 +475,7 @@ export function ReportView({
                         else {
                           setSheetFor(null);
                           setImageFor(null);
+                          setParaFor(null);
                           setTableDraft(null);
                           setTableFor(n);
                         }
@@ -528,6 +662,7 @@ export function ReportView({
                         else {
                           setImageFor(null);
                           setTableFor(null);
+                          setParaFor(null);
                           setDraft(null);
                           setSheetFor(b.id);
                         }
@@ -549,6 +684,7 @@ export function ReportView({
                         else {
                           setSheetFor(null);
                           setTableFor(null);
+                          setParaFor(null);
                           setImageFor(b.id);
                         }
                       }}

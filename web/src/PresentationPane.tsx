@@ -66,13 +66,20 @@ export function PresentationPane({
   const [idx, setIdx] = useState(0);
   const [dir, setDir] = useState(0);
   const [full, setFull] = useState(false);
-  /** Julius: open in Slide view; Edit is explicit. */
+  /**
+   * Julius gallery contract (lock):
+   * - mount / run change → grid, editing=false
+   * - gallery thumbnail click → Slide + editing=false (never Edit)
+   * - Edit only via Edit segment or E key
+   * - leaving Edit → Slide turns editing off
+   */
   const [editing, setEditing] = useState(false);
   const [view, setView] = useState<"grid" | "slide">("grid");
   const [deck, setDeck] = useState<DeckIR | null>(deckProp);
   const [saving, setSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -130,6 +137,39 @@ export function PresentationPane({
     return () => window.removeEventListener("keydown", onKey);
   }, [full, go, editing]);
 
+  const waitPatchRebuild = useCallback(
+    async (optimisticDeck?: DeckIR) => {
+      if (optimisticDeck) setDeck(optimisticDeck);
+      let done = false;
+      for (let i = 0; i < 40; i++) {
+        await new Promise((res) => setTimeout(res, 500));
+        const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+        const gBody = await g.json().catch(() => ({}));
+        if (gBody.slides_status === "ok") {
+          const pngs = (gBody.slide_pngs as string[]) || [];
+          if (gBody.deck) setDeck(gBody.deck as DeckIR);
+          onDeckUpdated?.(gBody.deck as DeckIR, pngs);
+          setSaveFlash(true);
+          window.setTimeout(() => setSaveFlash(false), 1600);
+          done = true;
+          break;
+        }
+        if (gBody.slides_status === "cancelled") {
+          throw new Error("Остановлено");
+        }
+        if (gBody.slides_status === "error") {
+          throw new Error(
+            String(gBody.slides_error || "Не удалось сохранить слайды"),
+          );
+        }
+      }
+      if (!done) {
+        throw new Error("Сохранение заняло слишком долго — попробуйте ещё раз");
+      }
+    },
+    [onDeckUpdated, runId],
+  );
+
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
       setSaving(true);
@@ -149,40 +189,75 @@ export function PresentationPane({
             typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
           );
         }
-        if (body.deck) setDeck(body.deck as DeckIR);
-        let done = false;
-        for (let i = 0; i < 40; i++) {
-          await new Promise((res) => setTimeout(res, 500));
-          const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
-          const gBody = await g.json().catch(() => ({}));
-          if (gBody.slides_status === "ok") {
-            const pngs = (gBody.slide_pngs as string[]) || [];
-            if (gBody.deck) setDeck(gBody.deck as DeckIR);
-            onDeckUpdated?.(gBody.deck as DeckIR, pngs);
-            setSaveFlash(true);
-            window.setTimeout(() => setSaveFlash(false), 1600);
-            done = true;
-            break;
-          }
-          if (gBody.slides_status === "cancelled") {
-            throw new Error("Остановлено");
-          }
-          if (gBody.slides_status === "error") {
-            throw new Error(
-              String(gBody.slides_error || "Не удалось сохранить слайды"),
-            );
-          }
-        }
-        if (!done) {
-          throw new Error("Сохранение заняло слишком долго — попробуйте ещё раз");
-        }
+        await waitPatchRebuild(body.deck as DeckIR | undefined);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
       } finally {
         setSaving(false);
       }
     },
-    [onDeckUpdated, runId],
+    [runId, waitPatchRebuild],
+  );
+
+  const structureOp = useCallback(
+    async (payload: {
+      op: "reorder" | "duplicate" | "delete";
+      id?: string;
+      order?: string[];
+    }) => {
+      if (!deck?.slides?.length) {
+        setSaveError("Нет IR деки — соберите презентацию");
+        return;
+      }
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const r = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/slides/structure`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(
+            typeof body.detail === "string"
+              ? body.detail
+              : `structure ${r.status}`,
+          );
+        }
+        const next = body.deck as DeckIR | undefined;
+        if (next?.slides && payload.op === "delete") {
+          setIdx((i) => Math.min(i, Math.max(0, next.slides.length - 1)));
+        }
+        if (next?.slides && payload.op === "duplicate" && payload.id) {
+          const at = next.slides.findIndex((s) => s.id === payload.id);
+          if (at >= 0) setIdx(Math.min(at + 1, next.slides.length - 1));
+        }
+        await waitPatchRebuild(next);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [deck, runId, waitPatchRebuild],
+  );
+
+  const onReorderIndices = useCallback(
+    (from: number, to: number) => {
+      if (!deck?.slides?.length || from === to || saving) return;
+      const ids = deck.slides.map((s) => s.id);
+      if (from < 0 || to < 0 || from >= ids.length || to >= ids.length) return;
+      const next = [...ids];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setIdx(to);
+      void structureOp({ op: "reorder", order: next });
+    },
+    [deck, saving, structureOp],
   );
 
   const pending = status === "running" || status === "queued" || making;
@@ -363,7 +438,10 @@ export function PresentationPane({
               <button
                 type="button"
                 className={`presentation-seg-btn${view === "grid" ? " is-on" : ""}`}
-                onClick={() => setView("grid")}
+                onClick={() => {
+                  setView("grid");
+                  setEditing(false);
+                }}
               >
                 Preview
               </button>
@@ -422,12 +500,44 @@ export function PresentationPane({
           slidePngs={slidePngs}
           activeIndex={safeIdx}
           titles={(deck?.slides || []).map((s) => s.title || "")}
+          canStructure={Boolean(live) && !saving}
           onSelect={(i) => {
+            // Gallery → Slide only (never Edit). Edit is the Edit segment.
             setDir(i > safeIdx ? 1 : -1);
             setIdx(i);
             setView("slide");
             setEditing(false);
           }}
+          onReorder={onReorderIndices}
+          onDuplicate={
+            live
+              ? (i) => {
+                  const id = deck?.slides?.[i]?.id;
+                  if (id) void structureOp({ op: "duplicate", id });
+                }
+              : undefined
+          }
+          onDelete={
+            live
+              ? (i) => {
+                  const id = deck?.slides?.[i]?.id;
+                  if (!id) return;
+                  if (deck!.slides.length <= 1) {
+                    setSaveError("Нельзя удалить единственный слайд");
+                    return;
+                  }
+                  const title = deck?.slides?.[i]?.title || `Слайд ${i + 1}`;
+                  if (
+                    !window.confirm(
+                      `Удалить слайд «${title}»? PPTX и превью пересоберутся.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  void structureOp({ op: "delete", id });
+                }
+              : undefined
+          }
         />
       ) : (
         <>
@@ -528,18 +638,33 @@ export function PresentationPane({
                 const t = (deck?.slides?.[i]?.title || "").trim();
                 return (
                   <button
-                    key={url}
+                    key={deck?.slides?.[i]?.id || url}
                     type="button"
                     role="tab"
+                    draggable={live && !saving}
                     aria-selected={i === safeIdx}
-                    className={`presentation-thumb${i === safeIdx ? " is-active" : ""}`}
-                    title={t || `Слайд ${i + 1}`}
+                    className={`presentation-thumb${i === safeIdx ? " is-active" : ""}${dragFrom === i ? " is-dragging" : ""}`}
+                    title={
+                      live
+                        ? `${t || `Слайд ${i + 1}`} · перетащите для порядка`
+                        : t || `Слайд ${i + 1}`
+                    }
+                    onDragStart={() => setDragFrom(i)}
+                    onDragEnd={() => setDragFrom(null)}
+                    onDragOver={(e) => {
+                      if (live) e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragFrom != null) onReorderIndices(dragFrom, i);
+                      setDragFrom(null);
+                    }}
                     onClick={() => {
                       setDir(i > safeIdx ? 1 : -1);
                       setIdx(i);
                     }}
                   >
-                    <img src={url} alt="" />
+                    <img src={url} alt="" draggable={false} />
                     <span>{String(i + 1).padStart(2, "0")}</span>
                   </button>
                 );
@@ -600,6 +725,42 @@ export function PresentationPane({
           >
             Все слайды
           </button>
+          {live ? (
+            <>
+              <button
+                type="button"
+                className="presentation-nav"
+                disabled={saving}
+                onClick={() => {
+                  const id = deck?.slides?.[safeIdx]?.id;
+                  if (id) void structureOp({ op: "duplicate", id });
+                }}
+              >
+                Дублировать
+              </button>
+              <button
+                type="button"
+                className="presentation-nav is-danger"
+                disabled={saving || (deck?.slides?.length || 0) <= 1}
+                onClick={() => {
+                  const id = deck?.slides?.[safeIdx]?.id;
+                  if (!id) return;
+                  const title =
+                    deck?.slides?.[safeIdx]?.title || `Слайд ${safeIdx + 1}`;
+                  if (
+                    !window.confirm(
+                      `Удалить слайд «${title}»? PPTX и превью пересоберутся.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  void structureOp({ op: "delete", id });
+                }}
+              >
+                Удалить
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 

@@ -239,57 +239,80 @@ export function useLiberDevPreviews({
     };
   }, [setMsgs, setBusy]);
 
-  // Visual QA: http://127.0.0.1:5173/?preview=deck — PPTX + PDF twin stack
+  // Visual QA: http://127.0.0.1:5173/?preview=deck — real IR + twin PNGs (structure/Present)
   useEffect(() => {
     if (!/preview=deck(?:-busy)?/.test(window.location.search)) return;
     if (/preview=deck-busy/.test(window.location.search)) return;
     const id = "preview-deck";
-    const runId = "source_20261021T082640Z";
-    const result: RunResult = {
-      run_id: runId,
-      status: "ok",
-      output_mode: "presentation",
-      downloads: {
-        pdf: `/api/runs/${runId}/files/source.pdf`,
+    const runId = "source_20261024T192937Z";
+    let cancelled = false;
+    (async () => {
+      let slidePngs: string[] = [];
+      let deck: RunResult["deck"] = null;
+      let downloads: Record<string, string> = {
         pptx: `/api/runs/${runId}/files/deck.pptx`,
         deck_pdf: `/api/runs/${runId}/files/deck.pdf`,
-      },
-      preview: {
+      };
+      try {
+        const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+        const body = await g.json().catch(() => ({}));
+        if (Array.isArray(body.slide_pngs)) slidePngs = body.slide_pngs;
+        if (body.deck) deck = body.deck;
+        if (body.downloads && typeof body.downloads === "object") {
+          downloads = { ...downloads, ...body.downloads };
+        }
+      } catch {
+        /* keep stubs */
+      }
+      if (cancelled) return;
+      const result: RunResult = {
+        run_id: runId,
+        status: "ok",
+        output_mode: "presentation",
+        downloads,
+        preview: {
+          title: "Marketing QBR",
+          blocks: [
+            { type: "heading", level: 1, text: "Quarterly business review" },
+            {
+              type: "paragraph",
+              text: "Демо: Present · DnD reorder · дубль/удаление.",
+            },
+          ],
+        },
+        charts_ok: 0,
+        figures_ok: 0,
+        charts_planned: [],
+        figures_planned: [],
+        warnings: [],
+        slides_status: "ok",
+        slide_pngs: slidePngs,
+        deck: deck ?? undefined,
+      };
+      setMsgs([
+        {
+          id: "preview-deck-user",
+          role: "user",
+          text: "Собери презентацию QBR: два слайда, спокойная палитра.",
+        },
+        {
+          id,
+          role: "bot",
+          text: "Готово — презентация и PDF twin. Откройте карточку, чтобы править слайды.",
+          result,
+        },
+      ]);
+      setActiveArtifact({
+        kind: "report",
+        msgId: id,
+        tab: "presentation",
         title: "Marketing QBR",
-        blocks: [
-          { type: "heading", level: 1, text: "Quarterly business review" },
-          {
-            type: "paragraph",
-            text: "Демо стека Julius: PPTX + PDF twin в чате.",
-          },
-        ],
-      },
-      charts_ok: 0,
-      figures_ok: 0,
-      charts_planned: [],
-      figures_planned: [],
-      warnings: [],
-      slides_status: "ok",
-      slide_pngs: [
-        `/api/runs/${runId}/figures/cht_01.png`,
-        `/api/runs/${runId}/figures/cht_01.png`,
-        `/api/runs/${runId}/figures/cht_01.png`,
-      ],
+      });
+    })();
+    return () => {
+      cancelled = true;
     };
-    setMsgs([
-      {
-        id: "preview-deck-user",
-        role: "user",
-        text: "Собери презентацию QBR: два слайда, спокойная палитра.",
-      },
-      {
-        id,
-        role: "bot",
-        text: "Готово — презентация и PDF twin. Откройте карточку, чтобы править слайды.",
-        result,
-      },
-    ]);
-  }, [setMsgs]);
+  }, [setActiveArtifact, setMsgs]);
 
   // Visual QA: http://127.0.0.1:5173/?preview=flow
   useEffect(() => {

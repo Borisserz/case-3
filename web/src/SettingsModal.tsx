@@ -3,13 +3,26 @@
 import { useEffect, useId, useRef } from "react";
 import { useFocusTrap } from "./useFocusTrap";
 
+export type DeskProbeSnapshot = {
+  id: string;
+  label: string;
+  status: string;
+  hint?: string | null;
+};
+
 export type HealthSnapshot = {
   docker_ok: boolean;
   playwright_ok: boolean;
   vision_configured: boolean;
+  vision_ok?: boolean;
   image_api_configured?: boolean;
   kandinsky_configured?: boolean;
+  image_api_ok?: boolean;
+  image_api_error?: string | null;
   docker_error?: string | null;
+  soffice_ok?: boolean;
+  soffice_hint?: string | null;
+  probes?: DeskProbeSnapshot[];
 };
 
 type Props = {
@@ -177,46 +190,75 @@ export function SettingsModal({
             aria-labelledby="set-health"
           >
             <h3 className="settings-block-title" id="set-health">
-              Статус
+              Desk
             </h3>
             {!health && <p className="hint">Проверка API…</p>}
             {health && (
-              <div className="health-grid">
-                <div className="health-row">
-                  <span>Docker</span>
-                  <span className={`val${health.docker_ok ? "" : " bad"}`}>
-                    {health.docker_ok ? "ok" : health.docker_error || "fail"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Vision</span>
-                  <span
-                    className={`val${health.vision_configured ? "" : " bad"}`}
-                  >
-                    {health.vision_configured ? "ok" : "нет"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Playwright</span>
-                  <span className={`val${health.playwright_ok ? "" : " bad"}`}>
-                    {health.playwright_ok ? "ok" : "нет"}
-                  </span>
-                </div>
-                <div className="health-row">
-                  <span>Image API</span>
-                  <span
-                    className={`val${
-                      health.image_api_configured || health.kandinsky_configured
-                        ? ""
-                        : " bad"
-                    }`}
-                  >
-                    {health.image_api_configured || health.kandinsky_configured
-                      ? "ok"
-                      : "нет"}
-                  </span>
-                </div>
-              </div>
+              <ul className="desk-health-list">
+                {(
+                  health.probes || [
+                    {
+                      id: "vision",
+                      label: "Qwen / Vision",
+                      status: health.vision_ok
+                        ? "green"
+                        : health.vision_configured
+                          ? "amber"
+                          : "red",
+                      hint: health.vision_configured
+                        ? null
+                        : "VISION_API_BASE_URL",
+                    },
+                    {
+                      id: "image",
+                      label: "Image API",
+                      status: health.image_api_ok
+                        ? "green"
+                        : health.image_api_configured ||
+                            health.kandinsky_configured
+                          ? "amber"
+                          : "amber",
+                      hint: health.image_api_error,
+                    },
+                    {
+                      id: "docker",
+                      label: "Docker TeX",
+                      status: health.docker_ok ? "green" : "red",
+                      hint: health.docker_error,
+                    },
+                    {
+                      id: "soffice",
+                      label: "LibreOffice",
+                      status: health.soffice_ok ? "green" : "amber",
+                      hint: health.soffice_hint,
+                    },
+                    {
+                      id: "playwright",
+                      label: "Playwright",
+                      status: health.playwright_ok ? "green" : "red",
+                      hint: null,
+                    },
+                  ]
+                ).map((p) => (
+                  <li key={p.id} className="desk-health-row">
+                    <span
+                      className={`desk-health-dot is-${p.status}`}
+                      aria-hidden
+                    />
+                    <span className="desk-health-label">{p.label}</span>
+                    <span className={`desk-health-val is-${p.status}`}>
+                      {p.status === "green"
+                        ? "ok"
+                        : p.status === "amber"
+                          ? "внимание"
+                          : "нет"}
+                    </span>
+                    {p.hint ? (
+                      <span className="desk-health-hint">{p.hint}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
             )}
             <p className="health-foot">{paradeHint}</p>
           </section>

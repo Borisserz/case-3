@@ -1093,6 +1093,23 @@
   align-content: start;
 }
 .deck-gallery-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+.deck-gallery-card.is-dragging {
+  opacity: 0.55;
+}
+.deck-gallery-hit {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1104,7 +1121,40 @@
   text-align: left;
   font: inherit;
   color: inherit;
-  transition: transform 0.2s ease;
+  width: 100%;
+}
+.deck-gallery-ops {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+.deck-gallery-card:hover .deck-gallery-ops,
+.deck-gallery-card.is-active .deck-gallery-ops {
+  opacity: 1;
+}
+.deck-gallery-op {
+  width: 1.55rem;
+  height: 1.55rem;
+  border: none;
+  border-radius: 6px;
+  background: rgba(20, 22, 26, 0.78);
+  color: #f4f4f5;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.deck-gallery-op:hover {
+  background: rgba(20, 22, 26, 0.95);
+}
+.deck-gallery-op.is-danger:hover {
+  background: #7f1d1d;
+  color: #fff;
 }
 .deck-gallery-frame {
   position: relative;

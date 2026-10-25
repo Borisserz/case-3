@@ -18,10 +18,13 @@ import {
 import type { ChartEditRequest } from "../ChartEditSheet";
 import type { ImageEditRequest } from "../ImageEditModal";
 import type { TableEditRequest } from "../TableEditSheet";
+import type { ParagraphEditRequest } from "../ParagraphEditSheet";
 import { ChatComposer } from "../ChatComposer";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../ChartsQa";
+import { openRunEvents } from "../api/runEvents";
 import { openSummaryStream } from "../api/summaryStream";
+import { artifactChipLabel } from "../domain/craftSteps";
 import {
   DEFAULT_INTENT,
   FALLBACK_PALETTES,
@@ -36,6 +39,7 @@ import {
   formatApiDetailError,
   formatBytes,
   formatRunStatusError,
+  imageChipFromHealth,
   paradeHintFromHealth,
   provisionalSessionTitle,
   readTextFile,
@@ -557,6 +561,94 @@ export default function App() {
     }
   }
 
+  async function editParagraph(
+    msgId: string,
+    runId: string,
+    req: ParagraphEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: `para:${req.paragraphIndex}`,
+        message: "Нет run_id — открой отчёт из свежего запуска",
+      });
+      return false;
+    }
+    editLock.current = true;
+    const paraId = `para:${req.paragraphIndex}`;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: paraId });
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(rid)}/paragraphs/${req.paragraphIndex}/edit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: req.text, formats: "both" }),
+        },
+      );
+      let data: Record<string, unknown> = {};
+      try {
+        data = (await res.json()) as Record<string, unknown>;
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        const detail = data.detail;
+        const raw =
+          typeof detail === "string"
+            ? detail
+            : typeof data.error === "string"
+              ? data.error
+              : res.statusText || "paragraph edit failed";
+        throw new Error(raw);
+      }
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const next = {
+            ...msg,
+            result: {
+              ...msg.result,
+              preview:
+                (data.preview as ReportPreview | undefined) ??
+                msg.result.preview,
+              downloads: asDownloads(data.downloads, msg.result.downloads),
+              warnings:
+                Array.isArray(data.warnings) && data.warnings.length
+                  ? data.warnings.filter(
+                      (w): w is string => typeof w === "string",
+                    )
+                  : msg.result.warnings,
+              media_status:
+                (data.media_status as Record<string, unknown> | undefined) ??
+                msg.result.media_status,
+            },
+          };
+          if (next.result) rememberRun(next.result);
+          return next;
+        }),
+      );
+      setToast("Абзац обновлён");
+      setDownloadsPulseMsgId(msgId);
+      window.setTimeout(() => setToast(null), 2800);
+      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: paraId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
   function openReportArtifact(msgId: string, result: RunResult, tab?: ArtifactTab) {
     const mode = result.output_mode || "auto";
     const preferPreview = Boolean(result.preview?.blocks?.length);
@@ -738,16 +830,36 @@ export default function App() {
             : body.error || res.statusText,
         );
       }
-      const deadline = Date.now() + 10 * 60 * 1000;
-      for (;;) {
-        if (cancelRequestedRef.current) {
-          break;
-        }
-        if (Date.now() > deadline) {
-          throw new Error("таймаут сборки презентации (10 мин)");
-        }
-        await new Promise((r) => setTimeout(r, 500));
-        if (cancelRequestedRef.current) break;
+      const applySlideStage = (slidesStage: string | null) => {
+        const slideKey = slidesStage
+          ? slidesStage.startsWith("slides_")
+            ? slidesStage
+            : `slides_${slidesStage}`
+          : "slides_queued";
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
+              return msg;
+            return appendBotThinking(
+              {
+                ...msg,
+                thinkingMode: "presentation",
+                pending: true,
+                pendingStage: slideKey,
+                result: {
+                  ...msg.result,
+                  slides_status: "running",
+                  slides_stage: slidesStage,
+                },
+              },
+              slideKey,
+              null,
+            );
+          }),
+        );
+      };
+
+      const finishSlidesFromStatus = async () => {
         const st = await fetch(
           `/api/runs/${encodeURIComponent(runId)}/status`,
         );
@@ -763,92 +875,137 @@ export default function App() {
         const slidesStage = (stBody.slides_stage as string) || null;
         const slidesError = (stBody.slides_error as string) || null;
         const downloads = (stBody.downloads || {}) as Record<string, string>;
-        if (
-          slidesStatus === "ok" ||
-          slidesStatus === "error" ||
-          slidesStatus === "cancelled"
-        ) {
-          let slidePngs: string[] = [];
-          let deckIr: RunResult["deck"] = null;
-          let deckPdfMode: string | null = null;
-          if (slidesStatus === "ok") {
-            const g = await fetch(
-              `/api/runs/${encodeURIComponent(runId)}/slides`,
-            );
-            const gBody = await g.json().catch(() => ({}));
-            if (g.ok && Array.isArray(gBody.slide_pngs)) {
-              slidePngs = gBody.slide_pngs as string[];
-            }
-            if (g.ok && gBody.deck) deckIr = gBody.deck;
-            if (g.ok && typeof gBody.deck_pdf_mode === "string") {
-              deckPdfMode = gBody.deck_pdf_mode;
-            }
-          }
-          if (!deckPdfMode) {
-            const art = stBody.slides_artifacts as
-              | { deck_pdf_mode?: string }
-              | undefined;
-            if (art && typeof art.deck_pdf_mode === "string") {
-              deckPdfMode = art.deck_pdf_mode;
-            }
-          }
-          setMsgs((m) =>
-            m.map((msg) => {
-              if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
-                return msg;
-              return {
-                ...msg,
-                pending: false,
-                thinkingElapsedSec: msg.thinkingStartedAt
-                  ? Math.max(
-                      0,
-                      Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
-                    )
-                  : msg.thinkingElapsedSec,
-                result: {
-                  ...msg.result,
-                  downloads: { ...msg.result.downloads, ...downloads },
-                  slides_status: slidesStatus,
-                  slides_stage: slidesStage,
-                  slides_error: slidesError,
-                  slide_pngs: slidePngs,
-                  deck: deckIr ?? msg.result.deck,
-                  deck_pdf_mode: deckPdfMode ?? msg.result.deck_pdf_mode,
-                },
-              };
-            }),
+        let slidePngs: string[] = [];
+        let deckIr: RunResult["deck"] = null;
+        let deckPdfMode: string | null = null;
+        if (slidesStatus === "ok") {
+          const g = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/slides`,
           );
-          if (slidesStatus === "ok") {
-            // Cards in chat are enough — do not auto-open the artifact rail.
-            setDownloadsPulseMsgId(msgId);
-            window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
+          const gBody = await g.json().catch(() => ({}));
+          if (g.ok && Array.isArray(gBody.slide_pngs)) {
+            slidePngs = gBody.slide_pngs as string[];
           }
-          break;
+          if (g.ok && gBody.deck) deckIr = gBody.deck;
+          if (g.ok && typeof gBody.deck_pdf_mode === "string") {
+            deckPdfMode = gBody.deck_pdf_mode;
+          }
         }
-        const slideKey = slidesStage
-          ? `slides_${slidesStage}`
-          : "slides_queued";
+        if (!deckPdfMode) {
+          const art = stBody.slides_artifacts as
+            | { deck_pdf_mode?: string }
+            | undefined;
+          if (art && typeof art.deck_pdf_mode === "string") {
+            deckPdfMode = art.deck_pdf_mode;
+          }
+        }
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
               return msg;
-            return appendBotThinking(
-              {
-                ...msg,
-                thinkingMode: "presentation",
-                pending: true,
-                pendingStage: slideKey,
-                result: {
-                  ...msg.result,
-                  slides_status: slidesStatus,
-                  slides_stage: slidesStage,
-                },
+            return {
+              ...msg,
+              pending: false,
+              thinkingElapsedSec: msg.thinkingStartedAt
+                ? Math.max(
+                    0,
+                    Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
+                  )
+                : msg.thinkingElapsedSec,
+              result: {
+                ...msg.result,
+                downloads: { ...msg.result.downloads, ...downloads },
+                slides_status: slidesStatus,
+                slides_stage: slidesStage,
+                slides_error: slidesError,
+                slide_pngs: slidePngs,
+                deck: deckIr ?? msg.result.deck,
+                deck_pdf_mode: deckPdfMode ?? msg.result.deck_pdf_mode,
               },
-              slideKey,
-              null,
-            );
+            };
           }),
         );
+        if (slidesStatus === "ok") {
+          setDownloadsPulseMsgId(msgId);
+          window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
+        }
+      };
+
+      const deadline = Date.now() + 10 * 60 * 1000;
+      const slideCloser = { stop: null as null | (() => void) };
+      const terminal = await new Promise<
+        "done" | "error" | "cancelled" | "fallback"
+      >((resolve) => {
+        let settled = false;
+        const settle = (v: "done" | "error" | "cancelled" | "fallback") => {
+          if (settled) return;
+          settled = true;
+          resolve(v);
+        };
+        slideCloser.stop = openRunEvents(runId, {
+          onStage: (stage, detail, scope) => {
+            void detail;
+            if (scope === "slides" || stage.startsWith("slides_")) {
+              applySlideStage(stage);
+            }
+          },
+          onArtifact: (kind) => {
+            const label = artifactChipLabel(kind);
+            setMsgs((m) =>
+              m.map((msg) => {
+                if (msg.id !== msgId || msg.role !== "bot") return msg;
+                const prev = msg.artifactChips || [];
+                if (prev.includes(label)) return msg;
+                return { ...msg, artifactChips: [...prev, label] };
+              }),
+            );
+          },
+          onTerminal: (kind) => settle(kind),
+          onFallback: () => settle("fallback"),
+        });
+        const cancelWatch = window.setInterval(() => {
+          if (cancelRequestedRef.current) {
+            window.clearInterval(cancelWatch);
+            settle("cancelled");
+          }
+        }, 400);
+        window.setTimeout(() => window.clearInterval(cancelWatch), 10 * 60 * 1000);
+      });
+      slideCloser.stop?.();
+
+      if (terminal === "fallback") {
+        for (;;) {
+          if (cancelRequestedRef.current) break;
+          if (Date.now() > deadline) {
+            throw new Error("таймаут сборки презентации (10 мин)");
+          }
+          await new Promise((r) => setTimeout(r, 500));
+          if (cancelRequestedRef.current) break;
+          const st = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/status`,
+          );
+          const stBody = await st.json().catch(() => ({}));
+          if (!st.ok) {
+            throw new Error(
+              typeof stBody.detail === "string"
+                ? stBody.detail
+                : stBody.error || st.statusText,
+            );
+          }
+          const slidesStatus = (stBody.slides_status as string) || "idle";
+          const slidesStage = (stBody.slides_stage as string) || null;
+          if (
+            slidesStatus === "ok" ||
+            slidesStatus === "error" ||
+            slidesStatus === "cancelled"
+          ) {
+            await finishSlidesFromStatus();
+            break;
+          }
+          applySlideStage(slidesStage);
+        }
+      } else if (terminal !== "cancelled") {
+        await finishSlidesFromStatus();
       }
     } catch (err) {
       if (!cancelRequestedRef.current) {
@@ -1104,6 +1261,22 @@ export default function App() {
     if (photoMode === "document" && !hasSource && !chatTrim) return;
     setDeckApplyHint(null);
 
+    // Soft warn: Image down + photos wanted — run still proceeds (fig_* may skip)
+    const wantsPhotos =
+      photoMode === "edit" ||
+      (photoMode === "document" &&
+        !forbidImages &&
+        maxImages > 0 &&
+        modeToOutputMode(workMode) !== "diagram");
+    if (wantsPhotos && health && !imageChip.ok) {
+      setToast(
+        health.image_api_configured || health.kandinsky_configured
+          ? "Image API не отвечает — отчёт соберу, фото fig_* могут пропуститься"
+          : "Image API не настроен — слоты fig_* будут пропущены",
+      );
+      window.setTimeout(() => setToast(null), 5200);
+    }
+
     const attachment: SourceAttachment | undefined = draftSnap?.text
       ? {
           title: draftSnap.title,
@@ -1328,18 +1501,117 @@ export default function App() {
             );
           }),
         );
-        const pollStarted = Date.now();
         const pollDeadlineMs = 20 * 60 * 1000;
-        let soft404 = 0;
-        let stopSummary: (() => void) | null = null;
+        const runCloser = {
+          summary: null as null | (() => void),
+          events: null as null | (() => void),
+        };
         let streamedSummary = "";
         let summaryStreamStarted = false;
         let cancelled = false;
-        try {
+        let slidesKicked = false;
+
+        const applyStage = (
+          stage: string | undefined,
+          detail: string | null,
+        ) => {
+          setMsgs((m) =>
+            m.map((msg) => {
+              if (msg.id !== pendingId || msg.role !== "bot") return msg;
+              const mode = msg.thinkingMode || "report";
+              return appendBotThinking(
+                {
+                  ...msg,
+                  pending: true,
+                  pendingStage: stage,
+                  pendingDetail: detail,
+                  text:
+                    msg.streamingSummary && msg.text.trim()
+                      ? msg.text
+                      : stageLabel(stage || "queued", detail, mode),
+                },
+                stage,
+                detail,
+              );
+            }),
+          );
+          const shouldStream =
+            !summaryStreamStarted &&
+            outMode !== "diagram" &&
+            (stage === "latex" ||
+              stage === "docx" ||
+              stage === "summary");
+          if (shouldStream) {
+            summaryStreamStarted = true;
+            runCloser.summary = openSummaryStream(
+              runId,
+              (full) => {
+                streamedSummary = full;
+                setMsgs((m) =>
+                  m.map((msg) => {
+                    if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                    return {
+                      ...msg,
+                      text: full,
+                      pending: true,
+                      streamingSummary: true,
+                      pendingStage: stage || msg.pendingStage,
+                      pendingDetail: detail,
+                    };
+                  }),
+                );
+              },
+              (full) => {
+                streamedSummary = full || streamedSummary;
+              },
+            );
+          }
+        };
+
+        const applyArtifact = (kind: string) => {
+          const label = artifactChipLabel(kind);
+          setMsgs((m) =>
+            m.map((msg) => {
+              if (msg.id !== pendingId || msg.role !== "bot") return msg;
+              const prev = msg.artifactChips || [];
+              if (prev.includes(label)) return msg;
+              return { ...msg, artifactChips: [...prev, label] };
+            }),
+          );
+        };
+
+        const fetchFinalStatus = async (): Promise<RunResult> => {
+          const st = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/status`,
+          );
+          const body = await st.json().catch(() => ({}));
+          if (!st.ok) {
+            throw new Error(
+              typeof body.detail === "string"
+                ? body.detail
+                : body.error || st.statusText,
+            );
+          }
+          if (body.status === "cancelled") {
+            cancelled = true;
+            return body as RunResult;
+          }
+          if (body.status === "error") {
+            throw new Error(
+              formatRunStatusError(body as Record<string, unknown>, runId),
+            );
+          }
+          return body as RunResult;
+        };
+
+        /** Status poll — used as SSE fallback (Windows proxies). */
+        const pollUntilDone = async (): Promise<RunResult | null> => {
+          const pollStarted = Date.now();
+          let soft404 = 0;
           for (;;) {
             if (cancelRequestedRef.current) {
               cancelled = true;
-              break;
+              return null;
             }
             if (Date.now() - pollStarted > pollDeadlineMs) {
               throw new Error(
@@ -1349,7 +1621,7 @@ export default function App() {
             await new Promise((r) => setTimeout(r, 400));
             if (cancelRequestedRef.current) {
               cancelled = true;
-              break;
+              return null;
             }
             const st = await fetch(
               `/api/runs/${encodeURIComponent(runId)}/status`,
@@ -1372,66 +1644,12 @@ export default function App() {
             }
             const stage = body.stage as string | undefined;
             const detail = (body.stage_detail as string | null) || null;
-            const summaryStatus = body.summary_status as string | undefined;
-            const shouldStream =
-              !summaryStreamStarted &&
-              outMode !== "diagram" &&
-              (stage === "latex" ||
-                stage === "docx" ||
-                stage === "summary" ||
-                summaryStatus === "streaming" ||
-                summaryStatus === "ok");
-            if (shouldStream) {
-              summaryStreamStarted = true;
-              stopSummary = openSummaryStream(
-                runId,
-                (full) => {
-                  streamedSummary = full;
-                  setMsgs((m) =>
-                    m.map((msg) => {
-                      if (msg.id !== pendingId || msg.role !== "bot") return msg;
-                      return {
-                        ...msg,
-                        text: full,
-                        pending: true,
-                        streamingSummary: true,
-                        pendingStage: stage || msg.pendingStage,
-                        pendingDetail: detail,
-                      };
-                    }),
-                  );
-                },
-                (full) => {
-                  streamedSummary = full || streamedSummary;
-                },
-              );
-            }
             if (body.status === "cancelled") {
               cancelled = true;
-              break;
+              return null;
             }
             if (body.status === "running" || body.status === "started") {
-              setMsgs((m) =>
-                m.map((msg) => {
-                  if (msg.id !== pendingId || msg.role !== "bot") return msg;
-                  const mode = msg.thinkingMode || "report";
-                  const next = appendBotThinking(
-                    {
-                      ...msg,
-                      pending: true,
-                      pendingStage: stage,
-                      pendingDetail: detail,
-                      text:
-                        msg.streamingSummary && msg.text.trim()
-                          ? msg.text
-                          : stageLabel(stage || "queued", detail, mode),
-                    },
-                    stage,
-                    detail,
-                  );
-                  return next;
-                }),
-              );
+              applyStage(stage, detail);
               continue;
             }
             if (body.status === "error") {
@@ -1439,11 +1657,76 @@ export default function App() {
                 formatRunStatusError(body as Record<string, unknown>, runId),
               );
             }
-            result = body as RunResult;
-            break;
+            return body as RunResult;
+          }
+        };
+
+        try {
+          const terminal = await new Promise<
+            "done" | "error" | "cancelled" | "fallback"
+          >((resolve) => {
+            let settled = false;
+            const settle = (v: "done" | "error" | "cancelled" | "fallback") => {
+              if (settled) return;
+              settled = true;
+              resolve(v);
+            };
+            runCloser.events = openRunEvents(runId, {
+              onStage: (stage, detail, scope) => {
+                const uiStage =
+                  scope === "slides" && !stage.startsWith("slides_")
+                    ? `slides_${stage}`
+                    : stage;
+                applyStage(uiStage, detail);
+                // Presentation: after pipeline_ok, kick slides while SSE stays open
+                if (
+                  outMode === "presentation" &&
+                  (stage === "pipeline_ok" || stage === "ok") &&
+                  scope === "pipeline" &&
+                  !slidesKicked
+                ) {
+                  slidesKicked = true;
+                  void fetch(
+                    `/api/runs/${encodeURIComponent(runId)}/slides`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(deckStyleToApiPayload(deckStyle)),
+                    },
+                  ).catch(() => {
+                    /* makePresentation path still runs if needed */
+                  });
+                }
+              },
+              onArtifact: applyArtifact,
+              onTerminal: (kind) => settle(kind),
+              onFallback: () => settle("fallback"),
+            });
+            // Safety: if cancel while waiting SSE
+            const cancelWatch = window.setInterval(() => {
+              if (cancelRequestedRef.current) {
+                window.clearInterval(cancelWatch);
+                settle("cancelled");
+              }
+            }, 400);
+            window.setTimeout(() => window.clearInterval(cancelWatch), pollDeadlineMs);
+          });
+
+          if (terminal === "fallback") {
+            runCloser.events?.();
+            runCloser.events = null;
+            const polled = await pollUntilDone();
+            if (polled) result = polled;
+          } else if (terminal === "cancelled") {
+            cancelled = true;
+          } else if (terminal === "error") {
+            result = await fetchFinalStatus();
+          } else {
+            result = await fetchFinalStatus();
           }
         } finally {
-          stopSummary?.();
+          runCloser.events?.();
+          runCloser.summary?.();
         }
         if (cancelled || cancelRequestedRef.current) {
           setBusy(false);
@@ -1484,6 +1767,8 @@ export default function App() {
             thinking: msg.thinking,
             thinkingStartedAt: msg.thinkingStartedAt,
             thinkingMode: msg.thinkingMode,
+            artifactChips: msg.artifactChips,
+            pendingStage: msg.pendingStage,
             thinkingElapsedSec: msg.thinkingStartedAt
               ? Math.max(
                   0,
@@ -1499,14 +1784,17 @@ export default function App() {
       }
       const isPresentationOnly =
         outMode === "presentation" || result.output_mode === "presentation";
-      if (isPresentationOnly && result.run_id) {
+      const slidesAlreadyDone =
+        result.slides_status === "ok" || Boolean(result.downloads?.pptx);
+      if (isPresentationOnly && result.run_id && !slidesAlreadyDone) {
         // makePresentation owns busy until deck finishes; opens presentation rail on ok
         void makePresentation(pendingId, result);
       } else {
         activeRunIdRef.current = null;
         setBusy(false);
-        // Open the mode's primary surface so the user sees the right artifact.
-        if (result.output_mode === "diagram" && result.diagrams?.[0]) {
+        if (isPresentationOnly && slidesAlreadyDone) {
+          openReportArtifact(pendingId, result, "presentation");
+        } else if (result.output_mode === "diagram" && result.diagrams?.[0]) {
           openDiagramArtifact(pendingId, result, result.diagrams[0].id);
         } else if (
           result.output_mode === "report" ||
@@ -1533,6 +1821,7 @@ export default function App() {
   }
 
   const paradeHint = paradeHintFromHealth(health);
+  const imageChip = imageChipFromHealth(health);
 
   const healthReady = Boolean(
     health?.vision_configured && health?.docker_ok && health?.playwright_ok,
@@ -1641,6 +1930,9 @@ export default function App() {
           healthReady={healthReady}
           healthLabel={healthReady ? "готово" : health ? "сервисы" : "…"}
           healthHint={paradeHint}
+          imageChipLabel={imageChip.label}
+          imageChipOk={imageChip.ok}
+          imageChipHint={imageChip.hint}
           history={history}
           folders={folders}
           onNew={startNewReport}
@@ -1905,6 +2197,18 @@ export default function App() {
                   activeReport.run_id
                     ? (req) =>
                         editTable(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+                onEditParagraph={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (req) =>
+                        editParagraph(
                           railArtifact.msgId,
                           activeReport.run_id,
                           req,

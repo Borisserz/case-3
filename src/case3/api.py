@@ -14,7 +14,13 @@ from typing import Any
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
 from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
@@ -30,9 +36,17 @@ from case3.diagram_edit import (
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.figure_edit import FigureEditError, edit_figure_in_run
+from case3.paragraph_edit import ParagraphEditError, edit_paragraph_in_run
 from case3.table_edit import TableEditError, edit_table_in_run
 from case3.generate import max_images_from_env, resolve_text_file
-from case3.image_api import ImageApiConfig, edit_png, image_api_configured
+from case3.desk_health import build_desk_probes, probe_soffice, probe_vision
+from case3.image_api import (
+    ImageApiConfig,
+    edit_png,
+    image_api_configured,
+    probe_image_api,
+)
+from case3.run_events import EVENTS
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
@@ -190,7 +204,9 @@ def build_intent_from_ui(
         )
         req.append(
             "- вёрстка: A4 portrait; широкие таблицы — tabularx{\\textwidth}{…} "
-            "или колонки p{…}/X, не landscape и не tabular{lll} с длинным текстом"
+            "или p{…}/X; если всё ещё не влезает (≈6+ колонок) — "
+            "только эту table в \\begin{landscape}…\\end{landscape}; "
+            "не весь документ; не tabular{lll}"
         )
         if auto and not hints:
             req.append(
@@ -264,6 +280,7 @@ def health() -> dict[str, Any]:
         docker_err = str(exc)[:200]
 
     playwright_ok = False
+    playwright_err: str | None = None
     try:
         from playwright.sync_api import sync_playwright
 
@@ -279,23 +296,57 @@ def health() -> dict[str, Any]:
         _run_sync_playwright(_probe)
         playwright_ok = True
     except Exception as exc:  # noqa: BLE001
+        playwright_err = str(exc)[:200]
         log.info("playwright check failed: %s", exc)
 
-    vision = bool(os.environ.get("VISION_API_BASE_URL", "").strip())
-    images_ok = image_api_configured()
+    vision_cfg, vision_live, vision_err = probe_vision()
+    images_configured = image_api_configured()
     image_base = (os.environ.get("IMAGE_API_BASE_URL") or os.environ.get("KANDINSKY_API_BASE_URL") or "").strip()
+    image_live_ok = False
+    image_live_err: str | None = None
+    if images_configured:
+        image_live_ok, image_live_err = probe_image_api(timeout_s=1.5)
+    else:
+        image_live_err = "IMAGE_API_BASE_URL empty"
+    soffice_ok, soffice_path, soffice_hint = probe_soffice()
+    probes = build_desk_probes(
+        docker_ok=docker_ok,
+        docker_error=docker_err,
+        playwright_ok=playwright_ok,
+        playwright_error=playwright_err,
+        vision_configured=vision_cfg,
+        vision_ok=vision_live,
+        vision_error=vision_err,
+        image_configured=images_configured,
+        image_ok=bool(image_live_ok),
+        image_error=image_live_err,
+        soffice_ok=soffice_ok,
+        soffice_path=soffice_path,
+        soffice_hint=soffice_hint,
+    )
+    # ok = desk can run a report (Vision + Docker). Image red/amber does not block.
     return {
-        "ok": docker_ok and vision,
+        "ok": docker_ok and vision_cfg,
         "docker_image": IMAGE,
         "docker_ok": docker_ok,
         "docker_error": docker_err,
         "playwright_ok": playwright_ok,
-        "vision_configured": vision,
-        "image_api_configured": images_ok,
+        "playwright_error": playwright_err,
+        "vision_configured": vision_cfg,
+        "vision_ok": vision_live,
+        "vision_error": vision_err,
+        "image_api_configured": images_configured,
+        # live probe (short timeout) — UI chip Image · ok / down
+        "image_api_ok": bool(image_live_ok),
+        "image_api_error": image_live_err,
         # so Windows desk can verify .env without opening the file
         "image_api_base_url": image_base or None,
         # alias for Liber UI that still reads kandinsky_configured
-        "kandinsky_configured": images_ok,
+        "kandinsky_configured": images_configured,
+        "soffice_ok": soffice_ok,
+        "soffice_path": soffice_path,
+        "soffice_hint": soffice_hint,
+        "probes": probes,
         "defaults": {
             "max_charts": max_charts_from_env(),
             "max_images": max_images_from_env(),
@@ -777,6 +828,8 @@ async def api_run(
     payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
     (logs_dir / "meta.json").write_text(payload0, encoding="utf-8")
     (out_dir / "meta.json").write_text(payload0, encoding="utf-8")
+    EVENTS.start(run_id)
+    EVENTS.publish_stage(run_id, "queued", scope="pipeline")
 
     _kick_pipeline_thread(
         src_path,
@@ -807,6 +860,84 @@ async def api_run(
 
 def _sse_pack(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.get("/api/runs/{run_id}/events")
+def stream_run_events(run_id: str) -> StreamingResponse:
+    """SSE: stage / artifact / done|error|cancelled (no model thoughts)."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)):
+        raise HTTPException(404, detail="run not found")
+    work = ROOT / "runs" / "work" / run_id
+    if not out_dir.is_dir() and not work.is_dir():
+        raise HTTPException(404, detail="run not found")
+
+    def gen():
+        import time as _time
+
+        # Late join: seed bus from meta if empty (API restart / missed start).
+        snap = EVENTS.snapshot(run_id)
+        meta_path = out_dir / "meta.json"
+        if meta_path.is_file() and snap.get("count", 0) == 0:
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+            st = str(meta.get("status") or "")
+            stage = str(meta.get("stage") or "queued")
+            detail = meta.get("stage_detail")
+            if st == "running":
+                EVENTS.publish_stage(
+                    run_id, stage, detail=str(detail) if detail else None, scope="pipeline"
+                )
+                EVENTS.scan_artifacts(run_id, out_dir)
+            elif st in {"ok", "error", "cancelled"}:
+                slides_st = str(meta.get("slides_status") or "idle")
+                out_mode = str(meta.get("output_mode") or "")
+                if st == "ok" and slides_st in {"running", "queued"}:
+                    EVENTS.reopen(run_id)
+                    EVENTS.publish_stage(
+                        run_id,
+                        str(meta.get("slides_stage") or "starting"),
+                        scope="slides",
+                    )
+                    EVENTS.scan_artifacts(run_id, out_dir)
+                elif (
+                    st == "ok"
+                    and out_mode == "presentation"
+                    and slides_st in {"idle", ""}
+                ):
+                    # Pipeline done; slides not kicked yet — keep SSE open.
+                    EVENTS.ensure(run_id)
+                    EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
+                    EVENTS.scan_artifacts(run_id, out_dir)
+                else:
+                    kind = "done" if st == "ok" else st
+                    payload: dict[str, Any] = {"status": st, "t": _time.time()}
+                    if meta.get("error"):
+                        payload["error"] = meta.get("error")
+                    yield _sse_pack(kind, payload)
+                    return
+
+        for ev in EVENTS.subscribe(run_id, timeout_s=1200.0):
+            kind = str(ev.get("event") or "stage")
+            data = {k: v for k, v in ev.items() if k != "event"}
+            yield _sse_pack(kind, data)
+            if kind in {"done", "error", "cancelled"}:
+                return
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/runs/{run_id}/summary/stream")
@@ -1100,6 +1231,13 @@ class TableEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
+class ParagraphEditBody(BaseModel):
+    """Plain prose replace → patch TeX paragraph → rebuild PDF/DOCX."""
+
+    text: str = Field(default="")
+    formats: str = Field(default="both")
+
+
 def _resolve_run_dir(run_id: str) -> Path:
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
@@ -1178,6 +1316,44 @@ async def edit_run_diagram(
         "diagram": diagram,
         "diagrams": _load_diagrams_from_out(out_dir),
     }
+
+
+@app.get("/api/runs/{run_id}/diagrams/{diagram_id}/svg")
+async def download_diagram_svg(run_id: str, diagram_id: str) -> Response:
+    """Mermaid → SVG for Liber schema download (no PNG raster)."""
+    from case3.diagram_svg import DiagramSvgError, export_diagram_svg, load_diagram_spec
+
+    if not _FILE_OK.match(diagram_id):
+        raise HTTPException(400, detail="invalid diagram_id")
+    out_dir = _resolve_run_dir(run_id)
+    try:
+        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        meta = {}
+    palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
+    try:
+        spec = load_diagram_spec(out_dir, diagram_id)
+        svg = await asyncio.to_thread(
+            partial(export_diagram_svg, out_dir, diagram_id, palette=palette)
+        )
+    except DiagramSvgError as exc:
+        raise HTTPException(404 if "not found" in str(exc) else 400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — Playwright missing browsers, etc.
+        log.exception("diagram svg render failed run_id=%s id=%s", run_id, diagram_id)
+        raise HTTPException(
+            503, detail=f"svg render unavailable: {exc}"
+        ) from exc
+    # ASCII-only filename (Starlette headers are latin-1); UTF-8 title → slug fallback
+    raw_title = spec.get("title") or diagram_id
+    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(raw_title)).strip("-_.")[:48] or diagram_id
+    return Response(
+        content=svg.encode("utf-8"),
+        media_type="image/svg+xml; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe}.svg"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.post("/api/runs/{run_id}/diagrams/regenerate")
@@ -1430,13 +1606,71 @@ async def edit_run_table(
     }
 
 
+@app.post("/api/runs/{run_id}/paragraphs/{paragraph_index}/edit")
+async def edit_run_paragraph(
+    run_id: str, paragraph_index: int, body: ParagraphEditBody
+) -> dict[str, Any]:
+    """Replace one preview paragraph (para-N) and rebuild PDF/DOCX."""
+    out_dir = _resolve_run_dir(run_id)
+    if paragraph_index < 1:
+        raise HTTPException(400, detail="paragraph_index must be ≥ 1")
+
+    fmt_raw = (body.formats or "both").strip().lower()
+    if fmt_raw == "both":
+        fmt_set = {"pdf", "docx"}
+    elif fmt_raw in {"pdf", "docx"}:
+        fmt_set = {fmt_raw}
+    else:
+        raise HTTPException(400, detail="formats must be pdf|docx|both")
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_paragraph_in_run,
+                out_dir,
+                paragraph_index,
+                text=str(body.text or ""),
+                formats=fmt_set,
+            )
+        )
+    except ParagraphEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    media = result.get("media_status") or {}
+    preview = _build_preview_payload(
+        run_id, out_dir, media if isinstance(media, dict) else {}
+    )
+    v = int(result.get("version") or 0)
+
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
+
+    return {
+        "run_id": run_id,
+        "paragraph_index": paragraph_index,
+        "status": "ok",
+        "text": result.get("text"),
+        "media_status": media,
+        "downloads": files,
+        "preview": preview,
+        "warnings": [],
+    }
+
+
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
     warnings: list[str] = []
     planned = meta.get("figures_planned") or []
     media = meta.get("media_status") or {}
     if planned and max_images > 0:
         if not image_api_configured():
-            warnings.append("IMAGE_API_BASE_URL empty — figure slots stripped")
+            warnings.append(
+                "Image API не настроен — слоты fig_* пропущены (отчёт без блокировки)"
+            )
         else:
             failed = [
                 fid
@@ -1445,7 +1679,7 @@ def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
             ]
             if failed:
                 warnings.append(
-                    f"фото не сгенерировались (Image API): {', '.join(failed)}"
+                    f"фото пропущены / не сгенерировались (Image API): {', '.join(failed)}"
                 )
     c_planned = meta.get("charts_planned") or []
     if c_planned:
@@ -1641,6 +1875,11 @@ async def start_slides(
     meta["slides_stage"] = "starting"
     meta["slides_error"] = None
     meta.pop("cancel_requested", None)
+    # Reopen progress bus so slides stages reach SSE after report "done".
+    from case3.run_events import EVENTS
+
+    EVENTS.reopen(run_id)
+    EVENTS.publish_stage(run_id, "starting", scope="slides")
     with _slides_patch_lock:
         _slides_patch_pending.pop(run_id, None)
         _slides_patch_busy.discard(run_id)
@@ -1710,6 +1949,14 @@ class SlidesIrPatchBody(BaseModel):
     """Text-only IR patch — edit existing fields; no add/delete slides."""
 
     slides: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SlidesStructureBody(BaseModel):
+    """Structural IR op — reorder / duplicate / delete; rebuild twin+PPTX only."""
+
+    op: str = Field(default="")
+    id: str | None = Field(default=None)
+    order: list[str] | None = Field(default=None)
 
 
 def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
@@ -1791,20 +2038,14 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     }
 
 
-@app.patch("/api/runs/{run_id}/slides/ir")
-async def patch_slides_ir(
-    run_id: str,
-    body: SlidesIrPatchBody,
-) -> JSONResponse:
-    """Patch deck text fields and rebuild native PPTX + twin preview.
-
-    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
-    """
+def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Path]:
+    """Shared guards for text + structure slide patches."""
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
     out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+    if not str(out_dir.resolve()).startswith(str(out_root)) or not (
+        out_dir / "meta.json"
+    ).is_file():
         raise HTTPException(404, detail="run not found")
     ir_path = out_dir / "slides" / "deck.json"
     if not ir_path.is_file():
@@ -1815,14 +2056,10 @@ async def patch_slides_ir(
         raise HTTPException(500, detail="corrupt meta.json") from exc
     if meta.get("status") != "ok":
         raise HTTPException(409, detail="report run is not ok")
-    # Full LLM slides job (not patch) still blocks — clear zombies first.
     if meta.get("slides_status") == "running" and meta.get("slides_stage") != "patch":
         _clear_stale_slides_running(meta, run_id=run_id, out_dir=out_dir)
         if meta.get("slides_status") == "running":
             raise HTTPException(409, detail="slides job already running")
-
-    from case3.slides_ir import DeckIrError
-    from case3.slides_patch import apply_deck_text_patch
 
     with _slides_patch_lock:
         base = (_slides_patch_pending.get(run_id) or {}).get("deck")
@@ -1833,12 +2070,13 @@ async def patch_slides_ir(
             raise HTTPException(500, detail="corrupt deck.json") from exc
     if not isinstance(base, dict):
         raise HTTPException(500, detail="corrupt deck.json")
+    return base, ir_path
 
-    try:
-        patched = apply_deck_text_patch(base, {"slides": body.slides})
-    except DeckIrError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
 
+def _enqueue_deck_rebuild(
+    run_id: str, out_dir: Path, ir_path: Path, patched: dict[str, Any]
+) -> bool:
+    """Write IR + queue coalesce worker. Returns True if already queued."""
     try:
         ir_path.write_text(
             json.dumps(patched, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1859,7 +2097,30 @@ async def patch_slides_ir(
             name=f"case3-slides-patch-{run_id}",
             daemon=True,
         ).start()
+    return already
 
+
+@app.patch("/api/runs/{run_id}/slides/ir")
+async def patch_slides_ir(
+    run_id: str,
+    body: SlidesIrPatchBody,
+) -> JSONResponse:
+    """Patch deck text fields and rebuild native PPTX + twin preview.
+
+    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
+    """
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    base, ir_path = _load_deck_for_patch(run_id, out_dir)
+
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_text_patch
+
+    try:
+        patched = apply_deck_text_patch(base, {"slides": body.slides})
+    except DeckIrError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
     return JSONResponse(
         {
             "run_id": run_id,
@@ -1867,6 +2128,44 @@ async def patch_slides_ir(
             "slides_status": "running",
             "slides_stage": "patch",
             "queued": already,
+            "deck": patched,
+        },
+        status_code=202,
+    )
+
+
+@app.post("/api/runs/{run_id}/slides/structure")
+async def post_slides_structure(
+    run_id: str,
+    body: SlidesStructureBody,
+) -> JSONResponse:
+    """Reorder / duplicate / delete slides — IR patch + rebuild twin/PPTX (no LLM)."""
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    base, ir_path = _load_deck_for_patch(run_id, out_dir)
+
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_structure
+
+    op_body: dict[str, Any] = {"op": body.op}
+    if body.id is not None:
+        op_body["id"] = body.id
+    if body.order is not None:
+        op_body["order"] = body.order
+
+    try:
+        patched = apply_deck_structure(base, op_body)
+    except DeckIrError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "running",
+            "slides_stage": "patch",
+            "queued": already,
+            "op": body.op,
             "deck": patched,
         },
         status_code=202,

@@ -1,11 +1,14 @@
-"""Apply text-only patches to deck IR (edit existing fields; no structural mutate)."""
+"""Apply text-only and structural patches to deck IR (no LLM)."""
 
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from case3.slides_ir import DeckIrError, _norm_ws
+
+_ID_OK = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 
 _TEXT_KEYS = (
     "title",
@@ -173,3 +176,67 @@ def _patch_rows(target: dict[str, Any], rows: Any) -> None:
             if not isinstance(cell, str):
                 raise DeckIrError("table cell must be string")
             cur[r][c] = _norm_ws(cell)
+
+
+def _slide_list(deck: dict[str, Any]) -> list[dict[str, Any]]:
+    slides = deck.get("slides")
+    if not isinstance(slides, list) or not slides:
+        raise DeckIrError("deck.slides required")
+    for s in slides:
+        if not isinstance(s, dict) or not s.get("id"):
+            raise DeckIrError("each slide needs id")
+    return slides  # type: ignore[return-value]
+
+
+def _fresh_slide_id(existing: set[str]) -> str:
+    for i in range(1, 10_000):
+        cand = f"s{i:02d}"
+        if cand not in existing and _ID_OK.match(cand):
+            return cand
+    raise DeckIrError("could not allocate slide id")
+
+
+def apply_deck_structure(
+    deck: dict[str, Any],
+    op_body: dict[str, Any],
+) -> dict[str, Any]:
+    """Reorder / duplicate / delete slides. Returns a new deck dict."""
+    if not isinstance(deck, dict) or not isinstance(op_body, dict):
+        raise DeckIrError("deck/op must be objects")
+    op = str(op_body.get("op") or "").strip().lower()
+    out = copy.deepcopy(deck)
+    slides = list(_slide_list(out))
+    by_id = {str(s["id"]): s for s in slides}
+
+    if op == "reorder":
+        order = op_body.get("order")
+        if not isinstance(order, list) or not order:
+            raise DeckIrError("reorder requires order list")
+        ids = [str(x) for x in order]
+        if len(ids) != len(by_id) or set(ids) != set(by_id):
+            raise DeckIrError("order must be a permutation of slide ids")
+        out["slides"] = [copy.deepcopy(by_id[i]) for i in ids]
+        return out
+
+    if op == "duplicate":
+        sid = str(op_body.get("id") or "")
+        if sid not in by_id:
+            raise DeckIrError(f"unknown slide id: {sid!r}")
+        idx = next(i for i, s in enumerate(slides) if str(s["id"]) == sid)
+        clone = copy.deepcopy(slides[idx])
+        new_id = _fresh_slide_id(set(by_id))
+        clone["id"] = new_id
+        slides.insert(idx + 1, clone)
+        out["slides"] = slides
+        return out
+
+    if op == "delete":
+        sid = str(op_body.get("id") or "")
+        if sid not in by_id:
+            raise DeckIrError(f"unknown slide id: {sid!r}")
+        if len(slides) <= 1:
+            raise DeckIrError("cannot delete the last slide")
+        out["slides"] = [s for s in slides if str(s["id"]) != sid]
+        return out
+
+    raise DeckIrError(f"unknown structure op: {op!r}")

@@ -482,6 +482,19 @@
 .presentation-fullscreen-nav button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+.presentation-thumb.is-dragging {
+  opacity: 0.5;
+}
+.presentation-nav.is-danger {
+  color: #9f1239;
+}
+.presentation-nav.is-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #9f1239 40%, var(--border));
+}
+.presentation-nav:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .artifact-card-view.secondary {
   background: transparent;
   border: 1px solid var(--border);

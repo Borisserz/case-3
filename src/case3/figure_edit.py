@@ -98,16 +98,28 @@ def edit_figure_in_run(
     if texs and texs[0].is_file():
         tex_bak = texs[0].read_text(encoding="utf-8")
 
+    pack_id: str | None = None
+    if meta_path.is_file():
+        try:
+            m0 = json.loads(meta_path.read_text(encoding="utf-8"))
+            pack_id = (
+                str(m0.get("image_style_pack") or m0.get("slides_theme_pack") or "")
+                or str(m0.get("chart_palette") or "")
+                or None
+            )
+        except (OSError, json.JSONDecodeError):
+            pack_id = None
+
     try:
         if mode == "generate":
-            generate_png(cfg, prompt, dest)
+            generate_png(cfg, prompt, dest, pack_id=pack_id)
         else:
             if bak is None:
                 raise FigureEditError(
                     f"нет исходного PNG для правки ({figure_id}.png) — сначала сгенерируйте"
                 )
             tmp = dest.with_suffix(".edit.png")
-            edit_png(cfg, prompt, dest, tmp)
+            edit_png(cfg, prompt, dest, tmp, pack_id=pack_id)
             tmp.replace(dest)
     except FigureEditError:
         raise

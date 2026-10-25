@@ -1,6 +1,10 @@
 /** Client-side SVG → PNG download for Liber diagrams. */
 
-export function slugDiagramFilename(title: string, id: string): string {
+export function slugDiagramFilename(
+  title: string,
+  id: string,
+  ext: "png" | "svg" = "png",
+): string {
   const base = (title || id || "diagram")
     .trim()
     .toLowerCase()
@@ -9,7 +13,8 @@ export function slugDiagramFilename(title: string, id: string): string {
     .replace(/^-|-$/g, "")
     .slice(0, 48);
   const safe = base || id || "diagram";
-  return safe.endsWith(".png") ? safe : `${safe}.png`;
+  const suffix = `.${ext}`;
+  return safe.endsWith(suffix) ? safe : `${safe}${suffix}`;
 }
 
 function intrinsicSize(svgEl: SVGSVGElement): { w: number; h: number } {
@@ -78,6 +83,25 @@ function loadImageFromSvgXml(xml: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error("svg image load failed"));
     img.src = url;
   });
+}
+
+/** Download the live Mermaid SVG (vector) — no raster. */
+export async function downloadDiagramSvg(
+  svgEl: SVGSVGElement,
+  filename: string,
+): Promise<void> {
+  const { xml } = prepareClone(svgEl);
+  const a = document.createElement("a");
+  const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  a.href = href;
+  const name = filename.endsWith(".svg") ? filename : `${filename}.svg`;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 2500);
 }
 
 export async function downloadDiagramPng(

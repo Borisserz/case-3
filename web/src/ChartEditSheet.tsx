@@ -68,6 +68,8 @@ export function ChartEditSheet({
   const [chartType, setChartType] = useState(initialType || types[0] || "bar");
   const [styleNotes, setStyleNotes] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
+  /** Local preview failure — keep last good HTML above; do not blank forever. */
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSeq = useRef(0);
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open });
@@ -85,15 +87,20 @@ export function ChartEditSheet({
         : types[0] || "bar";
     setChartType(t);
     setStyleNotes("");
+    setPreviewError(null);
     onPreviewHtml?.(null);
   }, [open, figureId, initialPalette, initialType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) {
+      setPreviewError(null);
       onPreviewHtml?.(null);
       return;
     }
-    return () => onPreviewHtml?.(null);
+    return () => {
+      setPreviewError(null);
+      onPreviewHtml?.(null);
+    };
   }, [open, onPreviewHtml]);
 
   useEffect(() => {
@@ -107,7 +114,7 @@ export function ChartEditSheet({
     });
   }, [open, palette, chartType, onDraftChange]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // G9: debounce preview → swap figure above (no second chart)
+  // G9: debounce preview → swap figure above (no second chart); style notes deferred to Apply
   useEffect(() => {
     if (!open || !runId || !figureId) return;
     const seq = ++previewSeq.current;
@@ -130,10 +137,16 @@ export function ChartEditSheet({
           }
           const data = (await r.json()) as { html?: string };
           if (seq !== previewSeq.current) return;
+          setPreviewError(null);
           onPreviewHtml?.(data.html || null);
-        } catch {
+        } catch (exc) {
           if (seq !== previewSeq.current) return;
-          onPreviewHtml?.(null);
+          // Keep last good preview (or original when still null) — never blank forever.
+          const msg =
+            exc instanceof Error
+              ? exc.message.slice(0, 160)
+              : "не удалось обновить превью";
+          setPreviewError(msg || "не удалось обновить превью");
         } finally {
           if (seq === previewSeq.current) setLiveLoading(false);
         }
@@ -254,8 +267,16 @@ export function ChartEditSheet({
             }
           }}
         />
+        <p className="chart-edit-style-hint">
+          превью без текста стиля; текст применится при сохранении
+        </p>
       </section>
 
+      {previewError && (
+        <p className="err chart-edit-preview-err" role="status">
+          Превью: {previewError}
+        </p>
+      )}
       {error && <p className="err">{error}</p>}
 
       <footer className="chart-edit-foot">

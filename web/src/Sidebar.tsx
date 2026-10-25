@@ -20,6 +20,10 @@ type Props = {
   healthReady: boolean;
   healthLabel: string;
   healthHint: string;
+  /** Live Image API chip (ok / down) — Quiet Mono. */
+  imageChipLabel?: string;
+  imageChipOk?: boolean;
+  imageChipHint?: string;
   history: HistoryItem[];
   folders: HistoryFolder[];
   onNew: () => void;
@@ -273,6 +277,9 @@ export function Sidebar({
   healthReady,
   healthLabel,
   healthHint,
+  imageChipLabel,
+  imageChipOk = false,
+  imageChipHint = "",
   history,
   folders,
   onNew,
@@ -493,6 +500,16 @@ export function Sidebar({
       ) : null}
 
       <div className="liber-sidebar-foot">
+        {imageChipLabel ? (
+          <span
+            className={`liber-image-chip${imageChipOk ? " is-ok" : " is-down"}`}
+            title={imageChipHint || imageChipLabel}
+            role="status"
+          >
+            <span className="health-dot" aria-hidden />
+            <span className="liber-side-label">{imageChipLabel}</span>
+          </span>
+        ) : null}
         <button
           type="button"
           className="liber-sidebar-item liber-sidebar-settings"

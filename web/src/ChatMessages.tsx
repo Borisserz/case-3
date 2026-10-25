@@ -148,13 +148,17 @@ export function ChatMessages({
                     <IconLiberMark size={28} />
                   </span>
                   <div className="msg-bot-stack">
-                    {m.thinking?.length ? (
+                    {m.thinking?.length || m.artifactChips?.length ? (
                       <ThinkingFold
-                        lines={m.thinking}
+                        lines={m.thinking || []}
                         live={slidesLive}
                         liveLabel={
                           slidesLive ? "Собираю презентацию" : undefined
                         }
+                        stage={m.pendingStage || m.result?.slides_stage}
+                        thinkingMode={m.thinkingMode || "report"}
+                        artifactChips={m.artifactChips}
+                        reduceMotion={reduceMotion}
                         elapsedSec={
                           slidesLive && m.thinkingStartedAt
                             ? Math.max(
@@ -254,6 +258,10 @@ export function ChatMessages({
                     <ThinkingFold
                       lines={m.thinking || []}
                       live
+                      stage={m.pendingStage}
+                      thinkingMode={m.thinkingMode || "report"}
+                      artifactChips={m.artifactChips}
+                      reduceMotion={reduceMotion}
                       elapsedSec={
                         m.thinkingStartedAt
                           ? Math.max(
@@ -278,10 +286,15 @@ export function ChatMessages({
                     <IconLiberMark size={28} />
                   </span>
                   <div className="msg-bot-stack">
-                    {m.role === "bot" && m.thinking?.length ? (
+                    {m.role === "bot" &&
+                    (m.thinking?.length || m.artifactChips?.length) ? (
                       <ThinkingFold
-                        lines={m.thinking}
+                        lines={m.thinking || []}
                         live={false}
+                        stage={m.pendingStage}
+                        thinkingMode={m.thinkingMode || "report"}
+                        artifactChips={m.artifactChips}
+                        reduceMotion={reduceMotion}
                         elapsedSec={m.thinkingElapsedSec}
                       />
                     ) : null}

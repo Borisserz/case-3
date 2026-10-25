@@ -197,7 +197,8 @@ def resolve_deck_theme(
         ),
     }
     fonts = {
-        "title": str(fonts_in.get("title") or "Calibri"),
+        # Title default Georgia (serif packs); body/fallback stay Calibri Office-safe.
+        "title": str(fonts_in.get("title") or "Georgia"),
         "body": str(fonts_in.get("body") or "Calibri"),
         "fallback_pptx": str(fonts_in.get("fallback_pptx") or "Calibri"),
     }

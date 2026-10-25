@@ -16,6 +16,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ChartEditRequest, PaletteInfo } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
 import type { TableEditRequest } from "./TableEditSheet";
+import type { ParagraphEditRequest } from "./ParagraphEditSheet";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { DeckSlidesFilm } from "./DeckSlidesFilm";
@@ -111,6 +112,7 @@ type Props = {
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
+  onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   onMakePresentation?: () => void;
   makingPresentation?: boolean;
@@ -140,6 +142,7 @@ export function ArtifactRail({
   onEditFigure,
   onEditImage,
   onEditTable,
+  onEditParagraph,
   onEditCancel,
   onMakePresentation,
   makingPresentation = false,
@@ -299,6 +302,7 @@ export function ArtifactRail({
   const jumpToc = useCallback((id: string) => {
     setTocActive(id);
     const el = bodyRef.current?.querySelector(`#${CSS.escape(id)}`);
+    // block:start + .report-h scroll-margin-top clears sticky TOC.
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
@@ -603,6 +607,7 @@ export function ArtifactRail({
                   onEditFigure={onEditFigure}
                   onEditImage={onEditImage}
                   onEditTable={onEditTable}
+                  onEditParagraph={onEditParagraph}
                   onEditCancel={onEditCancel}
                 />
               ) : null}

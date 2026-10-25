@@ -14,6 +14,7 @@ import { nodeIdsForRole, parseDiagramLegend } from "./diagramLegend";
 import { formatMetricChip, parseDiagramMetrics } from "./diagramMetrics";
 import {
   downloadDiagramPng,
+  downloadDiagramSvg,
   slugDiagramFilename,
 } from "./downloadDiagramPng";
 
@@ -70,7 +71,7 @@ export function DiagramPane({
     [],
   );
 
-  const doDownload = useCallback(
+  const doDownloadPng = useCallback(
     async (el: SVGSVGElement | null) => {
       if (!el) {
         setErr("Схема ещё не готова");
@@ -81,7 +82,7 @@ export function DiagramPane({
       try {
         await downloadDiagramPng(
           el,
-          slugDiagramFilename(diagram.title, diagram.id),
+          slugDiagramFilename(diagram.title, diagram.id, "png"),
         );
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -90,6 +91,39 @@ export function DiagramPane({
       }
     },
     [diagram.id, diagram.title],
+  );
+
+  const doDownloadSvg = useCallback(
+    async (el: SVGSVGElement | null) => {
+      setBusy(true);
+      setErr(null);
+      try {
+        if (el) {
+          await downloadDiagramSvg(
+            el,
+            slugDiagramFilename(diagram.title, diagram.id, "svg"),
+          );
+          return;
+        }
+        if (!runId) {
+          setErr("Схема ещё не готова");
+          return;
+        }
+        // Fallback: server Playwright SVG
+        const a = document.createElement("a");
+        a.href = `/api/runs/${encodeURIComponent(runId)}/diagrams/${encodeURIComponent(diagram.id)}/svg`;
+        a.download = slugDiagramFilename(diagram.title, diagram.id, "svg");
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [diagram.id, diagram.title, runId],
   );
 
   const doApplyEdit = useCallback(
@@ -165,7 +199,7 @@ export function DiagramPane({
               ·
             </span>
             <span>
-              {metrics.length > 0 ? "с метриками · PNG" : "Liber · PNG"}
+              {metrics.length > 0 ? "с метриками · SVG/PNG" : "Liber · SVG/PNG"}
             </span>
           </p>
           <h3 className="diagram-pane-title">{diagram.title}</h3>
@@ -188,9 +222,17 @@ export function DiagramPane({
           </button>
           <button
             type="button"
+            className="btn ghost"
+            disabled={busy}
+            onClick={() => void doDownloadSvg(paneSvgRef.current)}
+          >
+            {busy ? "…" : "SVG"}
+          </button>
+          <button
+            type="button"
             className="btn primary diagram-pane-png"
             disabled={busy}
-            onClick={() => void doDownload(paneSvgRef.current)}
+            onClick={() => void doDownloadPng(paneSvgRef.current)}
           >
             {busy ? "…" : "Скачать PNG"}
           </button>

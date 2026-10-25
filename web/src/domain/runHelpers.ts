@@ -194,18 +194,55 @@ export function paradeHintFromHealth(health: {
   playwright_ok?: boolean;
   image_api_configured?: boolean;
   kandinsky_configured?: boolean;
+  image_api_ok?: boolean;
+  image_api_error?: string | null;
 } | null): string {
   if (!health) return "проверка…";
+  const imageConfigured =
+    health.image_api_configured || health.kandinsky_configured;
+  let imageBit: string | null = null;
+  if (imageConfigured) {
+    imageBit = health.image_api_ok ? "Image ok" : "Image down";
+  }
   return (
     [
       health.vision_configured ? "Vision" : null,
       health.docker_ok ? "Docker" : null,
       health.playwright_ok ? "Playwright" : null,
-      health.image_api_configured || health.kandinsky_configured
-        ? "Image API"
-        : null,
+      imageBit,
     ]
       .filter(Boolean)
       .join(" · ") || "сервисы не готовы"
   );
+}
+
+/** Compact chip label for sidebar / composer. */
+export function imageChipFromHealth(health: {
+  image_api_configured?: boolean;
+  kandinsky_configured?: boolean;
+  image_api_ok?: boolean;
+  image_api_error?: string | null;
+} | null): { label: string; ok: boolean; hint: string } {
+  if (!health) {
+    return { label: "Image · …", ok: false, hint: "проверка Image API…" };
+  }
+  const configured =
+    health.image_api_configured || health.kandinsky_configured;
+  if (!configured) {
+    return {
+      label: "Image · off",
+      ok: false,
+      hint: "IMAGE_API_BASE_URL пуст — fig_* будут пропущены",
+    };
+  }
+  if (health.image_api_ok) {
+    return { label: "Image · ok", ok: true, hint: "Image API отвечает" };
+  }
+  return {
+    label: "Image · down",
+    ok: false,
+    hint:
+      health.image_api_error ||
+      "Image API не отвечает — отчёт соберётся, фото могут пропуститься",
+  };
 }

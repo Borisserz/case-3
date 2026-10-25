@@ -10,14 +10,36 @@ export type PaletteInfo = {
   swatches: string[];
 };
 
+export type DeskProbe = {
+  id: string;
+  label: string;
+  status: "green" | "amber" | "red" | string;
+  ok?: boolean;
+  configured?: boolean;
+  hint?: string | null;
+  path?: string | null;
+  error?: string | null;
+};
+
 export type Health = {
   ok: boolean;
   docker_ok: boolean;
   playwright_ok: boolean;
   vision_configured: boolean;
+  vision_ok?: boolean;
+  vision_error?: string | null;
   kandinsky_configured: boolean;
   image_api_configured?: boolean;
+  /** Live probe of IMAGE_API_BASE_URL (short timeout). */
+  image_api_ok?: boolean;
+  image_api_error?: string | null;
+  image_api_base_url?: string | null;
   docker_error?: string | null;
+  playwright_error?: string | null;
+  soffice_ok?: boolean;
+  soffice_path?: string | null;
+  soffice_hint?: string | null;
+  probes?: DeskProbe[];
   chart_types?: string[];
   chart_palettes?: PaletteInfo[];
   defaults?: {
@@ -114,6 +136,8 @@ export type BotMsg = {
   thinkingElapsedSec?: number;
   /** Phrase pool: report / diagram / presentation */
   thinkingMode?: ThinkingMode;
+  /** Artifact-ready chips while run is still live (PDF / PPTX / …). */
+  artifactChips?: string[];
   error?: string;
 };
 

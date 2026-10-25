@@ -184,8 +184,10 @@ Only skip (`"figures": []`) when **all** hold: budget is 0, **or** Intent says �
 
 - If Intent says «сгенерируй фото…» → emit up to {{MAX_IMAGES}} with rich English prompts matching that request.
 - `caption`: Russian, what the reader sees.
-- `prompt`: **English only**, high-quality photographic style: subject, setting, lighting, lens feel; no Cyrillic; no watermark; no tiny text overlays; no charts/tables of numbers; no logos unless Source requires.
-- Prefer photorealistic clarity suitable for print (A4). One clear subject per figure.
+- `prompt`: **English only**, photographic subject + setting + lighting + lens feel; no Cyrillic; no tiny text overlays; no charts/tables of numbers; no logos unless Source requires.
+- Photo prompts **MUST**: print-editorial / matte / natural light / documentary object or place; one clear subject; suitable for A4 print.
+- Photo prompts **MUST NOT**: handshake, stock smiling team in glass office, purple/violet/magenta neon glow, hologram UI, watermark / Shutterstock look, plastic 3D people, confetti/trophy slam energy.
+- Prefer photorealistic clarity; avoid readable faces of real people when possible. Server also hardens brand-safe + pack style-lock.
 - Never use figures for KPI/number comparisons — those are `charts`.
 - Place each `%CASE3_FIG:id%` slot near the prose it illustrates (not dumped at the end).
 - If {{MAX_IMAGES}} is 0 → `"figures": []`, no `%CASE3_FIG:%` slots.
@@ -342,9 +344,15 @@ Required when Source allows:
    - Prefer short paragraphs (2–4 sentences) between lists; avoid one unbroken prose block for list-like Source.
 5. Tables with `booktabs` when Intent/Source need them; if Intent says no tables — prose only.
    Use `\toprule` / `\midrule` / `\bottomrule` — **never** stack `\hline\hline`.
-   **Fit A4 text width:** for 3+ columns or long cell text use
+   **Fit A4 text width:** for 3+ columns or long cell text prefer
    `\begin{tabularx}{\textwidth}{lXX}` (first column `l`/`c`/`r`, remaining `X`), or `p{…}`.
-   Never `landscape`. Never wide `\begin{tabular}{lll}` — the pipeline may rewrite it, but prefer `tabularx` yourself (see gold `02_table.tex`).
+   Never wide `\begin{tabular}{lll}` — the pipeline may rewrite it, but prefer `tabularx` yourself (see gold `02_table.tex`).
+   **Landscape (C4):** only when a table is still too wide after tabularx (≈6+ columns or very long cells) —
+   wrap **that one** `table` in `\begin{landscape}…\end{landscape}` (`pdflscape` is in the preamble).
+   Do **not** put the whole document in landscape; leave normal tables portrait.
+5b. **Citations / footnotes (C2):** use `\footnote{…}` **only** when Source has an explicit ref
+   (URL, «см. …», bibliography line). Copy the URL/phrase from Source — never invent authors, years, or DOIs.
+   If Source has no refs → emit **no** `\footnote` and **no** `\cite`.
 6. **Never** write `\includegraphics` yourself. Slots only — **alone on their own line**,
    **not** wrapped in `\begin{figure}` (the pipeline wraps successful PNGs):
 
@@ -355,7 +363,7 @@ Required when Source allows:
 
 In prose you may write «см. рисунок» without `\ref` to a chart label (labels are assigned at inject).
 IDs: `^[a-z][a-z0-9_]*$`. Chart ids prefer `cht_NN`; diagram ids prefer `dia_NN`. IDs unique across figures+charts+diagrams.
-7. Figure `prompt`: English, photographic, detailed; no Cyrillic; no watermarks; no tiny unreadable text.
+7. Figure `prompt`: English, photographic subject; no Cyrillic; no stock handshake/team clichés; no purple neon; no watermarks; no tiny unreadable text.
 8. Chart `html`: **fragment only** (no `<html>`/`<head>`/`<!DOCTYPE>`). Offline Chart.js global `Chart` is already loaded. No CDN, no `fetch`/XHR, no external URLs. End with `window.__CASE3_CHART_READY = true;`.
 9. At most {{MAX_IMAGES}} figures, {{MAX_CHARTS}} charts (`CASE3_MAX_CHARTS`), {{MAX_DIAGRAMS}} diagrams (`CASE3_MAX_DIAGRAMS`).
 10. No Times New Roman, no `extreport`, no BSUIR STP-only packages.

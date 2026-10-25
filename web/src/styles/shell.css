@@ -417,6 +417,82 @@ button:disabled {
   line-height: 1.4;
 }
 
+/* Desk health dashboard (Quiet Mono — no purple) */
+.desk-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.desk-health-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.45rem;
+  row-gap: 0.15rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.desk-health-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  grid-row: 1;
+  align-self: center;
+  background: var(--muted-2);
+}
+
+.desk-health-dot.is-green {
+  background: var(--ok);
+}
+
+.desk-health-dot.is-amber {
+  background: #c4922a;
+}
+
+.desk-health-dot.is-red {
+  background: var(--danger);
+}
+
+.desk-health-label {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--ink);
+}
+
+.desk-health-val {
+  grid-column: 3;
+  grid-row: 1;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.desk-health-val.is-green {
+  color: var(--ok);
+}
+
+.desk-health-val.is-amber {
+  color: #a67a1f;
+}
+
+.desk-health-val.is-red {
+  color: var(--danger);
+}
+
+.desk-health-hint {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted-2);
+}
+
 /* ——— Main desk ——— */
 .main {
   display: flex;
@@ -1446,6 +1522,46 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+}
+
+.liber-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0.2rem 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--paper) 88%, var(--ink) 4%);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.liber-image-chip .health-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  flex-shrink: 0;
+}
+.liber-image-chip.is-ok .health-dot {
+  background: var(--accent, #3d5a45);
+}
+.liber-image-chip.is-down {
+  color: var(--ink);
+  border-color: color-mix(in srgb, #9f1239 28%, var(--border));
+}
+.liber-image-chip.is-down .health-dot {
+  background: #9f1239;
+}
+.liber-sidebar.is-collapsed .liber-image-chip .liber-side-label {
+  display: none;
+}
+.liber-sidebar.is-collapsed .liber-image-chip {
+  justify-content: center;
+  padding: 0.35rem;
+  margin-inline: auto;
 }
 
 .liber-sidebar-settings {

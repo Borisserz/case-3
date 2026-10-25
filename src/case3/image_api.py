@@ -61,6 +61,11 @@ class ImageApiConfig:
     def edit_url(self) -> str:
         return f"{self.base_url.rstrip('/')}/edit"
 
+    @property
+    def health_url(self) -> str:
+        """Root ping — worker may 404; connection proves process is up."""
+        return f"{self.base_url.rstrip('/')}/"
+
     @classmethod
     def from_env(cls) -> ImageApiConfig:
         max_images = int(
@@ -107,6 +112,22 @@ def max_images_from_env() -> int:
     return ImageApiConfig.from_env().max_images
 
 
+def probe_image_api(*, timeout_s: float = 1.5) -> tuple[bool, str | None]:
+    """Live ping of IMAGE_API_BASE_URL (short timeout). Does not block report runs."""
+    cfg = ImageApiConfig.from_env()
+    if not cfg.base_url:
+        return False, "IMAGE_API_BASE_URL empty"
+    url = cfg.health_url
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.get(url, headers=_headers(cfg))
+            if resp.status_code >= 500:
+                return False, f"HTTP {resp.status_code}"
+            return True, None
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)[:200]
+
+
 def _headers(cfg: ImageApiConfig) -> dict[str, str]:
     h: dict[str, str] = {}
     if cfg.api_key:
@@ -114,14 +135,32 @@ def _headers(cfg: ImageApiConfig) -> dict[str, str]:
     return h
 
 
-def _knobs(cfg: ImageApiConfig) -> dict[str, Any]:
-    return {
+def _knobs(cfg: ImageApiConfig, *, negative_prompt: str | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {
         "width": cfg.width,
         "height": cfg.height,
         "steps": cfg.steps,
         "guidance": cfg.guidance,
         "seed": cfg.seed,
     }
+    if negative_prompt:
+        # Forward-compat: worker may ignore; prompt also bakes Avoid:
+        out["negative_prompt"] = negative_prompt
+    return out
+
+
+def _resolve_pack_id(pack_id: str | None) -> str | None:
+    return (pack_id or "").strip() or None
+
+
+def _outbound_prompt(prompt: str, *, pack_id: str | None) -> str:
+    from case3.image_prompt import prepare_image_prompt
+
+    return prepare_image_prompt(
+        prompt,
+        pack_id=_resolve_pack_id(pack_id),
+        bake_avoid=True,
+    )
 
 
 def _is_png(data: bytes) -> bool:
@@ -328,15 +367,32 @@ def _parse_http_body(resp: httpx.Response) -> Any:
     return text
 
 
-def generate_png(cfg: ImageApiConfig, prompt: str, dest: Path) -> None:
-    """POST /generate — new image from prompt."""
+def generate_png(
+    cfg: ImageApiConfig,
+    prompt: str,
+    dest: Path,
+    *,
+    pack_id: str | None = None,
+) -> None:
+    """POST /generate — new image from prompt (pack-lock + brand-safe applied)."""
+    from case3.image_prompt import brand_safe_negative
+
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
-    body = {"prompt": (prompt or "").strip(), **_knobs(cfg)}
+    cooked = _outbound_prompt(prompt, pack_id=pack_id)
+    body = {
+        "prompt": cooked,
+        **_knobs(cfg, negative_prompt=brand_safe_negative()),
+    }
     if not body["prompt"]:
         raise RuntimeError("empty image prompt")
     url = cfg.generate_url
-    log.info("image POST %s prompt_len=%d", url, len(body["prompt"]))
+    log.info(
+        "image POST %s prompt_len=%d pack=%s",
+        url,
+        len(body["prompt"]),
+        pack_id or "-",
+    )
     try:
         with httpx.Client(timeout=cfg.timeout_s) as client:
             resp = client.post(url, json=body, headers=_headers(cfg))
@@ -378,24 +434,37 @@ def edit_png(
     prompt: str,
     source_png: Path,
     dest: Path,
+    *,
+    pack_id: str | None = None,
 ) -> None:
     """POST /edit — office FastAPI expects multipart; prefer base64 form field.
 
     Swagger ``image: array[string]`` → form field ``image`` = base64 (not file).
     Fallback: UploadFile-style multipart, then ``images`` plural.
+    Same pack-lock + brand-safe path as generate.
     """
+    from case3.image_prompt import brand_safe_negative
+
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     if not source_png.is_file():
         raise RuntimeError(f"source image missing: {source_png}")
-    prompt = (prompt or "").strip()
+    prompt = _outbound_prompt(prompt, pack_id=pack_id)
     if not prompt:
         raise RuntimeError("empty edit prompt")
     png_bytes = _png_bytes_max_side(source_png.read_bytes(), 512)
-    knobs = {k: str(v) for k, v in _knobs(cfg).items()}
+    knobs = {
+        k: str(v)
+        for k, v in _knobs(cfg, negative_prompt=brand_safe_negative()).items()
+    }
     b64 = base64.b64encode(png_bytes).decode("ascii")
     url = cfg.edit_url
-    log.info("image POST %s (edit) prompt_len=%d", url, len(prompt))
+    log.info(
+        "image POST %s (edit) prompt_len=%d pack=%s",
+        url,
+        len(prompt),
+        pack_id or "-",
+    )
     errors: list[str] = []
 
     def _try_decode(resp: httpx.Response, label: str) -> bool:
@@ -437,6 +506,7 @@ def generate_all_figures(
     *,
     cfg: ImageApiConfig | None = None,
     on_progress: Any | None = None,
+    pack_id: str | None = None,
 ) -> dict[str, Any]:
     cfg = cfg or ImageApiConfig.from_env()
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -456,7 +526,12 @@ def generate_all_figures(
             on_progress(fid)
         dest = figures_dir / f"{fid}.png"
         try:
-            generate_png(cfg, str(fig.get("prompt") or ""), dest)
+            generate_png(
+                cfg,
+                str(fig.get("prompt") or ""),
+                dest,
+                pack_id=pack_id,
+            )
             status[fid] = {"ok": True, "path": str(dest), "kind": "figure"}
             log.info("image ok %s → %s", fid, dest)
         except (

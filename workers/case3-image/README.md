@@ -2,6 +2,8 @@
 
 Office-shaped shim: `POST /generate` + `POST /edit` → Workers AI (Flux Schnell / SD img2img).
 
+**Negative prompt:** Liber may send `negative_prompt` in JSON/form; this worker currently **ignores** it — brand-safe bans are baked into `prompt` (`Avoid: …`) by `case3.image_prompt`.
+
 ## One-time: workers.dev subdomain
 
 Account needs a `*.workers.dev` name (Wrangler cannot create it non-interactively):

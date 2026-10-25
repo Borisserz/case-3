@@ -811,16 +811,15 @@
 }
 
 .rail-toc {
+  /* Stick under rail body scroll — must not scroll away with long reports. */
   position: sticky;
   top: 0;
-  z-index: 2;
-  margin: -0.15rem 0 0.75rem;
-  padding: 0.45rem 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--sheet) 94%, var(--secondary)) 70%,
-    transparent
-  );
+  z-index: 6;
+  margin: -0.85rem -1rem 0.75rem;
+  padding: 0.55rem 1rem 0.5rem;
+  background: color-mix(in srgb, var(--sheet) 96%, var(--secondary));
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  box-shadow: 0 6px 12px -10px color-mix(in srgb, var(--ink) 35%, transparent);
 }
 
 .rail-toc-scroll {
