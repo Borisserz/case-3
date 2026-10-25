@@ -42,6 +42,15 @@ def probe_soffice() -> tuple[bool, str | None, str | None]:
     return True, str(path), None
 
 
+def _short_hint(text: str | None, *, limit: int = 96) -> str | None:
+    if not text:
+        return None
+    one = " ".join(str(text).split())
+    if len(one) <= limit:
+        return one
+    return one[: max(0, limit - 1)].rstrip() + "…"
+
+
 def build_desk_probes(
     *,
     docker_ok: bool,
@@ -64,23 +73,36 @@ def build_desk_probes(
         vision_hint = None
     elif vision_configured:
         vision_status = "amber"
-        vision_hint = vision_error
+        vision_hint = _short_hint(
+            vision_error or "Vision не отвечает — проверь VISION_API_BASE_URL / ключ"
+        )
     else:
         vision_status = "red"
-        vision_hint = vision_error
+        vision_hint = _short_hint(vision_error or "Задай VISION_API_BASE_URL в .env")
 
     if image_ok:
         image_status = "green"
         image_hint = None
     elif image_configured:
         image_status = "amber"
-        image_hint = (
-            (image_error or "Image API down")
-            + " — запусти workers/case3-image; отчёт без фото всё равно пойдёт"
+        image_hint = _short_hint(
+            "Image down — запусти workers/case3-image (отчёт без фото всё равно пойдёт)"
         )
     else:
         image_status = "amber"
-        image_hint = image_error or "IMAGE_API_BASE_URL empty — фото пропускаются"
+        image_hint = _short_hint("IMAGE_API_BASE_URL пуст — фото пропускаются")
+
+    if docker_ok:
+        docker_hint = None
+    else:
+        # Prefer actionable short line over raw docker sock dump.
+        raw = (docker_error or "").lower()
+        if "docker.sock" in raw or "connect" in raw:
+            docker_hint = "Запусти Docker Desktop, затем scripts/setup.cmd (case-3:tex)"
+        else:
+            docker_hint = _short_hint(
+                docker_error or "docker pull case-3:tex / запусти Docker Desktop"
+            )
 
     return [
         {
@@ -98,16 +120,14 @@ def build_desk_probes(
             "ok": image_ok,
             "configured": image_configured,
             "hint": image_hint,
-            "error": image_error,
+            "error": _short_hint(image_error),
         },
         {
             "id": "docker",
             "label": "Docker TeX",
             "status": "green" if docker_ok else "red",
             "ok": docker_ok,
-            "hint": None
-            if docker_ok
-            else (docker_error or "docker pull case-3:tex / запусти Docker Desktop"),
+            "hint": docker_hint,
         },
         {
             "id": "soffice",
@@ -115,7 +135,12 @@ def build_desk_probes(
             "status": "green" if soffice_ok else "amber",
             "ok": soffice_ok,
             "path": soffice_path,
-            "hint": None if soffice_ok else soffice_hint,
+            "hint": None
+            if soffice_ok
+            else _short_hint(
+                soffice_hint
+                or "Установи LibreOffice / CASE3_SOFFICE (иначе PNG-stitch)"
+            ),
         },
         {
             "id": "playwright",
@@ -124,6 +149,6 @@ def build_desk_probes(
             "ok": playwright_ok,
             "hint": None
             if playwright_ok
-            else (playwright_error or "playwright install chromium"),
+            else _short_hint(playwright_error or "playwright install chromium"),
         },
     ]

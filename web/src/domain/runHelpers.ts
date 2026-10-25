@@ -190,8 +190,10 @@ export function formatApiDetailError(
 
 export function paradeHintFromHealth(health: {
   vision_configured?: boolean;
+  vision_ok?: boolean;
   docker_ok?: boolean;
   playwright_ok?: boolean;
+  soffice_ok?: boolean;
   image_api_configured?: boolean;
   kandinsky_configured?: boolean;
   image_api_ok?: boolean;
@@ -200,15 +202,19 @@ export function paradeHintFromHealth(health: {
   if (!health) return "проверка…";
   const imageConfigured =
     health.image_api_configured || health.kandinsky_configured;
+  let visionBit: string | null = null;
+  if (health.vision_ok) visionBit = "Vision ok";
+  else if (health.vision_configured) visionBit = "Vision slow";
   let imageBit: string | null = null;
   if (imageConfigured) {
     imageBit = health.image_api_ok ? "Image ok" : "Image down";
   }
   return (
     [
-      health.vision_configured ? "Vision" : null,
+      visionBit,
       health.docker_ok ? "Docker" : null,
       health.playwright_ok ? "Playwright" : null,
+      health.soffice_ok ? "LibreOffice" : null,
       imageBit,
     ]
       .filter(Boolean)
