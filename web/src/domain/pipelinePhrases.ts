@@ -455,7 +455,7 @@ export function stageLabelForMode(
   const labels: Record<ThinkingMode, Record<string, string>> = {
     report: {
       queued: "В очереди…",
-      llm: "Думаю над структурой…",
+      llm: "Пишу текст (жду модель)…",
       charts: "Рисую графики…",
       images: "Готовлю иллюстрации…",
       inject: "Вставляю рисунки в текст…",

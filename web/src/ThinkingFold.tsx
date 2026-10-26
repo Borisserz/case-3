@@ -139,11 +139,20 @@ export function ThinkingFold({
       : "";
   const eta = live && !craftFrozen ? formatEtaSuffix(etaSec) : "";
   const detailBit = activeSub ? ` · ${activeSub.label}` : "";
+  // llm can sit up to VISION_TIMEOUT_S (~5 min) with no substeps — say so.
+  const llmWait =
+    live &&
+    !craftFrozen &&
+    !activeSub &&
+    (stage === "llm" ||
+      stage === "slides_llm" ||
+      stage === "slides_llm_retry");
+  const waitBit = llmWait ? " · жду модель" : "";
   const title = craftFrozen
     ? "Остановлено"
     : live
       ? liveLabel ||
-        `${activeCraft?.label || "Выполняется"}${detailBit}${eta}`
+        `${activeCraft?.label || "Выполняется"}${waitBit}${detailBit}${eta}`
       : "Шаги";
 
   return (

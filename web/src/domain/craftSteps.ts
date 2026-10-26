@@ -35,7 +35,8 @@ export type CraftStepState = CraftStep & {
 
 const REPORT: CraftStep[] = [
   { id: "source", label: "Читаю Source" },
-  { id: "layout", label: "Верстаю отчёт" },
+  // llm stage — waiting on Qwen, NOT TeX print (that is «Печатаю PDF»)
+  { id: "layout", label: "Пишу текст" },
   { id: "charts", label: "Рисую графики" },
   { id: "photos", label: "Собираю фото" },
   { id: "pdf", label: "Печатаю PDF" },

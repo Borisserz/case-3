@@ -318,7 +318,7 @@ def run_pipeline(
             on_stage(stage, detail)
 
     try:
-        bump("llm")
+        bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
         # Reserve slots for uploads so the LLM plans fewer generated photos.
         llm_image_budget = max(0, images_budget - len(user_figs))
