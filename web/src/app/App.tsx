@@ -2041,10 +2041,8 @@ export default function App() {
                   onOpenIntent={openIntentArtifact}
                   onOpenReport={openReportArtifact}
                   onOpenDiagram={openDiagramArtifact}
-                  onMakePresentation={makePresentation}
                   onOpenPresentation={openPresentationArtifact}
                   onOpenDeckSlides={openDeckSlidesArtifact}
-                  onDeckStyle={() => setDeckStyleOpen(true)}
                 />
 
                 <ChatComposer
@@ -2213,20 +2211,10 @@ export default function App() {
                 onSelectDiagram={
                   railArtifact.kind === "report" ? selectDiagram : undefined
                 }
-                onMakePresentation={
-                  railArtifact.kind === "report" &&
-                  activeReport &&
-                  activeReport.output_mode === "presentation"
-                    ? () =>
-                        void makePresentation(
-                          railArtifact.msgId,
-                          activeReport,
-                        )
-                    : undefined
-                }
                 makingPresentation={
                   activeReport?.slides_status === "queued" ||
-                  activeReport?.slides_status === "running"
+                  activeReport?.slides_status === "running" ||
+                  activeReport?.slides_status === "starting"
                 }
                 onClose={closeArtifact}
                 onEditCancel={() => {

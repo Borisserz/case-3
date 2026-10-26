@@ -44,7 +44,6 @@ type Props = {
   error?: string | null;
   downloads?: Record<string, string>;
   deckPdfMode?: string | null;
-  onMakePresentation?: () => void;
   making?: boolean;
   onDeckUpdated?: (deck: DeckIR, slidePngs: string[]) => void;
 };
@@ -58,7 +57,6 @@ export function PresentationPane({
   error,
   downloads,
   deckPdfMode: _deckPdfMode = null,
-  onMakePresentation,
   making = false,
   onDeckUpdated,
 }: Props) {
@@ -346,18 +344,8 @@ export function PresentationPane({
         <p className="presentation-empty-kicker">Презентация</p>
         <h3 className="presentation-empty-title">Остановлено</h3>
         <p className="presentation-empty-copy">
-          Сборку прервали. Карточки в чате не менялись — можно собрать снова.
+          Сборку прервали. Отправьте запрос снова в режиме Презентация.
         </p>
-        {onMakePresentation ? (
-          <button
-            type="button"
-            className="presentation-cta"
-            onClick={onMakePresentation}
-            disabled={making}
-          >
-            Собрать снова
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -366,43 +354,23 @@ export function PresentationPane({
     return (
       <div className="presentation-pane is-error">
         <p className="presentation-error">{error || "Не удалось собрать деку"}</p>
-        {onMakePresentation ? (
-          <button
-            type="button"
-            className="presentation-cta"
-            onClick={onMakePresentation}
-          >
-            Повторить
-          </button>
-        ) : null}
+        <p className="presentation-empty-copy">
+          Отправьте запрос снова — сборка стартует сама, без кнопки.
+        </p>
       </div>
     );
   }
 
   if (!n && !live) {
+    // No «Сделать презентацию» — deck kicks on send; wait or open chat cards.
     return (
       <div className="presentation-pane is-empty">
         <p className="presentation-empty-kicker">Презентация</p>
-        <h3 className="presentation-empty-title">16:9 · PPTX и PDF</h3>
+        <h3 className="presentation-empty-title">Превью появится здесь</h3>
         <p className="presentation-empty-copy">
-          Одна преза в двух форматах: twin + PPTX и вертикальный PDF. Стиль
-          (Atelier · Relay · Botanical) — в палитре рядом с кнопкой.
+          После сборки в чате два файла — PPTX и PDF. Нажмите карточку:
+          сразу twin / film, без «Собрать».
         </p>
-        <ul className="presentation-empty-points" aria-hidden>
-          <li>Сетка слайдов · live edit</li>
-          <li>Правки текста → сразу в PPTX</li>
-          <li>PDF twin — вкладка PDF в панели</li>
-        </ul>
-        {onMakePresentation ? (
-          <button
-            type="button"
-            className="presentation-cta"
-            onClick={onMakePresentation}
-            disabled={making}
-          >
-            Сделать презентацию
-          </button>
-        ) : null}
       </div>
     );
   }

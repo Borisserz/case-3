@@ -29,10 +29,8 @@ type Props = {
   onOpenIntent: (text: string) => void;
   onOpenReport: (msgId: string, result: RunResult) => void;
   onOpenDiagram: (msgId: string, result: RunResult, diagramId: string) => void;
-  onMakePresentation: (msgId: string, result: RunResult) => void;
   onOpenPresentation: (msgId: string, result: RunResult) => void;
   onOpenDeckSlides: (msgId: string, result: RunResult) => void;
-  onDeckStyle?: () => void;
 };
 
 export function ChatMessages({
@@ -50,10 +48,8 @@ export function ChatMessages({
   onOpenIntent,
   onOpenReport,
   onOpenDiagram,
-  onMakePresentation: _onMakePresentation,
   onOpenPresentation,
   onOpenDeckSlides,
-  onDeckStyle,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -202,7 +198,6 @@ export function ChatMessages({
                           ? undefined
                           : (id) => onOpenDiagram(m.id, m.result!, id)
                       }
-                      onMakePresentation={undefined}
                       onOpenPresentation={
                         m.result.output_mode === "presentation" ||
                         m.result.slides_status === "ok"
@@ -213,11 +208,6 @@ export function ChatMessages({
                         m.result.output_mode === "presentation" ||
                         m.result.slides_status === "ok"
                           ? () => onOpenDeckSlides(m.id, m.result!)
-                          : undefined
-                      }
-                      onDeckStyle={
-                        m.result.output_mode === "presentation"
-                          ? onDeckStyle
                           : undefined
                       }
                     />

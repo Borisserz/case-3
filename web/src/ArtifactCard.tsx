@@ -1,7 +1,6 @@
 /** In-chat Julius artifact previews — large DeckFileCards; rail opens on click. */
 
 import { DeckFileCard } from "./DeckFileCard";
-import { DeckMakeSplit } from "./DeckMakeSplit";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
 import { modeSurfaces } from "./liberModes";
 
@@ -24,11 +23,9 @@ type Props = {
   outputMode?: string | null;
   onView: () => void;
   onOpenDiagram?: (id: string) => void;
-  onMakePresentation?: () => void;
   onOpenPresentation?: () => void;
   /** Open vertical Слайды film (deck PDF twin). */
   onOpenDeckSlides?: () => void;
-  onDeckStyle?: () => void;
 };
 
 function fileNameFromUrl(url: string, fallback: string): string {
@@ -130,20 +127,17 @@ export function ArtifactCard({
   outputMode = null,
   onView,
   onOpenDiagram,
-  onMakePresentation,
   onOpenPresentation,
   onOpenDeckSlides,
-  onDeckStyle,
 }: Props) {
   const surfaces = modeSurfaces(outputMode);
   const slidesBusy =
     surfaces.showPresentation &&
-    (slidesStatus === "running" || slidesStatus === "queued");
+    (slidesStatus === "running" ||
+      slidesStatus === "queued" ||
+      slidesStatus === "starting");
   const slidesReady = surfaces.showPresentation && slidesStatus === "ok";
   const hero = slidesReady && slidePngs.length > 0 ? slidePngs[0] : null;
-  const allowMake = surfaces.showDeckMake && Boolean(onMakePresentation);
-  const hasDeckCta =
-    allowMake || (slidesReady && Boolean(onOpenPresentation));
   const reportPdfHref = surfaces.showReportPdf
     ? pdfUrl || downloads?.pdf || null
     : null;
@@ -159,9 +153,6 @@ export function ArtifactCard({
   const showPdfGallery =
     surfaces.showPresentation &&
     (Boolean(downloads?.deck_pdf) || slidePngs.length > 0);
-
-  const showDeckMake =
-    hasDeckCta && (slidesBusy || !hasDeckFiles || allowMake);
 
   const shellClass = [
     "artifact-card",
@@ -288,20 +279,7 @@ export function ArtifactCard({
             </section>
           ) : null}
         </div>
-        {slidesBusy ? (
-          <DeckBuildCard stage={slidesStage} />
-        ) : showDeckMake ? (
-          <div className="artifact-card-actions is-quiet-cta">
-            <DeckMakeSplit
-              busy={false}
-              ready={slidesReady}
-              quiet
-              onMake={() => onMakePresentation?.()}
-              onOpen={onOpenPresentation}
-              onStyle={() => onDeckStyle?.()}
-            />
-          </div>
-        ) : null}
+        {slidesBusy ? <DeckBuildCard stage={slidesStage} /> : null}
       </div>
     );
   }
@@ -319,30 +297,28 @@ export function ArtifactCard({
     );
   }
 
-  /* 4) Slides busy / make CTA — never empty; progress stays in chat */
-  if (slidesBusy || hasDeckCta) {
+  /* 4) Slides busy — progress in chat; no «Сделать презентацию» */
+  if (slidesBusy) {
     return (
       <div className={shellClass}>
-        {slidesBusy ? (
-          <>
-            <p className="artifact-card-quiet-label">Презентация</p>
-            <DeckBuildCard stage={slidesStage} />
-          </>
-        ) : (
-          <>
-            <p className="artifact-card-quiet-label">{title}</p>
-            <div className="artifact-card-actions is-quiet-cta">
-              <DeckMakeSplit
-                busy={false}
-                ready={slidesReady}
-                quiet
-                onMake={() => onMakePresentation?.()}
-                onOpen={onOpenPresentation}
-                onStyle={() => onDeckStyle?.()}
-              />
-            </div>
-          </>
-        )}
+        <p className="artifact-card-quiet-label">Презентация</p>
+        <DeckBuildCard stage={slidesStage} />
+      </div>
+    );
+  }
+
+  /* 4b) Ready but files not mapped yet — open twin on click */
+  if (slidesReady && onOpenPresentation) {
+    return (
+      <div className={shellClass}>
+        <p className="artifact-card-quiet-label">{title}</p>
+        <button
+          type="button"
+          className="artifact-card-view deck-make-primary is-ghost"
+          onClick={onOpenPresentation}
+        >
+          Открыть презентацию
+        </button>
       </div>
     );
   }

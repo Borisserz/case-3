@@ -114,7 +114,6 @@ type Props = {
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
-  onMakePresentation?: () => void;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (diagrams: DiagramInfo[]) => void;
 };
@@ -144,7 +143,6 @@ export function ArtifactRail({
   onEditTable,
   onEditParagraph,
   onEditCancel,
-  onMakePresentation,
   makingPresentation = false,
   onDiagramsUpdated,
 }: Props) {
@@ -642,7 +640,6 @@ export function ArtifactRail({
                   error={report.slidesError}
                   downloads={report.downloads}
                   deckPdfMode={report.deckPdfMode}
-                  onMakePresentation={onMakePresentation}
                   making={makingPresentation}
                   onDeckUpdated={report.onDeckUpdated}
                 />
