@@ -25,9 +25,10 @@ if not defined PY where py >nul 2>&1 && for %%V in (3.13 3.12 3.11 3.10 3.9 3) d
 )
 if not defined PY (echo ERROR: Python 3.9+ not on PATH. Run scripts\setup.cmd & exit /b 1)
 
-%PY% -c "import case3,uvicorn" >nul 2>&1
+%PY% -c "import case3,uvicorn,pptx" >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: packages missing. Run: scripts\setup.cmd
+  echo ERROR: packages missing ^(need python-pptx^). Run: scripts\setup.cmd
+  echo        or: %PY% -m pip install -e .
   exit /b 1
 )
 

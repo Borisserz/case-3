@@ -45,6 +45,9 @@ import {
   readTextFile,
   reportReadyText,
   reportTitle,
+  slidesJobInFlight,
+  slidesJobNeedsKick,
+  slidesJobTerminal,
   stageLabel,
   uid,
 } from "../domain/runHelpers";
@@ -787,48 +790,62 @@ export default function App() {
     activeRunIdRef.current = runId;
     pendingBotIdRef.current = msgId;
     setBusy(true);
+    const alreadyInFlight = slidesJobInFlight(result.slides_status);
+    const kick = slidesJobNeedsKick(result);
     setMsgs((m) =>
       m.map((msg) => {
         if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+        const stageKey = alreadyInFlight
+          ? result.slides_stage?.startsWith("slides_")
+            ? result.slides_stage
+            : `slides_${result.slides_stage || "starting"}`
+          : "slides_queued";
         const next = appendBotThinking(
           {
             ...msg,
             thinkingMode: "presentation",
             pending: true,
-            pendingStage: "slides_queued",
+            pendingStage: stageKey,
             pendingDetail: null,
             text: msg.text?.trim()
               ? msg.text
               : "Собираю презентацию…",
             result: {
               ...msg.result,
-              slides_status: "queued",
-              slides_stage: "queued",
+              slides_status: alreadyInFlight
+                ? result.slides_status || "running"
+                : "queued",
+              slides_stage: alreadyInFlight
+                ? result.slides_stage || "starting"
+                : "queued",
               slides_error: null,
             },
           },
-          "slides_queued",
+          stageKey,
           null,
         );
         return next;
       }),
     );
     try {
-      const res = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/slides`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(deckStyleToApiPayload(deckStyle)),
-        },
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok && res.status !== 202) {
-        throw new Error(
-          typeof body.detail === "string"
-            ? body.detail
-            : body.error || res.statusText,
+      // Windows path was POST /slides twice (SSE kick + makePresentation) → double LLM/scrub.
+      if (kick) {
+        const res = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/slides`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(deckStyleToApiPayload(deckStyle)),
+          },
         );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok && res.status !== 202) {
+          throw new Error(
+            typeof body.detail === "string"
+              ? body.detail
+              : body.error || res.statusText,
+          );
+        }
       }
       const applySlideStage = (slidesStage: string | null) => {
         const slideKey = slidesStage
@@ -1657,6 +1674,22 @@ export default function App() {
                 formatRunStatusError(body as Record<string, unknown>, runId),
               );
             }
+            // Presentation: pipeline status=ok early — wait for slides job (Windows poll path).
+            if (outMode === "presentation") {
+              const slidesSt = (body.slides_status as string) || "idle";
+              if (slidesJobInFlight(slidesSt)) {
+                const ss = (body.slides_stage as string) || "starting";
+                applyStage(
+                  ss.startsWith("slides_") ? ss : `slides_${ss}`,
+                  null,
+                );
+                continue;
+              }
+              if (slidesJobTerminal(slidesSt)) {
+                return body as RunResult;
+              }
+              // idle — return so caller can kick once (do not spin forever)
+            }
             return body as RunResult;
           }
         };
@@ -1740,6 +1773,15 @@ export default function App() {
         output_mode: result.output_mode || outMode || "auto",
       };
 
+      const isPresentationOnly =
+        outMode === "presentation" || result.output_mode === "presentation";
+      const slidesAlreadyDone =
+        result.slides_status === "ok" || Boolean(result.downloads?.pptx);
+      const slidesStillBuilding =
+        isPresentationOnly &&
+        Boolean(result.run_id) &&
+        !slidesAlreadyDone;
+
       try {
         setChatTitle(reportTitle(result));
         if (
@@ -1759,6 +1801,34 @@ export default function App() {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
           const streamed =
             msg.streamingSummary && msg.text.trim() ? msg.text : "";
+          if (slidesStillBuilding) {
+            // Keep pending — never flash empty PPTX/PDF cards + «Сделать».
+            const ss = result.slides_stage || "starting";
+            const stageKey = ss.startsWith("slides_")
+              ? ss
+              : slidesJobInFlight(result.slides_status)
+                ? `slides_${ss}`
+                : "slides_queued";
+            return appendBotThinking(
+              {
+                ...msg,
+                thinkingMode: "presentation",
+                pending: true,
+                pendingStage: stageKey,
+                pendingDetail: null,
+                text: streamed || msg.text?.trim() || "Собираю презентацию…",
+                result: {
+                  ...result,
+                  slides_status: slidesJobInFlight(result.slides_status)
+                    ? result.slides_status
+                    : "queued",
+                  slides_stage: result.slides_stage || "queued",
+                },
+              },
+              stageKey,
+              null,
+            );
+          }
           return {
             id: pendingId,
             role: "bot" as const,
@@ -1782,12 +1852,8 @@ export default function App() {
         setBusy(false);
         return;
       }
-      const isPresentationOnly =
-        outMode === "presentation" || result.output_mode === "presentation";
-      const slidesAlreadyDone =
-        result.slides_status === "ok" || Boolean(result.downloads?.pptx);
-      if (isPresentationOnly && result.run_id && !slidesAlreadyDone) {
-        // makePresentation owns busy until deck finishes; opens presentation rail on ok
+      if (slidesStillBuilding) {
+        // Attach or kick once — never second POST when SSE already got 202.
         void makePresentation(pendingId, result);
       } else {
         activeRunIdRef.current = null;

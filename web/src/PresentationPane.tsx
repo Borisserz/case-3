@@ -260,7 +260,11 @@ export function PresentationPane({
     [deck, saving, structureOp],
   );
 
-  const pending = status === "running" || status === "queued" || making;
+  const pending =
+    status === "running" ||
+    status === "queued" ||
+    status === "starting" ||
+    making;
   const elapsed = useElapsedSeconds(pending, runId);
   const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 

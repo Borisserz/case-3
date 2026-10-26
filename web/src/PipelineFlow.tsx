@@ -14,7 +14,7 @@ export type FlowStage =
   | "error"
   | string;
 
-type NodeDef = {
+export type NodeDef = {
   id: string;
   label: string;
   /** Pipeline stages that light this node. */
@@ -40,12 +40,102 @@ const DIAGRAM_NODES: NodeDef[] = [
   },
 ];
 
-function activeIndex(nodes: NodeDef[], stage?: string | null): number {
-  if (!stage || stage === "queued") return 0;
-  if (stage === "ok") return nodes.length; // all complete
-  if (stage === "error") return -1;
-  const i = nodes.findIndex((n) => n.stages.includes(stage));
-  return i >= 0 ? i : 0;
+/**
+ * Presentation: pipeline then slides job. Unknown slides_* must NOT fall back to Стол.
+ */
+const PRESENTATION_NODES: NodeDef[] = [
+  { id: "desk", label: "Стол", stages: ["queued"] },
+  { id: "think", label: "Текст", stages: ["llm"] },
+  {
+    id: "viz",
+    label: "Фигуры",
+    stages: ["images", "charts", "inject"],
+  },
+  {
+    id: "plan",
+    label: "План",
+    stages: [
+      "pipeline_ok",
+      "summary",
+      "latex",
+      "docx",
+      "slides_queued",
+      "slides_starting",
+      "starting",
+      "slides_llm",
+      "llm_retry",
+      "slides_llm_retry",
+      "slides_plan",
+      "plan",
+    ],
+  },
+  {
+    id: "pack",
+    label: "Дека",
+    stages: [
+      "slides_diagrams",
+      "slides_media",
+      "slides_charts",
+      "diagrams",
+      "media",
+      "slides_render",
+      "render",
+      "slides_pptx",
+      "pptx",
+      "slides_patch",
+      "patch",
+    ],
+  },
+];
+
+/** Normalize UI/API stage aliases for node lookup. */
+export function normalizePipelineStage(stage?: string | null): string {
+  const raw = (stage || "queued").toLowerCase();
+  if (!raw || raw === "queued") return "queued";
+  if (raw === "ok" || raw === "slides_ok") return "ok";
+  if (raw === "error" || raw === "slides_error") return "error";
+  // Bare slides stages from SSE scope=slides → already prefixed in App, but accept both.
+  if (
+    [
+      "starting",
+      "llm_retry",
+      "plan",
+      "diagrams",
+      "media",
+      "render",
+      "pptx",
+      "patch",
+    ].includes(raw)
+  ) {
+    return `slides_${raw}`;
+  }
+  return raw;
+}
+
+export function pipelineNodesForMode(
+  mode?: "report" | "diagram" | "presentation" | string | null,
+): NodeDef[] {
+  if (mode === "diagram") return DIAGRAM_NODES;
+  if (mode === "presentation") return PRESENTATION_NODES;
+  return REPORT_NODES;
+}
+
+export function pipelineActiveIndex(
+  nodes: NodeDef[],
+  stage?: string | null,
+): number {
+  const s = normalizePipelineStage(stage);
+  if (s === "queued") return 0;
+  if (s === "ok") return nodes.length; // all complete
+  if (s === "error") return -1;
+  const i = nodes.findIndex((n) => n.stages.includes(s));
+  if (i >= 0) return i;
+  // Presentation: any unmatched slides_* advances to План (never stick on Стол).
+  if (s.startsWith("slides_")) {
+    const planIdx = nodes.findIndex((n) => n.id === "plan");
+    return planIdx >= 0 ? planIdx : Math.max(0, nodes.length - 2);
+  }
+  return 0;
 }
 
 type Props = {
@@ -63,10 +153,10 @@ export function PipelineFlow({
   mode = "report",
 }: Props) {
   const reduce = useReducedMotion();
-  const nodes = mode === "diagram" ? DIAGRAM_NODES : REPORT_NODES;
-  const idx = activeIndex(nodes, stage);
-  const failed = stage === "error";
-  const done = stage === "ok";
+  const nodes = pipelineNodesForMode(mode);
+  const idx = pipelineActiveIndex(nodes, stage);
+  const failed = normalizePipelineStage(stage) === "error";
+  const done = normalizePipelineStage(stage) === "ok";
 
   return (
     <div
@@ -74,7 +164,12 @@ export function PipelineFlow({
       role="status"
       aria-live="polite"
       aria-label={
-        label || (mode === "diagram" ? "Сборка схемы" : "Сборка отчёта")
+        label ||
+        (mode === "diagram"
+          ? "Сборка схемы"
+          : mode === "presentation"
+            ? "Сборка презентации"
+            : "Сборка отчёта")
       }
     >
       <div className="pipeline-flow-track" aria-hidden>
@@ -112,9 +207,9 @@ export function PipelineFlow({
                       }}
                     />
                   )}
+                  {/* no layout prop — Framer layout was shifting dots along the track */}
                   <motion.span
                     className="pipeline-flow-dot"
-                    layout
                     transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
                   >
                     {complete ? (
@@ -149,7 +244,12 @@ export function PipelineFlow({
       </div>
 
       <p className="pipeline-flow-label">
-        {failed ? "Сбой на столе" : label || "Набираю отчёт…"}
+        {failed
+          ? "Сбой на столе"
+          : label ||
+            (mode === "presentation"
+              ? "Собираю презентацию…"
+              : "Набираю отчёт…")}
         {detail && !failed ? (
           <span className="pipeline-flow-detail"> · {detail}</span>
         ) : null}

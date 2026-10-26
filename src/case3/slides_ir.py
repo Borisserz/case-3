@@ -122,8 +122,16 @@ def _number_variants(num: str) -> list[str]:
 
 
 def _is_section_index_chrome(num: str) -> bool:
-    """Allow zero-padded kicker indices ``01``…``099`` (not bare Source facts)."""
-    return bool(re.fullmatch(r"0\d{1,2}", num or ""))
+    """Allow slide/section chrome indices — not Source facts.
+
+    - Zero-padded kickers ``01``…``099``
+    - Bare ``1``…``12`` (deck chapter / card count chrome; LLM often emits these)
+    Multi-digit facts like ``5000`` still require Source / chart allow-list.
+    """
+    n = num or ""
+    if re.fullmatch(r"0\d{1,2}", n):
+        return True
+    return bool(re.fullmatch(r"[1-9]|1[0-2]", n))
 
 
 def _number_in_source(num: str, source_norm: str) -> bool:

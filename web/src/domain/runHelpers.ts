@@ -110,6 +110,29 @@ export function reportTitle(result: RunResult): string {
   return `Отчёт · ${result.run_id}`;
 }
 
+/** Slides job already accepted (POST 202) — attach SSE/poll, do not POST again. */
+export function slidesJobInFlight(status?: string | null): boolean {
+  const st = (status || "").toLowerCase();
+  return st === "running" || st === "queued" || st === "starting";
+}
+
+export function slidesJobTerminal(status?: string | null): boolean {
+  const st = (status || "").toLowerCase();
+  return st === "ok" || st === "error" || st === "cancelled";
+}
+
+/** True when Liber should POST /slides (idle / failed), false when done or in-flight. */
+export function slidesJobNeedsKick(result: {
+  slides_status?: string | null;
+  downloads?: Record<string, string | undefined> | null;
+}): boolean {
+  if (result.downloads?.pptx) return false;
+  const st = (result.slides_status || "idle").toLowerCase();
+  if (st === "ok") return false;
+  if (slidesJobInFlight(st)) return false;
+  return true;
+}
+
 /** Provisional chat header while a run is in flight (Julius rename). */
 export function provisionalSessionTitle(
   mode: "report" | "diagram" | "presentation" | null | undefined,

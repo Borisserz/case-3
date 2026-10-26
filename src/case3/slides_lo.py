@@ -14,8 +14,6 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from case3.slides_export import build_deck_pdf
-
 log = logging.getLogger(__name__)
 
 _MAC_SOFFICE = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
@@ -166,6 +164,9 @@ def write_deck_pdf(
             return dest, "lo"
         except (LibreOfficeError, OSError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             log.warning("LibreOffice deck_pdf failed (%s); PNG stitch fallback", exc)
+    # Lazy: desk_health imports find_soffice without requiring python-pptx.
+    from case3.slides_export import build_deck_pdf
+
     build_deck_pdf(png_paths, dest)
     log.info("deck_pdf via PNG stitch: %s", dest.name)
     return dest, "png_stitch"
