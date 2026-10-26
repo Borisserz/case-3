@@ -1771,13 +1771,18 @@ export default function App() {
               return null;
             }
             if (body.status === "running" || body.status === "started") {
+              // meta.stage is source of truth — steps[] can lag (persist race)
+              // and must NOT pin the checklist on «Читаю Source» for minutes.
+              applyStage(stage, detail);
               const rawSteps = body.steps;
               if (Array.isArray(rawSteps) && rawSteps.length) {
                 const hydrated = hydrateCraftFromSteps(
                   rawSteps as CraftStepLogEntry[],
                 );
-                applyStage(hydrated.stage || stage, detail);
-                if (hydrated.substeps.length || Object.keys(hydrated.skipped).length) {
+                if (
+                  hydrated.substeps.length ||
+                  Object.keys(hydrated.skipped).length
+                ) {
                   setMsgs((m) =>
                     m.map((msg) => {
                       if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -1794,8 +1799,6 @@ export default function App() {
                     }),
                   );
                 }
-              } else {
-                applyStage(stage, detail);
               }
               continue;
             }

@@ -189,6 +189,25 @@ def _set_stage(
         meta["stage_detail"] = detail
     else:
         meta.pop("stage_detail", None)
+    # Keep meta.steps in lockstep with stage (poll hydrate / late SSE seed).
+    from case3.run_events import STEPS_CAP, compact_step_entry
+    import time as _time
+
+    step_entry = compact_step_entry(
+        {
+            "event": "stage",
+            "stage": stage,
+            "scope": "pipeline",
+            "t": _time.time(),
+            **({"detail": detail} if detail else {}),
+        }
+    )
+    if step_entry:
+        prev_steps = list(meta.get("steps") or [])
+        if not isinstance(prev_steps, list):
+            prev_steps = []
+        prev_steps.append(step_entry)
+        meta["steps"] = prev_steps[-STEPS_CAP:]
     _write_meta(meta, out, logs)
     run_id = str(meta.get("run_id") or "")
     if run_id:

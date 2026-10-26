@@ -132,7 +132,16 @@ export function craftStepForStage(
 
   if (mode === "diagram") {
     if (raw === "queued") return "source";
-    if (raw === "llm" || raw === "diagram_repair") return "layout";
+    // charts/images still building the figure — not «Отдаю в чат» yet
+    if (
+      raw === "llm" ||
+      raw === "diagram_repair" ||
+      raw === "charts" ||
+      raw === "images" ||
+      raw === "inject"
+    ) {
+      return "layout";
+    }
     return "pdf";
   }
 
