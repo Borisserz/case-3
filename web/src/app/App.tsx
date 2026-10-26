@@ -1832,9 +1832,13 @@ export default function App() {
             "done" | "error" | "cancelled" | "fallback"
           >((resolve) => {
             let settled = false;
+            let stageWatch: number | null = null;
+            let cancelWatch: number | null = null;
             const settle = (v: "done" | "error" | "cancelled" | "fallback") => {
               if (settled) return;
               settled = true;
+              if (stageWatch != null) window.clearInterval(stageWatch);
+              if (cancelWatch != null) window.clearInterval(cancelWatch);
               resolve(v);
             };
             runCloser.events = openRunEvents(runId, {
@@ -1924,10 +1928,66 @@ export default function App() {
               },
               onFallback: () => settle("fallback"),
             });
+            // Vite/SSE often buffers: UI stuck on queued/Source while meta.stage=llm.
+            // Poll status in parallel — stage truth; SSE still drives film/terminal.
+            stageWatch = window.setInterval(() => {
+              if (settled || cancelRequestedRef.current) return;
+              void fetch(`/api/runs/${encodeURIComponent(runId)}/status`)
+                .then(async (st) => {
+                  if (settled || !st.ok) return;
+                  const body = (await st.json().catch(() => ({}))) as {
+                    status?: string;
+                    stage?: string;
+                    stage_detail?: string | null;
+                    slides_status?: string;
+                    slides_stage?: string | null;
+                    steps?: CraftStepLogEntry[];
+                  };
+                  if (body.status !== "running" && body.status !== "started") {
+                    return;
+                  }
+                  let stage = body.stage || "queued";
+                  if (
+                    outMode === "presentation" &&
+                    (body.slides_status === "running" ||
+                      body.slides_status === "queued")
+                  ) {
+                    const ss = body.slides_stage || "starting";
+                    stage = ss.startsWith("slides_") ? ss : `slides_${ss}`;
+                  }
+                  applyStage(stage, body.stage_detail ?? null);
+                  if (Array.isArray(body.steps) && body.steps.length) {
+                    const hydrated = hydrateCraftFromSteps(body.steps);
+                    if (
+                      hydrated.substeps.length ||
+                      Object.keys(hydrated.skipped).length
+                    ) {
+                      setMsgs((m) =>
+                        m.map((msg) => {
+                          if (msg.id !== pendingId || msg.role !== "bot")
+                            return msg;
+                          return {
+                            ...msg,
+                            craftSubsteps: hydrated.substeps.length
+                              ? hydrated.substeps
+                              : msg.craftSubsteps,
+                            craftSkipped: {
+                              ...(msg.craftSkipped || {}),
+                              ...hydrated.skipped,
+                            },
+                          };
+                        }),
+                      );
+                    }
+                  }
+                })
+                .catch(() => {
+                  /* ignore transient */
+                });
+            }, 1000);
             // Safety: if cancel while waiting SSE
-            const cancelWatch = window.setInterval(() => {
+            cancelWatch = window.setInterval(() => {
               if (cancelRequestedRef.current) {
-                window.clearInterval(cancelWatch);
                 setMsgs((m) =>
                   m.map((msg) =>
                     msg.id === pendingId && msg.role === "bot"
@@ -1938,7 +1998,9 @@ export default function App() {
                 settle("cancelled");
               }
             }, 400);
-            window.setTimeout(() => window.clearInterval(cancelWatch), pollDeadlineMs);
+            window.setTimeout(() => {
+              if (cancelWatch != null) window.clearInterval(cancelWatch);
+            }, pollDeadlineMs);
           });
 
           if (terminal === "fallback") {

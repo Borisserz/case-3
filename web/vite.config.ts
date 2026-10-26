@@ -14,6 +14,16 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
         configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, req) => {
+            const url = String(req.url || "");
+            if (!url.includes("/events") && !url.includes("/summary/stream")) {
+              return;
+            }
+            // Discourage proxy/client buffering of long-lived SSE.
+            proxyRes.headers["cache-control"] = "no-cache, no-transform";
+            proxyRes.headers["x-accel-buffering"] = "no";
+            delete proxyRes.headers["content-length"];
+          });
           proxy.on("error", (err, req) => {
             const code =
               err && typeof err === "object" && "code" in err
