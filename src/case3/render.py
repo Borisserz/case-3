@@ -245,6 +245,35 @@ def render_tex(
             from case3.docx_polish import try_polish_docx
 
             polished = try_polish_docx(docx_dst)
+            # Native OOXML charts for cht_* (Series IR); soft-fail.
+            native_ids: list[str] = []
+            try:
+                import json as _json
+
+                from case3.docx_charts import (
+                    palette_hexes_for_report,
+                    try_replace_docx_native_charts,
+                )
+
+                palette = "atelier"
+                meta_p = out_dir / "meta.json"
+                if meta_p.is_file():
+                    try:
+                        meta = _json.loads(meta_p.read_text(encoding="utf-8"))
+                        if isinstance(meta, dict) and meta.get("chart_palette"):
+                            palette = str(meta.get("chart_palette") or palette)
+                    except (OSError, _json.JSONDecodeError, TypeError):
+                        pass
+                fj = out_dir / "figures.json"
+                if not fj.is_file():
+                    fj = work / "figures.json"
+                native_ids = try_replace_docx_native_charts(
+                    docx_dst,
+                    figures_path=fj if fj.is_file() else None,
+                    series_hexes=palette_hexes_for_report(palette),
+                )
+            except Exception as exc:  # noqa: BLE001 — never break DOCX
+                log.warning("docx native charts hook failed: %s", exc)
             results["docx"] = docx_dst
             media_src = work / media_dir
             if media_src.is_dir() and any(media_src.rglob("*")):
@@ -253,10 +282,11 @@ def render_tex(
                     shutil.rmtree(media_dst)
                 shutil.copytree(media_src, media_dst)
             log.info(
-                "wrote %s%s%s",
+                "wrote %s%s%s%s",
                 docx_dst,
                 " (reference.docx)" if ref_docx else " (pandoc default)",
                 " +polish" if polished else "",
+                f" +native_charts={native_ids}" if native_ids else "",
             )
 
     return results

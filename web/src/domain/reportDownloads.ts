@@ -1,0 +1,30 @@
+/** Report print downloads (PDF + DOCX) for chat cards and rail. */
+
+export type ReportDownloadKind = "pdf" | "docx";
+
+export type ReportDownloadLink = {
+  kind: ReportDownloadKind;
+  href: string;
+  /** Short UI label */
+  label: string;
+};
+
+/**
+ * Ordered print downloads for Liber report mode.
+ * Empty when surface disabled or no files.
+ */
+export function reportDownloadLinks(
+  downloads?: Record<string, string> | null,
+  opts?: { enabled?: boolean },
+): ReportDownloadLink[] {
+  const enabled = opts?.enabled !== false;
+  if (!enabled || !downloads) return [];
+  const out: ReportDownloadLink[] = [];
+  if (downloads.pdf) {
+    out.push({ kind: "pdf", href: downloads.pdf, label: "PDF" });
+  }
+  if (downloads.docx) {
+    out.push({ kind: "docx", href: downloads.docx, label: "DOCX" });
+  }
+  return out;
+}

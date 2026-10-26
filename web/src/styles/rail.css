@@ -660,6 +660,27 @@
   flex-shrink: 0;
 }
 
+.artifact-rail-dl {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--primary);
+  text-decoration: none;
+  padding: 0.28rem 0.45rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  background: color-mix(in srgb, var(--sheet) 88%, var(--secondary));
+}
+
+.artifact-rail-dl:hover {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet));
+  color: var(--ink);
+}
+
+.artifact-rail-dl.is-pulse {
+  animation: liber-link-pulse 1.1s ease-out 2;
+}
+
 .artifact-rail-close {
   display: grid;
   place-items: center;
@@ -697,6 +718,29 @@
   margin: 1.5rem 0;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.artifact-rail-media {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.25rem 0 1rem;
+}
+
+.artifact-rail-media-caption {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.artifact-rail-media-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface, #fff) 94%, var(--muted-2));
 }
 
 .artifact-source-toolbar {

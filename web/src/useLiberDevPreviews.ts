@@ -12,6 +12,19 @@ import {
   stageLabel,
 } from "./liberRunHelpers";
 
+/** Inline stub so ?preview=flow film works without API / figures. */
+const PREVIEW_FILM_PNG =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <rect width="96" height="96" fill="#f4f4f2"/>
+      <rect x="14" y="52" width="14" height="28" fill="#2a2a28"/>
+      <rect x="34" y="36" width="14" height="44" fill="#5a5a56"/>
+      <rect x="54" y="24" width="14" height="56" fill="#2a2a28"/>
+      <rect x="74" y="44" width="10" height="36" fill="#8a8a84"/>
+    </svg>`,
+  );
+
 type SetMsgs = Dispatch<SetStateAction<Msg[]>>;
 
 export function useLiberDevPreviews({
@@ -314,12 +327,13 @@ export function useLiberDevPreviews({
     };
   }, [setActiveArtifact, setMsgs]);
 
-  // Visual QA: http://127.0.0.1:5173/?preview=flow
+  // Visual QA: http://127.0.0.1:5173/?preview=flow — SSE phase 2A craft (ETA + substeps + skip)
   useEffect(() => {
     if (!/preview=flow/.test(window.location.search)) return;
     const stages = [
       "queued",
       "llm",
+      "charts",
       "charts",
       "inject",
       "latex",
@@ -341,7 +355,8 @@ export function useLiberDevPreviews({
         thinkingStageAt = Date.now();
       }
       const stage = stages[idx];
-      const detail = stage === "charts" ? "cht_01" : null;
+      const chartBeat = idx === 2 ? "cht_01" : idx === 3 ? "cht_02" : null;
+      const detail = chartBeat;
       setBusy(stage !== "ok");
       if (stage === "ok") {
         setMsgs([
@@ -361,6 +376,15 @@ export function useLiberDevPreviews({
               0,
               Math.round((Date.now() - thinkingStartedAt) / 1000),
             ),
+            craftSkipped: { photos: "IMAGE_API_BASE_URL empty" },
+            craftFilm: [
+              {
+                id: "cht_01",
+                kind: "chart",
+                url: PREVIEW_FILM_PNG,
+              },
+            ],
+            craftRecap: "Собрано за 0:12 · PDF · DOCX · 1 график",
             result: {
               run_id: "preview-flow",
               status: "ok",
@@ -374,6 +398,27 @@ export function useLiberDevPreviews({
           },
         ]);
       } else {
+        const craftSubsteps =
+          stage === "charts"
+            ? [
+                {
+                  id: "cht_01",
+                  label: "cht_01",
+                  status: (chartBeat === "cht_01" ? "active" : "done") as
+                    | "active"
+                    | "done",
+                },
+                ...(chartBeat === "cht_02"
+                  ? [
+                      {
+                        id: "cht_02",
+                        label: "cht_02",
+                        status: "active" as const,
+                      },
+                    ]
+                  : []),
+              ]
+            : [];
         const draft = appendBotThinking(
           {
             id,
@@ -386,6 +431,34 @@ export function useLiberDevPreviews({
             thinkingStartedAt,
             thinkingStageKey,
             thinkingStageAt,
+            craftSubsteps,
+            craftSkipped: { photos: "IMAGE_API_BASE_URL empty" },
+            etaSec: stage === "charts" ? 38 : stage === "latex" ? 55 : null,
+            craftFilm:
+              stage === "charts" ||
+              stage === "inject" ||
+              stage === "latex" ||
+              stage === "docx"
+                ? [
+                    {
+                      id: "cht_01",
+                      kind: "chart",
+                      url: PREVIEW_FILM_PNG,
+                    },
+                    ...(chartBeat === "cht_02" ||
+                    stage === "inject" ||
+                    stage === "latex" ||
+                    stage === "docx"
+                      ? [
+                          {
+                            id: "cht_02",
+                            kind: "chart" as const,
+                            url: PREVIEW_FILM_PNG,
+                          },
+                        ]
+                      : []),
+                  ]
+                : [],
           },
           stage,
           detail,
@@ -408,5 +481,40 @@ export function useLiberDevPreviews({
     tick();
     const t = window.setInterval(tick, 1400);
     return () => window.clearInterval(t);
+  }, [setMsgs, setBusy]);
+
+  // Visual QA: http://127.0.0.1:5173/?preview=craft-error — frozen + hint
+  useEffect(() => {
+    if (!/preview=craft-error/.test(window.location.search)) return;
+    setBusy(false);
+    setMsgs([
+      {
+        id: "preview-craft-err-user",
+        role: "user",
+        text: "Собери отчёт по Source.",
+      },
+      {
+        id: "preview-craft-err",
+        role: "bot",
+        text: "Сборка остановилась на TeX.",
+        pending: false,
+        pendingStage: "latex",
+        thinkingMode: "report",
+        craftFrozen: true,
+        craftSkipped: { photos: "IMAGE_API_BASE_URL empty" },
+        craftSubsteps: [
+          { id: "cht_01", label: "cht_01", status: "done" },
+          { id: "cht_02", label: "cht_02", status: "done" },
+        ],
+        errorHint: "TeX: проверь таблицу (tabularx) · открой log",
+        thinking: [
+          { id: "t1", text: "Читаю Source", stageKey: "llm" },
+          { id: "t2", text: "Верстаю текст", stageKey: "inject" },
+          { id: "t3", text: "Печатаю PDF", stageKey: "latex" },
+        ],
+        thinkingElapsedSec: 12,
+        error: "latexmk failed",
+      },
+    ]);
   }, [setMsgs, setBusy]);
 }

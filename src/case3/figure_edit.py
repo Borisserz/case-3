@@ -70,6 +70,10 @@ def edit_figure_in_run(
 
     caption_new = (caption or "").strip()
 
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="figure", target=figure_id)
+
     figs_dir = out_dir / "figures"
     dest = figs_dir / f"{figure_id}.png"
     figs_dir.mkdir(parents=True, exist_ok=True)
@@ -186,9 +190,14 @@ def edit_figure_in_run(
             meta_path.write_text(meta_bak, encoding="utf-8")
         if tex_bak is not None:
             texs[0].write_text(tex_bak, encoding="utf-8")
+        from case3.run_undo import clear_undo
+
+        clear_undo(out_dir)
         raise FigureEditError(f"document rebuild failed: {exc}") from exc
 
     v = int(dest.stat().st_mtime)
+    from case3.run_undo import undo_meta
+
     return {
         "figure_id": figure_id,
         "mode": mode,
@@ -197,4 +206,5 @@ def edit_figure_in_run(
         "media_status": media,
         "artifacts": {k: str(p) for k, p in artifacts.items()},
         "version": v,
+        "undo": undo_meta(out_dir),
     }

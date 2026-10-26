@@ -136,8 +136,20 @@ export type BotMsg = {
   thinkingElapsedSec?: number;
   /** Phrase pool: report / diagram / presentation */
   thinkingMode?: ThinkingMode;
-  /** Artifact-ready chips while run is still live (PDF / PPTX / …). */
-  artifactChips?: string[];
+  /** SSE phase 2A: nested chart/figure beats */
+  craftSubsteps?: import("./craftSteps").CraftSubstep[];
+  /** photos → skip reason */
+  craftSkipped?: Partial<Record<import("./craftSteps").CraftStepId, string>>;
+  /** SSE 2B film thumbnails */
+  craftFilm?: import("./craftSteps").CraftFilmFrame[];
+  /** Success recap one-liner */
+  craftRecap?: string | null;
+  /** Server ETA for current stage (seconds) */
+  etaSec?: number | null;
+  /** Cancel froze the checklist */
+  craftFrozen?: boolean;
+  /** Actionable error line under fold */
+  errorHint?: string | null;
   error?: string;
 };
 

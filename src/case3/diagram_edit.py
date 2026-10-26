@@ -72,6 +72,9 @@ def edit_diagram_in_run(
     did = (diagram_id or "").strip()
     if not _ID_OK.match(did):
         raise DiagramEditError("invalid diagram id")
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="diagram", target=did)
     fj = _load_fj(out_dir)
     diagrams = list(fj.get("diagrams") or [])
     idx = next(
@@ -107,7 +110,11 @@ def edit_diagram_in_run(
     diagrams[idx] = parsed[0]
     fj["diagrams"] = diagrams
     _save_fj(out_dir, fj)
-    return parsed[0]
+    from case3.run_undo import undo_meta
+
+    out = dict(parsed[0])
+    out["undo"] = undo_meta(out_dir)
+    return out
 
 
 def _load_generate_system(*, max_diagrams: int, palette: str) -> str:

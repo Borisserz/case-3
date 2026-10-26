@@ -7,7 +7,7 @@ from typing import Any
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.util import Emu, Inches, Pt
+from pptx.util import Inches, Pt
 
 
 def _chart_type(ir_type: str):
@@ -27,6 +27,102 @@ def _chart_type(ir_type: str):
     return XL_CHART_TYPE.COLUMN_CLUSTERED
 
 
+def _is_line_like(chart_type) -> bool:
+    return chart_type in (
+        XL_CHART_TYPE.LINE_MARKERS,
+        XL_CHART_TYPE.LINE,
+        XL_CHART_TYPE.AREA,
+    )
+
+
+def _series_display_name(raw: str, *, chart_type, series_ir: dict[str, Any]) -> str:
+    name = (raw or "").strip()
+    if name and name.lower() not in ("series", "dataset", "data"):
+        return name
+    title = str(series_ir.get("title") or "").strip()
+    if title:
+        return title[:48]
+    if chart_type == XL_CHART_TYPE.DOUGHNUT:
+        return "Доля"
+    return name or "Series"
+
+
+def _color_series(
+    chart,
+    chart_type,
+    *,
+    series_colors: list[RGBColor],
+    n_categories: int,
+) -> None:
+    """Apply pack colors: multi-series by series; single series by category point."""
+    if not series_colors:
+        return
+    try:
+        series_list = list(chart.series)
+    except Exception:
+        return
+    if not series_list:
+        return
+
+    point_color_types = {
+        XL_CHART_TYPE.COLUMN_CLUSTERED,
+        XL_CHART_TYPE.BAR_CLUSTERED,
+        XL_CHART_TYPE.DOUGHNUT,
+        XL_CHART_TYPE.PIE,
+    }
+
+    # One series → color each category/point from the pack (Julius-like bars/donut).
+    if len(series_list) == 1 and chart_type in point_color_types and n_categories > 1:
+        ser = series_list[0]
+        try:
+            for i, pt in enumerate(ser.points):
+                color = series_colors[i % len(series_colors)]
+                pt.format.fill.solid()
+                pt.format.fill.fore_color.rgb = color
+                try:
+                    pt.format.line.fill.background()
+                except Exception:
+                    pass
+        except Exception:
+            # Fallback: whole series one color
+            try:
+                ser.format.fill.solid()
+                ser.format.fill.fore_color.rgb = series_colors[0]
+            except Exception:
+                pass
+        return
+
+    for i, ser in enumerate(series_list):
+        color = series_colors[i % len(series_colors)]
+        try:
+            if _is_line_like(chart_type):
+                ser.format.line.color.rgb = color
+                ser.format.line.width = Pt(2.25)
+            else:
+                ser.format.fill.solid()
+                ser.format.fill.fore_color.rgb = color
+        except Exception:
+            continue
+
+
+def _style_donut_labels(plot) -> None:
+    """Percent labels on donut slices (twin has center %; OOXML ≈ labels)."""
+    try:
+        plot.has_data_labels = True
+        labels = plot.data_labels
+        labels.show_percentage = True
+        labels.show_value = False
+        labels.show_category_name = False
+        labels.show_series_name = False
+        try:
+            labels.font.size = Pt(11)
+            labels.font.bold = True
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def add_native_chart(
     slide,
     series_ir: dict[str, Any],
@@ -42,16 +138,20 @@ def add_native_chart(
     series = list(series_ir.get("series") or [])
     if not cats or not series:
         return False
+    chart_type = _chart_type(str(series_ir.get("type") or "bar"))
     data = CategoryChartData()
     data.categories = cats
     for s in series:
-        name = str(s.get("name") or "Series")
+        name = _series_display_name(
+            str(s.get("name") or ""),
+            chart_type=chart_type,
+            series_ir=series_ir,
+        )
         vals = list(s.get("values") or [])
         if len(vals) < len(cats):
             vals = vals + [0.0] * (len(cats) - len(vals))
         data.add_series(name, vals[: len(cats)])
 
-    chart_type = _chart_type(str(series_ir.get("type") or "bar"))
     try:
         graphic = slide.shapes.add_chart(
             chart_type, left, top, width, height, data
@@ -60,36 +160,38 @@ def add_native_chart(
         return False
     chart = graphic.chart
     try:
-        chart.has_legend = len(series) > 1
+        chart.has_legend = len(series) > 1 or chart_type == XL_CHART_TYPE.DOUGHNUT
         if chart.has_legend:
             chart.legend.position = XL_LEGEND_POSITION.BOTTOM
             chart.legend.include_in_layout = False
     except Exception:
         pass
 
-    # Soft color series from theme when possible
-    if series_colors:
-        try:
-            for i, ser in enumerate(chart.series):
-                color = series_colors[i % len(series_colors)]
-                if chart_type in (
-                    XL_CHART_TYPE.LINE_MARKERS,
-                    XL_CHART_TYPE.LINE,
-                ):
-                    ser.format.line.color.rgb = color
-                else:
-                    ser.format.fill.solid()
-                    ser.format.fill.fore_color.rgb = color
-        except Exception:
-            pass
+    _color_series(
+        chart,
+        chart_type,
+        series_colors=list(series_colors or []),
+        n_categories=len(cats),
+    )
 
     try:
         plot = chart.plots[0]
-        plot.has_data_labels = False
+        if chart_type == XL_CHART_TYPE.DOUGHNUT:
+            _style_donut_labels(plot)
+        else:
+            plot.has_data_labels = False
+        if chart_type in (
+            XL_CHART_TYPE.COLUMN_CLUSTERED,
+            XL_CHART_TYPE.BAR_CLUSTERED,
+            XL_CHART_TYPE.COLUMN_STACKED,
+        ):
+            try:
+                plot.gap_width = 80
+            except Exception:
+                pass
     except Exception:
         pass
 
-    # Quiet axis text size
     try:
         chart.font.size = Pt(10)
     except Exception:

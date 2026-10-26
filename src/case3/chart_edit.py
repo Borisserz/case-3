@@ -221,6 +221,9 @@ def edit_chart_in_run(
     """Update one chart PNG + figures.json and rebuild PDF/DOCX in out_dir."""
     out_dir = out_dir.resolve()
     fj, chart, idx = _load_chart_from_run(out_dir, chart_id)
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="chart", target=chart_id)
     charts = list(fj.get("charts") or [])
     html = str(chart.get("html") or "").strip()
 
@@ -319,6 +322,9 @@ def edit_chart_in_run(
     # G2: persist so Liber edit sheet seeds this figure's palette next open.
     if palette_id and palette_id != "auto":
         chart["palette"] = palette_id
+    from case3.slides_chart_data import attach_series_ir
+
+    attach_series_ir(chart)
     charts[idx] = chart
     fj["charts"] = charts
     figs_dir = out_dir / "figures"
@@ -331,6 +337,9 @@ def edit_chart_in_run(
     except Exception as exc:  # noqa: BLE001
         if bak is not None:
             dest.write_bytes(bak)
+        from case3.run_undo import clear_undo
+
+        clear_undo(out_dir)
         raise ChartEditError(f"chart render failed: {exc}") from exc
     fj_path = out_dir / "figures.json"
     fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -375,6 +384,8 @@ def edit_chart_in_run(
         raise ChartEditError(f"document rebuild failed: {exc}") from exc
 
     v = int(dest.stat().st_mtime)
+    from case3.run_undo import undo_meta
+
     return {
         "chart_id": chart_id,
         "mode": "+".join(modes),
@@ -383,4 +394,5 @@ def edit_chart_in_run(
         "version": v,
         "palette": palette_id,
         "style": style_notes,
+        "undo": undo_meta(out_dir),
     }

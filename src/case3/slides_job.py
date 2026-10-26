@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from case3.chart_html import sanitize_chart_html
-from case3.chart_style import apply_hex_series_to_html, normalize_palette_id
+from case3.chart_style import (
+    apply_hex_series_to_html,
+    apply_pack_category_colors_to_html,
+    normalize_palette_id,
+)
 from case3.charts import render_chart_png
 from case3.deck_theme import normalize_pack_id, resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
@@ -20,7 +24,12 @@ from case3.slides_beat_planner import (
     maybe_apply_pack_hint,
     plan_beats,
 )
-from case3.slides_chart_data import series_from_figures_json
+from case3.slides_chart_data import (
+    attach_series_ir_to_charts,
+    ensure_deck_charts,
+    series_from_figures_json,
+    series_map_from_figures,
+)
 from case3.slides_lo import write_deck_pdf
 from case3.slides_pptx_native import build_native_pptx
 from case3.slides_ir import DeckIrError, parse_deck_ir, scrub_invented_numbers
@@ -211,7 +220,9 @@ def _set_slides(
     elif status == "ok":
         EVENTS.scan_artifacts(run_id, out_dir)
         EVENTS.publish_stage(run_id, "ok", scope="slides")
-        EVENTS.publish_terminal(run_id, "ok")
+        EVENTS.publish_terminal(
+            run_id, "ok", recap=EVENTS.success_recap(run_id)
+        )
     elif status == "error":
         EVENTS.publish_stage(run_id, "error", detail=error, scope="slides")
         EVENTS.publish_terminal(run_id, "error", error=error)
@@ -477,6 +488,21 @@ def run_slides_job(
         deck["style"] = theme_tokens.as_dict()
         deck["palette"] = palette
 
+        # Every native-eligible cht_* must appear in the deck (inject missing).
+        fj_early = load_figures_json(out_dir)
+        attach_series_ir_to_charts(fj_early.get("charts") if isinstance(fj_early, dict) else None)
+        series_all = series_map_from_figures(fj_early if isinstance(fj_early, dict) else {})
+        injected = ensure_deck_charts(deck, series_all)
+        if injected:
+            meta["slides_chart_injected"] = injected
+            log.info("slides: injected chart_hero for %s", injected)
+            fj_path = out_dir / "figures.json"
+            if fj_path.is_file() and isinstance(fj_early, dict):
+                fj_path.write_text(
+                    json.dumps(fj_early, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+
         _materialize_deck_artifacts(
             out_dir,
             meta,
@@ -572,12 +598,14 @@ def _recolor_deck_charts(
         return {}
     fj = load_figures_json(out_dir)
     html_by_id: dict[str, str] = {}
+    type_by_id: dict[str, str] = {}
     for ch in fj.get("charts") or []:
         if not isinstance(ch, dict):
             continue
         cid = str(ch.get("id") or "").strip()
         if cid in needed and str(ch.get("html") or "").strip():
             html_by_id[cid] = str(ch.get("html") or "")
+            type_by_id[cid] = str(ch.get("type") or "").strip().lower()
 
     dest_dir = slides_dir / "charts"
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -592,6 +620,12 @@ def _recolor_deck_charts(
                 muted=muted,
                 area=area,
                 grid=grid,
+            )
+            # Twin ≈ native: per-category pack colors on single-series bar/donut.
+            remapped = apply_pack_category_colors_to_html(
+                remapped,
+                series,
+                chart_type=type_by_id.get(cid) or None,
             )
             if dark:
                 remapped = (
@@ -678,17 +712,44 @@ def _materialize_deck_artifacts(
     tmp_pptx = out_dir / f".{stem}_slides.pptx.tmp"
     tmp_pdf = out_dir / f".{stem}_deck.pdf.tmp"
     fj = load_figures_json(out_dir)
+    if isinstance(fj, dict):
+        attach_series_ir_to_charts(fj.get("charts"))
+        # Keep figures.json series in sync for Liber re-exports / edits.
+        fj_path = out_dir / "figures.json"
+        try:
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError:
+            pass
+    # Every cht_* referenced by the deck must resolve series when possible.
+    needed = set(chart_ids) | _chart_ids_in_deck(deck)
     chart_series: dict[str, dict[str, Any]] = {}
-    for cid in chart_ids:
-        ir = series_from_figures_json(fj, cid)
+    for cid in sorted(needed):
+        ir = series_from_figures_json(fj if isinstance(fj, dict) else {}, cid)
         if ir:
             chart_series[cid] = ir
+    # Also pull any leftover eligible charts (ensure path / multi-ref).
+    for cid, ir in series_map_from_figures(
+        fj if isinstance(fj, dict) else {}
+    ).items():
+        chart_series.setdefault(cid, ir)
+    # Drop series not on deck slides — avoid unused chart parts; keep only needed.
+    chart_series = {cid: ir for cid, ir in chart_series.items() if cid in needed}
+    missing = sorted(needed - set(chart_series))
+    if missing:
+        log.warning(
+            "native chart series missing for %s — those slides fall back to PNG",
+            missing,
+        )
     build_native_pptx(
         deck,
         tmp_pptx,
         media_by_id=media_map,
         chart_series_by_id=chart_series,
     )
+    meta["slides_native_charts"] = sorted(chart_series.keys())
+
     raise_if_cancelled(out_dir)
     # Julius path: LO-convert native PPTX → PDF; PNG stitch if soffice missing.
     _, pdf_mode = write_deck_pdf(tmp_pptx, pngs, tmp_pdf)

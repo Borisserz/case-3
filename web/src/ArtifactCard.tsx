@@ -2,6 +2,7 @@
 
 import { DeckFileCard } from "./DeckFileCard";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
+import { reportDownloadLinks } from "./domain/reportDownloads";
 import { modeSurfaces } from "./liberModes";
 
 type DiagramChip = DiagramChatItem;
@@ -141,6 +142,11 @@ export function ArtifactCard({
   const reportPdfHref = surfaces.showReportPdf
     ? pdfUrl || downloads?.pdf || null
     : null;
+  const reportPrintLinks = reportDownloadLinks(downloads, {
+    enabled: surfaces.showReportPdf,
+  });
+  const reportDocxHref =
+    reportPrintLinks.find((l) => l.kind === "docx")?.href ?? null;
   const visibleDiagrams = surfaces.showDiagram ? diagrams : [];
   const hasDeckFiles =
     slidesReady && Boolean(downloads?.pptx || downloads?.deck_pdf);
@@ -150,6 +156,10 @@ export function ArtifactCard({
   const reportPdfName = reportPdfHref
     ? fileNameFromUrl(reportPdfHref, "report.pdf")
     : "report.pdf";
+  const reportDocxName = reportDocxHref
+    ? fileNameFromUrl(reportDocxHref, "report.docx")
+    : "report.docx";
+  const reportCardHref = reportPdfHref || reportDocxHref;
   const showPdfGallery =
     surfaces.showPresentation &&
     (Boolean(downloads?.deck_pdf) || slidePngs.length > 0);
@@ -159,7 +169,7 @@ export function ArtifactCard({
     "is-julius",
     pulse ? "is-pulse" : "",
     updated ? "is-updated" : "",
-    hasDeckFiles || reportPdfHref ? "has-deck" : "",
+    hasDeckFiles || reportPdfHref || reportDocxHref ? "has-deck" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -235,8 +245,13 @@ export function ArtifactCard({
     );
   }
 
-  /* 2) Report PDF → document card; schema is peer artifact #3 when present */
-  if (reportPdfHref) {
+  /* 2) One report card (Source → PDF + DOCX); schema is peer when present */
+  if (reportCardHref) {
+    const formatsLabel = reportPdfHref
+      ? reportDocxHref
+        ? "Отчёт · PDF · DOCX"
+        : "Отчёт · PDF"
+      : "Отчёт · DOCX";
     return (
       <div className={shellClass}>
         <div
@@ -252,16 +267,26 @@ export function ArtifactCard({
                 {subtitle || null}
               </p>
             ) : (
-              <p className="artifact-card-quiet-label">Отчёт · PDF</p>
+              <p className="artifact-card-quiet-label">{formatsLabel}</p>
             )}
-            <DeckFileCard
-              kind="pdf"
-              href={reportPdfHref}
-              docTitle={title}
-              fileLabel={reportPdfName}
-              onPrimary={onView}
-              primaryLabel="Открыть"
-            />
+            {reportPdfHref ? (
+              <DeckFileCard
+                kind="pdf"
+                href={reportPdfHref}
+                docxHref={reportDocxHref}
+                docTitle={title}
+                fileLabel={reportPdfName}
+                onPrimary={onView}
+                primaryLabel="Открыть"
+              />
+            ) : (
+              <DeckFileCard
+                kind="docx"
+                href={reportDocxHref!}
+                docTitle={title}
+                fileLabel={reportDocxName}
+              />
+            )}
           </section>
           {visibleDiagrams.length > 0 && onOpenDiagram ? (
             <section className="artifact-card-block is-diagram-peer">

@@ -166,6 +166,7 @@ def _set_stage(
     *,
     detail: str | None = None,
     status: str = "running",
+    project_root: Path | None = None,
 ) -> None:
     meta["status"] = status
     meta["stage"] = stage
@@ -176,7 +177,31 @@ def _set_stage(
     _write_meta(meta, out, logs)
     run_id = str(meta.get("run_id") or "")
     if run_id:
-        EVENTS.publish_stage(run_id, stage, detail=detail, scope="pipeline")
+        from case3.stage_eta import note_stage_enter
+
+        # Only roll ETA when the stage id changes (not every cht_* detail bump).
+        prev = str(meta.get("_eta_stage") or "")
+        eta = None
+        if stage != prev:
+            eta = note_stage_enter(run_id, stage, project_root=project_root)
+            meta["_eta_stage"] = stage
+            timings = list(meta.get("stage_timings") or [])
+            if isinstance(timings, list):
+                timings.append({"stage": stage, "t": __import__("time").time()})
+                meta["stage_timings"] = timings[-40:]
+        EVENTS.publish_stage(
+            run_id, stage, detail=detail, scope="pipeline", eta_s=eta
+        )
+        # Phase 2A: fine steps for charts / photos
+        det = (detail or "").strip()
+        if stage == "charts" and det.startswith("cht_"):
+            EVENTS.publish_step(
+                run_id, parent="charts", step_id=det, status="active", label=det
+            )
+        elif stage == "images" and det.startswith(("fig_", "usr_")):
+            EVENTS.publish_step(
+                run_id, parent="photos", step_id=det, status="active", label=det
+            )
         EVENTS.scan_artifacts(run_id, out)
 
 
@@ -262,13 +287,18 @@ def run_pipeline(
         "status": "running",
         "stage": "queued",
     }
+    from case3.stage_eta import load_timings
+
+    load_timings(root)
     EVENTS.ensure(run_id)
     _write_meta(meta, out, logs)
     EVENTS.publish_stage(run_id, "queued", scope="pipeline")
 
     def bump(stage: str, detail: str | None = None) -> None:
         raise_if_cancelled(out)
-        _set_stage(meta, out, logs, stage, detail=detail)
+        _set_stage(
+            meta, out, logs, stage, detail=detail, project_root=root
+        )
         if on_stage:
             on_stage(stage, detail)
 
@@ -325,6 +355,11 @@ def run_pipeline(
         fj["figures"] = figures
         fj["charts"] = charts
         fj["diagrams"] = diagrams
+        # Persist ChartSeriesIR for native PPTX (prefer over HTML regex later).
+        from case3.slides_chart_data import attach_series_ir_to_charts
+
+        attach_series_ir_to_charts(charts)
+        fj["charts"] = charts
         # Keep diagrams_dropped from generate if present (soft-fail telemetry).
         fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -360,10 +395,26 @@ def run_pipeline(
                             "error": "IMAGE_API_BASE_URL empty",
                             "kind": "figure",
                         }
+                EVENTS.publish_step(
+                    run_id,
+                    parent="photos",
+                    step_id="photos",
+                    status="skipped",
+                    reason="IMAGE_API_BASE_URL empty",
+                    label="Фото",
+                )
             elif need_api:
 
                 def _img_progress(fid: str) -> None:
                     bump("images", fid)
+                    if fid:
+                        EVENTS.publish_step(
+                            run_id,
+                            parent="photos",
+                            step_id=fid,
+                            status="done",
+                            label=fid,
+                        )
 
                 from case3.chart_style import palette_from_intent
 
@@ -384,6 +435,14 @@ def run_pipeline(
 
             def _chart_progress(cid: str) -> None:
                 bump("charts", cid)
+                if cid:
+                    EVENTS.publish_step(
+                        run_id,
+                        parent="charts",
+                        step_id=cid,
+                        status="done",
+                        label=cid,
+                    )
 
             status.update(
                 generate_all_charts(
@@ -393,6 +452,14 @@ def run_pipeline(
                     max_charts=charts_budget,
                     on_progress=_chart_progress,
                 )
+            )
+            # Re-attach after harden/render path may have rewritten HTML.
+            from case3.slides_chart_data import attach_series_ir_to_charts
+
+            attach_series_ir_to_charts(charts)
+            fj["charts"] = charts
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
             )
 
         meta["media_status"] = status
@@ -555,7 +622,33 @@ def run_pipeline(
         EVENTS.scan_artifacts(run_id, out)
         # Presentation: slides job continues on the same bus — defer terminal.
         if mode != "presentation":
-            EVENTS.publish_terminal(run_id, "ok")
+            chart_ids = [
+                str(c.get("id") or "")
+                for c in (charts or [])
+                if isinstance(c, dict) and c.get("id")
+            ]
+            fig_ids = [
+                str(f.get("id") or "")
+                for f in (figures or [])
+                if isinstance(f, dict) and f.get("id")
+            ]
+            charts_ok = sum(
+                1
+                for cid in chart_ids
+                if isinstance(status.get(cid), dict) and status[cid].get("ok")
+            )
+            figures_ok = sum(
+                1
+                for fid in fig_ids
+                if isinstance(status.get(fid), dict) and status[fid].get("ok")
+            )
+            EVENTS.publish_terminal(
+                run_id,
+                "ok",
+                recap=EVENTS.success_recap(
+                    run_id, charts=charts_ok, figures=figures_ok
+                ),
+            )
         else:
             EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
     except RunCancelled:
@@ -583,8 +676,13 @@ def run_pipeline(
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         _write_meta(meta, out, logs)
+        from case3.stage_eta import error_hint
+
         EVENTS.publish_terminal(
-            run_id, "error", error=str(meta.get("error") or exc)
+            run_id,
+            "error",
+            error=str(meta.get("error") or exc),
+            hint=error_hint(exc, stage=str(meta.get("stage") or "")),
         )
         raise PipelineError(
             str(meta.get("error") or exc),

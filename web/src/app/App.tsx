@@ -24,7 +24,13 @@ import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../ChartsQa";
 import { openRunEvents } from "../api/runEvents";
 import { openSummaryStream } from "../api/summaryStream";
-import { artifactChipLabel } from "../domain/craftSteps";
+import {
+  craftParentId,
+  formatCraftRecap,
+  upsertCraftFilm,
+  upsertCraftSubstep,
+  type CraftFilmFrame,
+} from "../domain/craftSteps";
 import {
   DEFAULT_INTENT,
   FALLBACK_PALETTES,
@@ -74,7 +80,6 @@ import {
   type HistoryItem,
 } from "../domain/reportHistory";
 import { loadRailWidth } from "../domain/railWidth";
-import type { ReportPreview } from "../ReportView";
 import { DeckStyleSheet } from "../DeckStyleSheet";
 import {
   deckStyleToApiPayload,
@@ -127,6 +132,12 @@ export default function App() {
     message: string;
   } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** B21: one-shot undo after last Liber edit */
+  const [undoOffer, setUndoOffer] = useState<{
+    msgId: string;
+    runId: string;
+  } | null>(null);
+  const undoBusyRef = useRef(false);
   const [downloadsPulseMsgId, setDownloadsPulseMsgId] = useState<string | null>(
     null,
   );
@@ -319,6 +330,78 @@ export default function App() {
     setActiveArtifact,
   });
 
+  function applyEditPayload(
+    msgId: string,
+    runId: string,
+    data: {
+      preview?: RunResult["preview"];
+      downloads?: RunResult["downloads"];
+      warnings?: string[];
+      media_status?: RunResult["media_status"];
+      diagrams?: RunResult["diagrams"];
+      undo?: { kind?: string; target?: string } | null;
+    },
+    toastText: string,
+  ) {
+    setMsgs((list) =>
+      list.map((msg) => {
+        if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+        const next = {
+          ...msg,
+          result: {
+            ...msg.result,
+            preview: data.preview ?? msg.result.preview,
+            downloads: data.downloads ?? msg.result.downloads,
+            warnings:
+              Array.isArray(data.warnings) && data.warnings.length
+                ? data.warnings
+                : msg.result.warnings,
+            media_status: data.media_status ?? msg.result.media_status,
+            diagrams: data.diagrams ?? msg.result.diagrams,
+          },
+        };
+        if (next.result) rememberRun(next.result);
+        return next;
+      }),
+    );
+    if (data.undo && data.undo.kind) {
+      setUndoOffer({ msgId, runId });
+    } else {
+      setUndoOffer(null);
+    }
+    setToast(toastText);
+    setDownloadsPulseMsgId(msgId);
+    window.setTimeout(() => setToast(null), 4200);
+    window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+  }
+
+  async function undoLastEdit() {
+    if (!undoOffer || undoBusyRef.current) return;
+    undoBusyRef.current = true;
+    const { msgId, runId } = undoOffer;
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/undo`,
+        { method: "POST" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : data.error || res.statusText || "undo failed",
+        );
+      }
+      applyEditPayload(msgId, runId, { ...data, undo: null }, "Правка отменена");
+      setUndoOffer(null);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : String(err));
+      window.setTimeout(() => setToast(null), 3200);
+    } finally {
+      undoBusyRef.current = false;
+    }
+  }
+
   async function editFigure(
     msgId: string,
     runId: string,
@@ -351,31 +434,7 @@ export default function App() {
             : data.error || res.statusText || "edit failed",
         );
       }
-      setMsgs((list) =>
-        list.map((msg) => {
-          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-          const next = {
-            ...msg,
-            // Keep chat summary — only refresh artifacts (toast signals edit).
-            result: {
-              ...msg.result,
-              preview: data.preview ?? msg.result.preview,
-              downloads: data.downloads ?? msg.result.downloads,
-              warnings:
-                Array.isArray(data.warnings) && data.warnings.length
-                  ? data.warnings
-                  : msg.result.warnings,
-              media_status: data.media_status ?? msg.result.media_status,
-            },
-          };
-          if (next.result) rememberRun(next.result);
-          return next;
-        }),
-      );
-      setToast("Отчёт обновлён");
-      setDownloadsPulseMsgId(msgId);
-      window.setTimeout(() => setToast(null), 2800);
-      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      applyEditPayload(msgId, runId, data, "Отчёт обновлён");
       return true;
     } catch (err) {
       setEditError({
@@ -422,33 +481,12 @@ export default function App() {
             : data.error || res.statusText || "image edit failed",
         );
       }
-      setMsgs((list) =>
-        list.map((msg) => {
-          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-          const next = {
-            ...msg,
-            // Keep chat summary — only refresh artifacts (как правка графика).
-            result: {
-              ...msg.result,
-              preview: data.preview ?? msg.result.preview,
-              downloads: data.downloads ?? msg.result.downloads,
-              warnings:
-                Array.isArray(data.warnings) && data.warnings.length
-                  ? data.warnings
-                  : msg.result.warnings,
-              media_status: data.media_status ?? msg.result.media_status,
-            },
-          };
-          if (next.result) rememberRun(next.result);
-          return next;
-        }),
-      );
-      setToast(
+      applyEditPayload(
+        msgId,
+        runId,
+        data,
         req.mode === "edit" ? "Фото изменено" : "Фото сгенерировано заново",
       );
-      setDownloadsPulseMsgId(msgId);
-      window.setTimeout(() => setToast(null), 2800);
-      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
       return true;
     } catch (err) {
       setEditError({
@@ -520,36 +558,20 @@ export default function App() {
         }
         throw new Error(raw);
       }
-      setMsgs((list) =>
-        list.map((msg) => {
-          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-          const next = {
-            ...msg,
-            result: {
-              ...msg.result,
-              preview:
-                (data.preview as ReportPreview | undefined) ??
-                msg.result.preview,
-              downloads: asDownloads(data.downloads, msg.result.downloads),
-              warnings:
-                Array.isArray(data.warnings) && data.warnings.length
-                  ? data.warnings.filter(
-                      (w): w is string => typeof w === "string",
-                    )
-                  : msg.result.warnings,
-              media_status:
-                (data.media_status as Record<string, unknown> | undefined) ??
-                msg.result.media_status,
-            },
-          };
-          if (next.result) rememberRun(next.result);
-          return next;
-        }),
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        "Таблица обновлена",
       );
-      setToast("Таблица обновлена");
-      setDownloadsPulseMsgId(msgId);
-      window.setTimeout(() => setToast(null), 2800);
-      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
       return true;
     } catch (err) {
       setEditError({
@@ -608,36 +630,20 @@ export default function App() {
               : res.statusText || "paragraph edit failed";
         throw new Error(raw);
       }
-      setMsgs((list) =>
-        list.map((msg) => {
-          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-          const next = {
-            ...msg,
-            result: {
-              ...msg.result,
-              preview:
-                (data.preview as ReportPreview | undefined) ??
-                msg.result.preview,
-              downloads: asDownloads(data.downloads, msg.result.downloads),
-              warnings:
-                Array.isArray(data.warnings) && data.warnings.length
-                  ? data.warnings.filter(
-                      (w): w is string => typeof w === "string",
-                    )
-                  : msg.result.warnings,
-              media_status:
-                (data.media_status as Record<string, unknown> | undefined) ??
-                msg.result.media_status,
-            },
-          };
-          if (next.result) rememberRun(next.result);
-          return next;
-        }),
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        "Абзац обновлён",
       );
-      setToast("Абзац обновлён");
-      setDownloadsPulseMsgId(msgId);
-      window.setTimeout(() => setToast(null), 2800);
-      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
       return true;
     } catch (err) {
       setEditError({
@@ -696,6 +702,25 @@ export default function App() {
 
   function openDeckSlidesArtifact(msgId: string, result: RunResult) {
     openReportArtifact(msgId, result, "slides");
+  }
+
+  function openFilmFrame(msgId: string, frame: CraftFilmFrame, runId?: string) {
+    const bot = msgs.find((m) => m.id === msgId && m.role === "bot");
+    const rid =
+      runId ||
+      (bot && bot.role === "bot" ? bot.result?.run_id : undefined) ||
+      activeRunIdRef.current ||
+      "";
+    setRailExiting(false);
+    setActiveArtifact({
+      kind: "media",
+      msgId,
+      tab: "preview",
+      runId: rid,
+      mediaId: frame.id,
+      url: frame.url,
+      title: frame.id,
+    });
   }
 
   function stopGeneration() {
@@ -960,29 +985,102 @@ export default function App() {
           resolve(v);
         };
         slideCloser.stop = openRunEvents(runId, {
-          onStage: (stage, detail, scope) => {
+          onStage: (stage, detail, scope, etaSec) => {
             void detail;
             if (scope === "slides" || stage.startsWith("slides_")) {
               applySlideStage(stage);
+              if (etaSec != null && etaSec > 0) {
+                setMsgs((m) =>
+                  m.map((msg) =>
+                    msg.id === msgId && msg.role === "bot"
+                      ? { ...msg, etaSec }
+                      : msg,
+                  ),
+                );
+              }
             }
           },
-          onArtifact: (kind) => {
-            const label = artifactChipLabel(kind);
+          onStep: (step) => {
             setMsgs((m) =>
               m.map((msg) => {
                 if (msg.id !== msgId || msg.role !== "bot") return msg;
-                const prev = msg.artifactChips || [];
-                if (prev.includes(label)) return msg;
-                return { ...msg, artifactChips: [...prev, label] };
+                const parent = craftParentId(step.parent);
+                const nextSubs = upsertCraftSubstep(
+                  msg.craftSubsteps || [],
+                  step,
+                );
+                let craftSkipped = msg.craftSkipped;
+                if (step.status === "skipped" && parent) {
+                  craftSkipped = {
+                    ...(craftSkipped || {}),
+                    [parent]: step.reason || "пропущено",
+                  };
+                }
+                return {
+                  ...msg,
+                  craftSubsteps: nextSubs,
+                  craftSkipped,
+                };
               }),
             );
           },
-          onTerminal: (kind) => settle(kind),
+          onFilm: (frame) => {
+            setMsgs((m) =>
+              m.map((msg) =>
+                msg.id === msgId && msg.role === "bot"
+                  ? {
+                      ...msg,
+                      craftFilm: upsertCraftFilm(msg.craftFilm || [], frame),
+                    }
+                  : msg,
+              ),
+            );
+          },
+          onTerminal: (kind, _err, hint, recap) => {
+            if (kind === "cancelled") {
+              setMsgs((m) =>
+                m.map((msg) =>
+                  msg.id === msgId && msg.role === "bot"
+                    ? { ...msg, craftFrozen: true, pending: false }
+                    : msg,
+                ),
+              );
+            }
+            if (kind === "error" && hint) {
+              setMsgs((m) =>
+                m.map((msg) =>
+                  msg.id === msgId && msg.role === "bot"
+                    ? { ...msg, errorHint: hint }
+                    : msg,
+                ),
+              );
+            }
+            if (kind === "done" && recap) {
+              const line = formatCraftRecap(recap);
+              if (line) {
+                setMsgs((m) =>
+                  m.map((msg) =>
+                    msg.id === msgId && msg.role === "bot"
+                      ? { ...msg, craftRecap: line }
+                      : msg,
+                  ),
+                );
+              }
+            }
+            settle(kind);
+          },
           onFallback: () => settle("fallback"),
         });
         const cancelWatch = window.setInterval(() => {
           if (cancelRequestedRef.current) {
             window.clearInterval(cancelWatch);
+            setMsgs((m) =>
+              m.map((msg) =>
+                msg.id === msgId && msg.role === "bot"
+                  ? { ...msg, craftFrozen: true }
+                  : msg,
+              ),
+            );
             settle("cancelled");
           }
         }, 400);
@@ -1096,8 +1194,9 @@ export default function App() {
     setActiveArtifact((prev) => {
       if (!prev) return prev;
       if (prev.kind === "report") return { ...prev, tab };
+      if (prev.kind === "media") return { ...prev, tab: "preview" };
       // source / intent only expose the Source tab
-      return { ...prev, tab: "source" };
+      return { ...prev, tab: "source" as const };
     });
   }
 
@@ -1531,6 +1630,7 @@ export default function App() {
         const applyStage = (
           stage: string | undefined,
           detail: string | null,
+          etaSec?: number | null,
         ) => {
           setMsgs((m) =>
             m.map((msg) => {
@@ -1542,6 +1642,8 @@ export default function App() {
                   pending: true,
                   pendingStage: stage,
                   pendingDetail: detail,
+                  etaSec:
+                    etaSec != null && etaSec > 0 ? etaSec : msg.etaSec ?? null,
                   text:
                     msg.streamingSummary && msg.text.trim()
                       ? msg.text
@@ -1585,15 +1687,16 @@ export default function App() {
           }
         };
 
-        const applyArtifact = (kind: string) => {
-          const label = artifactChipLabel(kind);
+        const applyFilm = (frame: CraftFilmFrame) => {
           setMsgs((m) =>
-            m.map((msg) => {
-              if (msg.id !== pendingId || msg.role !== "bot") return msg;
-              const prev = msg.artifactChips || [];
-              if (prev.includes(label)) return msg;
-              return { ...msg, artifactChips: [...prev, label] };
-            }),
+            m.map((msg) =>
+              msg.id === pendingId && msg.role === "bot"
+                ? {
+                    ...msg,
+                    craftFilm: upsertCraftFilm(msg.craftFilm || [], frame),
+                  }
+                : msg,
+            ),
           );
         };
 
@@ -1705,12 +1808,12 @@ export default function App() {
               resolve(v);
             };
             runCloser.events = openRunEvents(runId, {
-              onStage: (stage, detail, scope) => {
+              onStage: (stage, detail, scope, etaSec) => {
                 const uiStage =
                   scope === "slides" && !stage.startsWith("slides_")
                     ? `slides_${stage}`
                     : stage;
-                applyStage(uiStage, detail);
+                applyStage(uiStage, detail, etaSec);
                 // Presentation: after pipeline_ok, kick slides while SSE stays open
                 if (
                   outMode === "presentation" &&
@@ -1731,14 +1834,77 @@ export default function App() {
                   });
                 }
               },
-              onArtifact: applyArtifact,
-              onTerminal: (kind) => settle(kind),
+              onStep: (step) => {
+                setMsgs((m) =>
+                  m.map((msg) => {
+                    if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                    const parent = craftParentId(step.parent);
+                    const nextSubs = upsertCraftSubstep(
+                      msg.craftSubsteps || [],
+                      step,
+                    );
+                    let craftSkipped = msg.craftSkipped;
+                    if (step.status === "skipped" && parent) {
+                      craftSkipped = {
+                        ...(craftSkipped || {}),
+                        [parent]: step.reason || "пропущено",
+                      };
+                    }
+                    return {
+                      ...msg,
+                      craftSubsteps: nextSubs,
+                      craftSkipped,
+                    };
+                  }),
+                );
+              },
+              onFilm: applyFilm,
+              onTerminal: (kind, _err, hint, recap) => {
+                if (kind === "cancelled") {
+                  setMsgs((m) =>
+                    m.map((msg) =>
+                      msg.id === pendingId && msg.role === "bot"
+                        ? { ...msg, craftFrozen: true, pending: false }
+                        : msg,
+                    ),
+                  );
+                }
+                if (kind === "error" && hint) {
+                  setMsgs((m) =>
+                    m.map((msg) =>
+                      msg.id === pendingId && msg.role === "bot"
+                        ? { ...msg, errorHint: hint }
+                        : msg,
+                    ),
+                  );
+                }
+                if (kind === "done" && recap) {
+                  const line = formatCraftRecap(recap);
+                  if (line) {
+                    setMsgs((m) =>
+                      m.map((msg) =>
+                        msg.id === pendingId && msg.role === "bot"
+                          ? { ...msg, craftRecap: line }
+                          : msg,
+                      ),
+                    );
+                  }
+                }
+                settle(kind);
+              },
               onFallback: () => settle("fallback"),
             });
             // Safety: if cancel while waiting SSE
             const cancelWatch = window.setInterval(() => {
               if (cancelRequestedRef.current) {
                 window.clearInterval(cancelWatch);
+                setMsgs((m) =>
+                  m.map((msg) =>
+                    msg.id === pendingId && msg.role === "bot"
+                      ? { ...msg, craftFrozen: true }
+                      : msg,
+                  ),
+                );
                 settle("cancelled");
               }
             }, 400);
@@ -1837,7 +2003,12 @@ export default function App() {
             thinking: msg.thinking,
             thinkingStartedAt: msg.thinkingStartedAt,
             thinkingMode: msg.thinkingMode,
-            artifactChips: msg.artifactChips,
+            craftFilm: msg.craftFilm,
+            craftRecap: msg.craftRecap,
+            craftSubsteps: msg.craftSubsteps,
+            craftSkipped: msg.craftSkipped,
+            errorHint: msg.errorHint,
+            craftFrozen: msg.craftFrozen,
             pendingStage: msg.pendingStage,
             thinkingElapsedSec: msg.thinkingStartedAt
               ? Math.max(
@@ -1985,7 +2156,16 @@ export default function App() {
     >
       {toast && (
         <div className="liber-toast" role="status" aria-live="polite">
-          {toast}
+          <span>{toast}</span>
+          {undoOffer ? (
+            <button
+              type="button"
+              className="liber-toast-undo"
+              onClick={() => void undoLastEdit()}
+            >
+              Отменить
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -2043,6 +2223,7 @@ export default function App() {
                   onOpenDiagram={openDiagramArtifact}
                   onOpenPresentation={openPresentationArtifact}
                   onOpenDeckSlides={openDeckSlidesArtifact}
+                  onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
                 />
 
                 <ChatComposer

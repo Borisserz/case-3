@@ -145,6 +145,104 @@ def apply_hex_series_to_html(
     return _RGBA.sub(_sub_rgba, out)
 
 
+_LABELS_ARR = re.compile(r"labels\s*:\s*\[([^\]]*)\]", re.I | re.S)
+_DATASET_BLOCK = re.compile(r"datasets\s*:\s*\[", re.I)
+
+
+def _count_chart_labels(html: str) -> int:
+    m = _LABELS_ARR.search(html or "")
+    if not m:
+        return 0
+    return len(re.findall(r"""['"]([^'"]*)['"]""", m.group(1)))
+
+
+def _count_chart_datasets(html: str) -> int:
+    """Rough dataset object count inside datasets:[...]."""
+    m = _DATASET_BLOCK.search(html or "")
+    if not m:
+        return 0
+    # Count `{label:` or `{data:` at dataset depth — prefer label markers.
+    tail = (html or "")[m.end() :]
+    # Stop at matching ] is hard; count dataset-like objects with data:
+    return len(re.findall(r"\{\s*(?:label|data)\s*:", tail[:8000], flags=re.I))
+
+
+def apply_pack_category_colors_to_html(
+    html: str,
+    series_hexes: list[str],
+    *,
+    chart_type: str | None = None,
+) -> str:
+    """Force per-category pack colors on single-series bar/donut (twin ≈ native).
+
+    Multi-series (grouped/stacked) left unchanged — those color by series.
+    """
+    ctype = (chart_type or "").strip().lower()
+    if ctype in ("line", "area", "kpi", "scatter", "grouped_bar", "stacked_bar"):
+        return html
+    targets = [
+        f"#{h.lstrip('#').upper()}"
+        for h in series_hexes
+        if h and re.match(r"^#?[0-9A-Fa-f]{6}$", str(h).strip())
+    ]
+    if not targets or not (html or "").strip():
+        return html
+    n_ds = _count_chart_datasets(html)
+    if n_ds > 1:
+        return html
+    n = _count_chart_labels(html)
+    if n < 2:
+        return html
+    # Donut / bar / horizontal_bar / plain bar — one color per category.
+    if ctype and ctype not in (
+        "bar",
+        "donut",
+        "doughnut",
+        "horizontal_bar",
+        "",
+    ):
+        # Unknown single-series types: still expand (matches native point colors).
+        pass
+    colors = ",".join(f"'{targets[i % len(targets)]}'" for i in range(n))
+    out = html or ""
+    if re.search(r"backgroundColor\s*:\s*\[", out, flags=re.I):
+        out = re.sub(
+            r"backgroundColor\s*:\s*\[[^\]]*\]",
+            f"backgroundColor:[{colors}]",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    else:
+        out = re.sub(
+            r"backgroundColor\s*:\s*'[^']+'",
+            f"backgroundColor:[{colors}]",
+            out,
+            count=1,
+            flags=re.I,
+        )
+        # Also handle "..." quotes
+        if f"backgroundColor:[{colors}]" not in out.replace(" ", ""):
+            out = re.sub(
+                r'backgroundColor\s*:\s*"[^"]+"',
+                f"backgroundColor:[{colors}]",
+                out,
+                count=1,
+                flags=re.I,
+            )
+    # Drop conflicting single borderColor so Chart.js uses segment fills cleanly.
+    if "backgroundColor:[" in out.replace(" ", ""):
+        out = re.sub(r"borderWidth\s*:\s*\d+\s*,?", "", out, count=1, flags=re.I)
+        out = re.sub(
+            r"borderColor\s*:\s*'[^']+'\s*,?",
+            "",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    return out
+
+
 def apply_palette_to_html(html: str, palette_id: str) -> str:
     """Remap #hex / rgb(a) colors in chart HTML onto a named palette.
 

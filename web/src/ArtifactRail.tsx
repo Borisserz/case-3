@@ -24,6 +24,7 @@ import { PresentationPane } from "./PresentationPane";
 import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
 import { IconPanelRight } from "./icons";
+import { reportDownloadLinks } from "./domain/reportDownloads";
 import { modeSurfaces } from "./liberModes";
 import { SourcePane } from "./SourcePane";
 import {
@@ -66,6 +67,16 @@ export type ActiveArtifact =
       tab: "source";
       title: string;
       text: string;
+    }
+  | {
+      /** SSE 2B film click — PNG in rail */
+      kind: "media";
+      msgId: string;
+      tab: "preview";
+      runId: string;
+      mediaId: string;
+      url: string;
+      title: string;
     };
 
 type ReportBundle = {
@@ -149,6 +160,7 @@ export function ArtifactRail({
   const reduceMotion = useReducedMotion();
   const tab = artifact.tab;
   const openWidthRef = useRef<number | null>(null);
+  const isMedia = artifact.kind === "media";
   const isReport = artifact.kind === "report";
   const diagrams = isReport ? report?.diagrams || [] : [];
   const activeDiagramId =
@@ -223,6 +235,9 @@ export function ArtifactRail({
   );
 
   const visibleTabs = useMemo(() => {
+    if (isMedia) {
+      return [{ id: "preview" as ArtifactTab, label: "Кадр", show: true }];
+    }
     // Peer order for documents: Превью · Схема · PDF (schema sits next to preview).
     const diagramLabel =
       diagrams.length > 1 ? `Схема · ${diagrams.length}` : "Схема";
@@ -244,6 +259,7 @@ export function ArtifactRail({
     ];
     return all.filter((t) => t.show);
   }, [
+    isMedia,
     isReport,
     hasPreview,
     hasPdf,
@@ -494,9 +510,11 @@ export function ArtifactRail({
       <div className="artifact-rail-inner">
         <header className="artifact-rail-head">
           <span id={titleId} className="sr-only">
-            {artifact.kind === "report"
-              ? artifact.title || "Отчёт"
-              : displaySourceTitle}
+            {artifact.kind === "media"
+              ? artifact.title
+              : artifact.kind === "report"
+                ? artifact.title || "Отчёт"
+                : displaySourceTitle}
           </span>
           <nav
             className="artifact-rail-tabs"
@@ -539,6 +557,20 @@ export function ArtifactRail({
             ))}
           </nav>
           <div className="artifact-rail-actions">
+            {isReport
+              ? reportDownloadLinks(report?.downloads, {
+                  enabled: surfaces.showReportPdf,
+                }).map((link) => (
+                  <a
+                    key={link.kind}
+                    href={link.href}
+                    download
+                    className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}`}
+                  >
+                    {link.label}
+                  </a>
+                ))
+              : null}
             <button
               type="button"
               className="artifact-rail-close"
@@ -575,6 +607,17 @@ export function ArtifactRail({
               exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             >
+              {isMedia && artifact.kind === "media" ? (
+                <div className="artifact-rail-media">
+                  <p className="artifact-rail-media-caption">{artifact.title}</p>
+                  <img
+                    className="artifact-rail-media-img"
+                    src={artifact.url}
+                    alt={artifact.title}
+                  />
+                </div>
+              ) : null}
+
               {showDiagramSurface && activeDiagram ? (
                 <DiagramPane
                   diagram={activeDiagram}
@@ -585,7 +628,10 @@ export function ArtifactRail({
                 />
               ) : null}
 
-              {!showDiagramSurface && tab === "preview" && report?.preview ? (
+              {!isMedia &&
+              !showDiagramSurface &&
+              tab === "preview" &&
+              report?.preview ? (
                 <ReportView
                   preview={report.preview}
                   downloads={report.downloads}
@@ -660,12 +706,15 @@ export function ArtifactRail({
                 />
               ) : null}
 
-              {!showDiagramSurface && tab === "preview" && !hasPreview ? (
+              {!isMedia &&
+              !showDiagramSurface &&
+              tab === "preview" &&
+              !hasPreview ? (
                 <p className="artifact-rail-loading muted">
                   Превью пустое — откройте вкладку PDF.
                 </p>
               ) : null}
-              {!showDiagramSurface && tab === "pdf" && !hasPdf ? (
+              {!isMedia && !showDiagramSurface && tab === "pdf" && !hasPdf ? (
                 <p className="artifact-rail-loading muted">PDF ещё нет.</p>
               ) : null}
             </motion.div>

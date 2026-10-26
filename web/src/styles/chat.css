@@ -401,6 +401,54 @@
   );
 }
 
+.report-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.65rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  background: color-mix(in srgb, var(--sheet) 92%, var(--secondary));
+}
+
+.report-edit-bar-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.report-edit-toggle {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  background: var(--sheet);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.report-edit-toggle:hover {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet));
+  color: var(--ink);
+}
+
+.report-edit-toggle.is-on {
+  background: color-mix(in srgb, var(--primary) 12%, var(--sheet));
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--ink);
+}
+
+.report.is-editing-mode .report-edit-bar {
+  border-color: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
 .report-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1166,6 +1214,9 @@
   left: 50%;
   z-index: 80;
   transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
   padding: 0.65rem 1.15rem;
   border-radius: 999px;
   font-size: 0.88rem;
@@ -1174,6 +1225,26 @@
   background: color-mix(in srgb, var(--ink) 88%, var(--primary));
   box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 28%, transparent);
   animation: liber-toast-in 0.28s ease-out;
+}
+
+.liber-toast-undo {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+  opacity: 0.92;
+}
+
+.liber-toast-undo:hover,
+.liber-toast-undo:focus-visible {
+  opacity: 1;
+  outline: none;
 }
 
 @keyframes liber-toast-in {
@@ -2722,8 +2793,69 @@
 
 .thinking-fold-line.is-skipped {
   color: var(--muted-2);
-  text-decoration: line-through;
-  opacity: 0.55;
+  opacity: 0.72;
+}
+
+.thinking-fold-line.is-skipped .thinking-fold-text {
+  text-decoration: none;
+  font-style: italic;
+}
+
+.thinking-fold-sublist {
+  list-style: none;
+  margin: 0.15rem 0 0.2rem;
+  padding: 0 0 0 1.1rem;
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.thinking-fold-sub {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.78em;
+  color: var(--muted-2);
+  padding: 0.08rem 0;
+}
+
+.thinking-fold-sub.is-active {
+  color: var(--muted);
+}
+
+.thinking-fold-sub.is-done {
+  opacity: 0.85;
+}
+
+.thinking-fold-sub.is-skipped {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.thinking-fold-skip-mark {
+  font-size: 0.7rem;
+  line-height: 1.15rem;
+  color: var(--muted-2);
+}
+
+.thinking-fold-pause {
+  display: block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.thinking-fold-hint {
+  margin: 0.35rem 0 0.1rem 1.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--danger, #8b3a2a);
+  border-left: 2px solid color-mix(in srgb, var(--danger, #8b3a2a) 55%, var(--rule));
+  background: color-mix(in srgb, var(--danger, #8b3a2a) 6%, transparent);
+}
+
+.thinking-fold.is-frozen .thinking-fold-title {
+  color: var(--muted);
 }
 
 .thinking-fold-dot {
@@ -2733,8 +2865,68 @@
   background: color-mix(in srgb, var(--muted-2) 55%, transparent);
 }
 
-.thinking-fold-chips {
+.thinking-fold-film {
   display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.15rem 1.35rem;
+  max-width: min(100%, 22rem);
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+  scrollbar-width: thin;
+}
+
+.thinking-fold-frame {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--muted-2));
+  cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  animation: thinking-film-in 0.35s ease forwards;
+}
+
+.thinking-fold.is-reduced .thinking-fold-frame {
+  opacity: 1;
+  animation: none;
+}
+
+.thinking-fold-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thinking-fold-frame:hover,
+.thinking-fold-frame:focus-visible {
+  border-color: var(--muted);
+  outline: none;
+}
+
+@keyframes thinking-film-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.thinking-fold-recap {
+  margin: 0.4rem 0 0.1rem 1.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.thinking-fold-chips {
+  display: none; /* phase 2B: plaques removed — keep rule inert if stale markup */
   flex-wrap: wrap;
   gap: 0.35rem;
   padding: 0.2rem 0.15rem 0.35rem 1.35rem;
@@ -4426,9 +4618,14 @@
   width: min(100%, 26rem);
 }
 
-/* Report PDF: one compact row — icon + title + download/open (no chart dump) */
-.deck-file-card.is-report-pdf.is-compact {
+/* Report PDF / DOCX: compact row — icon + title + download (+ open for PDF) */
+.deck-file-card.is-report-pdf.is-compact,
+.deck-file-card.is-report-docx.is-compact {
   overflow: hidden;
+}
+
+.deck-file-card.is-report-docx .deck-file-card-compact-badge {
+  letter-spacing: 0.04em;
 }
 
 .deck-file-card-compact {

@@ -2,7 +2,7 @@
 
 import { PdfThumb } from "./PdfThumb";
 
-type Kind = "pptx" | "deck_pdf" | "pdf";
+type Kind = "pptx" | "deck_pdf" | "pdf" | "docx";
 
 type Props = {
   kind: Kind;
@@ -13,6 +13,8 @@ type Props = {
   fileLabel?: string;
   /** Human report title for the compact PDF teaser. */
   docTitle?: string | null;
+  /** Same Source → DOCX twin; download on the same report card. */
+  docxHref?: string | null;
   onPrimary?: () => void;
   primaryLabel?: string;
   /** Extra slide thumbs under the hero (deck). */
@@ -52,6 +54,43 @@ function FileGlyph({ kind }: { kind: Kind }) {
           d="M6 8.2h10M6 11h7.5M6 13.8h5"
           stroke="currentColor"
           strokeWidth="1.35"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (kind === "docx") {
+    return (
+      <svg
+        className="deck-file-card-glyph"
+        width="22"
+        height="22"
+        viewBox="0 0 22 22"
+        aria-hidden
+      >
+        <path
+          d="M6 2.8h7.2L17.2 7v12.2a1.6 1.6 0 0 1-1.6 1.6H6A1.6 1.6 0 0 1 4.4 19.2V4.4A1.6 1.6 0 0 1 6 2.8Z"
+          fill="currentColor"
+          opacity="0.12"
+        />
+        <path
+          d="M6 2.8h7.2L17.2 7v12.2a1.6 1.6 0 0 1-1.6 1.6H6A1.6 1.6 0 0 1 4.4 19.2V4.4A1.6 1.6 0 0 1 6 2.8Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M13.1 2.9V7h4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M7.6 12.2h6.8M7.6 15h4.8"
+          stroke="currentColor"
+          strokeWidth="1.25"
           strokeLinecap="round"
         />
       </svg>
@@ -101,39 +140,55 @@ export function DeckFileCard({
   pdfUrl = null,
   fileLabel,
   docTitle = null,
+  docxHref = null,
   onPrimary,
   primaryLabel,
   filmstrip = [],
 }: Props) {
   const isPptx = kind === "pptx";
   const isReportPdf = kind === "pdf";
+  const isDocx = kind === "docx";
   const title =
     fileLabel ||
-    (isPptx ? "deck_slides.pptx" : isReportPdf ? "report.pdf" : "deck.pdf");
-  const badge = isPptx ? "PPTX" : "PDF";
+    (isPptx
+      ? "deck_slides.pptx"
+      : isReportPdf
+        ? "report.pdf"
+        : isDocx
+          ? "report.docx"
+          : "deck.pdf");
+  const badge = isPptx ? "PPTX" : isDocx ? "DOCX" : "PDF";
   const isDeckPdf = kind === "deck_pdf";
   const kindHint = isPptx
     ? "Презентация · PowerPoint"
     : isReportPdf
       ? "PDF отчёта"
-      : "Презентация · PDF";
+      : isDocx
+        ? "DOCX отчёта"
+        : "Презентация · PDF";
   const defaultPrimary = isPptx || isDeckPdf ? "Просмотр" : "Открыть";
   const actionLabel = primaryLabel || defaultPrimary;
   const kindClass = isPptx
     ? "is-pptx"
     : isReportPdf
       ? "is-pdf is-report-pdf"
-      : "is-pdf is-deck-pdf";
+      : isDocx
+        ? "is-docx is-report-docx"
+        : "is-pdf is-deck-pdf";
   const emptyHint = isPptx
     ? "Презентация · PPTX"
     : isReportPdf
       ? "PDF отчёта"
-      : "Презентация · PDF";
+      : isDocx
+        ? "DOCX отчёта"
+        : "Презентация · PDF";
   const strip = filmstrip.filter(Boolean).slice(0, 6);
   const teaserTitle = (docTitle || "").trim() || title;
+  const hasDocxTwin = Boolean(docxHref);
 
-  /* Report PDF: compact file row — no page/chart dump, one primary CTA */
+  /* One report card: Source → PDF (+ DOCX twin downloads). */
   if (isReportPdf) {
+    const eyebrow = hasDocxTwin ? "Отчёт · PDF · DOCX" : "Отчёт · PDF";
     return (
       <article className={`deck-file-card ${kindClass} is-compact`}>
         <button
@@ -150,7 +205,7 @@ export function DeckFileCard({
             <span className="deck-file-card-compact-badge">PDF</span>
           </span>
           <span className="deck-file-card-compact-copy">
-            <span className="deck-file-card-compact-eyebrow">Отчёт · PDF</span>
+            <span className="deck-file-card-compact-eyebrow">{eyebrow}</span>
             <span className="deck-file-card-compact-title">{teaserTitle}</span>
             <span className="deck-file-card-compact-file" title={title}>
               {title}
@@ -163,8 +218,18 @@ export function DeckFileCard({
               className="deck-file-card-compact-dl"
               onClick={(e) => e.stopPropagation()}
             >
-              Скачать
+              PDF
             </a>
+            {docxHref ? (
+              <a
+                href={docxHref}
+                download
+                className="deck-file-card-compact-dl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                DOCX
+              </a>
+            ) : null}
             {onPrimary ? (
               <span className="deck-file-card-compact-go" aria-hidden>
                 {actionLabel}
@@ -173,6 +238,35 @@ export function DeckFileCard({
             ) : null}
           </span>
         </button>
+      </article>
+    );
+  }
+
+  /* DOCX-only fallback (no PDF yet) */
+  if (isDocx) {
+    return (
+      <article className={`deck-file-card ${kindClass} is-compact`}>
+        <a
+          href={href}
+          download
+          className="deck-file-card-compact"
+          aria-label={`Скачать ${teaserTitle}`}
+        >
+          <span className="deck-file-card-compact-mark" aria-hidden>
+            <FileGlyph kind="docx" />
+            <span className="deck-file-card-compact-badge">DOCX</span>
+          </span>
+          <span className="deck-file-card-compact-copy">
+            <span className="deck-file-card-compact-eyebrow">Отчёт · DOCX</span>
+            <span className="deck-file-card-compact-title">{teaserTitle}</span>
+            <span className="deck-file-card-compact-file" title={title}>
+              {title}
+            </span>
+          </span>
+          <span className="deck-file-card-compact-actions">
+            <span className="deck-file-card-compact-dl">Скачать</span>
+          </span>
+        </a>
       </article>
     );
   }

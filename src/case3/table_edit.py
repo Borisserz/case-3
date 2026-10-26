@@ -205,6 +205,9 @@ def edit_table_in_run(
     texs = sorted(out_dir.glob("*.tex"))
     if not texs:
         raise TableEditError("no .tex in run")
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="table", target=str(table_index))
     tex_path = texs[0]
     tex_bak = tex_path.read_text(encoding="utf-8")
 
@@ -256,9 +259,14 @@ def edit_table_in_run(
         tex_path.write_text(tex_bak, encoding="utf-8")
         if meta_bak is not None:
             meta_path.write_text(meta_bak, encoding="utf-8")
+        from case3.run_undo import clear_undo
+
+        clear_undo(out_dir)
         raise TableEditError(f"document rebuild failed: {exc}") from exc
 
     v = int(time.time())
+    from case3.run_undo import undo_meta
+
     return {
         "table_index": table_index,
         "caption": caption,
@@ -267,4 +275,5 @@ def edit_table_in_run(
         "artifacts": {k: str(p) for k, p in artifacts.items()},
         "version": v,
         "media_status": meta.get("media_status") or {},
+        "undo": undo_meta(out_dir),
     }

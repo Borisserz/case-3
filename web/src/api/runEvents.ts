@@ -1,9 +1,33 @@
 /** SSE client for Liber run progress (stages / artifacts / terminal). */
 
+import type { CraftFilmFrame, CraftRecap } from "../domain/craftSteps";
+
+export type RunStepPayload = {
+  parent: string;
+  id: string;
+  status: "active" | "done" | "skipped" | string;
+  reason?: string | null;
+  label?: string | null;
+  scope?: string;
+};
+
 export type RunEventsHandlers = {
-  onStage?: (stage: string, detail: string | null, scope: string) => void;
+  onStage?: (
+    stage: string,
+    detail: string | null,
+    scope: string,
+    etaSec?: number | null,
+  ) => void;
+  onStep?: (step: RunStepPayload) => void;
+  onFilm?: (frame: CraftFilmFrame) => void;
+  /** Kept for protocol; UI no longer shows kind plaques. */
   onArtifact?: (kind: string) => void;
-  onTerminal?: (kind: "done" | "error" | "cancelled", error?: string) => void;
+  onTerminal?: (
+    kind: "done" | "error" | "cancelled",
+    error?: string,
+    hint?: string,
+    recap?: CraftRecap | null,
+  ) => void;
   /** SSE failed — caller should fall back to status poll. */
   onFallback?: () => void;
 };
@@ -33,10 +57,15 @@ export function openRunEvents(
     handlers.onFallback?.();
   };
 
-  const finish = (kind: "done" | "error" | "cancelled", err?: string) => {
+  const finish = (
+    kind: "done" | "error" | "cancelled",
+    err?: string,
+    hint?: string,
+    recap?: CraftRecap | null,
+  ) => {
     if (finished) return;
     finished = true;
-    handlers.onTerminal?.(kind, err);
+    handlers.onTerminal?.(kind, err, hint, recap);
     es.close();
   };
 
@@ -47,12 +76,46 @@ export function openRunEvents(
         stage?: string;
         detail?: string | null;
         scope?: string;
+        eta_s?: number;
       };
+      const eta =
+        typeof data.eta_s === "number" && data.eta_s > 0 ? data.eta_s : null;
       handlers.onStage?.(
         data.stage || "queued",
         data.detail ?? null,
         data.scope || "pipeline",
+        eta,
       );
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onStep = (ev: Event) => {
+    gotEvent = true;
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as RunStepPayload;
+      if (data?.id && data?.parent) handlers.onStep?.(data);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onFilm = (ev: Event) => {
+    gotEvent = true;
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        id?: string;
+        kind?: string;
+        url?: string;
+      };
+      if (data?.id && data?.url) {
+        handlers.onFilm?.({
+          id: data.id,
+          kind: data.kind || "chart",
+          url: data.url,
+        });
+      }
     } catch {
       /* ignore */
     }
@@ -71,13 +134,21 @@ export function openRunEvents(
   const onDone = (ev: Event) => {
     gotEvent = true;
     let err: string | undefined;
+    let hint: string | undefined;
+    let recap: CraftRecap | null = null;
     try {
-      const data = JSON.parse((ev as MessageEvent).data) as { error?: string };
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        error?: string;
+        hint?: string;
+        recap?: CraftRecap;
+      };
       err = data.error;
+      hint = data.hint;
+      if (data.recap && typeof data.recap === "object") recap = data.recap;
     } catch {
       /* ignore */
     }
-    finish("done", err);
+    finish("done", err, hint, recap);
   };
 
   const onCancelled = (ev: Event) => {
@@ -94,10 +165,11 @@ export function openRunEvents(
         const data = JSON.parse(ev.data) as {
           error?: string;
           status?: string;
+          hint?: string;
         };
         if (data.error != null || data.status === "error") {
           gotEvent = true;
-          finish("error", data.error);
+          finish("error", data.error, data.hint, null);
           return;
         }
       } catch {
@@ -114,7 +186,8 @@ export function openRunEvents(
   };
 
   es.addEventListener("stage", onStage);
-  es.addEventListener("step", onStage);
+  es.addEventListener("step", onStep);
+  es.addEventListener("film", onFilm);
   es.addEventListener("artifact", onArtifact);
   es.addEventListener("done", onDone);
   es.addEventListener("cancelled", onCancelled);
@@ -123,7 +196,8 @@ export function openRunEvents(
   return () => {
     closed = true;
     es.removeEventListener("stage", onStage);
-    es.removeEventListener("step", onStage);
+    es.removeEventListener("step", onStep);
+    es.removeEventListener("film", onFilm);
     es.removeEventListener("artifact", onArtifact);
     es.removeEventListener("done", onDone);
     es.removeEventListener("cancelled", onCancelled);

@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import threading
+import time
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -1312,9 +1313,13 @@ async def edit_run_diagram(
         )
     except DiagramEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    undo = None
+    if isinstance(diagram, dict):
+        undo = diagram.pop("undo", None)
     return {
         "diagram": diagram,
         "diagrams": _load_diagrams_from_out(out_dir),
+        "undo": undo,
     }
 
 
@@ -1457,6 +1462,7 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
             "kind": "chart",
             "url": f"/api/runs/{run_id}/figures/{chart_id}.png?v={v}",
         },
+        "undo": result.get("undo"),
         "warnings": [],
     }
 
@@ -1540,6 +1546,7 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
             "kind": "figure",
             "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
         },
+        "undo": result.get("undo"),
         "warnings": [],
     }
 
@@ -1602,6 +1609,7 @@ async def edit_run_table(
         "media_status": media,
         "downloads": files,
         "preview": preview,
+        "undo": result.get("undo"),
         "warnings": [],
     }
 
@@ -1658,7 +1666,57 @@ async def edit_run_paragraph(
         "media_status": media,
         "downloads": files,
         "preview": preview,
+        "undo": result.get("undo"),
         "warnings": [],
+    }
+
+
+@app.post("/api/runs/{run_id}/undo")
+async def undo_last_edit(run_id: str) -> dict[str, Any]:
+    """Restore the single undo snapshot from the last successful Liber edit."""
+    from case3.run_undo import UndoError, apply_undo
+
+    out_dir = _resolve_run_dir(run_id)
+    try:
+        result = await asyncio.to_thread(partial(apply_undo, out_dir, rebuild=True))
+    except UndoError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    media: dict[str, Any] = {}
+    meta_path = out_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            media = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get(
+                "media_status"
+            ) or {}
+        except (OSError, json.JSONDecodeError):
+            media = {}
+    if not isinstance(media, dict):
+        media = {}
+    preview = _build_preview_payload(run_id, out_dir, media)
+    v = int(time.time())
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
+    # Cache-bust figures in preview
+    for block in preview.get("blocks") or []:
+        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
+            url = str(block["url"])
+            sep = "&" if "?" in url else "?"
+            block["url"] = f"{url}{sep}v={v}"
+
+    return {
+        "run_id": run_id,
+        "status": "ok",
+        "undone": {"kind": result.get("kind"), "target": result.get("target")},
+        "downloads": files,
+        "preview": preview,
+        "undo": None,
+        "warnings": (
+            [str(result["rebuild_error"])] if result.get("rebuild_error") else []
+        ),
     }
 
 

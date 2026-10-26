@@ -7,6 +7,7 @@ import { EmptyState } from "./EmptyState";
 import { IconCopy, IconLiberMark } from "./icons";
 import { LONG_TEXT_CHARS } from "./liberConstants";
 import type { LiberWorkMode } from "./liberModes";
+import type { CraftFilmFrame } from "./domain/craftSteps";
 import type { Msg, RunResult, SourceAttachment } from "./liberTypes";
 import { reportThumb, reportTitle } from "./liberRunHelpers";
 import { MsgMarkdown } from "./lightMd";
@@ -31,6 +32,7 @@ type Props = {
   onOpenDiagram: (msgId: string, result: RunResult, diagramId: string) => void;
   onOpenPresentation: (msgId: string, result: RunResult) => void;
   onOpenDeckSlides: (msgId: string, result: RunResult) => void;
+  onOpenFilm?: (msgId: string, frame: CraftFilmFrame) => void;
 };
 
 export function ChatMessages({
@@ -50,6 +52,7 @@ export function ChatMessages({
   onOpenDiagram,
   onOpenPresentation,
   onOpenDeckSlides,
+  onOpenFilm,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -144,7 +147,11 @@ export function ChatMessages({
                     <IconLiberMark size={28} />
                   </span>
                   <div className="msg-bot-stack">
-                    {m.thinking?.length || m.artifactChips?.length ? (
+                    {m.thinking?.length ||
+                    m.craftFilm?.length ||
+                    m.craftSubsteps?.length ||
+                    m.craftRecap ||
+                    m.errorHint ? (
                       <ThinkingFold
                         lines={m.thinking || []}
                         live={slidesLive}
@@ -153,8 +160,19 @@ export function ChatMessages({
                         }
                         stage={m.pendingStage || m.result?.slides_stage}
                         thinkingMode={m.thinkingMode || "report"}
-                        artifactChips={m.artifactChips}
                         reduceMotion={reduceMotion}
+                        craftSubsteps={m.craftSubsteps}
+                        craftSkipped={m.craftSkipped}
+                        craftFilm={m.craftFilm}
+                        craftRecap={m.craftRecap}
+                        onOpenFilm={
+                          onOpenFilm
+                            ? (frame) => onOpenFilm(m.id, frame)
+                            : undefined
+                        }
+                        etaSec={m.etaSec}
+                        craftFrozen={m.craftFrozen}
+                        errorHint={m.errorHint}
                         elapsedSec={
                           slidesLive && m.thinkingStartedAt
                             ? Math.max(
@@ -250,8 +268,19 @@ export function ChatMessages({
                       live
                       stage={m.pendingStage}
                       thinkingMode={m.thinkingMode || "report"}
-                      artifactChips={m.artifactChips}
                       reduceMotion={reduceMotion}
+                      craftSubsteps={m.craftSubsteps}
+                      craftSkipped={m.craftSkipped}
+                      craftFilm={m.craftFilm}
+                      craftRecap={m.craftRecap}
+                      onOpenFilm={
+                        onOpenFilm
+                          ? (frame) => onOpenFilm(m.id, frame)
+                          : undefined
+                      }
+                      etaSec={m.etaSec}
+                      craftFrozen={m.craftFrozen}
+                      errorHint={m.errorHint}
                       elapsedSec={
                         m.thinkingStartedAt
                           ? Math.max(
@@ -277,14 +306,29 @@ export function ChatMessages({
                   </span>
                   <div className="msg-bot-stack">
                     {m.role === "bot" &&
-                    (m.thinking?.length || m.artifactChips?.length) ? (
+                    (m.thinking?.length ||
+                      m.craftFilm?.length ||
+                      m.craftSubsteps?.length ||
+                      m.craftRecap ||
+                      m.errorHint) ? (
                       <ThinkingFold
                         lines={m.thinking || []}
                         live={false}
                         stage={m.pendingStage}
                         thinkingMode={m.thinkingMode || "report"}
-                        artifactChips={m.artifactChips}
                         reduceMotion={reduceMotion}
+                        craftSubsteps={m.craftSubsteps}
+                        craftSkipped={m.craftSkipped}
+                        craftFilm={m.craftFilm}
+                        craftRecap={m.craftRecap}
+                        onOpenFilm={
+                          onOpenFilm
+                            ? (frame) => onOpenFilm(m.id, frame)
+                            : undefined
+                        }
+                        etaSec={m.etaSec}
+                        craftFrozen={m.craftFrozen}
+                        errorHint={m.errorHint}
                         elapsedSec={m.thinkingElapsedSec}
                       />
                     ) : null}

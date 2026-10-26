@@ -33,6 +33,10 @@ import {
 } from "./ParagraphEditSheet";
 import { PipelineFlow } from "./PipelineFlow";
 import {
+  blockEditVisible,
+  reportEditToggleVisible,
+} from "./domain/reportEditMode";
+import {
   isBlockHiddenByCollapse,
   loadCollapsedIds,
   saveCollapsedIds,
@@ -178,14 +182,38 @@ export function ReportView({
   const [paraFor, setParaFor] = useState<number | null>(null);
   const [draft, setDraft] = useState<ChartEditDraft | null>(null);
   const [sheetPreviewHtml, setSheetPreviewHtml] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => loadCollapsedIds(runId || ""),
   );
   const lbTitle = useId();
+  const showEditToggle = reportEditToggleVisible({
+    onEditFigure,
+    onEditImage,
+    onEditTable,
+    onEditParagraph,
+  });
+  const canEditPara = blockEditVisible(editMode, Boolean(onEditParagraph));
+  const canEditTable = blockEditVisible(editMode, Boolean(onEditTable));
+  const canEditFigure = blockEditVisible(editMode, Boolean(onEditFigure));
+  const canEditImage = blockEditVisible(editMode, Boolean(onEditImage));
 
   useEffect(() => {
     setCollapsed(loadCollapsedIds(runId || ""));
+    setEditMode(false);
   }, [runId]);
+
+  const leaveEditMode = useCallback(() => {
+    setEditMode(false);
+    setSheetFor(null);
+    setDraft(null);
+    setSheetPreviewHtml(null);
+    setImageFor(null);
+    setTableFor(null);
+    setTableDraft(null);
+    setParaFor(null);
+    onEditCancel?.();
+  }, [onEditCancel]);
 
   const toggleSection = useCallback(
     (headingId: string) => {
@@ -243,8 +271,29 @@ export function ReportView({
     if (editingFigureId) setSheetFor(editingFigureId);
   }, [editingFigureId]);
   return (
-    <article className="report">
+    <article className={`report${editMode ? " is-editing-mode" : ""}`}>
       <div className="report-rail" aria-hidden />
+
+      {showEditToggle ? (
+        <div className="report-edit-bar">
+          <p className="report-edit-bar-hint">
+            {editMode
+              ? "Режим правки — «Изменить» у абзацев, таблиц, графиков и фото"
+              : "Чтение · правки PDF/DOCX из того же Source"}
+          </p>
+          <button
+            type="button"
+            className={`report-edit-toggle${editMode ? " is-on" : ""}`}
+            aria-pressed={editMode}
+            onClick={() => {
+              if (editMode) leaveEditMode();
+              else setEditMode(true);
+            }}
+          >
+            {editMode ? "Готово" : "Редактировать"}
+          </button>
+        </div>
+      ) : null}
 
       {warnings && warnings.length > 0 ? (
         <header className="report-meta">
@@ -360,7 +409,7 @@ export function ReportView({
                   ) : (
                     <p className="report-p">{b.text}</p>
                   )}
-                  {onEditParagraph && !isEditingPara && (
+                  {canEditPara && !isEditingPara && (
                     <button
                       type="button"
                       className={`report-fig-edit report-para-edit${sheetOpen ? " is-open" : ""}`}
@@ -384,7 +433,7 @@ export function ReportView({
                     </div>
                   )}
                 </div>
-                {sheetOpen && onEditParagraph && (
+                {editMode && sheetOpen && onEditParagraph && (
                   <ParagraphEditSheet
                     open
                     paragraphIndex={n}
@@ -463,7 +512,7 @@ export function ReportView({
                       <span className="report-table-draft-tag"> черновик</span>
                     ) : null}
                   </figcaption>
-                  {onEditTable && !isEditingTable && (
+                  {canEditTable && !isEditingTable && (
                     <button
                       type="button"
                       className={`report-fig-edit${tableOpen ? " is-open" : ""}`}
@@ -523,7 +572,7 @@ export function ReportView({
                     <p className="fig-press-hint">TeX · PDF · DOCX</p>
                   </div>
                 )}
-                {tableOpen && onEditTable && (
+                {editMode && tableOpen && onEditTable && (
                   <TableEditSheet
                     open
                     tableIndex={n}
@@ -649,7 +698,7 @@ export function ReportView({
                       ↗
                     </button>
                   )}
-                  {isChart && onEditFigure && !isEditing && (
+                  {isChart && canEditFigure && !isEditing && (
                     <button
                       type="button"
                       className={`report-fig-edit${sheetOpen ? " is-open" : ""}`}
@@ -671,7 +720,7 @@ export function ReportView({
                       {sheetOpen ? "Закрыть" : "Изменить"}
                     </button>
                   )}
-                  {isPhoto && onEditImage && !isEditing && (
+                  {isPhoto && canEditImage && !isEditing && (
                     <button
                       type="button"
                       className={`report-fig-edit${imageOpen ? " is-open" : ""}`}
@@ -769,7 +818,7 @@ export function ReportView({
                   {caption}
                 </figcaption>
 
-                {isChart && sheetOpen && onEditFigure && (
+                {editMode && isChart && sheetOpen && onEditFigure && (
                   <ChartEditSheet
                     open
                     figureId={b.id}
@@ -798,7 +847,7 @@ export function ReportView({
                     }}
                   />
                 )}
-                {isPhoto && imageOpen && onEditImage && (
+                {editMode && isPhoto && imageOpen && onEditImage && (
                   <ImageEditModal
                     open
                     figureId={b.id}
