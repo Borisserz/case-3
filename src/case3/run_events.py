@@ -444,12 +444,27 @@ class RunEventBus:
                 "film": sorted(st.film_seen),
             }
 
-    def subscribe(self, run_id: str, *, timeout_s: float = 1200.0) -> Iterator[dict[str, Any]]:
-        """Yield event dicts until terminal or timeout."""
+    def subscribe(
+        self,
+        run_id: str,
+        *,
+        timeout_s: float = 1200.0,
+        keepalive_s: float = 15.0,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield event dicts until terminal or timeout.
+
+        Emits ``event: ping`` every ``keepalive_s`` while idle so Vite/proxies
+        do not idle-reset the SSE socket (ECONNRESET in the frontend terminal).
+        """
         st = self._state(run_id)
         sent = 0
         deadline = time.monotonic() + max(0.1, timeout_s)
+        last_out = time.monotonic()
+        keep_every = max(1.0, float(keepalive_s))
         while True:
+            ping: dict[str, Any] | None = None
+            batch: list[dict[str, Any]] = []
+            finished = False
             with st.cond:
                 while sent >= len(st.events) and not st.done:
                     remaining = deadline - time.monotonic()
@@ -462,14 +477,24 @@ class RunEventBus:
                         }
                         return
                     st.cond.wait(timeout=min(0.5, remaining))
+                    if sent >= len(st.events) and not st.done:
+                        if time.monotonic() - last_out >= keep_every:
+                            ping = {"event": "ping", "t": time.time()}
+                            break
 
                 while sent < len(st.events):
-                    ev = st.events[sent]
+                    batch.append(dict(st.events[sent]))
                     sent += 1
-                    yield dict(ev)
+                finished = st.done and sent >= len(st.events)
 
-                if st.done:
-                    return
+            if ping is not None:
+                last_out = time.monotonic()
+                yield ping
+            for ev in batch:
+                last_out = time.monotonic()
+                yield ev
+            if finished:
+                return
 
 
 # Process-wide bus used by pipeline + slides + API

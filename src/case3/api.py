@@ -967,8 +967,12 @@ def stream_run_events(run_id: str) -> StreamingResponse:
                     yield _sse_pack(kind, payload)
                     return
 
-        for ev in EVENTS.subscribe(run_id, timeout_s=1200.0):
+        for ev in EVENTS.subscribe(run_id, timeout_s=1200.0, keepalive_s=15.0):
             kind = str(ev.get("event") or "stage")
+            # SSE comment — keeps Vite proxy / TCP alive during long llm waits
+            if kind == "ping":
+                yield ": keepalive\n\n"
+                continue
             data = {k: v for k, v in ev.items() if k != "event"}
             yield _sse_pack(kind, data)
             if kind in {"done", "error", "cancelled"}:
