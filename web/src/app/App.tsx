@@ -1984,7 +1984,7 @@ export default function App() {
                 .catch(() => {
                   /* ignore transient */
                 });
-            }, 1000);
+            }, 2000);
             // Safety: if cancel while waiting SSE
             cancelWatch = window.setInterval(() => {
               if (cancelRequestedRef.current) {

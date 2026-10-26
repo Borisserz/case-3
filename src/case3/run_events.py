@@ -7,6 +7,7 @@ Durable craft log: meta["steps"] (stage/step/terminal only; no film/sound).
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from collections.abc import Iterator
@@ -69,35 +70,66 @@ def compact_step_entry(event: dict[str, Any]) -> dict[str, Any] | None:
     return out
 
 
-def append_meta_step(out_dir: Path, entry: dict[str, Any]) -> None:
-    """Append one craft step into out/meta.json (and logs twin if present)."""
-    out = Path(out_dir)
-    meta_path = out / "meta.json"
-    if not meta_path.is_file():
+def note_craft_stage(
+    meta: dict[str, Any],
+    *,
+    stage: str,
+    scope: str = "pipeline",
+    detail: str | None = None,
+) -> None:
+    """Append one durable stage when the stage *id* changes (not every cht_ detail).
+
+    Avoids Windows meta.json write storms during charts/images progress bumps.
+    """
+    key = f"{scope}:{stage}"
+    if str(meta.get("_craft_stage_key") or "") == key:
         return
-    with _meta_file_lock:
+    entry = compact_step_entry(
+        {
+            "event": "stage",
+            "stage": stage,
+            "scope": scope,
+            "t": time.time(),
+            **({"detail": detail} if detail else {}),
+        }
+    )
+    if not entry:
+        return
+    steps = list(meta.get("steps") or [])
+    if not isinstance(steps, list):
+        steps = []
+    steps.append(entry)
+    meta["steps"] = steps[-STEPS_CAP:]
+    meta["_craft_stage_key"] = key
+
+
+def write_meta_atomic(
+    meta_path: Path,
+    payload: str,
+    *,
+    logs_meta: Path | None = None,
+) -> None:
+    """Write meta.json via tmp+replace (Windows-safe vs readers/AV)."""
+    meta_path = Path(meta_path)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = meta_path.with_suffix(".json.tmp")
+    last_err: OSError | None = None
+    for attempt in range(6):
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if not isinstance(meta, dict):
-            return
-        steps = list(meta.get("steps") or [])
-        if not isinstance(steps, list):
-            steps = []
-        steps.append(dict(entry))
-        meta["steps"] = steps[-STEPS_CAP:]
-        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, meta_path)
+            last_err = None
+            break
+        except OSError as exc:
+            last_err = exc
+            time.sleep(0.04 * (attempt + 1))
+    if last_err is not None:
+        # Last resort — may still race with status poll on Win
+        meta_path.write_text(payload, encoding="utf-8")
+    if logs_meta is not None:
         try:
-            meta_path.write_text(payload, encoding="utf-8")
-        except OSError:
-            return
-        # Best-effort logs mirror (same layout as pipeline._write_meta)
-        try:
-            run_id = str(meta.get("run_id") or out.name)
-            logs_meta = out.parent.parent / "logs" / run_id / "meta.json"
-            if logs_meta.is_file():
-                logs_meta.write_text(payload, encoding="utf-8")
+            logs_meta.parent.mkdir(parents=True, exist_ok=True)
+            logs_meta.write_text(payload, encoding="utf-8")
         except OSError:
             pass
 
@@ -178,17 +210,6 @@ class RunEventBus:
         """Allow more events after pipeline done (e.g. on-demand slides job)."""
         self.ensure(run_id)
 
-    def _persist_event(self, run_id: str, event: dict[str, Any]) -> None:
-        entry = compact_step_entry(event)
-        if not entry:
-            return
-        st = self._state(run_id)
-        with st.cond:
-            out_dir = st.out_dir
-        if out_dir is None:
-            return
-        append_meta_step(out_dir, entry)
-
     def seed_from_steps(self, run_id: str, steps: list[Any]) -> int:
         """Load meta.steps into an empty in-memory bus (no re-persist)."""
         st = self._state(run_id)
@@ -233,8 +254,8 @@ class RunEventBus:
                 st.done = True
                 st.terminal = kind
             st.cond.notify_all()
-        if appended:
-            self._persist_event(run_id, event)
+        # Do NOT persist meta.steps here — pipeline/slides write steps once per
+        # stage id. Double RMW on every publish hammered Windows meta.json (AV).
 
     def publish_stage(
         self,

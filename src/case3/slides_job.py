@@ -188,25 +188,12 @@ def _read_meta(out_dir: Path) -> dict[str, Any]:
 
 
 def _write_meta(out_dir: Path, meta: dict[str, Any], logs_dir: Path | None = None) -> None:
-    from case3.run_events import _meta_file_lock
+    from case3.run_events import _meta_file_lock, write_meta_atomic
 
     with _meta_file_lock:
-        meta_path = out_dir / "meta.json"
-        mem = meta.get("steps") if isinstance(meta.get("steps"), list) else []
-        disk: list = []
-        if meta_path.is_file():
-            try:
-                prev = json.loads(meta_path.read_text(encoding="utf-8"))
-                if isinstance(prev, dict) and isinstance(prev.get("steps"), list):
-                    disk = prev["steps"]
-            except (OSError, json.JSONDecodeError):
-                pass
-        meta["steps"] = disk if len(disk) >= len(mem) else mem
         payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        meta_path.write_text(payload, encoding="utf-8")
-        if logs_dir is not None:
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
+        logs_meta = (logs_dir / "meta.json") if logs_dir is not None else None
+        write_meta_atomic(out_dir / "meta.json", payload, logs_meta=logs_meta)
 
 
 def _set_slides(
@@ -226,6 +213,9 @@ def _set_slides(
         meta["slides_error"] = error
     elif "slides_error" in meta and status == "ok":
         meta["slides_error"] = None
+    from case3.run_events import note_craft_stage
+
+    note_craft_stage(meta, stage=stage, scope="slides")
     _write_meta(out_dir, meta, logs_dir)
     run_id = str(meta.get("run_id") or out_dir.name)
     if status == "running":

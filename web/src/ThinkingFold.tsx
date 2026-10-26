@@ -139,7 +139,7 @@ export function ThinkingFold({
       : "";
   const eta = live && !craftFrozen ? formatEtaSuffix(etaSec) : "";
   const detailBit = activeSub ? ` · ${activeSub.label}` : "";
-  // llm can sit up to VISION_TIMEOUT_S (~5 min) with no substeps — say so.
+  // llm / diagram_repair can sit up to VISION_TIMEOUT_S (~5 min) with no substeps.
   const llmWait =
     live &&
     !craftFrozen &&
@@ -147,7 +147,13 @@ export function ThinkingFold({
     (stage === "llm" ||
       stage === "slides_llm" ||
       stage === "slides_llm_retry");
-  const waitBit = llmWait ? " · жду модель" : "";
+  const repairWait =
+    live && !craftFrozen && !activeSub && stage === "diagram_repair";
+  const waitBit = llmWait
+    ? " · жду модель"
+    : repairWait
+      ? " · уточняю Mermaid"
+      : "";
   const title = craftFrozen
     ? "Остановлено"
     : live

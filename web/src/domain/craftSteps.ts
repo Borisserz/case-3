@@ -45,7 +45,8 @@ const REPORT: CraftStep[] = [
 
 const DIAGRAM: CraftStep[] = [
   { id: "source", label: "Читаю Source" },
-  { id: "layout", label: "Собираю схему" },
+  // llm — waiting on Qwen (often minutes); not local Mermaid render
+  { id: "layout", label: "Пишу схему" },
   { id: "pdf", label: "Отдаю в чат" },
 ];
 

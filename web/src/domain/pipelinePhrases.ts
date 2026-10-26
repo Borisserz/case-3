@@ -464,7 +464,7 @@ export function stageLabelForMode(
     },
     diagram: {
       queued: "В очереди…",
-      llm: "Собираю схему…",
+      llm: "Пишу схему (жду модель)…",
       diagram_repair: "Уточняю схему по Source…",
       charts: "Сверяю числа со схемой…",
       images: "Медиа для схемы…",

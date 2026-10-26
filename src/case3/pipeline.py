@@ -153,24 +153,12 @@ def _presentation_chat_blurb(
 
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
-    from case3.run_events import _meta_file_lock
+    from case3.run_events import _meta_file_lock, write_meta_atomic
 
-    # Prefer longer durable craft log (SSE bus may append concurrently).
     with _meta_file_lock:
-        meta_path = out / "meta.json"
-        mem = meta.get("steps") if isinstance(meta.get("steps"), list) else []
-        disk: list[Any] = []
-        if meta_path.is_file():
-            try:
-                prev = json.loads(meta_path.read_text(encoding="utf-8"))
-                if isinstance(prev, dict) and isinstance(prev.get("steps"), list):
-                    disk = prev["steps"]
-            except (OSError, json.JSONDecodeError):
-                pass
-        meta["steps"] = disk if len(disk) >= len(mem) else mem
+        # Drop internal craft cursor from on-disk payload noise (optional keep).
         payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
-        meta_path.write_text(payload, encoding="utf-8")
+        write_meta_atomic(out / "meta.json", payload, logs_meta=logs / "meta.json")
 
 
 def _set_stage(
@@ -189,25 +177,10 @@ def _set_stage(
         meta["stage_detail"] = detail
     else:
         meta.pop("stage_detail", None)
-    # Keep meta.steps in lockstep with stage (poll hydrate / late SSE seed).
-    from case3.run_events import STEPS_CAP, compact_step_entry
-    import time as _time
+    from case3.run_events import note_craft_stage
 
-    step_entry = compact_step_entry(
-        {
-            "event": "stage",
-            "stage": stage,
-            "scope": "pipeline",
-            "t": _time.time(),
-            **({"detail": detail} if detail else {}),
-        }
-    )
-    if step_entry:
-        prev_steps = list(meta.get("steps") or [])
-        if not isinstance(prev_steps, list):
-            prev_steps = []
-        prev_steps.append(step_entry)
-        meta["steps"] = prev_steps[-STEPS_CAP:]
+    # One steps[] row per stage id — not per cht_/fig_ detail bump.
+    note_craft_stage(meta, stage=stage, scope="pipeline", detail=detail)
     _write_meta(meta, out, logs)
     run_id = str(meta.get("run_id") or "")
     if run_id:
@@ -353,6 +326,17 @@ def run_pipeline(
             cancel_check=lambda: raise_if_cancelled(out),
         )
         figures = merge_user_figures(figures, user_figs, max_images=images_budget)
+        # Mode «Схема»: product is Mermaid in chat — never wait on Image API / charts
+        # (LLM often still emits figures[]; that was the 10min Win hang after diagrams ready).
+        if mode == "diagram":
+            if figures or charts:
+                log.info(
+                    "diagram mode: dropping %d figures / %d charts (schema-only)",
+                    len(figures),
+                    len(charts),
+                )
+            figures = []
+            charts = []
         raw_tex = tex_path.read_text(encoding="utf-8")
         tex_path.write_text(ensure_user_slots_in_tex(raw_tex, user_figs), encoding="utf-8")
         # Persist merged figures.json for Liber edit / preview
@@ -365,26 +349,44 @@ def run_pipeline(
         else:
             fj = {}
 
-        # Mode «Схема»: always enrich Mermaid from Source (soft-fail → draft).
+        # Mode «Схема»: optional second LLM pass. Skip when draft already has Mermaid
+        # (default) — set CASE3_DIAGRAM_REPAIR=1 to force. Soft-fail keeps draft.
         if mode == "diagram" and diagrams and not dry_run:
-            bump("diagram_repair")
-            from case3.diagram_repair import repair_diagrams
-            from case3.llm_client import LLMClient, LLMConfig
+            import os as _os
 
-            fj["diagrams_draft"] = diagrams
-            source_text = text_path.read_text(encoding="utf-8")
-            from case3.chart_style import palette_from_intent
+            force_repair = (_os.environ.get("CASE3_DIAGRAM_REPAIR") or "").strip() == "1"
 
-            diagrams, repair_meta = repair_diagrams(
-                diagrams,
-                source=source_text,
-                intent=intent or "",
-                max_diagrams=diagrams_budget,
-                client=LLMClient(LLMConfig.from_env()),
-                palette=palette_from_intent(intent or ""),
-            )
-            meta["diagrams_repaired"] = bool(repair_meta.get("diagrams_repaired"))
-            meta["diagrams_draft_slop"] = bool(repair_meta.get("diagrams_draft_slop"))
+            def _draft_has_mermaid(d: dict) -> bool:
+                body = str(d.get("mermaid") or d.get("code") or "").strip()
+                return len(body) >= 40
+
+            if not force_repair and all(
+                isinstance(d, dict) and _draft_has_mermaid(d) for d in diagrams
+            ):
+                meta["diagrams_repair_skipped"] = "draft_has_mermaid"
+                log.info(
+                    "diagram_repair skipped — draft mermaid present "
+                    "(CASE3_DIAGRAM_REPAIR=1 to force)"
+                )
+            else:
+                bump("diagram_repair", "второй вызов модели…")
+                from case3.diagram_repair import repair_diagrams
+                from case3.llm_client import LLMClient, LLMConfig
+
+                fj["diagrams_draft"] = diagrams
+                source_text = text_path.read_text(encoding="utf-8")
+                from case3.chart_style import palette_from_intent
+
+                diagrams, repair_meta = repair_diagrams(
+                    diagrams,
+                    source=source_text,
+                    intent=intent or "",
+                    max_diagrams=diagrams_budget,
+                    client=LLMClient(LLMConfig.from_env()),
+                    palette=palette_from_intent(intent or ""),
+                )
+                meta["diagrams_repaired"] = bool(repair_meta.get("diagrams_repaired"))
+                meta["diagrams_draft_slop"] = bool(repair_meta.get("diagrams_draft_slop"))
 
         fj["figures"] = figures
         fj["charts"] = charts
