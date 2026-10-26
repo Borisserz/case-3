@@ -1,16 +1,21 @@
 """In-process SSE bus for Liber run progress (stages / artifacts / terminal).
 
 Does not stream model thoughts — only craft stage bumps and file-ready pulses.
+Durable craft log: meta["steps"] (stage/step/terminal only; no film/sound).
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+STEPS_CAP = 200
+_meta_file_lock = threading.Lock()
 
 
 @dataclass
@@ -22,7 +27,88 @@ class _RunEvents:
     artifacts_seen: set[str] = field(default_factory=set)
     film_seen: set[str] = field(default_factory=set)
     started_at: float = field(default_factory=time.time)
+    out_dir: Path | None = None
     cond: threading.Condition = field(default_factory=threading.Condition)
+
+
+def compact_step_entry(event: dict[str, Any]) -> dict[str, Any] | None:
+    """Shrink SSE event for meta.steps[] (skip film/artifact)."""
+    kind = str(event.get("event") or "")
+    if kind not in {"stage", "step", "done", "error", "cancelled"}:
+        return None
+    out: dict[str, Any] = {
+        "event": kind,
+        "t": float(event.get("t") or time.time()),
+    }
+    if kind == "stage":
+        out["stage"] = str(event.get("stage") or "queued")
+        scope = str(event.get("scope") or "")
+        if scope:
+            out["scope"] = scope
+        detail = event.get("detail")
+        if detail:
+            out["detail"] = str(detail)
+    elif kind == "step":
+        out["parent"] = str(event.get("parent") or "charts")
+        out["id"] = str(event.get("id") or "step")
+        out["status"] = str(event.get("status") or "active")
+        scope = str(event.get("scope") or "")
+        if scope:
+            out["scope"] = scope
+        if event.get("reason"):
+            out["reason"] = str(event.get("reason"))
+        if event.get("label"):
+            out["label"] = str(event.get("label"))
+    else:
+        if event.get("status") is not None:
+            out["status"] = event.get("status")
+        if event.get("error"):
+            out["error"] = str(event.get("error"))
+        if event.get("hint"):
+            out["hint"] = str(event.get("hint"))
+    return out
+
+
+def append_meta_step(out_dir: Path, entry: dict[str, Any]) -> None:
+    """Append one craft step into out/meta.json (and logs twin if present)."""
+    out = Path(out_dir)
+    meta_path = out / "meta.json"
+    if not meta_path.is_file():
+        return
+    with _meta_file_lock:
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(meta, dict):
+            return
+        steps = list(meta.get("steps") or [])
+        if not isinstance(steps, list):
+            steps = []
+        steps.append(dict(entry))
+        meta["steps"] = steps[-STEPS_CAP:]
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        try:
+            meta_path.write_text(payload, encoding="utf-8")
+        except OSError:
+            return
+        # Best-effort logs mirror (same layout as pipeline._write_meta)
+        try:
+            run_id = str(meta.get("run_id") or out.name)
+            logs_meta = out.parent.parent / "logs" / run_id / "meta.json"
+            if logs_meta.is_file():
+                logs_meta.write_text(payload, encoding="utf-8")
+        except OSError:
+            pass
+
+
+def seed_events_from_steps(
+    bus: RunEventBus,
+    run_id: str,
+    steps: list[Any],
+) -> int:
+    """Replay durable meta.steps into an empty bus (late SSE join)."""
+    return bus.seed_from_steps(run_id, steps)
 
 
 def build_success_recap(
@@ -70,8 +156,15 @@ class RunEventBus:
             st.terminal = None
             st.artifacts_seen.clear()
             st.film_seen.clear()
+            st.out_dir = None
             st.started_at = time.time()
             st.cond.notify_all()
+
+    def bind_out(self, run_id: str, out_dir: Path) -> None:
+        """Attach out/ so stage/step/terminal append meta.steps[]."""
+        st = self._state(run_id)
+        with st.cond:
+            st.out_dir = Path(out_dir)
 
     def ensure(self, run_id: str) -> None:
         """Open bus without wiping events (pipeline after API queued seed)."""
@@ -85,8 +178,44 @@ class RunEventBus:
         """Allow more events after pipeline done (e.g. on-demand slides job)."""
         self.ensure(run_id)
 
+    def _persist_event(self, run_id: str, event: dict[str, Any]) -> None:
+        entry = compact_step_entry(event)
+        if not entry:
+            return
+        st = self._state(run_id)
+        with st.cond:
+            out_dir = st.out_dir
+        if out_dir is None:
+            return
+        append_meta_step(out_dir, entry)
+
+    def seed_from_steps(self, run_id: str, steps: list[Any]) -> int:
+        """Load meta.steps into an empty in-memory bus (no re-persist)."""
+        st = self._state(run_id)
+        n = 0
+        with st.cond:
+            if st.events:
+                return 0
+            for raw in steps:
+                if not isinstance(raw, dict):
+                    continue
+                kind = str(raw.get("event") or "")
+                if kind not in {"stage", "step", "done", "error", "cancelled"}:
+                    continue
+                ev = dict(raw)
+                if "t" not in ev:
+                    ev["t"] = time.time()
+                st.events.append(ev)
+                if kind in {"done", "error", "cancelled"}:
+                    st.done = True
+                    st.terminal = kind
+                n += 1
+            st.cond.notify_all()
+        return n
+
     def publish(self, run_id: str, event: dict[str, Any]) -> None:
         st = self._state(run_id)
+        appended = False
         with st.cond:
             kind = str(event.get("event") or "")
             scope = str(event.get("scope") or "")
@@ -99,10 +228,13 @@ class RunEventBus:
             if st.done and kind == "stage" and scope != "slides":
                 return
             st.events.append(dict(event))
+            appended = True
             if kind in {"done", "error", "cancelled"}:
                 st.done = True
                 st.terminal = kind
             st.cond.notify_all()
+        if appended:
+            self._persist_event(run_id, event)
 
     def publish_stage(
         self,

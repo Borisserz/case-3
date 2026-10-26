@@ -153,9 +153,24 @@ def _presentation_chat_blurb(
 
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (logs / "meta.json").write_text(payload, encoding="utf-8")
-    (out / "meta.json").write_text(payload, encoding="utf-8")
+    from case3.run_events import _meta_file_lock
+
+    # Prefer longer durable craft log (SSE bus may append concurrently).
+    with _meta_file_lock:
+        meta_path = out / "meta.json"
+        mem = meta.get("steps") if isinstance(meta.get("steps"), list) else []
+        disk: list[Any] = []
+        if meta_path.is_file():
+            try:
+                prev = json.loads(meta_path.read_text(encoding="utf-8"))
+                if isinstance(prev, dict) and isinstance(prev.get("steps"), list):
+                    disk = prev["steps"]
+            except (OSError, json.JSONDecodeError):
+                pass
+        meta["steps"] = disk if len(disk) >= len(mem) else mem
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+        meta_path.write_text(payload, encoding="utf-8")
 
 
 def _set_stage(

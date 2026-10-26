@@ -35,7 +35,7 @@ export type CraftStepState = CraftStep & {
 
 const REPORT: CraftStep[] = [
   { id: "source", label: "Читаю Source" },
-  { id: "layout", label: "Верстаю текст" },
+  { id: "layout", label: "Верстаю отчёт" },
   { id: "charts", label: "Рисую графики" },
   { id: "photos", label: "Собираю фото" },
   { id: "pdf", label: "Печатаю PDF" },
@@ -45,18 +45,18 @@ const REPORT: CraftStep[] = [
 const DIAGRAM: CraftStep[] = [
   { id: "source", label: "Читаю Source" },
   { id: "layout", label: "Собираю схему" },
-  { id: "pdf", label: "Кладу в чат" },
+  { id: "pdf", label: "Отдаю в чат" },
 ];
 
 const PRESENTATION: CraftStep[] = [
   { id: "source", label: "Читаю Source" },
-  { id: "layout", label: "Пишу каркас" },
+  { id: "layout", label: "Пишу каркас дека" },
   { id: "charts", label: "Рисую графики" },
   { id: "photos", label: "Собираю медиа" },
   { id: "slides_plan", label: "План слайдов" },
   { id: "slides_media", label: "Медиа на кадры" },
   { id: "slides_render", label: "Рисую превью" },
-  { id: "slides_pack", label: "Собираю PPTX" },
+  { id: "slides_pack", label: "Пакую PPTX" },
 ];
 
 const PARENT_TO_CRAFT: Record<string, CraftStepId> = {
@@ -148,6 +148,69 @@ export function craftTemplate(mode: ThinkingMode = "report"): CraftStep[] {
   if (mode === "diagram") return DIAGRAM;
   if (mode === "presentation") return PRESENTATION;
   return REPORT;
+}
+
+/** Slides stages use presentation checklist even if chat mode was report. */
+export function effectiveCraftMode(
+  mode: ThinkingMode = "report",
+  stage?: string | null,
+): ThinkingMode {
+  const raw = (stage || "").toLowerCase();
+  if (raw.startsWith("slides_")) return "presentation";
+  return mode;
+}
+
+export type CraftStepLogEntry = {
+  t?: number;
+  event: string;
+  stage?: string;
+  scope?: string;
+  detail?: string;
+  parent?: string;
+  id?: string;
+  status?: string;
+  reason?: string;
+  label?: string;
+};
+
+/** Rebuild craft UI state from durable meta.steps[]. */
+export function hydrateCraftFromSteps(steps: CraftStepLogEntry[] | null | undefined): {
+  stage: string | null;
+  substeps: CraftSubstep[];
+  skipped: Partial<Record<CraftStepId, string>>;
+} {
+  let stage: string | null = null;
+  let substeps: CraftSubstep[] = [];
+  const skipped: Partial<Record<CraftStepId, string>> = {};
+  if (!Array.isArray(steps)) {
+    return { stage, substeps, skipped };
+  }
+  for (const raw of steps) {
+    if (!raw || typeof raw !== "object") continue;
+    const ev = String(raw.event || "");
+    if (ev === "stage") {
+      const s = String(raw.stage || "").trim();
+      if (!s) continue;
+      const scope = String(raw.scope || "");
+      stage =
+        scope === "slides" && !s.startsWith("slides_")
+          ? `slides_${s}`
+          : s;
+    } else if (ev === "step") {
+      const parent = craftParentId(String(raw.parent || ""));
+      substeps = upsertCraftSubstep(substeps, {
+        parent: String(raw.parent || ""),
+        id: String(raw.id || "step"),
+        status: String(raw.status || "active"),
+        reason: raw.reason,
+        label: raw.label,
+      });
+      if (String(raw.status) === "skipped" && parent) {
+        skipped[parent] = String(raw.reason || "пропущено");
+      }
+    }
+  }
+  return { stage, substeps, skipped };
 }
 
 export type CraftProgressOpts = {

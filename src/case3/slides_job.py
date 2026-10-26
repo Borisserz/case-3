@@ -188,11 +188,25 @@ def _read_meta(out_dir: Path) -> dict[str, Any]:
 
 
 def _write_meta(out_dir: Path, meta: dict[str, Any], logs_dir: Path | None = None) -> None:
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    if logs_dir is not None:
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
+    from case3.run_events import _meta_file_lock
+
+    with _meta_file_lock:
+        meta_path = out_dir / "meta.json"
+        mem = meta.get("steps") if isinstance(meta.get("steps"), list) else []
+        disk: list = []
+        if meta_path.is_file():
+            try:
+                prev = json.loads(meta_path.read_text(encoding="utf-8"))
+                if isinstance(prev, dict) and isinstance(prev.get("steps"), list):
+                    disk = prev["steps"]
+            except (OSError, json.JSONDecodeError):
+                pass
+        meta["steps"] = disk if len(disk) >= len(mem) else mem
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        meta_path.write_text(payload, encoding="utf-8")
+        if logs_dir is not None:
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
 
 
 def _set_slides(

@@ -47,7 +47,7 @@ from case3.image_api import (
     image_api_configured,
     probe_image_api,
 )
-from case3.run_events import EVENTS
+from case3.run_events import EVENTS, seed_events_from_steps
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
@@ -830,6 +830,7 @@ async def api_run(
     (logs_dir / "meta.json").write_text(payload0, encoding="utf-8")
     (out_dir / "meta.json").write_text(payload0, encoding="utf-8")
     EVENTS.start(run_id)
+    EVENTS.bind_out(run_id, out_dir)
     EVENTS.publish_stage(run_id, "queued", scope="pipeline")
 
     _kick_pipeline_thread(
@@ -887,10 +888,53 @@ def stream_run_events(run_id: str) -> StreamingResponse:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 meta = {}
+            EVENTS.bind_out(run_id, out_dir)
+            durable = meta.get("steps") if isinstance(meta.get("steps"), list) else []
             st = str(meta.get("status") or "")
             stage = str(meta.get("stage") or "queued")
             detail = meta.get("stage_detail")
-            if st == "running":
+            if durable:
+                # While still running, drop terminal entries so SSE stays open
+                # (pipeline may have logged done before slides reopen).
+                playable = (
+                    [
+                        s
+                        for s in durable
+                        if isinstance(s, dict)
+                        and str(s.get("event") or "")
+                        not in {"done", "error", "cancelled"}
+                    ]
+                    if st == "running"
+                    or (
+                        st == "ok"
+                        and str(meta.get("slides_status") or "")
+                        in {"running", "queued"}
+                    )
+                    else durable
+                )
+                seeded = seed_events_from_steps(EVENTS, run_id, playable)
+                if seeded and (
+                    st == "running"
+                    or (
+                        st == "ok"
+                        and str(meta.get("slides_status") or "")
+                        in {"running", "queued"}
+                    )
+                ):
+                    EVENTS.ensure(run_id)
+                    EVENTS.scan_artifacts(run_id, out_dir)
+                elif seeded and st in {"ok", "error", "cancelled"}:
+                    # Terminal already in seeded events — subscribe will flush & end.
+                    pass
+                elif st == "running":
+                    EVENTS.publish_stage(
+                        run_id,
+                        stage,
+                        detail=str(detail) if detail else None,
+                        scope="pipeline",
+                    )
+                    EVENTS.scan_artifacts(run_id, out_dir)
+            elif st == "running":
                 EVENTS.publish_stage(
                     run_id, stage, detail=str(detail) if detail else None, scope="pipeline"
                 )
@@ -1031,6 +1075,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "slides_status": meta.get("slides_status") or "idle",
             "slides_stage": meta.get("slides_stage"),
             "cancel_requested": bool(meta.get("cancel_requested")),
+            "steps": meta.get("steps") if isinstance(meta.get("steps"), list) else [],
         }
     if status == "cancelled":
         err = meta.get("error") or "Остановлено"
@@ -1933,11 +1978,7 @@ async def start_slides(
     meta["slides_stage"] = "starting"
     meta["slides_error"] = None
     meta.pop("cancel_requested", None)
-    # Reopen progress bus so slides stages reach SSE after report "done".
-    from case3.run_events import EVENTS
-
-    EVENTS.reopen(run_id)
-    EVENTS.publish_stage(run_id, "starting", scope="slides")
+    # Write meta first, then SSE stage (persist appends into meta.steps).
     with _slides_patch_lock:
         _slides_patch_pending.pop(run_id, None)
         _slides_patch_busy.discard(run_id)
@@ -1946,6 +1987,11 @@ async def start_slides(
     logs = ROOT / "runs" / "logs" / run_id
     logs.mkdir(parents=True, exist_ok=True)
     (logs / "meta.json").write_text(payload, encoding="utf-8")
+    from case3.run_events import EVENTS
+
+    EVENTS.reopen(run_id)
+    EVENTS.bind_out(run_id, out_dir)
+    EVENTS.publish_stage(run_id, "starting", scope="slides")
     _kick_slides_thread(run_id)
     return JSONResponse(
         {

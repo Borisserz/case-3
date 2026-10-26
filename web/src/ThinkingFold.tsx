@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   craftProgress,
+  effectiveCraftMode,
   formatEtaSuffix,
   formatMmSs,
   type CraftFilmFrame,
@@ -94,7 +95,8 @@ export function ThinkingFold({
   const [open, setOpen] = useState(live);
   const [tick, setTick] = useState(0);
 
-  const craft: CraftStepState[] = craftProgress(stage, thinkingMode, {
+  const craftMode = effectiveCraftMode(thinkingMode, stage);
+  const craft: CraftStepState[] = craftProgress(stage, craftMode, {
     live: live && !craftFrozen,
     skipped: craftSkipped,
     substeps: craftSubsteps,

@@ -27,9 +27,11 @@ import { openSummaryStream } from "../api/summaryStream";
 import {
   craftParentId,
   formatCraftRecap,
+  hydrateCraftFromSteps,
   upsertCraftFilm,
   upsertCraftSubstep,
   type CraftFilmFrame,
+  type CraftStepLogEntry,
 } from "../domain/craftSteps";
 import {
   DEFAULT_INTENT,
@@ -1769,7 +1771,32 @@ export default function App() {
               return null;
             }
             if (body.status === "running" || body.status === "started") {
-              applyStage(stage, detail);
+              const rawSteps = body.steps;
+              if (Array.isArray(rawSteps) && rawSteps.length) {
+                const hydrated = hydrateCraftFromSteps(
+                  rawSteps as CraftStepLogEntry[],
+                );
+                applyStage(hydrated.stage || stage, detail);
+                if (hydrated.substeps.length || Object.keys(hydrated.skipped).length) {
+                  setMsgs((m) =>
+                    m.map((msg) => {
+                      if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                      return {
+                        ...msg,
+                        craftSubsteps: hydrated.substeps.length
+                          ? hydrated.substeps
+                          : msg.craftSubsteps,
+                        craftSkipped: {
+                          ...(msg.craftSkipped || {}),
+                          ...hydrated.skipped,
+                        },
+                      };
+                    }),
+                  );
+                }
+              } else {
+                applyStage(stage, detail);
+              }
               continue;
             }
             if (body.status === "error") {

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjs from "pdfjs-dist";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { pageTextMatchesNeedle } from "./pdfFindPage";
+import { bestPageForNeedles } from "./pdfFindPage";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -25,21 +25,21 @@ async function findPageByNeedles(
 ): Promise<number | null> {
   const list = needles.map((n) => n.trim()).filter((n) => n.length >= 3);
   if (!list.length) return null;
+  const pageTexts: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const pdfPage = await doc.getPage(i);
     const tc = await pdfPage.getTextContent();
-    const text = tc.items
-      .map((it) =>
-        typeof it === "object" && it && "str" in it
-          ? String((it as { str: string }).str)
-          : "",
-      )
-      .join(" ");
-    for (const needle of list) {
-      if (pageTextMatchesNeedle(text, needle)) return i;
-    }
+    pageTexts.push(
+      tc.items
+        .map((it) =>
+          typeof it === "object" && it && "str" in it
+            ? String((it as { str: string }).str)
+            : "",
+        )
+        .join(" "),
+    );
   }
-  return null;
+  return bestPageForNeedles(pageTexts, list);
 }
 
 export function PdfFirstPage({
