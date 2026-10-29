@@ -1,5 +1,16 @@
 # case-3
 
+## Сначала проверь Qwen (Win LAN)
+
+Пока curl молчит — Liber «жду модель» будет крутиться зря. Подставь IP/модель из `.env`:
+
+```cmd
+curl -s -m 30 http://192.168.4.101:8080/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"qwen3.5-4b\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":8,\"chat_template_kwargs\":{\"enable_thinking\":false}}"
+```
+
+- JSON с `choices` за ≤30 с → Vision ок, дальше `api.cmd` / `web.cmd`
+- таймаут / ошибка → чини хост `:8080` у коллеги (не UI)
+
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
 **Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. **В PDF/DOCX схем нет** (только графики/фото); print-truth = PDF.
