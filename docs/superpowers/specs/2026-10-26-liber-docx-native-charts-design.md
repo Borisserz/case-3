@@ -18,7 +18,11 @@ Downloaded `{stem}.docx`: every eligible report chart (`cht_*`) is a **native Wo
 
 ## Word safety (2026-10-29)
 
-MS Word rejects DOCX packages that embed a full `xlsx` under `word/embeddings/` for chart data. Liber ships **cache-only ChartML**: `c:numCache` / `c:strCache` in the chart XML, **no** `c:externalData`, empty `chartN.xml.rels`. Charts remain editable in Word (series/values live in the cache). Opt-out: `CASE3_DOCX_NATIVE_CHARTS=0`.
+MS Word rejects DOCX packages that embed a full `xlsx` under `word/embeddings/` for chart data. Liber ships **cache-only ChartML**: `c:numCache` / `c:strCache` in the chart XML, **no** `c:externalData`, empty `chartN.xml.rels`. Charts remain editable in Word (series/values live in the cache). Opt-out: `CASE3_DOCX_NATIVE_CHARTS=0`. Gate: `docx_charts_word_safe` inside `docx_package_ok` — broken packages restore pandoc original.
+
+## Parse gotcha (same day)
+
+Model thinking often pastes `````html`` drafts then `````json`` without a lone closing fence. Fence splitter must end a lang block at the **next** `````lang`` opener (`_iter_lang_fences`), or charts are dropped even when JSON is valid.
 
 ## Reuse
 

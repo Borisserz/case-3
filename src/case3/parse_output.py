@@ -15,7 +15,11 @@ from case3.tex_utils import extract_tex, finish_preamble_only_tex
 
 log = logging.getLogger("case3.parse")
 
+# Legacy whole-fence matcher (tests / simple cases). Prefer _iter_lang_fences —
+# models often omit the closing ``` before the next ```json / ```latex opener.
 _FENCE = re.compile(r"```(\w*)\s*([\s\S]*?)```", re.I)
+_LANG_OPEN = re.compile(r"```(\w+)\s*\n", re.I)
+_LONE_CLOSE = re.compile(r"(?m)^```[ \t]*\r?$")
 _ID_OK = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 # Same line-anchored pattern as inject (slots must be alone on a line).
 _FIG_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?$")
@@ -69,29 +73,96 @@ def _append_missing_slots(
     return (tex or "").rstrip() + block
 
 
+def _strip_trailing_fence(body: str) -> str:
+    text = (body or "").strip()
+    if text.endswith("```"):
+        text = text[:-3].rstrip()
+    return text
+
+
+def _first_json_object(text: str) -> str | None:
+    """Return the leading JSON object substring, or None."""
+    start = (text or "").find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for j, ch in enumerate(text[start:], start):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : j + 1]
+    return None
+
+
+def _iter_lang_fences(raw: str) -> list[tuple[str, str]]:
+    """Split ```lang blocks; next ```lang opener ends the previous body if close omitted."""
+    text = raw or ""
+    opens = list(_LANG_OPEN.finditer(text))
+    out: list[tuple[str, str]] = []
+    for i, m in enumerate(opens):
+        lang = (m.group(1) or "").lower()
+        body_start = m.end()
+        limit = opens[i + 1].start() if i + 1 < len(opens) else len(text)
+        region = text[body_start:limit]
+        close = _LONE_CLOSE.search(region)
+        body = region[: close.start()] if close else region
+        out.append((lang, body.strip()))
+    return out
+
+
 def _json_candidates(raw: str) -> list[str]:
     """All JSON-looking blobs (closed fences + trailing unclosed ```json)."""
     out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(body: str) -> None:
+        body = _strip_trailing_fence(body)
+        if not body or body in seen:
+            return
+        seen.add(body)
+        out.append(body)
+        obj = _first_json_object(body)
+        if obj and obj not in seen:
+            seen.add(obj)
+            out.append(obj)
+
+    for lang, body in _iter_lang_fences(raw):
+        if lang == "json" or (not lang and body.lstrip().startswith("{")):
+            _add(body)
     for m in _FENCE.finditer(raw or ""):
         lang = (m.group(1) or "").lower()
         body = m.group(2).strip()
         if lang == "json" or (lang == "" and body.lstrip().startswith("{")):
-            out.append(body)
+            _add(body)
     # Trailing unclosed ```json … (continuation cut mid-object)
     m_open = re.search(r"```json\s*\n([\s\S]*)$", raw or "", re.I)
     if m_open:
-        tail = m_open.group(1).strip()
-        if tail and (not out or tail != out[-1]):
-            # Only if this region isn't already captured as a closed fence
-            closed_spans = [m.span() for m in _FENCE.finditer(raw or "")]
-            start = m_open.start(1)
-            if not any(a <= start < b for a, b in closed_spans):
-                out.append(tail)
+        _add(m_open.group(1))
     return out
 
 
 def _pick_fences(raw: str) -> tuple[str | None, str | None]:
-    fences = [(m.group(1).lower(), m.group(2).strip()) for m in _FENCE.finditer(raw or "")]
+    fences = _iter_lang_fences(raw)
+    # Fallback for rare ```\n…``` without a language tag
+    if not any(lang in ("latex", "tex", "json") for lang, _ in fences):
+        fences = [
+            ((m.group(1) or "").lower(), m.group(2).strip())
+            for m in _FENCE.finditer(raw or "")
+        ]
     tex_body = None
     json_body = None
     # Prefer a latex/tex fence that actually contains \documentclass
