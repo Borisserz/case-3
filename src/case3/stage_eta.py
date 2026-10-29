@@ -97,17 +97,23 @@ def note_stage_enter(
     *,
     project_root: Path | None = None,
 ) -> float | None:
-    """Close previous stage timing; return ETA for the new stage (or None)."""
+    """Close previous stage timing; return ETA for the new stage (or None).
+
+    Must not call ``record_stage_duration`` while holding ``_LOCK`` — that
+    nested acquire deadlocks the pipeline on the 2nd stage (images/inject)
+    after a real LLM wait (≥0.4s). Win desk: «PDF 6 min forever».
+    """
     rid = (run_id or "").strip()
     st = (stage or "").strip().lower()
     now = time.time()
+    prev: tuple[str, float] | None = None
     with _LOCK:
         prev = _RUN_STAGE_START.pop(rid, None)
-        if prev:
-            prev_stage, t0 = prev
-            record_stage_duration(prev_stage, now - t0)
         if st and st not in {"ok", "pipeline_ok", "error", "cancelled"}:
             _RUN_STAGE_START[rid] = (st, now)
+    if prev:
+        prev_stage, t0 = prev
+        record_stage_duration(prev_stage, now - t0)
     if project_root is not None:
         save_timings(project_root)
     return estimate_eta_s(st)

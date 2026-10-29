@@ -68,7 +68,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     root = _root()
-    load_dotenv(root / ".env")
+    # override=False: shell IMAGE_MAX_IMAGES=0 wins over .env (desk api keeps override=True)
+    load_dotenv(root / ".env", override=False)
 
     try:
         if args.cmd == "run":

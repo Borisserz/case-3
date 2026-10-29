@@ -86,7 +86,8 @@ scripts\smoke.cmd
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
 | нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
 | HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
-| Завис после TeX на «фото» / `stage=images` | Image API `:8000` мёртв — поставь `IMAGE_MAX_IMAGES=0` или подними Image; убей зомби-python |
+| Завис после TeX на «фото» / `stage=images` / `inject` навсегда | Баг ETA-lock (fixed `4a64a98`+): `git pull`, убей python, один прогон. Image `:8000` мёртв → `IMAGE_MAX_IMAGES=0` |
+| «PDF 6 минут» а файла нет | Это не latexmk — LLM + deadlock на 2-й стадии; после pull PDF ~секунды после TeX |
 | Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
 | HTTP **409** уже идёт прогон | Дождись / убей python — на Win только 1 report за раз |
 | Коллега «404» | Не тот URL: Qwen≠`/generate`; или качаешь PDF пока `status=running` |
