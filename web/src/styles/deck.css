@@ -1217,67 +1217,16 @@
 }
 
 /* —— Deck style sheet (Julius-parity UX, Liber DNA) —— */
-.deck-make-split {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 0;
-}
-.deck-make-split .deck-make-primary.is-accent {
-  order: -1;
-}
-
-.deck-make-split .deck-make-primary {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.deck-make-split .deck-make-primary.is-accent {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.deck-make-split .deck-make-primary.is-ghost {
-  order: -1;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+/* Ghost primary still used by ArtifactCard Julius CTA */
+.deck-make-primary.is-ghost {
   background: transparent;
   color: var(--primary);
   border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
   box-shadow: none;
 }
-
-.deck-make-split .deck-make-primary.is-ghost:hover:not(:disabled) {
+.deck-make-primary.is-ghost:hover:not(:disabled) {
   background: color-mix(in srgb, var(--secondary) 42%, var(--sheet));
   color: var(--primary);
-}
-
-.deck-make-split.is-quiet .deck-make-gear {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
-  color: var(--muted);
-}
-
-.deck-make-split.is-quiet .deck-make-gear:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--secondary) 40%, var(--sheet));
-  color: var(--primary);
-}
-
-.deck-make-gear {
-  margin: 0;
-  padding: 0 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--rule));
-  border-left: none;
-  border-radius: 0 999px 999px 0;
-  background: color-mix(in srgb, var(--primary) 12%, var(--sheet));
-  color: var(--primary);
-  font-size: 0.95rem;
-  cursor: pointer;
-}
-.deck-make-gear:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 12%, var(--sheet));
-}
-.deck-make-gear:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 .deck-style-sheet {
   position: fixed;

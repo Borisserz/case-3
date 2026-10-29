@@ -5,7 +5,6 @@ from __future__ import annotations
 from case3.slides_chart_data import (
     attach_series_ir,
     ensure_deck_charts,
-    ensure_deck_has_chart_slide,
     extract_chart_series,
     series_from_figures_json,
 )
@@ -88,7 +87,7 @@ def test_ensure_deck_injects_chart_hero_when_missing() -> None:
             "series": [{"name": "Rev", "values": [1.0, 2.0]}],
         }
     }
-    assert ensure_deck_has_chart_slide(deck, series_by_id) is True
+    assert bool(ensure_deck_charts(deck, series_by_id)) is True
     ids = [
         str(s.get("chart_id") or s.get("media_id") or "")
         for s in deck["slides"]
@@ -117,7 +116,7 @@ def test_ensure_deck_noop_when_chart_present() -> None:
             "series": [{"name": "Rev", "values": [1.0]}],
         }
     }
-    assert ensure_deck_has_chart_slide(deck, series_by_id) is False
+    assert bool(ensure_deck_charts(deck, series_by_id)) is False
 
 
 def test_ensure_deck_charts_injects_missing_ids() -> None:

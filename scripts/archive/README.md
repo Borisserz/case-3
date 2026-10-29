@@ -15,3 +15,5 @@ Archive contents are kept for audits / regression matrices (e2e, slides matrix, 
 ```bash
 python scripts/archive/e2e_mac_matrix.py
 ```
+
+`ROOT` in these scripts is `Path(__file__).resolve().parents[2]` (repo root — one level above `scripts/`).

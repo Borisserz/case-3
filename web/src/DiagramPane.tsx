@@ -1,13 +1,18 @@
 /** Diagram body: premium Mermaid frame + legend + edit/PNG. */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import {
   DiagramFullscreen,
   type DiagramInfo,
 } from "./DiagramFullscreen";
 import { DiagramEditSheet } from "./DiagramEditSheet";
-import { DiagramVisualEditor } from "./DiagramVisualEditor";
 import { DiagramZoomView } from "./DiagramZoomView";
+
+const DiagramVisualEditor = lazy(() =>
+  import("./DiagramVisualEditor").then((m) => ({
+    default: m.DiagramVisualEditor,
+  })),
+);
 import { isSupportedFlowchartSubset } from "./diagramIr";
 import { diagramTypeLabel } from "./diagramLabels";
 import { nodeIdsForRole, parseDiagramLegend } from "./diagramLegend";
@@ -333,23 +338,26 @@ export function DiagramPane({
         />
       ) : null}
 
-      {visualOk ? (
-        <DiagramVisualEditor
-          open={editOpen}
-          diagramId={diagram.id}
-          title={diagram.title}
-          mermaid={diagram.mermaid}
-          busy={editBusy}
-          error={err}
-          focusNodeId={focusNodeId}
-          onCancel={() => {
-            setEditOpen(false);
-            setFocusNodeId(null);
-            setErr(null);
-          }}
-          onSave={(m, t) => void doApplyEdit(m, t)}
-        />
-      ) : (
+      {visualOk && editOpen ? (
+        <Suspense fallback={null}>
+          <DiagramVisualEditor
+            open={editOpen}
+            diagramId={diagram.id}
+            title={diagram.title}
+            mermaid={diagram.mermaid}
+            busy={editBusy}
+            error={err}
+            focusNodeId={focusNodeId}
+            onCancel={() => {
+              setEditOpen(false);
+              setFocusNodeId(null);
+              setErr(null);
+            }}
+            onSave={(m, t) => void doApplyEdit(m, t)}
+          />
+        </Suspense>
+      ) : null}
+      {!visualOk ? (
         <DiagramEditSheet
           open={editOpen}
           title={diagram.title}
@@ -363,7 +371,7 @@ export function DiagramPane({
           }}
           onApply={(m, t) => void doApplyEdit(m, t)}
         />
-      )}
+      ) : null}
     </div>
   );
 }

@@ -25,13 +25,13 @@ import { ReportView, type ReportPreview } from "./ReportView";
 import { RailToc, buildToc } from "./RailToc";
 import { IconPanelRight } from "./icons";
 import { reportDownloadLinks } from "./domain/reportDownloads";
-import { modeSurfaces } from "./liberModes";
+import { modeSurfaces } from "./domain/liberModes";
 import { SourcePane } from "./SourcePane";
 import {
   RAIL_WIDTH_DEFAULT,
   clampRailWidth,
   saveRailWidth,
-} from "./railWidth";
+} from "./domain/railWidth";
 import { pdfSearchNeedles } from "./pdfFindPage";
 
 const PdfFirstPage = lazy(() =>

@@ -298,11 +298,3 @@ def ensure_deck_charts(
         injected.append(cid)
     deck["slides"] = slides
     return injected
-
-
-def ensure_deck_has_chart_slide(
-    deck: dict[str, Any],
-    series_by_id: dict[str, dict[str, Any]],
-) -> bool:
-    """Compat: True if any chart slide was injected (floor or missing ids)."""
-    return bool(ensure_deck_charts(deck, series_by_id))

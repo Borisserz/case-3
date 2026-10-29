@@ -8,8 +8,8 @@ import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
 import { ModeStarterGrid } from "./ModeStarterGrid";
 import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
-import { LIBER_MODE_PILLS, type LiberWorkMode } from "./liberModes";
-import type { SourceDraft } from "./liberTypes";
+import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
+import type { SourceDraft } from "./domain/liberTypes";
 
 type Props = {
   busy: boolean;

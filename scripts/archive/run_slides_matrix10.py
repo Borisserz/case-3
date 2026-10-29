@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from case3.slides_export import build_deck_pdf, build_image_pptx  # noqa: E402

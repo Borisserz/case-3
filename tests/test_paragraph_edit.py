@@ -78,7 +78,7 @@ def test_edit_paragraph_in_run_rebuilds(
     (out / "meta.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(
-        "case3.paragraph_edit.render_tex",
+        "case3.paragraph_edit.rebuild_run_docs",
         lambda *a, **k: {"pdf": out / "demo.pdf"},
     )
     (out / "demo.pdf").write_bytes(b"%PDF")

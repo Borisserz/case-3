@@ -58,8 +58,6 @@ export function modeSurfaces(mode?: string | null) {
     showDiagram: m === "diagram" || m === "report" || m === "auto",
     /** PPTX + deck PDF twin */
     showPresentation: m === "presentation" || m === "auto",
-    /** Cross-sell «собрать презентацию» under a report — off (use Presentation mode) */
-    showDeckMake: false,
     /** Diagram mode: schema only in rail (no Source clutter). */
     showSource: m !== "diagram",
   };

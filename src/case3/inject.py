@@ -142,17 +142,6 @@ def inject_media(
     return out
 
 
-def inject_figures(
-    tex: str,
-    figures: list[dict[str, Any]],
-    status: dict[str, Any],
-    *,
-    rel_dir: str = "figures",
-) -> str:
-    """Backward-compatible: figures only."""
-    return inject_media(tex, figures, [], status, rel_dir=rel_dir)
-
-
 def write_injected(
     tex_path: Path,
     figures: list[dict[str, Any]],

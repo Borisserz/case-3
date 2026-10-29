@@ -23,7 +23,8 @@ from case3.chart_types_coerce import (
 )
 from case3.charts import render_chart_png
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
-from case3.render import RenderError, render_tex
+from case3.render import RenderError
+from case3.run_rebuild import rebuild_run_docs
 
 log = logging.getLogger("case3.chart_edit")
 
@@ -365,21 +366,10 @@ def edit_chart_in_run(
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    fmt = formats or {"pdf", "docx"}
-    texs = sorted(out_dir.glob("*.tex"))
-    if not texs:
-        raise ChartEditError("no .tex in run")
     try:
-        artifacts = render_tex(
-            texs[0],
-            out_dir=out_dir,
-            formats=fmt,
-            extra_dirs=[figs_dir],
-            log_dir=out_dir / "logs",
-            force=True,
-            # out_dir is runs/out/<run_id> → parents[2] = repo root
-            project_root=out_dir.resolve().parents[2],
-        )
+        artifacts = rebuild_run_docs(out_dir, formats=formats)
+    except FileNotFoundError as exc:
+        raise ChartEditError(str(exc)) from exc
     except RenderError as exc:
         raise ChartEditError(f"document rebuild failed: {exc}") from exc
 

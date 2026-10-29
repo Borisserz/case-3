@@ -2,14 +2,14 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { modeSurfaces } from "./liberModes";
+import { modeSurfaces } from "./domain/liberModes";
 import {
   formatRunStatusError,
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
   stageLabel,
-} from "./liberRunHelpers";
+} from "./domain/runHelpers";
 
 describe("liberRunHelpers", () => {
   it("stageLabel charts detail", () => {
@@ -58,7 +58,6 @@ describe("liberRunHelpers", () => {
     assert.equal(report.showReportPreview, true);
     assert.equal(report.showDiagram, true);
     assert.equal(report.showPresentation, false);
-    assert.equal(report.showDeckMake, false);
 
     const diagram = modeSurfaces("diagram");
     assert.equal(diagram.showReportPreview, false);

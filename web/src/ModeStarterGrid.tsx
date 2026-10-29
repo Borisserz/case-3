@@ -1,7 +1,7 @@
 /** Quiet system-prompt cards under sheet composer (all Liber modes). */
 
 import { startersForMode } from "./modeStarters";
-import type { LiberWorkMode } from "./liberModes";
+import type { LiberWorkMode } from "./domain/liberModes";
 
 type Props = {
   workMode: LiberWorkMode;

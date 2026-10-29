@@ -10,7 +10,7 @@ import {
   IconPlus,
   IconSettings,
 } from "./icons";
-import type { HistoryFolder, HistoryItem } from "./reportHistory";
+import type { HistoryFolder, HistoryItem } from "./domain/reportHistory";
 
 export type { HistoryItem, HistoryFolder };
 

@@ -69,6 +69,19 @@ def normalize_pack_id(raw: str | None) -> str:
     return "atelier" if "atelier" in packs else next(iter(packs), "atelier")
 
 
+_DARK_PACK_IDS = frozenset({"botanical", "signal", "ink", "voltage"})
+
+
+def is_dark_pack(style: dict[str, Any] | None) -> bool:
+    """True for dark deck packs / motif atmosphere (HTML twin + native PPTX)."""
+    if not isinstance(style, dict):
+        return False
+    if str(style.get("pack_id") or "") in _DARK_PACK_IDS:
+        return True
+    motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
+    return str(motif.get("atmosphere") or "") == "dark"
+
+
 def _norm_hex(value: str | None, fallback: str) -> str:
     raw = (value or "").strip()
     if not raw:

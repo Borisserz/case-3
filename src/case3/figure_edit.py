@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from case3.image_api import ImageApiConfig, edit_png, generate_png
-from case3.render import RenderError, render_tex
+from case3.render import RenderError
+from case3.run_rebuild import rebuild_run_docs
 from case3.tex_safe import escape_tex_text
 
 log = logging.getLogger("case3.figure_edit")
@@ -168,19 +169,10 @@ def edit_figure_in_run(
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    fmt = formats or {"pdf", "docx"}
-    if not texs:
-        raise FigureEditError("no .tex in run")
     try:
-        artifacts = render_tex(
-            texs[0],
-            out_dir=out_dir,
-            formats=fmt,
-            extra_dirs=[figs_dir],
-            log_dir=out_dir / "logs",
-            force=True,
-            project_root=out_dir.resolve().parents[2],
-        )
+        artifacts = rebuild_run_docs(out_dir, formats=formats)
+    except FileNotFoundError as exc:
+        raise FigureEditError(str(exc)) from exc
     except RenderError as exc:
         if bak is not None:
             dest.write_bytes(bak)

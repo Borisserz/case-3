@@ -1,0 +1,467 @@
+"""Deck / slides routes (mounted on main FastAPI app)."""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Body, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field
+
+from case3.deck_theme import list_public_packs, normalize_pack_id
+
+log = logging.getLogger("case3.api_slides")
+router = APIRouter(tags=["slides"])
+
+
+def _api():
+    import case3.api as api
+
+    return api
+
+def _write_slides_crash(run_id: str, message: str) -> None:
+    """Persist slides_status=error so UI does not sit on queued forever."""
+    out = _api().ROOT / "runs" / "out" / run_id
+    logs = _api().ROOT / "runs" / "logs" / run_id
+    meta_path = out / "meta.json"
+    meta: dict[str, Any] = {"run_id": run_id}
+    if meta_path.is_file():
+        try:
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (OSError, json.JSONDecodeError):
+            pass
+    meta["slides_status"] = "error"
+    meta["slides_stage"] = "error"
+    meta["slides_error"] = message
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        logs.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(payload, encoding="utf-8")
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+    except OSError:
+        log.exception("could not write slides crash meta run_id=%s", run_id)
+
+
+def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: Path) -> bool:
+    """Clear zombie slides_status=running left by API kill / hung LLM (not live patch).
+
+    Returns True if the lock was cleared so a PATCH may proceed.
+    """
+    if meta.get("slides_status") != "running":
+        return False
+    stage = str(meta.get("slides_stage") or "")
+    # Live text-edit rebuild — caller must serialize / 409.
+    if stage == "patch":
+        return False
+    ir = out_dir / "slides" / "deck.json"
+    # No IR yet → real first-time job may still be running.
+    if not ir.is_file() and stage in {"starting", "queued", "llm", "llm_retry", "plan", "ir"}:
+        return False
+    log.warning(
+        "clearing stale slides lock run_id=%s stage=%s (deck exists=%s)",
+        run_id,
+        stage or "?",
+        ir.is_file(),
+    )
+    meta["slides_status"] = "ok" if ir.is_file() else "error"
+    meta["slides_stage"] = "ok" if ir.is_file() else "error"
+    if not ir.is_file():
+        meta["slides_error"] = meta.get("slides_error") or "slides job interrupted"
+    else:
+        meta["slides_error"] = None
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    logs = _api().ROOT / "runs" / "logs" / run_id
+    try:
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / "meta.json").write_text(payload, encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
+def _bg_run_slides(run_id: str) -> None:
+    from case3.slides_job import run_slides_job
+
+    try:
+        run_slides_job(run_id, root=_api().ROOT)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("slides background job crashed run_id=%s", run_id)
+        _write_slides_crash(run_id, f"slides crashed: {exc}")
+
+
+def _kick_slides_thread(run_id: str) -> None:
+    """Start slides job on a daemon thread (BackgroundTasks+to_thread can stall on Windows)."""
+    threading.Thread(
+        target=_bg_run_slides,
+        args=(run_id,),
+        name=f"case3-slides-{run_id}",
+        daemon=True,
+    ).start()
+
+
+class SlidesStartBody(BaseModel):
+    theme_pack: str | None = Field(default=None)
+    structure_id: str | None = Field(default=None)
+    style_settings: dict[str, Any] | None = Field(default=None)
+
+
+@router.get("/api/deck-themes")
+def deck_themes() -> dict[str, Any]:
+    """Public catalog of Liber deck theme packs (deck-only)."""
+    from case3.deck_structure import list_structures
+
+    return {"packs": list_public_packs(), "structures": list_structures()}
+
+
+@router.post("/api/runs/{run_id}/slides")
+async def start_slides(
+    run_id: str,
+    body: SlidesStartBody | None = Body(default=None),
+) -> JSONResponse:
+    if not _api()._RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (_api().ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    try:
+        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
+    if meta.get("status") != "ok":
+        raise HTTPException(409, detail="report run is not ok")
+    # Live worker — do not start a second thread. Stuck "queued" (old bug) is retriable.
+    if meta.get("slides_status") == "running":
+        return JSONResponse(
+            {
+                "run_id": run_id,
+                "status": "started",
+                "slides_status": "running",
+                "slides_stage": meta.get("slides_stage") or "queued",
+            },
+            status_code=202,
+        )
+    from case3.deck_structure import normalize_structure_id
+
+    pack = normalize_pack_id((body.theme_pack if body else None) or "atelier")
+    structure_id = normalize_structure_id(body.structure_id if body else None)
+    settings = (body.style_settings if body else None) or None
+    if settings is not None and not isinstance(settings, dict):
+        settings = None
+    meta["slides_style"] = {
+        "theme_pack": pack,
+        "structure_id": structure_id,
+        "style_settings": settings,
+    }
+    meta["slides_theme_pack"] = pack
+    meta["slides_structure_id"] = structure_id
+    # Mark running before kick so a dead BackgroundTask cannot leave meta at queued.
+    meta["slides_status"] = "running"
+    meta["slides_stage"] = "starting"
+    meta["slides_error"] = None
+    meta.pop("cancel_requested", None)
+    # Write meta first, then SSE stage (persist appends into meta.steps).
+    with _api()._slides_patch_lock:
+        _api()._slides_patch_pending.pop(run_id, None)
+        _api()._slides_patch_busy.discard(run_id)
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    logs = _api().ROOT / "runs" / "logs" / run_id
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "meta.json").write_text(payload, encoding="utf-8")
+    from case3.run_events import EVENTS
+
+    EVENTS.reopen(run_id)
+    EVENTS.bind_out(run_id, out_dir)
+    EVENTS.publish_stage(run_id, "starting", scope="slides")
+    _kick_slides_thread(run_id)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "running",
+            "slides_stage": "starting",
+            "slides_style": meta["slides_style"],
+        },
+        status_code=202,
+    )
+
+
+@router.get("/api/runs/{run_id}/slides")
+def get_slides(run_id: str) -> dict[str, Any]:
+    if not _api()._RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (_api().ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
+        raise HTTPException(404, detail="run not found")
+    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    deck = None
+    ir_path = out_dir / "slides" / "deck.json"
+    if ir_path.is_file():
+        try:
+            deck = json.loads(ir_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            deck = None
+    art = meta.get("slides_artifacts") or {}
+    downloads: dict[str, str] = {}
+    deck_pdf_mode: str | None = None
+    if isinstance(art, dict):
+        for key in ("pptx", "deck_pdf"):
+            name = art.get(key)
+            if isinstance(name, str) and (out_dir / name).is_file():
+                downloads[key] = f"/api/runs/{run_id}/files/{name}"
+        mode = art.get("deck_pdf_mode")
+        if isinstance(mode, str) and mode.strip():
+            deck_pdf_mode = mode.strip()
+    return {
+        "run_id": run_id,
+        "slides_status": meta.get("slides_status") or "idle",
+        "slides_stage": meta.get("slides_stage"),
+        "slides_error": meta.get("slides_error"),
+        "deck": deck,
+        "slide_pngs": [
+            f"/api/runs/{run_id}/slides/png/{p.name}"
+            for p in sorted((out_dir / "slides").glob("slide_*.png"))
+        ]
+        if (out_dir / "slides").is_dir()
+        else [],
+        "downloads": downloads,
+        "deck_pdf_mode": deck_pdf_mode,
+    }
+
+
+class SlidesIrPatchBody(BaseModel):
+    """Text-only IR patch — edit existing fields; no add/delete slides."""
+
+    slides: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SlidesStructureBody(BaseModel):
+    """Structural IR op — reorder / duplicate / delete; rebuild twin+PPTX only."""
+
+    op: str = Field(default="")
+    id: str | None = Field(default=None)
+    order: list[str] | None = Field(default=None)
+
+
+def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
+    """Drain coalesced IR patches — latest deck wins; no 409 on concurrent edits."""
+    from case3.run_cancel import RunCancelled
+    from case3.slides_job import rebuild_slides_from_deck
+
+    while True:
+        with _api()._slides_patch_lock:
+            pending = _api()._slides_patch_pending.pop(run_id, None)
+            if pending is None:
+                _api()._slides_patch_busy.discard(run_id)
+                return
+            deck = pending["deck"]
+            _api()._slides_patch_busy.add(run_id)
+
+        try:
+            meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {"run_id": run_id, "status": "ok"}
+        meta["slides_status"] = "running"
+        meta["slides_stage"] = "patch"
+        meta["slides_error"] = None
+        meta.pop("cancel_requested", None)
+        payload = json.dumps(meta, ensure_ascii=False, indent=2)
+        try:
+            (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+        except OSError:
+            log.exception("slides patch meta write failed run_id=%s", run_id)
+
+        try:
+            rebuild_slides_from_deck(run_id, deck, root=_api().ROOT)
+        except RunCancelled:
+            log.info("slides patch cancelled run_id=%s", run_id)
+            with _api()._slides_patch_lock:
+                _api()._slides_patch_pending.pop(run_id, None)
+                _api()._slides_patch_busy.discard(run_id)
+            return
+        except Exception:
+            log.exception("slides IR patch rebuild failed run_id=%s", run_id)
+            try:
+                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+                m["slides_status"] = "error"
+                m["slides_stage"] = "error"
+                m["slides_error"] = "rebuild after edit failed"
+                (out_dir / "meta.json").write_text(
+                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+        with _api()._slides_patch_lock:
+            if run_id not in _api()._slides_patch_pending:
+                _api()._slides_patch_busy.discard(run_id)
+                return
+
+
+def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Path]:
+    """Shared guards for text + structure slide patches."""
+    if not _api()._RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_root = (_api().ROOT / "runs" / "out").resolve()
+    if not str(out_dir.resolve()).startswith(str(out_root)) or not (
+        out_dir / "meta.json"
+    ).is_file():
+        raise HTTPException(404, detail="run not found")
+    ir_path = out_dir / "slides" / "deck.json"
+    if not ir_path.is_file():
+        raise HTTPException(404, detail="deck IR not found — generate presentation first")
+    try:
+        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
+    if meta.get("status") != "ok":
+        raise HTTPException(409, detail="report run is not ok")
+    if meta.get("slides_status") == "running" and meta.get("slides_stage") != "patch":
+        _clear_stale_slides_running(meta, run_id=run_id, out_dir=out_dir)
+        if meta.get("slides_status") == "running":
+            raise HTTPException(409, detail="slides job already running")
+
+    with _api()._slides_patch_lock:
+        base = (_api()._slides_patch_pending.get(run_id) or {}).get("deck")
+    if base is None:
+        try:
+            base = json.loads(ir_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(500, detail="corrupt deck.json") from exc
+    if not isinstance(base, dict):
+        raise HTTPException(500, detail="corrupt deck.json")
+    return base, ir_path
+
+
+def _enqueue_deck_rebuild(
+    run_id: str, out_dir: Path, ir_path: Path, patched: dict[str, Any]
+) -> bool:
+    """Write IR + queue coalesce worker. Returns True if already queued."""
+    try:
+        ir_path.write_text(
+            json.dumps(patched, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        raise HTTPException(500, detail="could not write deck.json") from exc
+
+    with _api()._slides_patch_lock:
+        _api()._slides_patch_pending[run_id] = {"deck": patched}
+        already = run_id in _api()._slides_patch_busy
+        if not already:
+            _api()._slides_patch_busy.add(run_id)
+
+    if not already:
+        threading.Thread(
+            target=_slides_patch_worker,
+            args=(run_id, out_dir),
+            name=f"case3-slides-patch-{run_id}",
+            daemon=True,
+        ).start()
+    return already
+
+
+@router.patch("/api/runs/{run_id}/slides/ir")
+async def patch_slides_ir(
+    run_id: str,
+    body: SlidesIrPatchBody,
+) -> JSONResponse:
+    """Patch deck text fields and rebuild native PPTX + twin preview.
+
+    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
+    """
+    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    base, ir_path = _load_deck_for_patch(run_id, out_dir)
+
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_text_patch
+
+    try:
+        patched = apply_deck_text_patch(base, {"slides": body.slides})
+    except DeckIrError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "running",
+            "slides_stage": "patch",
+            "queued": already,
+            "deck": patched,
+        },
+        status_code=202,
+    )
+
+
+@router.post("/api/runs/{run_id}/slides/structure")
+async def post_slides_structure(
+    run_id: str,
+    body: SlidesStructureBody,
+) -> JSONResponse:
+    """Reorder / duplicate / delete slides — IR patch + rebuild twin/PPTX (no LLM)."""
+    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    base, ir_path = _load_deck_for_patch(run_id, out_dir)
+
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_structure
+
+    op_body: dict[str, Any] = {"op": body.op}
+    if body.id is not None:
+        op_body["id"] = body.id
+    if body.order is not None:
+        op_body["order"] = body.order
+
+    try:
+        patched = apply_deck_structure(base, op_body)
+    except DeckIrError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "status": "started",
+            "slides_status": "running",
+            "slides_stage": "patch",
+            "queued": already,
+            "op": body.op,
+            "deck": patched,
+        },
+        status_code=202,
+    )
+
+
+@router.get("/api/runs/{run_id}/slides/png/{name}")
+def download_slide_png(run_id: str, name: str) -> FileResponse:
+    if not name.lower().endswith(".png") or not _api()._FILE_OK.match(name):
+        raise HTTPException(400, detail="invalid png name")
+    path = _api()._safe_run_file(run_id, "slides", name)
+    return FileResponse(path, media_type="image/png", filename=path.name)
+
+
+@router.get("/api/runs/{run_id}/slides/media/{name}")
+def download_slide_media(run_id: str, name: str) -> FileResponse:
+    """Chart/figure PNG from figures/, or diagram PNG from slides/diagrams/."""
+    if not name.lower().endswith(".png") or not _api()._FILE_OK.match(name):
+        raise HTTPException(400, detail="invalid media name")
+    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    for parts in (("figures", name), ("slides", "diagrams", name)):
+        try:
+            path = _api()._safe_run_file(run_id, *parts)
+            return FileResponse(path, media_type="image/png", filename=path.name)
+        except HTTPException:
+            continue
+    raise HTTPException(404, detail="media not found")
+
+

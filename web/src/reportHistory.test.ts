@@ -8,7 +8,7 @@ import {
   moveHistoryToFolder,
   pushHistory,
   togglePinHistory,
-} from "./reportHistory";
+} from "./domain/reportHistory";
 
 const mem = new Map<string, string>();
 

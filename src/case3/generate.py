@@ -836,8 +836,3 @@ def generate_document(
         len(diagram_drops),
     )
     return out_tex, figures, charts, diagrams
-
-
-def generate_tex(*args, **kwargs):
-    path, _figs, _charts, _dias = generate_document(*args, **kwargs)
-    return path

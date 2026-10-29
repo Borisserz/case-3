@@ -20,10 +20,10 @@
 - Layouts: `title` | `section` | `kpi_row` | `scorecard` | `card_row` | `chart_hero` | `chart_split` | `media_hero` | `media_split` | `table_hero` | `callout` | `bullets` | `closing`. Cross-fields: `chapter?`, `takeaway?`.
 - Prompt: `system_slides.md` + `prompt/themes/slides_{pack}.md` + `structure_{id}.md`; prefer 10–12 slides.
 - **Anti-monotony:** ≥5 distinct layouts when ≥8 slides; vary beat 2; cap consecutive scorecards; title takeaway hero KPIs on split packs.
-- **Premium twin craft:** `card_row` leading `%` → `narr-meter` (HTML+PPTX); chart caption=`caption--insight`; closing `takeaway` → `closing-hero`; grain on `signal`/`ink`/`voltage`/`botanical`; pack charts via `scripts/render_premium_gallery_charts.py`.
+- **Premium twin craft:** `card_row` leading `%` → `narr-meter` (HTML+PPTX); chart caption=`caption--insight`; closing `takeaway` → `closing-hero`; grain on `signal`/`ink`/`voltage`/`botanical`; pack charts via `scripts/archive/render_premium_gallery_charts.py`.
 - Media ids only from run: `cht_*` PNG, `fig_*`/`usr_*` PNG, `dia_*` Mermaid→PNG (`slides_media.py`).
 - Numbers ⊆ Source. Whole-token match; spaced thousands `9 330` ≡ `9330`.
-- **Freeform (no `structure_id`):** `slides_beat_planner.plan_beats` → skeleton. Live QA: `scripts/run_freeform_slides_live.py`.
+- **Freeform (no `structure_id`):** `slides_beat_planner.plan_beats` → skeleton. Live QA: `scripts/archive/run_freeform_slides_live.py`.
 - **Number heal:** `scrub_invented_numbers` on IR reject. Meta: `slides_number_scrub=true`.
 - **Chrome nums:** zero-padded `01`…`099` and bare `1`…`12` allowed without Source (kickers / deck indices). Multi-digit facts still gated.
 - **Single kick:** UI must not `POST /slides` twice (SSE `pipeline_ok` + `makePresentation`). `slidesJobNeedsKick` / in-flight → attach only.

@@ -3,7 +3,7 @@
 import { DeckFileCard } from "./DeckFileCard";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
 import { reportDownloadLinks } from "./domain/reportDownloads";
-import { modeSurfaces } from "./liberModes";
+import { modeSurfaces } from "./domain/liberModes";
 
 type DiagramChip = DiagramChatItem;
 

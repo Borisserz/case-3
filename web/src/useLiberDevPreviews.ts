@@ -5,12 +5,12 @@
 
 import { useEffect, type Dispatch, type SetStateAction } from "react";
 import type { ActiveArtifact } from "./ArtifactRail";
-import type { ThinkingLine } from "./pipelinePhrases";
-import type { Msg, RunResult, SourceDraft } from "./liberTypes";
+import type { ThinkingLine } from "./domain/pipelinePhrases";
+import type { Msg, RunResult, SourceDraft } from "./domain/liberTypes";
 import {
   appendBotThinking,
   stageLabel,
-} from "./liberRunHelpers";
+} from "./domain/runHelpers";
 
 /** Inline stub so ?preview=flow film works without API / figures. */
 const PREVIEW_FILM_PNG =

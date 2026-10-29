@@ -1,7 +1,7 @@
 /** Liber empty hero — modes live in composer inner bar. */
 
 import { motion, useReducedMotion } from "framer-motion";
-import type { LiberWorkMode } from "./liberModes";
+import type { LiberWorkMode } from "./domain/liberModes";
 
 type Props = {
   hasStoredReport?: boolean;

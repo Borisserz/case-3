@@ -9,7 +9,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from case3.render import RenderError, render_tex
+from case3.render import RenderError
+from case3.run_rebuild import rebuild_run_docs
 from case3.tex_safe import escape_tex_text
 
 log = logging.getLogger("case3.table_edit")
@@ -243,18 +244,10 @@ def edit_table_in_run(
     }
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    fmt = formats or {"pdf", "docx"}
-    figs_dir = out_dir / "figures"
     try:
-        artifacts = render_tex(
-            tex_path,
-            out_dir=out_dir,
-            formats=fmt,
-            extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-            log_dir=out_dir / "logs",
-            force=True,
-            project_root=out_dir.resolve().parents[2],
-        )
+        artifacts = rebuild_run_docs(out_dir, formats=formats)
+    except FileNotFoundError as exc:
+        raise TableEditError(str(exc)) from exc
     except RenderError as exc:
         tex_path.write_text(tex_bak, encoding="utf-8")
         if meta_bak is not None:

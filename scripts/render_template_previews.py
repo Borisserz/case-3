@@ -20,8 +20,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from case3.deck_theme import resolve_deck_theme  # noqa: E402
 from case3.slides_render import render_deck_pngs  # noqa: E402
 
-# Prefer repo scripts/ on sys.path for premium decks
-sys.path.insert(0, str(ROOT / "scripts"))
+# Premium deck specs live under scripts/archive/ after Deep cleanup
+sys.path.insert(0, str(ROOT / "scripts" / "archive"))
 from premium_gallery_decks import PREMIUM_DECKS  # noqa: E402
 
 OUT_PUBLIC = ROOT / "web" / "public" / "deck" / "previews"
@@ -587,7 +587,10 @@ DECKS.update(PREMIUM_DECKS)
 
 def main() -> int:
     if not CHART_FALLBACK.is_file() and not GALLERY_CHARTS.is_dir():
-        print("missing charts — run scripts/render_premium_gallery_charts.py", file=sys.stderr)
+        print(
+            "missing charts — run scripts/archive/render_premium_gallery_charts.py",
+            file=sys.stderr,
+        )
         return 1
 
     if WORK.exists():

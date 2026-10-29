@@ -24,21 +24,11 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, Field
 
-from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
 from case3.charts import max_charts_from_env
-from case3.deck_theme import list_public_packs, normalize_pack_id
-from case3.diagram_edit import (
-    DiagramEditError,
-    edit_diagram_in_run,
-    regenerate_diagrams_in_run,
-)
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
-from case3.figure_edit import FigureEditError, edit_figure_in_run
-from case3.paragraph_edit import ParagraphEditError, edit_paragraph_in_run
-from case3.table_edit import TableEditError, edit_table_in_run
 from case3.generate import max_images_from_env, resolve_text_file
 from case3.desk_health import build_desk_probes, probe_soffice, probe_vision
 from case3.image_api import (
@@ -51,9 +41,10 @@ from case3.run_events import EVENTS, seed_events_from_steps
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
-from case3.render import IMAGE, RenderError, ensure_image
+from case3.render import IMAGE, ensure_image
 from case3.run_cancel import mark_cancel_requested
 from case3.summary_bus import BUS
+from case3.slides_media import load_figures_json
 from case3.tex_preview import build_report_preview
 from case3.user_photos import UserPhotoError, save_user_photos
 
@@ -113,6 +104,35 @@ def parse_formats_form(raw: str | None) -> set[str]:
     if fmt_raw in {"none", "diagram", "schemas"}:
         return set()
     raise ValueError("formats must be pdf|docx|both|none")
+
+
+def _formats_from_edit_body(raw: str | None) -> set[str]:
+    try:
+        return parse_formats_form(raw)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+
+def _artifact_downloads(run_id: str, out_dir: Path, version: int) -> dict[str, str]:
+    files: dict[str, str] = {}
+    for art in sorted(out_dir.iterdir()):
+        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
+            key = art.suffix.lower().lstrip(".")
+            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={version}"
+    return files
+
+
+def _bust_preview_figure_urls(
+    preview: dict[str, Any],
+    version: int,
+    *needles: str,
+) -> None:
+    for block in preview.get("blocks") or []:
+        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
+            url = str(block["url"])
+            if any(n and n in url for n in needles):
+                sep = "&" if "?" in url else "?"
+                block["url"] = f"{url}{sep}v={version}"
 
 
 def build_intent_from_ui(
@@ -1254,14 +1274,7 @@ def _find_out_tex(out_dir: Path) -> Path | None:
 
 
 def _load_figures_json(out_dir: Path) -> dict[str, Any]:
-    path = out_dir / "figures.json"
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return load_figures_json(out_dir)
 
 
 def _build_preview_payload(
@@ -1282,14 +1295,19 @@ def _build_preview_payload(
     )
 
 
-@app.get("/api/runs/{run_id}/preview")
-def get_run_preview(run_id: str) -> dict[str, Any]:
+def _resolve_run_dir(run_id: str) -> Path:
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
     out_dir = (ROOT / "runs" / "out" / run_id).resolve()
     out_root = (ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
         raise HTTPException(404, detail="run not found")
+    return out_dir
+
+
+@app.get("/api/runs/{run_id}/preview")
+def get_run_preview(run_id: str) -> dict[str, Any]:
+    out_dir = _resolve_run_dir(run_id)
     meta: dict[str, Any] = {}
     meta_path = out_dir / "meta.json"
     if meta_path.is_file():
@@ -1328,535 +1346,6 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
                 sep = "&" if "?" in url else "?"
                 block["url"] = f"{url}{sep}v={bust}"
     return preview
-
-
-class ChartEditBody(BaseModel):
-    palette: str | None = Field(default="atelier")
-    style: str | None = Field(default="")
-    chart_type: str | None = Field(default="")
-    formats: str = Field(default="both")
-
-
-class ChartPreviewBody(BaseModel):
-    """Local live preview (palette + type coerce). Style notes deferred to Apply."""
-
-    palette: str | None = Field(default="atelier")
-    chart_type: str | None = Field(default="")
-
-
-class DiagramEditBody(BaseModel):
-    mermaid: str = Field(default="")
-    title: str | None = Field(default=None)
-
-
-class DiagramRegenBody(BaseModel):
-    palette: str | None = Field(default="atelier")
-
-
-class FigureEditBody(BaseModel):
-    """mode=generate → POST /generate; mode=edit → POST /edit with current PNG."""
-
-    mode: str = Field(default="generate")
-    prompt: str = Field(default="")
-    caption: str | None = Field(default=None)
-    formats: str = Field(default="both")
-
-
-class TableEditBody(BaseModel):
-    """Structured table replace → patch TeX → rebuild PDF/DOCX."""
-
-    caption: str = Field(default="")
-    headers: list[str] = Field(default_factory=list)
-    rows: list[list[str]] = Field(default_factory=list)
-    formats: str = Field(default="both")
-
-
-class ParagraphEditBody(BaseModel):
-    """Plain prose replace → patch TeX paragraph → rebuild PDF/DOCX."""
-
-    text: str = Field(default="")
-    formats: str = Field(default="both")
-
-
-def _resolve_run_dir(run_id: str) -> Path:
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
-        raise HTTPException(404, detail="run not found")
-    return out_dir
-
-
-@app.get("/api/runs/{run_id}/charts/{chart_id}")
-def get_run_chart(run_id: str, chart_id: str) -> dict[str, Any]:
-    """Chart fragment + meta for Liber live Chart.js (G9/G12)."""
-    if not _FILE_OK.match(chart_id):
-        raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _resolve_run_dir(run_id)
-    fj = _load_figures_json(out_dir)
-    charts = fj.get("charts") or []
-    chart = next(
-        (c for c in charts if isinstance(c, dict) and c.get("id") == chart_id),
-        None,
-    )
-    if not chart:
-        raise HTTPException(404, detail="chart not found")
-    html = str(chart.get("html") or "").strip()
-    if not html:
-        raise HTTPException(404, detail="chart html missing")
-    return {
-        "id": chart_id,
-        "type": str(chart.get("type") or "").strip(),
-        "caption": str(chart.get("caption") or "").strip(),
-        "html": html,
-    }
-
-
-@app.post("/api/runs/{run_id}/charts/{chart_id}/preview")
-def preview_run_chart(
-    run_id: str, chart_id: str, body: ChartPreviewBody
-) -> dict[str, Any]:
-    """Local palette/type preview — no PNG/PDF write (Apply still commits)."""
-    if not _FILE_OK.match(chart_id):
-        raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _resolve_run_dir(run_id)
-    try:
-        return preview_chart_html(
-            out_dir,
-            chart_id,
-            palette=body.palette,
-            chart_type=body.chart_type,
-        )
-    except ChartEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
-
-@app.post("/api/runs/{run_id}/diagrams/{diagram_id}/edit")
-async def edit_run_diagram(
-    run_id: str, diagram_id: str, body: DiagramEditBody
-) -> dict[str, Any]:
-    """Save edited Mermaid for one Liber diagram (no PDF/TeX)."""
-    if not _FILE_OK.match(diagram_id):
-        raise HTTPException(400, detail="invalid diagram_id")
-    out_dir = _resolve_run_dir(run_id)
-    try:
-        diagram = await asyncio.to_thread(
-            partial(
-                edit_diagram_in_run,
-                out_dir,
-                diagram_id,
-                mermaid=body.mermaid or "",
-                title=body.title,
-            )
-        )
-    except DiagramEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    undo = None
-    if isinstance(diagram, dict):
-        undo = diagram.pop("undo", None)
-    return {
-        "diagram": diagram,
-        "diagrams": _load_diagrams_from_out(out_dir),
-        "undo": undo,
-    }
-
-
-@app.get("/api/runs/{run_id}/diagrams/{diagram_id}/svg")
-async def download_diagram_svg(run_id: str, diagram_id: str) -> Response:
-    """Mermaid → SVG for Liber schema download (no PNG raster)."""
-    from case3.diagram_svg import DiagramSvgError, export_diagram_svg, load_diagram_spec
-
-    if not _FILE_OK.match(diagram_id):
-        raise HTTPException(400, detail="invalid diagram_id")
-    out_dir = _resolve_run_dir(run_id)
-    try:
-        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        meta = {}
-    palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
-    try:
-        spec = load_diagram_spec(out_dir, diagram_id)
-        svg = await asyncio.to_thread(
-            partial(export_diagram_svg, out_dir, diagram_id, palette=palette)
-        )
-    except DiagramSvgError as exc:
-        raise HTTPException(404 if "not found" in str(exc) else 400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 — Playwright missing browsers, etc.
-        log.exception("diagram svg render failed run_id=%s id=%s", run_id, diagram_id)
-        raise HTTPException(
-            503, detail=f"svg render unavailable: {exc}"
-        ) from exc
-    # ASCII-only filename (Starlette headers are latin-1); UTF-8 title → slug fallback
-    raw_title = spec.get("title") or diagram_id
-    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(raw_title)).strip("-_.")[:48] or diagram_id
-    return Response(
-        content=svg.encode("utf-8"),
-        media_type="image/svg+xml; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="{safe}.svg"',
-            "Cache-Control": "no-store",
-        },
-    )
-
-
-@app.post("/api/runs/{run_id}/diagrams/regenerate")
-async def regenerate_run_diagrams(
-    run_id: str, body: DiagramRegenBody | None = None
-) -> dict[str, Any]:
-    """Full LLM regenerate of diagrams[] (+ repair). No TeX/PDF."""
-    out_dir = _resolve_run_dir(run_id)
-    palette = normalize_palette_id((body.palette if body else None) or "atelier")
-    try:
-        result = await asyncio.to_thread(
-            partial(
-                regenerate_diagrams_in_run,
-                out_dir,
-                palette=palette,
-                client=LLMClient(LLMConfig.from_env()),
-            )
-        )
-    except DiagramEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except (LLMError, LLMConfigError) as exc:
-        raise HTTPException(502, detail=str(exc)) from exc
-    return {
-        "diagrams": result.get("diagrams") or _load_diagrams_from_out(out_dir),
-        "diagrams_repaired": bool(result.get("diagrams_repaired")),
-        "diagrams_ok": int(result.get("diagrams_ok") or 0),
-    }
-
-
-@app.post("/api/runs/{run_id}/charts/{chart_id}/edit")
-async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
-    """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
-    if not _FILE_OK.match(chart_id):
-        raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _resolve_run_dir(run_id)
-
-    fmt_raw = (body.formats or "both").strip().lower()
-    if fmt_raw == "both":
-        fmt_set = {"pdf", "docx"}
-    elif fmt_raw in {"pdf", "docx"}:
-        fmt_set = {fmt_raw}
-    else:
-        raise HTTPException(400, detail="formats must be pdf|docx|both")
-
-    palette = normalize_palette_id(body.palette)
-    style = (body.style or "").strip()
-    chart_type = (body.chart_type or "").strip()
-    if chart_type and chart_type not in CHART_TYPES:
-        raise HTTPException(400, detail=f"unknown chart_type: {chart_type}")
-    if palette == "auto" and not style and not chart_type:
-        raise HTTPException(400, detail="укажите палитру, тип или текст «как изменить»")
-
-    try:
-        result = await asyncio.to_thread(
-            partial(
-                edit_chart_in_run,
-                out_dir,
-                chart_id,
-                palette=palette,
-                style=style or None,
-                chart_type=chart_type or None,
-                formats=fmt_set,
-            )
-        )
-    except ChartEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except (LLMError, LLMConfigError) as exc:
-        raise HTTPException(502, detail=str(exc)) from exc
-    except RenderError as exc:
-        raise HTTPException(500, detail=str(exc)) from exc
-
-    media = result.get("media_status") or {}
-    preview = _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
-    v = int(result.get("version") or 0)
-    # Cache-bust figure URLs in preview blocks
-    for block in preview.get("blocks") or []:
-        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
-            url = str(block["url"])
-            if "cht_" in url or chart_id in url:
-                sep = "&" if "?" in url else "?"
-                block["url"] = f"{url}{sep}v={v}"
-
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-
-    return {
-        "run_id": run_id,
-        "chart_id": chart_id,
-        "status": "ok",
-        "mode": result.get("mode"),
-        "palette": result.get("palette"),
-        "style": result.get("style"),
-        "media_status": media,
-        "downloads": files,
-        "preview": preview,
-        "preview_figure": {
-            "id": chart_id,
-            "kind": "chart",
-            "url": f"/api/runs/{run_id}/figures/{chart_id}.png?v={v}",
-        },
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
-
-
-@app.post("/api/runs/{run_id}/figures/{figure_id}/edit")
-async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> dict[str, Any]:
-    """Regenerate (generate) or img2img-edit one photo; rebuild PDF/DOCX."""
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    if not _FILE_OK.match(figure_id):
-        raise HTTPException(400, detail="invalid figure_id")
-    if figure_id.startswith("cht_"):
-        raise HTTPException(400, detail="use /charts/{id}/edit for charts")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
-        raise HTTPException(404, detail="run not found")
-
-    mode = (body.mode or "generate").strip().lower()
-    if mode not in {"generate", "edit"}:
-        raise HTTPException(400, detail="mode must be generate|edit")
-    prompt = (body.prompt or "").strip()
-    if not prompt:
-        raise HTTPException(400, detail="prompt required")
-
-    fmt_raw = (body.formats or "both").strip().lower()
-    if fmt_raw == "both":
-        fmt_set = {"pdf", "docx"}
-    elif fmt_raw in {"pdf", "docx"}:
-        fmt_set = {fmt_raw}
-    else:
-        raise HTTPException(400, detail="formats must be pdf|docx|both")
-
-    caption = (body.caption or "").strip() or None
-
-    try:
-        result = await asyncio.to_thread(
-            partial(
-                edit_figure_in_run,
-                out_dir,
-                figure_id,
-                mode=mode,  # type: ignore[arg-type]
-                prompt=prompt,
-                caption=caption,
-                formats=fmt_set,
-            )
-        )
-    except FigureEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except RenderError as exc:
-        raise HTTPException(500, detail=str(exc)) from exc
-
-    media = result.get("media_status") or {}
-    preview = _build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
-    v = int(result.get("version") or 0)
-    for block in preview.get("blocks") or []:
-        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
-            url = str(block["url"])
-            if figure_id in url:
-                sep = "&" if "?" in url else "?"
-                block["url"] = f"{url}{sep}v={v}"
-
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-
-    return {
-        "run_id": run_id,
-        "figure_id": figure_id,
-        "status": "ok",
-        "mode": result.get("mode"),
-        "prompt": result.get("prompt"),
-        "caption": result.get("caption"),
-        "media_status": media,
-        "downloads": files,
-        "preview": preview,
-        "preview_figure": {
-            "id": figure_id,
-            "kind": "figure",
-            "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
-        },
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
-
-
-@app.post("/api/runs/{run_id}/tables/{table_index}/edit")
-async def edit_run_table(
-    run_id: str, table_index: int, body: TableEditBody
-) -> dict[str, Any]:
-    """Replace one preview table (caption + grid) and rebuild PDF/DOCX."""
-    out_dir = _resolve_run_dir(run_id)
-    if table_index < 1:
-        raise HTTPException(400, detail="table_index must be ≥ 1")
-
-    fmt_raw = (body.formats or "both").strip().lower()
-    if fmt_raw == "both":
-        fmt_set = {"pdf", "docx"}
-    elif fmt_raw in {"pdf", "docx"}:
-        fmt_set = {fmt_raw}
-    else:
-        raise HTTPException(400, detail="formats must be pdf|docx|both")
-
-    headers = [str(h) for h in (body.headers or [])]
-    rows = [[str(c) for c in row] for row in (body.rows or [])]
-    caption = str(body.caption or "")
-
-    try:
-        result = await asyncio.to_thread(
-            partial(
-                edit_table_in_run,
-                out_dir,
-                table_index,
-                caption=caption,
-                headers=headers,
-                rows=rows,
-                formats=fmt_set,
-            )
-        )
-    except TableEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except RenderError as exc:
-        raise HTTPException(500, detail=str(exc)) from exc
-
-    media = result.get("media_status") or {}
-    preview = _build_preview_payload(
-        run_id, out_dir, media if isinstance(media, dict) else {}
-    )
-    v = int(result.get("version") or 0)
-
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-
-    return {
-        "run_id": run_id,
-        "table_index": table_index,
-        "status": "ok",
-        "caption": result.get("caption"),
-        "media_status": media,
-        "downloads": files,
-        "preview": preview,
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
-
-
-@app.post("/api/runs/{run_id}/paragraphs/{paragraph_index}/edit")
-async def edit_run_paragraph(
-    run_id: str, paragraph_index: int, body: ParagraphEditBody
-) -> dict[str, Any]:
-    """Replace one preview paragraph (para-N) and rebuild PDF/DOCX."""
-    out_dir = _resolve_run_dir(run_id)
-    if paragraph_index < 1:
-        raise HTTPException(400, detail="paragraph_index must be ≥ 1")
-
-    fmt_raw = (body.formats or "both").strip().lower()
-    if fmt_raw == "both":
-        fmt_set = {"pdf", "docx"}
-    elif fmt_raw in {"pdf", "docx"}:
-        fmt_set = {fmt_raw}
-    else:
-        raise HTTPException(400, detail="formats must be pdf|docx|both")
-
-    try:
-        result = await asyncio.to_thread(
-            partial(
-                edit_paragraph_in_run,
-                out_dir,
-                paragraph_index,
-                text=str(body.text or ""),
-                formats=fmt_set,
-            )
-        )
-    except ParagraphEditError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except RenderError as exc:
-        raise HTTPException(500, detail=str(exc)) from exc
-
-    media = result.get("media_status") or {}
-    preview = _build_preview_payload(
-        run_id, out_dir, media if isinstance(media, dict) else {}
-    )
-    v = int(result.get("version") or 0)
-
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-
-    return {
-        "run_id": run_id,
-        "paragraph_index": paragraph_index,
-        "status": "ok",
-        "text": result.get("text"),
-        "media_status": media,
-        "downloads": files,
-        "preview": preview,
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
-
-
-@app.post("/api/runs/{run_id}/undo")
-async def undo_last_edit(run_id: str) -> dict[str, Any]:
-    """Restore the single undo snapshot from the last successful Liber edit."""
-    from case3.run_undo import UndoError, apply_undo
-
-    out_dir = _resolve_run_dir(run_id)
-    try:
-        result = await asyncio.to_thread(partial(apply_undo, out_dir, rebuild=True))
-    except UndoError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
-    media: dict[str, Any] = {}
-    meta_path = out_dir / "meta.json"
-    if meta_path.is_file():
-        try:
-            media = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get(
-                "media_status"
-            ) or {}
-        except (OSError, json.JSONDecodeError):
-            media = {}
-    if not isinstance(media, dict):
-        media = {}
-    preview = _build_preview_payload(run_id, out_dir, media)
-    v = int(time.time())
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-    # Cache-bust figures in preview
-    for block in preview.get("blocks") or []:
-        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
-            url = str(block["url"])
-            sep = "&" if "?" in url else "?"
-            block["url"] = f"{url}{sep}v={v}"
-
-    return {
-        "run_id": run_id,
-        "status": "ok",
-        "undone": {"kind": result.get("kind"), "target": result.get("target")},
-        "downloads": files,
-        "preview": preview,
-        "undo": None,
-        "warnings": (
-            [str(result["rebuild_error"])] if result.get("rebuild_error") else []
-        ),
-    }
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
@@ -1925,291 +1414,6 @@ def download_file(run_id: str, name: str) -> FileResponse:
             "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
     return FileResponse(path, media_type=media, filename=path.name)
-
-
-def _write_slides_crash(run_id: str, message: str) -> None:
-    """Persist slides_status=error so UI does not sit on queued forever."""
-    out = ROOT / "runs" / "out" / run_id
-    logs = ROOT / "runs" / "logs" / run_id
-    meta_path = out / "meta.json"
-    meta: dict[str, Any] = {"run_id": run_id}
-    if meta_path.is_file():
-        try:
-            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                meta = loaded
-        except (OSError, json.JSONDecodeError):
-            pass
-    meta["slides_status"] = "error"
-    meta["slides_stage"] = "error"
-    meta["slides_error"] = message
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    try:
-        out.mkdir(parents=True, exist_ok=True)
-        logs.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(payload, encoding="utf-8")
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
-    except OSError:
-        log.exception("could not write slides crash meta run_id=%s", run_id)
-
-
-def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: Path) -> bool:
-    """Clear zombie slides_status=running left by API kill / hung LLM (not live patch).
-
-    Returns True if the lock was cleared so a PATCH may proceed.
-    """
-    if meta.get("slides_status") != "running":
-        return False
-    stage = str(meta.get("slides_stage") or "")
-    # Live text-edit rebuild — caller must serialize / 409.
-    if stage == "patch":
-        return False
-    ir = out_dir / "slides" / "deck.json"
-    # No IR yet → real first-time job may still be running.
-    if not ir.is_file() and stage in {"starting", "queued", "llm", "llm_retry", "plan", "ir"}:
-        return False
-    log.warning(
-        "clearing stale slides lock run_id=%s stage=%s (deck exists=%s)",
-        run_id,
-        stage or "?",
-        ir.is_file(),
-    )
-    meta["slides_status"] = "ok" if ir.is_file() else "error"
-    meta["slides_stage"] = "ok" if ir.is_file() else "error"
-    if not ir.is_file():
-        meta["slides_error"] = meta.get("slides_error") or "slides job interrupted"
-    else:
-        meta["slides_error"] = None
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs = ROOT / "runs" / "logs" / run_id
-    try:
-        logs.mkdir(parents=True, exist_ok=True)
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
-    except OSError:
-        pass
-    return True
-
-
-def _bg_run_slides(run_id: str) -> None:
-    from case3.slides_job import run_slides_job
-
-    try:
-        run_slides_job(run_id, root=ROOT)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("slides background job crashed run_id=%s", run_id)
-        _write_slides_crash(run_id, f"slides crashed: {exc}")
-
-
-def _kick_slides_thread(run_id: str) -> None:
-    """Start slides job on a daemon thread (BackgroundTasks+to_thread can stall on Windows)."""
-    threading.Thread(
-        target=_bg_run_slides,
-        args=(run_id,),
-        name=f"case3-slides-{run_id}",
-        daemon=True,
-    ).start()
-
-
-class SlidesStartBody(BaseModel):
-    theme_pack: str | None = Field(default=None)
-    structure_id: str | None = Field(default=None)
-    style_settings: dict[str, Any] | None = Field(default=None)
-
-
-@app.get("/api/deck-themes")
-def deck_themes() -> dict[str, Any]:
-    """Public catalog of Liber deck theme packs (deck-only)."""
-    from case3.deck_structure import list_structures
-
-    return {"packs": list_public_packs(), "structures": list_structures()}
-
-
-@app.post("/api/runs/{run_id}/slides")
-async def start_slides(
-    run_id: str,
-    body: SlidesStartBody | None = Body(default=None),
-) -> JSONResponse:
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
-        raise HTTPException(404, detail="run not found")
-    try:
-        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(500, detail="corrupt meta.json") from exc
-    if meta.get("status") != "ok":
-        raise HTTPException(409, detail="report run is not ok")
-    # Live worker — do not start a second thread. Stuck "queued" (old bug) is retriable.
-    if meta.get("slides_status") == "running":
-        return JSONResponse(
-            {
-                "run_id": run_id,
-                "status": "started",
-                "slides_status": "running",
-                "slides_stage": meta.get("slides_stage") or "queued",
-            },
-            status_code=202,
-        )
-    from case3.deck_structure import normalize_structure_id
-
-    pack = normalize_pack_id((body.theme_pack if body else None) or "atelier")
-    structure_id = normalize_structure_id(body.structure_id if body else None)
-    settings = (body.style_settings if body else None) or None
-    if settings is not None and not isinstance(settings, dict):
-        settings = None
-    meta["slides_style"] = {
-        "theme_pack": pack,
-        "structure_id": structure_id,
-        "style_settings": settings,
-    }
-    meta["slides_theme_pack"] = pack
-    meta["slides_structure_id"] = structure_id
-    # Mark running before kick so a dead BackgroundTask cannot leave meta at queued.
-    meta["slides_status"] = "running"
-    meta["slides_stage"] = "starting"
-    meta["slides_error"] = None
-    meta.pop("cancel_requested", None)
-    # Write meta first, then SSE stage (persist appends into meta.steps).
-    with _slides_patch_lock:
-        _slides_patch_pending.pop(run_id, None)
-        _slides_patch_busy.discard(run_id)
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs = ROOT / "runs" / "logs" / run_id
-    logs.mkdir(parents=True, exist_ok=True)
-    (logs / "meta.json").write_text(payload, encoding="utf-8")
-    from case3.run_events import EVENTS
-
-    EVENTS.reopen(run_id)
-    EVENTS.bind_out(run_id, out_dir)
-    EVENTS.publish_stage(run_id, "starting", scope="slides")
-    _kick_slides_thread(run_id)
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "started",
-            "slides_status": "running",
-            "slides_stage": "starting",
-            "slides_style": meta["slides_style"],
-        },
-        status_code=202,
-    )
-
-
-@app.get("/api/runs/{run_id}/slides")
-def get_slides(run_id: str) -> dict[str, Any]:
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
-        raise HTTPException(404, detail="run not found")
-    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    deck = None
-    ir_path = out_dir / "slides" / "deck.json"
-    if ir_path.is_file():
-        try:
-            deck = json.loads(ir_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            deck = None
-    art = meta.get("slides_artifacts") or {}
-    downloads: dict[str, str] = {}
-    deck_pdf_mode: str | None = None
-    if isinstance(art, dict):
-        for key in ("pptx", "deck_pdf"):
-            name = art.get(key)
-            if isinstance(name, str) and (out_dir / name).is_file():
-                downloads[key] = f"/api/runs/{run_id}/files/{name}"
-        mode = art.get("deck_pdf_mode")
-        if isinstance(mode, str) and mode.strip():
-            deck_pdf_mode = mode.strip()
-    return {
-        "run_id": run_id,
-        "slides_status": meta.get("slides_status") or "idle",
-        "slides_stage": meta.get("slides_stage"),
-        "slides_error": meta.get("slides_error"),
-        "deck": deck,
-        "slide_pngs": [
-            f"/api/runs/{run_id}/slides/png/{p.name}"
-            for p in sorted((out_dir / "slides").glob("slide_*.png"))
-        ]
-        if (out_dir / "slides").is_dir()
-        else [],
-        "downloads": downloads,
-        "deck_pdf_mode": deck_pdf_mode,
-    }
-
-
-class SlidesIrPatchBody(BaseModel):
-    """Text-only IR patch — edit existing fields; no add/delete slides."""
-
-    slides: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class SlidesStructureBody(BaseModel):
-    """Structural IR op — reorder / duplicate / delete; rebuild twin+PPTX only."""
-
-    op: str = Field(default="")
-    id: str | None = Field(default=None)
-    order: list[str] | None = Field(default=None)
-
-
-def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
-    """Drain coalesced IR patches — latest deck wins; no 409 on concurrent edits."""
-    from case3.run_cancel import RunCancelled
-    from case3.slides_job import rebuild_slides_from_deck
-
-    while True:
-        with _slides_patch_lock:
-            pending = _slides_patch_pending.pop(run_id, None)
-            if pending is None:
-                _slides_patch_busy.discard(run_id)
-                return
-            deck = pending["deck"]
-            _slides_patch_busy.add(run_id)
-
-        try:
-            meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {"run_id": run_id, "status": "ok"}
-        meta["slides_status"] = "running"
-        meta["slides_stage"] = "patch"
-        meta["slides_error"] = None
-        meta.pop("cancel_requested", None)
-        payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        try:
-            (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-        except OSError:
-            log.exception("slides patch meta write failed run_id=%s", run_id)
-
-        try:
-            rebuild_slides_from_deck(run_id, deck, root=ROOT)
-        except RunCancelled:
-            log.info("slides patch cancelled run_id=%s", run_id)
-            with _slides_patch_lock:
-                _slides_patch_pending.pop(run_id, None)
-                _slides_patch_busy.discard(run_id)
-            return
-        except Exception:
-            log.exception("slides IR patch rebuild failed run_id=%s", run_id)
-            try:
-                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-                m["slides_status"] = "error"
-                m["slides_stage"] = "error"
-                m["slides_error"] = "rebuild after edit failed"
-                (out_dir / "meta.json").write_text(
-                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-            except Exception:
-                pass
-
-        with _slides_patch_lock:
-            if run_id not in _slides_patch_pending:
-                _slides_patch_busy.discard(run_id)
-                return
 
 
 def _bg_resume_pipeline(run_id: str) -> None:
@@ -2303,166 +1507,15 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     }
 
 
-def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Path]:
-    """Shared guards for text + structure slide patches."""
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir.resolve()).startswith(str(out_root)) or not (
-        out_dir / "meta.json"
-    ).is_file():
-        raise HTTPException(404, detail="run not found")
-    ir_path = out_dir / "slides" / "deck.json"
-    if not ir_path.is_file():
-        raise HTTPException(404, detail="deck IR not found — generate presentation first")
-    try:
-        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(500, detail="corrupt meta.json") from exc
-    if meta.get("status") != "ok":
-        raise HTTPException(409, detail="report run is not ok")
-    if meta.get("slides_status") == "running" and meta.get("slides_stage") != "patch":
-        _clear_stale_slides_running(meta, run_id=run_id, out_dir=out_dir)
-        if meta.get("slides_status") == "running":
-            raise HTTPException(409, detail="slides job already running")
-
-    with _slides_patch_lock:
-        base = (_slides_patch_pending.get(run_id) or {}).get("deck")
-    if base is None:
-        try:
-            base = json.loads(ir_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise HTTPException(500, detail="corrupt deck.json") from exc
-    if not isinstance(base, dict):
-        raise HTTPException(500, detail="corrupt deck.json")
-    return base, ir_path
-
-
-def _enqueue_deck_rebuild(
-    run_id: str, out_dir: Path, ir_path: Path, patched: dict[str, Any]
-) -> bool:
-    """Write IR + queue coalesce worker. Returns True if already queued."""
-    try:
-        ir_path.write_text(
-            json.dumps(patched, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    except OSError as exc:
-        raise HTTPException(500, detail="could not write deck.json") from exc
-
-    with _slides_patch_lock:
-        _slides_patch_pending[run_id] = {"deck": patched}
-        already = run_id in _slides_patch_busy
-        if not already:
-            _slides_patch_busy.add(run_id)
-
-    if not already:
-        threading.Thread(
-            target=_slides_patch_worker,
-            args=(run_id, out_dir),
-            name=f"case3-slides-patch-{run_id}",
-            daemon=True,
-        ).start()
-    return already
-
-
-@app.patch("/api/runs/{run_id}/slides/ir")
-async def patch_slides_ir(
-    run_id: str,
-    body: SlidesIrPatchBody,
-) -> JSONResponse:
-    """Patch deck text fields and rebuild native PPTX + twin preview.
-
-    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
-    """
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    base, ir_path = _load_deck_for_patch(run_id, out_dir)
-
-    from case3.slides_ir import DeckIrError
-    from case3.slides_patch import apply_deck_text_patch
-
-    try:
-        patched = apply_deck_text_patch(base, {"slides": body.slides})
-    except DeckIrError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
-    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "started",
-            "slides_status": "running",
-            "slides_stage": "patch",
-            "queued": already,
-            "deck": patched,
-        },
-        status_code=202,
-    )
-
-
-@app.post("/api/runs/{run_id}/slides/structure")
-async def post_slides_structure(
-    run_id: str,
-    body: SlidesStructureBody,
-) -> JSONResponse:
-    """Reorder / duplicate / delete slides — IR patch + rebuild twin/PPTX (no LLM)."""
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    base, ir_path = _load_deck_for_patch(run_id, out_dir)
-
-    from case3.slides_ir import DeckIrError
-    from case3.slides_patch import apply_deck_structure
-
-    op_body: dict[str, Any] = {"op": body.op}
-    if body.id is not None:
-        op_body["id"] = body.id
-    if body.order is not None:
-        op_body["order"] = body.order
-
-    try:
-        patched = apply_deck_structure(base, op_body)
-    except DeckIrError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
-    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "started",
-            "slides_status": "running",
-            "slides_stage": "patch",
-            "queued": already,
-            "op": body.op,
-            "deck": patched,
-        },
-        status_code=202,
-    )
-
-
-@app.get("/api/runs/{run_id}/slides/png/{name}")
-def download_slide_png(run_id: str, name: str) -> FileResponse:
-    if not name.lower().endswith(".png") or not _FILE_OK.match(name):
-        raise HTTPException(400, detail="invalid png name")
-    path = _safe_run_file(run_id, "slides", name)
-    return FileResponse(path, media_type="image/png", filename=path.name)
-
-
-@app.get("/api/runs/{run_id}/slides/media/{name}")
-def download_slide_media(run_id: str, name: str) -> FileResponse:
-    """Chart/figure PNG from figures/, or diagram PNG from slides/diagrams/."""
-    if not name.lower().endswith(".png") or not _FILE_OK.match(name):
-        raise HTTPException(400, detail="invalid media name")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    for parts in (("figures", name), ("slides", "diagrams", name)):
-        try:
-            path = _safe_run_file(run_id, *parts)
-            return FileResponse(path, media_type="image/png", filename=path.name)
-        except HTTPException:
-            continue
-    raise HTTPException(404, detail="media not found")
-
-
 @app.get("/api/runs/{run_id}/figures/{name}")
 def download_figure(run_id: str, name: str) -> FileResponse:
     if not name.lower().endswith(".png"):
         raise HTTPException(400, detail="only PNG figures")
     path = _safe_run_file(run_id, "figures", name)
     return FileResponse(path, media_type="image/png", filename=path.name)
+
+
+from case3.api_edits import router as edits_router
+from case3.api_slides import router as slides_router
+app.include_router(edits_router)
+app.include_router(slides_router)

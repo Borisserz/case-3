@@ -575,7 +575,3 @@ def generate_all_figures(
             if dest.exists():
                 dest.unlink()
     return status
-
-
-# Back-compat alias used by older imports / health checks
-KandinskyConfig = ImageApiConfig

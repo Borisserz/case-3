@@ -348,12 +348,9 @@ def _kicker_title(
 
 
 def _is_dark_pack(style: dict[str, Any] | None) -> bool:
-    if not isinstance(style, dict):
-        return False
-    if str(style.get("pack_id") or "") in ("botanical", "signal", "ink", "voltage"):
-        return True
-    motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
-    return str(motif.get("atmosphere") or "") == "dark"
+    from case3.deck_theme import is_dark_pack
+
+    return is_dark_pack(style)
 
 
 def _motif_dict(style: dict[str, Any] | None) -> dict[str, Any]:

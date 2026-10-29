@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.util import Inches, Pt
+
+log = logging.getLogger("case3.slides_pptx_charts")
 
 
 def _chart_type(ir_type: str):
@@ -60,6 +63,7 @@ def _color_series(
     try:
         series_list = list(chart.series)
     except Exception:
+        log.debug("pptx chart: cannot list series", exc_info=True)
         return
     if not series_list:
         return
@@ -82,14 +86,15 @@ def _color_series(
                 try:
                     pt.format.line.fill.background()
                 except Exception:
-                    pass
+                    log.debug("pptx chart: point line clear failed", exc_info=True)
         except Exception:
             # Fallback: whole series one color
+            log.debug("pptx chart: point colors failed; solid series", exc_info=True)
             try:
                 ser.format.fill.solid()
                 ser.format.fill.fore_color.rgb = series_colors[0]
             except Exception:
-                pass
+                log.debug("pptx chart: solid series fallback failed", exc_info=True)
         return
 
     for i, ser in enumerate(series_list):
@@ -102,6 +107,7 @@ def _color_series(
                 ser.format.fill.solid()
                 ser.format.fill.fore_color.rgb = color
         except Exception:
+            log.debug("pptx chart: series color failed i=%s", i, exc_info=True)
             continue
 
 
@@ -118,9 +124,9 @@ def _style_donut_labels(plot) -> None:
             labels.font.size = Pt(11)
             labels.font.bold = True
         except Exception:
-            pass
+            log.debug("pptx chart: donut label font failed", exc_info=True)
     except Exception:
-        pass
+        log.debug("pptx chart: donut labels failed", exc_info=True)
 
 
 def add_native_chart(
@@ -157,6 +163,7 @@ def add_native_chart(
             chart_type, left, top, width, height, data
         )
     except Exception:
+        log.debug("pptx chart: add_chart failed type=%s", chart_type, exc_info=True)
         return False
     chart = graphic.chart
     try:
@@ -165,7 +172,7 @@ def add_native_chart(
             chart.legend.position = XL_LEGEND_POSITION.BOTTOM
             chart.legend.include_in_layout = False
     except Exception:
-        pass
+        log.debug("pptx chart: legend style failed", exc_info=True)
 
     _color_series(
         chart,
@@ -188,14 +195,14 @@ def add_native_chart(
             try:
                 plot.gap_width = 80
             except Exception:
-                pass
+                log.debug("pptx chart: gap_width failed", exc_info=True)
     except Exception:
-        pass
+        log.debug("pptx chart: plot style failed", exc_info=True)
 
     try:
         chart.font.size = Pt(10)
     except Exception:
-        pass
+        log.debug("pptx chart: font size failed", exc_info=True)
 
     return True
 

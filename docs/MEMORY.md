@@ -102,6 +102,7 @@ Desk: SSE v1 + **2A** + **2B** + **finish** (mode scripts · `meta.steps[]`) don
 | Презентация / PPTX deck | ADR-0008 · KI-liber-deck · structures `2026-10-22-liber-deck-structures-design` (arc ≠ colors) · Julius UX parity · packs + **structure_id** |
 | Полный аудит / top-10 probes | [`docs/audits/`](audits/) |
 | Отложенные фичи / цикл правок / «новое» K | [`knowledge/backlog-deferred-2026-10-25.md`](knowledge/backlog-deferred-2026-10-25.md) |
+| Аудит кода (improve/delete/reuse) | [`knowledge/codebase-audit-2026-10-29.md`](knowledge/codebase-audit-2026-10-29.md) |
 
 ---
 

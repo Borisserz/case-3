@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:helpers": "npx tsx --test src/liberRunHelpers.test.ts src/PipelineFlow.test.ts src/domain/slidesKick.test.ts src/domain/craftSteps.test.ts src/diagramIr.test.ts src/diagramLegend.test.ts src/diagramMetrics.test.ts src/downloadDiagramPng.test.ts src/mermaidSvgInteract.test.ts src/reportHistory.test.ts src/domain/reportDownloads.test.ts src/domain/reportEditMode.test.ts src/pdfFindPage.test.ts"
+    "test:helpers": "npx tsx --test src/liberRunHelpers.test.ts src/app/postJsonEdit.test.ts src/PipelineFlow.test.ts src/domain/slidesKick.test.ts src/domain/craftSteps.test.ts src/diagramIr.test.ts src/diagramLegend.test.ts src/diagramMetrics.test.ts src/downloadDiagramPng.test.ts src/mermaidSvgInteract.test.ts src/reportHistory.test.ts src/domain/reportDownloads.test.ts src/domain/reportEditMode.test.ts src/pdfFindPage.test.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",

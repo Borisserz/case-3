@@ -4459,23 +4459,6 @@
   color: var(--primary);
 }
 
-.msg-bot-stack
-  > .artifact-card.is-julius
-  .artifact-card-actions.is-quiet-cta
-  .deck-make-gear {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-  color: var(--muted);
-}
-
-.msg-bot-stack
-  > .artifact-card.is-julius
-  .artifact-card-actions.is-quiet-cta
-  .deck-make-gear:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--secondary) 40%, var(--sheet));
-  color: var(--primary);
-}
-
 .deck-file-card-head {
   display: flex;
   align-items: center;

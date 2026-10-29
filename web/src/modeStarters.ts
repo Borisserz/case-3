@@ -1,6 +1,6 @@
 /** Quiet empty-home starters under the sheet composer (all Liber modes). */
 
-import type { LiberWorkMode } from "./liberModes";
+import type { LiberWorkMode } from "./domain/liberModes";
 
 export type ModeStarter = {
   id: string;

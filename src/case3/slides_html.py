@@ -112,12 +112,9 @@ def _wants_split_title(style: dict[str, Any] | None) -> bool:
 
 
 def _is_dark_pack(style: dict[str, Any] | None) -> bool:
-    if not isinstance(style, dict):
-        return False
-    if str(style.get("pack_id") or "") in ("botanical", "signal", "ink", "voltage"):
-        return True
-    motif = style.get("motif") if isinstance(style.get("motif"), dict) else {}
-    return str(motif.get("atmosphere") or "") == "dark"
+    from case3.deck_theme import is_dark_pack
+
+    return is_dark_pack(style)
 
 
 def _motif_panels(style: dict[str, Any] | None) -> list[str]:

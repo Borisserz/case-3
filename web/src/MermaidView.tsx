@@ -1,7 +1,7 @@
 /** Render Mermaid source → SVG (Liber soft-premium theme). */
 
 import { useEffect, useId, useRef, useState } from "react";
-import mermaid from "mermaid";
+import type { Mermaid } from "mermaid";
 import {
   applyMermaidRoleHighlight,
   mermaidNodeIdFromElement,
@@ -18,25 +18,32 @@ type Props = {
 };
 
 let mermaidReady = false;
+let mermaidMod: Mermaid | null = null;
 
-function ensureMermaid() {
-  if (mermaidReady) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    theme: "base",
-    themeVariables: {
-      primaryColor: "#dce8df",
-      primaryTextColor: "#1a2e22",
-      primaryBorderColor: "#6b8f76",
-      secondaryColor: "#f4f7f4",
-      tertiaryColor: "#eef3ef",
-      lineColor: "#5a7a64",
-      fontFamily: "Georgia, 'Times New Roman', serif",
-      fontSize: "15px",
-    },
-  });
-  mermaidReady = true;
+async function loadMermaid(): Promise<Mermaid> {
+  if (mermaidMod) return mermaidMod;
+  const mod = await import("mermaid");
+  const mermaid = mod.default;
+  if (!mermaidReady) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#dce8df",
+        primaryTextColor: "#1a2e22",
+        primaryBorderColor: "#6b8f76",
+        secondaryColor: "#f4f7f4",
+        tertiaryColor: "#eef3ef",
+        lineColor: "#5a7a64",
+        fontFamily: "Georgia, 'Times New Roman', serif",
+        fontSize: "15px",
+      },
+    });
+    mermaidReady = true;
+  }
+  mermaidMod = mermaid;
+  return mermaid;
 }
 
 export function MermaidView({
@@ -71,10 +78,11 @@ export function MermaidView({
       setLoading(false);
       return;
     }
-    ensureMermaid();
     const renderId = `mmd_${reactId}_${Math.random().toString(36).slice(2, 8)}`;
     (async () => {
       try {
+        const mermaid = await loadMermaid();
+        if (cancelled || !hostRef.current) return;
         const { svg } = await mermaid.render(renderId, src);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
