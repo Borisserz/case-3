@@ -191,6 +191,23 @@ def credit_clamp_max_tokens(current: int, afford: int, *, margin: int = 64) -> i
     return None
 
 
+def context_exceeded(body_txt: str) -> bool:
+    """llama-server / local Qwen: prompt + max_tokens > n_ctx → HTTP 500."""
+    low = (body_txt or "").lower()
+    return "context size has been exceeded" in low or (
+        "context" in low and "exceed" in low
+    )
+
+
+def context_shrink_max_tokens(current: int, *, floor: int = 1024) -> int | None:
+    """Halve max_tokens for context-exceeded retry; stop at floor."""
+    cur = int(current)
+    if cur <= floor:
+        return None
+    nxt = max(floor, cur // 2)
+    return nxt if nxt < cur else None
+
+
 def build_body(
     *,
     system: str,
@@ -278,10 +295,11 @@ class LLMClient:
         headers = self._headers()
         max_tokens = int(body.get("max_tokens") or self.config.max_tokens)
         error: Exception | None = None
-        # Extra attempts when we shrink max_tokens on OpenRouter 402 (credits move).
+        # Extra attempts when we shrink max_tokens (OpenRouter 402 / LAN context 500).
         credit_shrinks = 0
+        context_shrinks = 0
         attempt = 0
-        while attempt <= self.config.max_retries + credit_shrinks:
+        while attempt <= self.config.max_retries + credit_shrinks + context_shrinks:
             if cancel_check is not None:
                 cancel_check()
             if attempt:
@@ -313,9 +331,6 @@ class LLMClient:
                     return text
             except urllib.error.HTTPError as exc:
                 body_txt = _http_body(exc)
-                error = LLMError(
-                    f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
-                )
                 # Re-clamp every 402 where afford drops — do not stop after first shrink.
                 if exc.code == 402 and "afford" in body_txt.lower():
                     afford = parse_openrouter_afford(body_txt)
@@ -334,6 +349,28 @@ class LLMClient:
                         credit_shrinks += 1
                         attempt += 1
                         continue
+                # Local Qwen: prompt + max_tokens > n_ctx → 500 context exceeded.
+                if exc.code == 500 and context_exceeded(body_txt):
+                    nxt = context_shrink_max_tokens(max_tokens)
+                    if nxt is not None and context_shrinks < 4:
+                        log.warning(
+                            "LLM 500 context exceeded — max_tokens %d → %d",
+                            max_tokens,
+                            nxt,
+                        )
+                        max_tokens = nxt
+                        context_shrinks += 1
+                        attempt += 1
+                        continue
+                    raise LLMError(
+                        "HTTP 500: контекст модели переполнен (prompt + max_tokens). "
+                        "В .env поставь VISION_MAX_TOKENS=4096 (или меньше), "
+                        "укороти Source, фото/графики=0, перезапусти api.cmd. "
+                        f"Ответ сервера: {body_txt}"
+                    ) from exc
+                error = LLMError(
+                    f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
+                )
                 if exc.code < 500 and exc.code != 429:
                     raise error from exc
             except TimeoutError as exc:

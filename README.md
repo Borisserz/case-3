@@ -83,7 +83,8 @@ scripts\smoke.cmd
 | нет Docker-образа | Docker Desktop → `scripts\setup.cmd` |
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
 | нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
-| мало текста / нет графиков (обрыв) | `VISION_MAX_TOKENS=16384`, `max_charts≤2`, перезапуск `api.cmd` |
+| HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
+| мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` если ctx позволяет; `max_charts≤2`, рестарт `api.cmd` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |
