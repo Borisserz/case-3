@@ -264,43 +264,74 @@ def render_tex(
                 raise RenderError("pandoc did not produce DOCX")
             docx_dst = out_dir / f"{stem}.docx"
             shutil.copy2(docx_src, docx_dst)
+            # Keep pandoc original — Word rejects some post-mutated OOXML.
+            from case3.docx_validate import docx_package_ok
+
+            docx_backup = work / f"{stem}.docx.pre_mut"
+            shutil.copy2(docx_dst, docx_backup)
+
+            def _restore_if_broken(step: str) -> None:
+                if docx_package_ok(docx_dst):
+                    return
+                log.warning("DOCX broken after %s — restoring pandoc original", step)
+                shutil.copy2(docx_backup, docx_dst)
+
             # D5: bold header row + numeric align (soft-fail if no python-docx).
             from case3.docx_polish import try_polish_docx
 
             polished = try_polish_docx(docx_dst)
+            _restore_if_broken("polish")
             # C7: itemize/enumerate → Liber List Bullet / List Number (soft-fail).
             from case3.docx_lists import try_fix_docx_lists
 
             lists_ok = try_fix_docx_lists(docx_dst)
-            # Native OOXML charts for cht_* (Series IR); soft-fail.
+            _restore_if_broken("lists")
+            # Native OOXML charts: OFF by default — MS Word often won't open
+            # packages LibreOffice accepts. Opt-in: CASE3_DOCX_NATIVE_CHARTS=1.
             native_ids: list[str] = []
-            try:
-                import json as _json
+            import os as _os
 
-                from case3.docx_charts import (
-                    palette_hexes_for_report,
-                    try_replace_docx_native_charts,
-                )
+            native_on = (_os.environ.get("CASE3_DOCX_NATIVE_CHARTS") or "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if native_on:
+                try:
+                    import json as _json
 
-                palette = "atelier"
-                meta_p = out_dir / "meta.json"
-                if meta_p.is_file():
-                    try:
-                        meta = _json.loads(meta_p.read_text(encoding="utf-8"))
-                        if isinstance(meta, dict) and meta.get("chart_palette"):
-                            palette = str(meta.get("chart_palette") or palette)
-                    except (OSError, _json.JSONDecodeError, TypeError):
-                        pass
-                fj = out_dir / "figures.json"
-                if not fj.is_file():
-                    fj = work / "figures.json"
-                native_ids = try_replace_docx_native_charts(
-                    docx_dst,
-                    figures_path=fj if fj.is_file() else None,
-                    series_hexes=palette_hexes_for_report(palette),
-                )
-            except Exception as exc:  # noqa: BLE001 — never break DOCX
-                log.warning("docx native charts hook failed: %s", exc)
+                    from case3.docx_charts import (
+                        palette_hexes_for_report,
+                        try_replace_docx_native_charts,
+                    )
+
+                    palette = "atelier"
+                    meta_p = out_dir / "meta.json"
+                    if meta_p.is_file():
+                        try:
+                            meta = _json.loads(meta_p.read_text(encoding="utf-8"))
+                            if isinstance(meta, dict) and meta.get("chart_palette"):
+                                palette = str(meta.get("chart_palette") or palette)
+                        except (OSError, _json.JSONDecodeError, TypeError):
+                            pass
+                    fj = out_dir / "figures.json"
+                    if not fj.is_file():
+                        fj = work / "figures.json"
+                    native_ids = try_replace_docx_native_charts(
+                        docx_dst,
+                        figures_path=fj if fj.is_file() else None,
+                        series_hexes=palette_hexes_for_report(palette),
+                    )
+                    if native_ids and not docx_package_ok(docx_dst):
+                        log.warning(
+                            "DOCX broken after native_charts — restoring pandoc original"
+                        )
+                        shutil.copy2(docx_backup, docx_dst)
+                        native_ids = []
+                except Exception as exc:  # noqa: BLE001 — never break DOCX
+                    log.warning("docx native charts hook failed: %s", exc)
+                    shutil.copy2(docx_backup, docx_dst)
+                    native_ids = []
             results["docx"] = docx_dst
             media_src = work / media_dir
             if media_src.is_dir() and any(media_src.rglob("*")):
