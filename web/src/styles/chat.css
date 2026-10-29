@@ -2346,6 +2346,30 @@
   font-size: 0.9rem;
 }
 
+.msg-error-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.btn-resume-run {
+  appearance: none;
+  border: 1px solid var(--ink-faint, #c5cdb0);
+  background: var(--paper, #f7f5ef);
+  color: var(--ink, #1a1f14);
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-resume-run:hover {
+  border-color: var(--ink-muted, #6a7160);
+}
+
 .empty {
   margin: auto;
   text-align: center;

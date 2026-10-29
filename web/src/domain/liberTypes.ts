@@ -151,6 +151,10 @@ export type BotMsg = {
   /** Actionable error line under fold */
   errorHint?: string | null;
   error?: string;
+  /** Same run_id eligible for POST /resume */
+  canResume?: boolean;
+  failedRunId?: string | null;
+  failedStage?: string | null;
 };
 
 export type Msg = UserMsg | BotMsg;

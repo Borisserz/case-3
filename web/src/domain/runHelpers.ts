@@ -142,6 +142,24 @@ export function provisionalSessionTitle(
   return "Новый отчёт";
 }
 
+/** Pipeline error that Liber can offer «Продолжить» for. */
+export class RunFailedError extends Error {
+  readonly canResume: boolean;
+  readonly runId: string;
+  readonly failedStage: string | null;
+
+  constructor(
+    message: string,
+    opts: { canResume?: boolean; runId: string; failedStage?: string | null },
+  ) {
+    super(message);
+    this.name = "RunFailedError";
+    this.canResume = Boolean(opts.canResume);
+    this.runId = opts.runId;
+    this.failedStage = opts.failedStage ?? null;
+  }
+}
+
 /** C8: human status error with failed charts + TeX log tail. */
 export function formatRunStatusError(
   body: Record<string, unknown>,

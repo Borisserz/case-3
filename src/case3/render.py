@@ -245,6 +245,10 @@ def render_tex(
             from case3.docx_polish import try_polish_docx
 
             polished = try_polish_docx(docx_dst)
+            # C7: itemize/enumerate → Liber List Bullet / List Number (soft-fail).
+            from case3.docx_lists import try_fix_docx_lists
+
+            lists_ok = try_fix_docx_lists(docx_dst)
             # Native OOXML charts for cht_* (Series IR); soft-fail.
             native_ids: list[str] = []
             try:
@@ -282,10 +286,11 @@ def render_tex(
                     shutil.rmtree(media_dst)
                 shutil.copytree(media_src, media_dst)
             log.info(
-                "wrote %s%s%s%s",
+                "wrote %s%s%s%s%s",
                 docx_dst,
                 " (reference.docx)" if ref_docx else " (pandoc default)",
                 " +polish" if polished else "",
+                " +lists" if lists_ok else "",
                 f" +native_charts={native_ids}" if native_ids else "",
             )
 

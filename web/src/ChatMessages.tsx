@@ -33,6 +33,8 @@ type Props = {
   onOpenPresentation: (msgId: string, result: RunResult) => void;
   onOpenDeckSlides: (msgId: string, result: RunResult) => void;
   onOpenFilm?: (msgId: string, frame: CraftFilmFrame) => void;
+  /** Continue failed pipeline from failed_stage (same run_id). */
+  onResumeRun?: (msgId: string, runId: string) => void;
 };
 
 export function ChatMessages({
@@ -53,6 +55,7 @@ export function ChatMessages({
   onOpenPresentation,
   onOpenDeckSlides,
   onOpenFilm,
+  onResumeRun,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -338,7 +341,20 @@ export function ChatMessages({
                       <div className="msg-body">{m.text}</div>
                     )}
                     {m.role === "bot" && m.error && (
-                      <p className="err">{m.error}</p>
+                      <div className="msg-error-block">
+                        <p className="err">{m.error}</p>
+                        {m.canResume && m.failedRunId && onResumeRun ? (
+                          <button
+                            type="button"
+                            className="btn-resume-run"
+                            onClick={() =>
+                              onResumeRun(m.id, m.failedRunId as string)
+                            }
+                          >
+                            Продолжить
+                          </button>
+                        ) : null}
+                      </div>
                     )}
                     {m.role === "bot" &&
                       m.result &&
