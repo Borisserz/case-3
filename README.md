@@ -2,10 +2,12 @@
 
 ## Сначала проверь Qwen (Win LAN)
 
-Пока curl молчит — Liber «жду модель» будет крутиться зря. Подставь IP/модель из `.env`:
+Пока модель молчит — Liber «жду модель» крутится зря. Подставь IP/модель из `.env`.
+
+**Важно:** в PowerShell `curl` = `Invoke-WebRequest` → ошибка про Headers / Content-Type. Пиши **`curl.exe`**.
 
 ```cmd
-curl -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"qwen3.5-4b\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":8,\"chat_template_kwargs\":{\"enable_thinking\":false}}"
+curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"qwen3.5-4b\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":8,\"chat_template_kwargs\":{\"enable_thinking\":false}}"
 ```
 
 `--max-time 30` = лимит ожидания ответа (сек), не путать с JSON-полем `"model"`.
