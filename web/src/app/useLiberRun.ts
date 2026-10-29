@@ -58,7 +58,6 @@ export type LiberSendDeps = {
   chat: string;
   sourceDraft: SourceDraft | null;
   file: File | null;
-  photoMode: "document" | "edit";
   health: Health | null;
   imageChip: { ok: boolean };
   workMode: LiberWorkMode;
@@ -106,7 +105,6 @@ export function useLiberRun(deps: LiberSendDeps) {
     chat,
     sourceDraft,
     file,
-    photoMode,
     health,
     imageChip,
     workMode,
@@ -146,23 +144,15 @@ async () => {
   const chatTrim = chat.trim();
   const draftSnap = sourceDraft;
   const hasSource = Boolean(file) || Boolean(draftSnap?.text);
-  const intentText =
-    photoMode === "edit"
-      ? chatTrim
-      : hasSource
-        ? chatTrim || DEFAULT_INTENT
-        : chatTrim;
-  if (photoMode === "edit" && !intentText) return;
-  if (photoMode === "document" && !hasSource && !chatTrim) return;
+  const intentText = hasSource ? chatTrim || DEFAULT_INTENT : chatTrim;
+  if (!hasSource && !chatTrim) return;
   setDeckApplyHint(null);
 
   // Soft warn: Image down + photos wanted — run still proceeds (fig_* may skip)
   const wantsPhotos =
-    photoMode === "edit" ||
-    (photoMode === "document" &&
-      !forbidImages &&
-      maxImages > 0 &&
-      modeToOutputMode(workMode) !== "diagram");
+    !forbidImages &&
+    maxImages > 0 &&
+    modeToOutputMode(workMode) !== "diagram";
   if (wantsPhotos && health && !imageChip.ok) {
     setToast(
       health.image_api_configured || health.kandinsky_configured
@@ -179,19 +169,15 @@ async () => {
         fileName: draftSnap.fileName,
       }
     : undefined;
-  const userBody =
-    photoMode === "edit"
-      ? intentText
-      : chatTrim
-        ? chatTrim
-        : attachment
-          ? "Собрать отчёт"
-          : file
-            ? `Файл: ${file.name}`
-            : chatTrim;
+  const userBody = chatTrim
+    ? chatTrim
+    : attachment
+      ? "Собрать отчёт"
+      : file
+        ? `Файл: ${file.name}`
+        : chatTrim;
   const outMode = modeToOutputMode(workMode);
   const userChips = [
-    photoMode === "edit" ? "только правка фото" : null,
     outMode === "diagram"
       ? "схема"
       : outMode === "presentation"
@@ -200,19 +186,17 @@ async () => {
           ? "отчёт"
           : null,
     attachPhotos.length ? `фото ×${attachPhotos.length}` : null,
-    photoMode === "document" && outMode !== "diagram" && forbidCharts
+    outMode !== "diagram" && forbidCharts
       ? "без графиков"
-      : photoMode === "document" && outMode !== "diagram"
+      : outMode !== "diagram"
         ? `≤${maxCharts} гр.`
         : null,
-    photoMode === "document" && outMode !== "diagram"
+    outMode !== "diagram"
       ? forbidImages && !attachPhotos.length
         ? "без фото"
         : `≤${Math.max(maxImages, attachPhotos.length)} фото`
       : null,
-    photoMode === "document"
-      ? `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`
-      : null,
+    `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`,
     dryRun ? "dry-run" : null,
   ].filter((x): x is string => Boolean(x));
 
@@ -245,13 +229,11 @@ async () => {
         id: pendingId,
         role: "bot",
         text:
-          photoMode === "edit"
-            ? "Править фото…"
-            : outMode === "diagram"
-              ? "Собираю схему…"
-              : outMode === "presentation"
-                ? "Собираю презентацию…"
-                : "Генерирую документ…",
+          outMode === "diagram"
+            ? "Собираю схему…"
+            : outMode === "presentation"
+              ? "Собираю презентацию…"
+              : "Генерирую документ…",
         pending: true,
         pendingStage: "queued",
         pendingDetail: null,
@@ -278,61 +260,59 @@ async () => {
   }
 
   const fd = new FormData();
-  fd.append("photo_mode", photoMode);
+  // Photo-edit UI parked; Liber desk always posts document runs.
+  // Standalone img2img remains POST /api/photo/edit.
+  fd.append("photo_mode", "document");
   for (const p of photosSnapshot) fd.append("photos", p);
-  if (photoMode === "edit") {
+  if (file) {
+    fd.append("source", file);
+    fd.append("intent", intentText);
+  } else if (draftSnap?.text) {
+    fd.append("source_text", draftSnap.text);
     fd.append("intent", intentText);
   } else {
-    if (file) {
-      fd.append("source", file);
-      fd.append("intent", intentText);
-    } else if (draftSnap?.text) {
-      fd.append("source_text", draftSnap.text);
-      fd.append("intent", intentText);
-    } else {
-      // Chat-only: same text is Source + Intent
-      fd.append("source_text", chatTrim);
-      fd.append("intent", intentText);
-    }
-    fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
-    fd.append("max_diagrams", String(maxDiagrams));
-    fd.append(
-      "max_images",
-      String(
-        forbidImages && !photosSnapshot.length
-          ? 0
-          : Math.max(maxImages, photosSnapshot.length),
-      ),
-    );
-    fd.append("chart_types", CHART_AUTO ? "" : CHART_TYPES.join(","));
-    fd.append("chart_hints", CHART_HINTS.trim());
-    fd.append("chart_auto", String(CHART_AUTO));
-    fd.append("chart_palette", CHART_PALETTE);
-    fd.append("chart_style", CHART_STYLE.trim());
-    fd.append("doc_title", DOC_TITLE.trim().slice(0, 200));
-    fd.append("forbid_charts", String(forbidCharts));
-    fd.append(
-      "forbid_images",
-      String(forbidImages && photosSnapshot.length === 0),
-    );
-    fd.append("output_mode", outMode);
-    fd.append("deck_pack", deckStyle.themePack || "atelier");
-    fd.append(
-      "formats",
-      outMode === "diagram" || outMode === "presentation" ? "none" : "both",
-    );
-    fd.append("dry_run", String(dryRun));
-    if (outMode === "diagram") {
-      fd.set("max_charts", "0");
-      fd.set("max_images", "0");
-      fd.set("forbid_charts", "true");
-      fd.set("forbid_images", "true");
-      fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
-    }
-    if (outMode === "presentation") {
-      // Liber Mermaid UI schemas off — deck only (PPTX + PDF twin).
-      fd.set("max_diagrams", "0");
-    }
+    // Chat-only: same text is Source + Intent
+    fd.append("source_text", chatTrim);
+    fd.append("intent", intentText);
+  }
+  fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
+  fd.append("max_diagrams", String(maxDiagrams));
+  fd.append(
+    "max_images",
+    String(
+      forbidImages && !photosSnapshot.length
+        ? 0
+        : Math.max(maxImages, photosSnapshot.length),
+    ),
+  );
+  fd.append("chart_types", CHART_AUTO ? "" : CHART_TYPES.join(","));
+  fd.append("chart_hints", CHART_HINTS.trim());
+  fd.append("chart_auto", String(CHART_AUTO));
+  fd.append("chart_palette", CHART_PALETTE);
+  fd.append("chart_style", CHART_STYLE.trim());
+  fd.append("doc_title", DOC_TITLE.trim().slice(0, 200));
+  fd.append("forbid_charts", String(forbidCharts));
+  fd.append(
+    "forbid_images",
+    String(forbidImages && photosSnapshot.length === 0),
+  );
+  fd.append("output_mode", outMode);
+  fd.append("deck_pack", deckStyle.themePack || "atelier");
+  fd.append(
+    "formats",
+    outMode === "diagram" || outMode === "presentation" ? "none" : "both",
+  );
+  fd.append("dry_run", String(dryRun));
+  if (outMode === "diagram") {
+    fd.set("max_charts", "0");
+    fd.set("max_images", "0");
+    fd.set("forbid_charts", "true");
+    fd.set("forbid_images", "true");
+    fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
+  }
+  if (outMode === "presentation") {
+    // Liber Mermaid UI schemas off — deck only (PPTX + PDF twin).
+    fd.set("max_diagrams", "0");
   }
 
   try {
@@ -965,7 +945,6 @@ async () => {
       chat,
       sourceDraft,
       file,
-      photoMode,
       health,
       imageChip,
       workMode,

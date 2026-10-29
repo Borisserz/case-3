@@ -24,10 +24,6 @@ def _parse_hex(h: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def _fmt_hex(r: int, g: int, b: int) -> str:
-    return f"#{r:02X}{g:02X}{b:02X}"
-
-
 def apply_hex_series_to_html(
     html: str,
     series_hexes: list[str],

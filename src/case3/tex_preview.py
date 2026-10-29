@@ -93,11 +93,6 @@ def _plain_unescape(text: str) -> str:
     return t
 
 
-def _unescape_tex(text: str) -> str:
-    """Back-compat alias used by tables/captions — plain text."""
-    return _plain_unescape(text)
-
-
 def _inline_to_html(tex_fragment: str) -> str:
     """Convert a TeX prose fragment to safe HTML with strong/em/code."""
     t = tex_fragment or ""

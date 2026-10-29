@@ -255,35 +255,6 @@ def _load_source_and_intent(out_dir: Path, meta: dict[str, Any]) -> tuple[str, s
     return source, intent
 
 
-def _chart_ids_and_pngs(out_dir: Path, meta: dict[str, Any]) -> tuple[list[str], dict[str, Path]]:
-    planned = [str(x) for x in (meta.get("charts_planned") or []) if x]
-    figs = out_dir / "figures"
-    by_id: dict[str, Path] = {}
-    for cid in planned:
-        png = figs / f"{cid}.png"
-        if png.is_file():
-            by_id[cid] = png
-    # Also scan figures.json charts list
-    fj = out_dir / "figures.json"
-    if fj.is_file():
-        try:
-            data = json.loads(fj.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            data = {}
-        for ch in data.get("charts") or []:
-            if not isinstance(ch, dict):
-                continue
-            cid = str(ch.get("id") or "")
-            if not cid:
-                continue
-            if cid not in planned:
-                planned.append(cid)
-            png = figs / f"{cid}.png"
-            if png.is_file():
-                by_id[cid] = png
-    return planned, by_id
-
-
 def _stem_from_out(out_dir: Path, meta: dict[str, Any]) -> str:
     for art in sorted(out_dir.glob("*.pdf")):
         name = art.name

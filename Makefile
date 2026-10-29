@@ -1,12 +1,12 @@
 .DEFAULT_GOAL := help
 
 PYTHON ?= python3
-FILE ?= notes.txt
+FILE ?= fixtures/smoke/01_temp_shares.txt
 
 .PHONY: help setup run dry-run push-debug clean
 
 help:
-	@echo "  make setup | make run FILE=notes.txt | make dry-run | make push-debug"
+	@echo "  make setup | make run FILE=fixtures/smoke/01_temp_shares.txt | make dry-run | make push-debug"
 
 setup:
 	$(PYTHON) -m pip install -e .

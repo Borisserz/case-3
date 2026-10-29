@@ -205,9 +205,3 @@ def add_native_chart(
         log.debug("pptx chart: font size failed", exc_info=True)
 
     return True
-
-
-def default_chart_box(*, split: bool) -> tuple:
-    if split:
-        return Inches(6.4), Inches(1.7), Inches(6.2), Inches(4.6)
-    return Inches(0.7), Inches(1.65), Inches(11.9), Inches(4.8)

@@ -53,7 +53,3 @@ def add_native_table(
             else:
                 fill.fore_color.rgb = row_fill
     return True
-
-
-def default_table_box() -> tuple:
-    return Inches(0.7), Inches(1.7), Inches(11.9), Inches(4.8)

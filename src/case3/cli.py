@@ -1,4 +1,4 @@
-"""CLI: case3 run notes.txt --prompt "…" → PDF/DOCX (+ Kandinsky if enabled)."""
+"""CLI: case3 run notes.txt --prompt "…" → PDF/DOCX (+ Image API if enabled)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
         prog="case3",
-        description="Text + intent → LaTeX (+ Kandinsky) → PDF/DOCX",
+        description="Text + intent → LaTeX (+ Image API) → PDF/DOCX",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

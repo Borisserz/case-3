@@ -5,17 +5,20 @@ Sources: 3 explore agents (`src/case3`, `web/src`, `scripts`+`tests`+`prompt`+`w
 
 **Scope:** improve / simplify / reuse / fix / delete. Not new product features (see parked `backlog-deferred-2026-10-25.md`).
 
+**Unified next plan:** [`docs/superpowers/plans/2026-10-29-liber-simplify-for-agents.md`](../superpowers/plans/2026-10-29-liber-simplify-for-agents.md) (Wave 0 hygiene + tracks A/B/C).
+
 ---
 
-## Do first (P0)
+## Do first (P0) — status 2026-10-29 evening
 
-| # | Action | Why |
-|---|--------|-----|
-| 1 | **`git add tests/test_*.py` + 4 fixtures** (then commit when asked) | Disk has ~108 tests; git tracks ~22. Clean clone loses ~80% coverage. |
-| 2 | Fix **`scripts/archive/*.py` `ROOT = parents[2]`** | Archive move left `parents[1]` → resolves to `scripts/`, not repo root. |
-| 3 | Fix **`scripts/render_template_previews.py`** → import `premium_gallery_decks` from `scripts/archive` | Gallery re-render broken after archive. |
-| 4 | Split / extract **`web/src/app/App.tsx`** | `useLiberEdits` + `useMakePresentation` + `useResumeFailedRun` + `useLiberRun` (`send`) **done** (~1273 lines orchestration) |
-| 5 | Split **`src/case3/api.py`** | `api_edits.py` + `api_slides.py` routers **done**; core run/SSE stays in `api.py` (~1.5k) |
+| # | Action | Status |
+|---|--------|--------|
+| 1 | Track full `tests/test_*.py` + fixtures | **done** (`8bfd303`) |
+| 2 | Archive `ROOT = parents[2]` | **done** |
+| 3 | Gallery import from `scripts/archive` | **done** (+ `run_structure_matrix8` path) |
+| 4 | Extract App hooks (`useLiberRun` …) | **done** |
+| 5 | Split `api_edits` / `api_slides` | **done** |
+| 6 | Dead helpers + orphan CSS (thinking-bar/export-menu) | **done** (wave 8) |
 
 ---
 
@@ -26,7 +29,7 @@ Sources: 3 explore agents (`src/case3`, `web/src`, `scripts`+`tests`+`prompt`+`w
 | `web/src/DeckMakeSplit.tsx` + split/gear CSS | Delete (0 imports; CTA in `ArtifactCard`) | **done** |
 | `src/case3/kandinsky.py` | Delete shim (0 importers). Keep health key `kandinsky_configured` | **done** |
 | `web/src/icons.tsx` `IconHistory` | Delete unused export | **done** |
-| `web/src/diagramMetrics.smoke.ts` | Wire into `test:helpers` **or** delete (`.test.ts` covers unit) | open |
+| `web/src/diagramMetrics.smoke.ts` | Delete (unit `.test.ts` covers) | **done** |
 | Root Week-1 shims (`liberTypes.ts`, … ×7) | Retarget ~12 files → `domain/`, then delete | **done** |
 | `domain/liberModes.ts` `showDeckMake` | Remove flag + test assertion | **done** |
 | Local junk `__pycache__`, worker `node_modules`/`.wrangler` | Optional local wipe (gitignored) | n/a |
@@ -133,4 +136,5 @@ Still open after safe deletes:
 - Wave 6: `useLiberRun` (`send`); App ~1273 + `useLiberRun.ts` ~1002
 - Wave 7: `slides_pptx_charts` bare except → `log.debug`; audit backend table synced
 - Verify (post–Wave 6): **438 pytest**, **54 web helpers**, `tsc` + `npm run build` OK, `/api/health` all green
+- Wave 8: dead helpers (`_kick_pipeline_thread`, `default_*_box`, `_align`, …); orphan CSS; unused api imports; `modeNudge`/`loadLastReport`; matrix8 archive path
 - Functional (Wave 7): UI dry-run via Liber desk → `status=ok`, PDF/DOCX, artifact rail + history (`source_20261029T195115Z`, ~3s)

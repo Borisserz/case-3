@@ -1,7 +1,6 @@
 /** Liber Print Desk — in-chat report: title, prose, tables, figure PNGs + chart edit. */
 
 import {
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -42,9 +41,7 @@ import {
   saveCollapsedIds,
 } from "./reportSections";
 
-const PdfFirstPage = lazy(() =>
-  import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
-);
+import { PdfFirstPage } from "./lazyPdfFirstPage";
 
 export type PreviewBlock =
   | { type: "heading"; level: number; text: string }

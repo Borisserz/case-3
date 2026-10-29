@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "archive"))
 
 from case3.deck_theme import resolve_deck_theme  # noqa: E402
 from case3.slides_export import build_deck_pdf  # noqa: E402

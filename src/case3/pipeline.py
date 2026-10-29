@@ -1,4 +1,4 @@
-"""intent+source → LLM tex → Kandinsky + HTML charts → inject → PDF/DOCX."""
+"""intent+source → LLM tex → Image API + HTML charts → inject → PDF/DOCX."""
 
 from __future__ import annotations
 

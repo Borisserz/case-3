@@ -375,23 +375,6 @@ def _parse_charts_list(raw_charts: Any, *, max_charts: int) -> list[dict[str, An
     return charts
 
 
-def _align(
-    slots: list[str],
-    items: list[dict[str, Any]],
-    *,
-    kind: str,
-    max_n: int,
-) -> list[dict[str, Any]]:
-    by_id = {x["id"]: x for x in items}
-    aligned = [by_id[s] for s in slots if s in by_id]
-    missing = [s for s in slots if s not in by_id]
-    if missing:
-        raise ParseError(
-            f"{kind} slot(s) without valid JSON entry: {missing}"
-        )
-    return aligned[:max_n]
-
-
 def _merge_media_lists(primary: list[Any], extra: list[Any]) -> list[Any]:
     """Union by id; prefer the entry with longer html/prompt/mermaid."""
     by_id: dict[str, Any] = {}

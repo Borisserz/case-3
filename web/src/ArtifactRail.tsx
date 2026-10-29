@@ -1,7 +1,6 @@
 /** Right-side Artifact rail: Preview · PDF · Source — resize, TOC, polish. */
 
 import {
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -33,10 +32,7 @@ import {
   saveRailWidth,
 } from "./domain/railWidth";
 import { pdfSearchNeedles } from "./pdfFindPage";
-
-const PdfFirstPage = lazy(() =>
-  import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
-);
+import { PdfFirstPage } from "./lazyPdfFirstPage";
 
 export type ArtifactTab =
   | "preview"

@@ -1,4 +1,4 @@
-"""Generate .tex (+ Kandinsky prompts + HTML charts) from intent ∥ source."""
+"""Generate .tex (+ Image API figure prompts + HTML charts) from intent ∥ source."""
 
 from __future__ import annotations
 

@@ -94,10 +94,8 @@ export default function App() {
   const [forbidImages, setForbidImages] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [chat, setChat] = useState("");
-  /** Liber-attached photos for document slots or chat-only /edit */
+  /** Liber-attached photos for document figure slots. */
   const [attachPhotos, setAttachPhotos] = useState<File[]>([]);
-  /** Photo-edit mode UI parked; keep document pipeline. */
-  const [photoMode] = useState<"document" | "edit">("document");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   /** Stop pressed — waiting for meta cancelled. */
@@ -674,21 +672,17 @@ export default function App() {
 
   const canSend = useMemo(() => {
     if (busy) return false;
-    if (photoMode === "edit") {
-      return attachPhotos.length > 0 && chat.trim().length > 0;
-    }
     const hasSource = Boolean(file) || Boolean(sourceDraft?.text);
     const chatTrim = chat.trim();
     // Any scale brief is fine — do not gate presentation/diagram on Source length.
     return hasSource || chatTrim.length > 0;
-  }, [file, busy, photoMode, attachPhotos, chat, sourceDraft]);
+  }, [file, busy, chat, sourceDraft]);
 
   const send = useLiberRun({
     canSend,
     chat,
     sourceDraft,
     file,
-    photoMode,
     health,
     imageChip,
     workMode,

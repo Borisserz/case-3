@@ -8,21 +8,17 @@ import logging
 import os
 import re
 import threading
-import time
-from functools import partial
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
     JSONResponse,
     RedirectResponse,
-    Response,
     StreamingResponse,
 )
-from pydantic import BaseModel, Field
 
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
@@ -38,8 +34,6 @@ from case3.image_api import (
     probe_image_api,
 )
 from case3.run_events import EVENTS, seed_events_from_steps
-from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
-from case3.parse_output import ParseError
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image
 from case3.run_cancel import mark_cancel_requested
@@ -596,53 +590,6 @@ def _bg_run_pipeline(
         (out / "meta.json").write_text(payload, encoding="utf-8")
     finally:
         _release_pipeline_slot(run_id)
-
-
-def _kick_pipeline_thread(
-    src_path: Path,
-    *,
-    run_id: str,
-    formats: set[str],
-    dry_run: bool,
-    intent: str,
-    max_images: int,
-    max_charts: int,
-    max_diagrams: int = 0,
-    user_figures: list[dict[str, Any]] | None = None,
-    output_mode: str = "auto",
-) -> None:
-    """Start report pipeline on a daemon thread.
-
-    BackgroundTasks + asyncio.to_thread can stall on Windows (same bug as slides);
-    Liber then polls 200 forever with status=running, stage=queued, error=null.
-    """
-    # Used by resume / helpers — /api/run claims the slot itself before prepare.
-    busy = _claim_pipeline_slot(run_id)
-    if busy is not None:
-        raise HTTPException(
-            409,
-            detail=(
-                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
-                "и перезапусти api.cmd — параллельные runs на Win зависают."
-            ),
-        )
-    threading.Thread(
-        target=_bg_run_pipeline,
-        kwargs={
-            "src_path": src_path,
-            "run_id": run_id,
-            "formats": formats,
-            "dry_run": dry_run,
-            "intent": intent,
-            "max_images": max_images,
-            "max_charts": max_charts,
-            "max_diagrams": max_diagrams,
-            "user_figures": user_figures,
-            "output_mode": output_mode,
-        },
-        name=f"case3-pipeline-{run_id}",
-        daemon=True,
-    ).start()
 
 
 async def _quick_photo_edit(
@@ -1245,7 +1192,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
 def _media_previews(
     run_id: str, out_dir: Path, media: dict[str, Any]
 ) -> list[dict[str, str]]:
-    """PNG thumbnails that succeeded (charts / Kandinsky) under out/figures/."""
+    """PNG thumbnails that succeeded (charts / Image API) under out/figures/."""
     figs = out_dir / "figures"
     if not figs.is_dir():
         return []

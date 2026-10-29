@@ -170,16 +170,6 @@ export function deleteFolder(id: string): {
   return { folders, history };
 }
 
-export function loadLastReport(): StoredRun | null {
-  try {
-    const raw = sessionStorage.getItem(LAST);
-    if (!raw) return null;
-    return JSON.parse(raw) as StoredRun;
-  } catch {
-    return null;
-  }
-}
-
 export function loadHistoryPayload(runId: string): StoredRun | null {
   try {
     const raw = sessionStorage.getItem(`liber-run-${runId}`);

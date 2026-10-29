@@ -16,20 +16,6 @@ export const LIBER_MODE_PILLS: {
   },
 ];
 
-/** Visible nudge under pills on empty desk. */
-export function modeNudge(mode: LiberWorkMode): string {
-  if (mode === "presentation") {
-    return "Презентация: PPTX и PDF — одна преза, разные форматы.";
-  }
-  if (mode === "diagram") {
-    return "Только схема Liber — без PDF/DOCX и презентации.";
-  }
-  if (mode === "report") {
-    return "Документ: Превью · Схема · PDF рядом в панели.";
-  }
-  return "Сначала выберите режим: Отчёт · Схема · Презентация.";
-}
-
 export function modeToOutputMode(mode: LiberWorkMode): string {
   return mode ?? "auto";
 }

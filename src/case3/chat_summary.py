@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Iterator
+from typing import Any
 
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.tex_preview import tex_to_preview_blocks
@@ -242,25 +242,3 @@ def try_generate_chat_summary(
             except Exception:  # noqa: BLE001
                 pass
         return blurb, "error"
-
-
-def iter_summary_deltas(
-    tex: str,
-    *,
-    intent: str | None = None,
-    media: dict[str, Any] | None = None,
-    client: LLMClient | None = None,
-) -> Iterator[str]:
-    """Yield text deltas then stop (for tests / bus publishers)."""
-    outline = build_outline(tex)
-    user = build_summary_user(outline, intent=intent, media=media)
-    llm = client or LLMClient(LLMConfig.from_env())
-    if hasattr(llm, "stream"):
-        yield from llm.stream(
-            system=SUMMARY_SYSTEM,
-            user_text=user,
-            reasoning="off",
-            max_tokens=400,
-        )
-    else:
-        yield llm.complete(system=SUMMARY_SYSTEM, user_text=user, reasoning="off")
