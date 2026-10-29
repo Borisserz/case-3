@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import argparse
 import logging
 import sys
@@ -14,11 +16,7 @@ from case3.render import RenderError
 
 
 def _root() -> Path:
-    here = Path(__file__).resolve()
-    cand = here.parents[2]
-    if (cand / "Dockerfile").is_file():
-        return cand
-    return Path.cwd()
+    return repo_root()
 
 
 def _read_prompt(args: argparse.Namespace) -> str | None:

@@ -1,8 +1,9 @@
 /** Shared Liber desk types (chat + run payload). */
 
 import type { ThinkingLine, ThinkingMode } from "./pipelinePhrases";
-/** Week-2+ debt: move ReportPreview into domain (avoid feature → type cycle). */
-import type { ReportPreview } from "../ReportView";
+import type { ReportPreview } from "./reportPreview";
+
+export type { PreviewBlock, ReportPreview } from "./reportPreview";
 
 export type PaletteInfo = {
   id: string;

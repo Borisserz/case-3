@@ -53,89 +53,102 @@ const CHART_PALETTE = "atelier";
 const CHART_STYLE = "";
 const DOC_TITLE = "";
 
+/** Grouped deps so App wiring stays scannable (composer / desk / runRefs). */
 export type LiberSendDeps = {
-  canSend: boolean;
-  chat: string;
-  sourceDraft: SourceDraft | null;
-  file: File | null;
-  health: Health | null;
-  imageChip: { ok: boolean };
-  workMode: LiberWorkMode;
-  deckStyle: DeckStyle;
-  attachPhotos: File[];
-  forbidCharts: boolean;
-  forbidImages: boolean;
-  maxCharts: number;
-  maxImages: number;
-  maxDiagrams: number;
-  dryRun: boolean;
-  setMsgs: Dispatch<SetStateAction<Msg[]>>;
-  setBusy: Dispatch<SetStateAction<boolean>>;
-  setStopping: Dispatch<SetStateAction<boolean>>;
-  setChat: Dispatch<SetStateAction<string>>;
-  setChatTitle: Dispatch<SetStateAction<string | null>>;
-  setSourceDraft: Dispatch<SetStateAction<SourceDraft | null>>;
-  setAttachPhotos: Dispatch<SetStateAction<File[]>>;
-  setHasStoredReport: Dispatch<SetStateAction<boolean>>;
-  setToast: Dispatch<SetStateAction<string | null>>;
-  setDeckApplyHint: Dispatch<SetStateAction<string | null>>;
-  setRailExiting: Dispatch<SetStateAction<boolean>>;
-  setActiveArtifact: Dispatch<SetStateAction<ActiveArtifact | null>>;
-  chatRef: RefObject<HTMLTextAreaElement | null>;
-  cancelRequestedRef: MutableRefObject<boolean>;
-  activeRunIdRef: MutableRefObject<string | null>;
-  pendingBotIdRef: MutableRefObject<string | null>;
-  rememberRun: (result: RunResult) => void;
-  openReportArtifact: (
-    msgId: string,
-    result: RunResult,
-    tab?: ArtifactTab,
-  ) => void;
-  openDiagramArtifact: (
-    msgId: string,
-    result: RunResult,
-    diagramId: string,
-  ) => void;
-  makePresentation: (msgId: string, result: RunResult) => Promise<void>;
+  composer: {
+    canSend: boolean;
+    chat: string;
+    sourceDraft: SourceDraft | null;
+    file: File | null;
+    attachPhotos: File[];
+    forbidCharts: boolean;
+    forbidImages: boolean;
+    maxCharts: number;
+    maxImages: number;
+    maxDiagrams: number;
+    dryRun: boolean;
+    workMode: LiberWorkMode;
+    deckStyle: DeckStyle;
+    chatRef: RefObject<HTMLTextAreaElement | null>;
+    setChat: Dispatch<SetStateAction<string>>;
+    setChatTitle: Dispatch<SetStateAction<string | null>>;
+    setSourceDraft: Dispatch<SetStateAction<SourceDraft | null>>;
+    setAttachPhotos: Dispatch<SetStateAction<File[]>>;
+  };
+  desk: {
+    health: Health | null;
+    imageChip: { ok: boolean };
+    setMsgs: Dispatch<SetStateAction<Msg[]>>;
+    setBusy: Dispatch<SetStateAction<boolean>>;
+    setStopping: Dispatch<SetStateAction<boolean>>;
+    setHasStoredReport: Dispatch<SetStateAction<boolean>>;
+    setToast: Dispatch<SetStateAction<string | null>>;
+    setDeckApplyHint: Dispatch<SetStateAction<string | null>>;
+    setRailExiting: Dispatch<SetStateAction<boolean>>;
+    setActiveArtifact: Dispatch<SetStateAction<ActiveArtifact | null>>;
+  };
+  runRefs: {
+    cancelRequestedRef: MutableRefObject<boolean>;
+    activeRunIdRef: MutableRefObject<string | null>;
+    pendingBotIdRef: MutableRefObject<string | null>;
+    rememberRun: (result: RunResult) => void;
+    openReportArtifact: (
+      msgId: string,
+      result: RunResult,
+      tab?: ArtifactTab,
+    ) => void;
+    openDiagramArtifact: (
+      msgId: string,
+      result: RunResult,
+      diagramId: string,
+    ) => void;
+    makePresentation: (msgId: string, result: RunResult) => Promise<void>;
+  };
 };
 
 export function useLiberRun(deps: LiberSendDeps) {
   const {
-    canSend,
-    chat,
-    sourceDraft,
-    file,
-    health,
-    imageChip,
-    workMode,
-    deckStyle,
-    attachPhotos,
-    forbidCharts,
-    forbidImages,
-    maxCharts,
-    maxImages,
-    maxDiagrams,
-    dryRun,
-    setMsgs,
-    setBusy,
-    setStopping,
-    setChat,
-    setChatTitle,
-    setSourceDraft,
-    setAttachPhotos,
-    setHasStoredReport,
-    setToast,
-    setDeckApplyHint,
-    setRailExiting,
-    setActiveArtifact,
-    chatRef,
-    cancelRequestedRef,
-    activeRunIdRef,
-    pendingBotIdRef,
-    rememberRun,
-    openReportArtifact,
-    openDiagramArtifact,
-    makePresentation,
+    composer: {
+      canSend,
+      chat,
+      sourceDraft,
+      file,
+      attachPhotos,
+      forbidCharts,
+      forbidImages,
+      maxCharts,
+      maxImages,
+      maxDiagrams,
+      dryRun,
+      workMode,
+      deckStyle,
+      chatRef,
+      setChat,
+      setChatTitle,
+      setSourceDraft,
+      setAttachPhotos,
+    },
+    desk: {
+      health,
+      imageChip,
+      setMsgs,
+      setBusy,
+      setStopping,
+      setHasStoredReport,
+      setToast,
+      setDeckApplyHint,
+      setRailExiting,
+      setActiveArtifact,
+    },
+    runRefs: {
+      cancelRequestedRef,
+      activeRunIdRef,
+      pendingBotIdRef,
+      rememberRun,
+      openReportArtifact,
+      openDiagramArtifact,
+      makePresentation,
+    },
   } = deps;
 
   return useCallback(

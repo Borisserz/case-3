@@ -1,7 +1,7 @@
 /** Compact horizontal TOC chips from preview headings. */
 
 import { useEffect, useRef } from "react";
-import type { PreviewBlock } from "./ReportView";
+import type { PreviewBlock } from "./domain/reportPreview";
 
 export type TocItem = {
   id: string;

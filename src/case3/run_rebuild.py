@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from case3.paths import repo_root
 from case3.render import render_tex
 
 
@@ -30,6 +31,5 @@ def rebuild_run_docs(
         extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
         log_dir=out_dir / "logs",
         force=True,
-        # out_dir is runs/out/<run_id> → parents[2] = repo root
-        project_root=out_dir.parents[2],
+        project_root=repo_root(),
     )

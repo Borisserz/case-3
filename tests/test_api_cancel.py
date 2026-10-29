@@ -11,7 +11,7 @@ from case3.api import app
 
 
 def test_cancel_marks_meta(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("case3.api.ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = "run_cancel_test"
     out = tmp_path / "runs" / "out" / run_id
     out.mkdir(parents=True)

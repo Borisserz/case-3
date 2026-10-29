@@ -27,16 +27,19 @@ from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.paragraph_edit import ParagraphEditError, edit_paragraph_in_run
 from case3.render import RenderError
 from case3.table_edit import TableEditError, edit_table_in_run
+from case3.run_store import (
+    FILE_OK,
+    artifact_downloads,
+    build_preview_payload,
+    edit_response_envelope,
+    formats_from_edit_body,
+    load_diagrams_from_out,
+    load_figures_json,
+    resolve_run_dir,
+)
 
 log = logging.getLogger("case3.api_edits")
 router = APIRouter(tags=["edits"])
-
-
-def _api():
-    """Late bind so ROOT monkeypatches on case3.api keep working."""
-    import case3.api as api
-
-    return api
 
 
 class ChartEditBody(BaseModel):
@@ -90,10 +93,10 @@ class ParagraphEditBody(BaseModel):
 @router.get("/api/runs/{run_id}/charts/{chart_id}")
 def get_run_chart(run_id: str, chart_id: str) -> dict[str, Any]:
     """Chart fragment + meta for Liber live Chart.js (G9/G12)."""
-    if not _api()._FILE_OK.match(chart_id):
+    if not FILE_OK.match(chart_id):
         raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _api()._resolve_run_dir(run_id)
-    fj = _api()._load_figures_json(out_dir)
+    out_dir = resolve_run_dir(run_id)
+    fj = load_figures_json(out_dir)
     charts = fj.get("charts") or []
     chart = next(
         (c for c in charts if isinstance(c, dict) and c.get("id") == chart_id),
@@ -117,9 +120,9 @@ def preview_run_chart(
     run_id: str, chart_id: str, body: ChartPreviewBody
 ) -> dict[str, Any]:
     """Local palette/type preview — no PNG/PDF write (Apply still commits)."""
-    if not _api()._FILE_OK.match(chart_id):
+    if not FILE_OK.match(chart_id):
         raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     try:
         return preview_chart_html(
             out_dir,
@@ -136,9 +139,9 @@ async def edit_run_diagram(
     run_id: str, diagram_id: str, body: DiagramEditBody
 ) -> dict[str, Any]:
     """Save edited Mermaid for one Liber diagram (no PDF/TeX)."""
-    if not _api()._FILE_OK.match(diagram_id):
+    if not FILE_OK.match(diagram_id):
         raise HTTPException(400, detail="invalid diagram_id")
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     try:
         diagram = await asyncio.to_thread(
             partial(
@@ -156,7 +159,7 @@ async def edit_run_diagram(
         undo = diagram.pop("undo", None)
     return {
         "diagram": diagram,
-        "diagrams": _api()._load_diagrams_from_out(out_dir),
+        "diagrams": load_diagrams_from_out(out_dir),
         "undo": undo,
     }
 
@@ -166,9 +169,9 @@ async def download_diagram_svg(run_id: str, diagram_id: str) -> Response:
     """Mermaid → SVG for Liber schema download (no PNG raster)."""
     from case3.diagram_svg import DiagramSvgError, export_diagram_svg, load_diagram_spec
 
-    if not _api()._FILE_OK.match(diagram_id):
+    if not FILE_OK.match(diagram_id):
         raise HTTPException(400, detail="invalid diagram_id")
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     try:
         meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -204,7 +207,7 @@ async def regenerate_run_diagrams(
     run_id: str, body: DiagramRegenBody | None = None
 ) -> dict[str, Any]:
     """Full LLM regenerate of diagrams[] (+ repair). No TeX/PDF."""
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     palette = normalize_palette_id((body.palette if body else None) or "atelier")
     try:
         result = await asyncio.to_thread(
@@ -220,7 +223,7 @@ async def regenerate_run_diagrams(
     except (LLMError, LLMConfigError) as exc:
         raise HTTPException(502, detail=str(exc)) from exc
     return {
-        "diagrams": result.get("diagrams") or _api()._load_diagrams_from_out(out_dir),
+        "diagrams": result.get("diagrams") or load_diagrams_from_out(out_dir),
         "diagrams_repaired": bool(result.get("diagrams_repaired")),
         "diagrams_ok": int(result.get("diagrams_ok") or 0),
     }
@@ -229,10 +232,10 @@ async def regenerate_run_diagrams(
 @router.post("/api/runs/{run_id}/charts/{chart_id}/edit")
 async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dict[str, Any]:
     """Restyle one chart in-place and rebuild PDF/DOCX (same PNG path → docs update)."""
-    if not _api()._FILE_OK.match(chart_id):
+    if not FILE_OK.match(chart_id):
         raise HTTPException(400, detail="invalid chart_id")
-    out_dir = _api()._resolve_run_dir(run_id)
-    fmt_set = _api()._formats_from_edit_body(body.formats)
+    out_dir = resolve_run_dir(run_id)
+    fmt_set = formats_from_edit_body(body.formats)
 
     palette = normalize_palette_id(body.palette)
     style = (body.style or "").strip()
@@ -261,39 +264,34 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
     except RenderError as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
-    media = result.get("media_status") or {}
-    preview = _api()._build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
     v = int(result.get("version") or 0)
-    _api()._bust_preview_figure_urls(preview, v, chart_id, "cht_")
-
-    return {
-        "run_id": run_id,
-        "chart_id": chart_id,
-        "status": "ok",
-        "mode": result.get("mode"),
-        "palette": result.get("palette"),
-        "style": result.get("style"),
-        "media_status": media,
-        "downloads": _api()._artifact_downloads(run_id, out_dir, v),
-        "preview": preview,
-        "preview_figure": {
-            "id": chart_id,
-            "kind": "chart",
-            "url": f"/api/runs/{run_id}/figures/{chart_id}.png?v={v}",
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        bust_needles=(chart_id, "cht_"),
+        extra={
+            "chart_id": chart_id,
+            "mode": result.get("mode"),
+            "palette": result.get("palette"),
+            "style": result.get("style"),
+            "preview_figure": {
+                "id": chart_id,
+                "kind": "chart",
+                "url": f"/api/runs/{run_id}/figures/{chart_id}.png?v={v}",
+            },
         },
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
+    )
 
 
 @router.post("/api/runs/{run_id}/figures/{figure_id}/edit")
 async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> dict[str, Any]:
     """Regenerate (generate) or img2img-edit one photo; rebuild PDF/DOCX."""
-    if not _api()._FILE_OK.match(figure_id):
+    if not FILE_OK.match(figure_id):
         raise HTTPException(400, detail="invalid figure_id")
     if figure_id.startswith("cht_"):
         raise HTTPException(400, detail="use /charts/{id}/edit for charts")
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
 
     mode = (body.mode or "generate").strip().lower()
     if mode not in {"generate", "edit"}:
@@ -302,7 +300,7 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
     if not prompt:
         raise HTTPException(400, detail="prompt required")
 
-    fmt_set = _api()._formats_from_edit_body(body.formats)
+    fmt_set = formats_from_edit_body(body.formats)
     caption = (body.caption or "").strip() or None
 
     try:
@@ -322,29 +320,24 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
     except RenderError as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
-    media = result.get("media_status") or {}
-    preview = _api()._build_preview_payload(run_id, out_dir, media if isinstance(media, dict) else {})
     v = int(result.get("version") or 0)
-    _api()._bust_preview_figure_urls(preview, v, figure_id)
-
-    return {
-        "run_id": run_id,
-        "figure_id": figure_id,
-        "status": "ok",
-        "mode": result.get("mode"),
-        "prompt": result.get("prompt"),
-        "caption": result.get("caption"),
-        "media_status": media,
-        "downloads": _api()._artifact_downloads(run_id, out_dir, v),
-        "preview": preview,
-        "preview_figure": {
-            "id": figure_id,
-            "kind": "figure",
-            "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        bust_needles=(figure_id,),
+        extra={
+            "figure_id": figure_id,
+            "mode": result.get("mode"),
+            "prompt": result.get("prompt"),
+            "caption": result.get("caption"),
+            "preview_figure": {
+                "id": figure_id,
+                "kind": "figure",
+                "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
+            },
         },
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
+    )
 
 
 @router.post("/api/runs/{run_id}/tables/{table_index}/edit")
@@ -352,11 +345,11 @@ async def edit_run_table(
     run_id: str, table_index: int, body: TableEditBody
 ) -> dict[str, Any]:
     """Replace one preview table (caption + grid) and rebuild PDF/DOCX."""
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     if table_index < 1:
         raise HTTPException(400, detail="table_index must be ≥ 1")
 
-    fmt_set = _api()._formats_from_edit_body(body.formats)
+    fmt_set = formats_from_edit_body(body.formats)
     headers = [str(h) for h in (body.headers or [])]
     rows = [[str(c) for c in row] for row in (body.rows or [])]
     caption = str(body.caption or "")
@@ -378,23 +371,15 @@ async def edit_run_table(
     except RenderError as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
-    media = result.get("media_status") or {}
-    preview = _api()._build_preview_payload(
-        run_id, out_dir, media if isinstance(media, dict) else {}
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "table_index": table_index,
+            "caption": result.get("caption"),
+        },
     )
-    v = int(result.get("version") or 0)
-
-    return {
-        "run_id": run_id,
-        "table_index": table_index,
-        "status": "ok",
-        "caption": result.get("caption"),
-        "media_status": media,
-        "downloads": _api()._artifact_downloads(run_id, out_dir, v),
-        "preview": preview,
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
 
 
 @router.post("/api/runs/{run_id}/paragraphs/{paragraph_index}/edit")
@@ -402,11 +387,11 @@ async def edit_run_paragraph(
     run_id: str, paragraph_index: int, body: ParagraphEditBody
 ) -> dict[str, Any]:
     """Replace one preview paragraph (para-N) and rebuild PDF/DOCX."""
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     if paragraph_index < 1:
         raise HTTPException(400, detail="paragraph_index must be ≥ 1")
 
-    fmt_set = _api()._formats_from_edit_body(body.formats)
+    fmt_set = formats_from_edit_body(body.formats)
 
     try:
         result = await asyncio.to_thread(
@@ -423,23 +408,15 @@ async def edit_run_paragraph(
     except RenderError as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
-    media = result.get("media_status") or {}
-    preview = _api()._build_preview_payload(
-        run_id, out_dir, media if isinstance(media, dict) else {}
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "paragraph_index": paragraph_index,
+            "text": result.get("text"),
+        },
     )
-    v = int(result.get("version") or 0)
-
-    return {
-        "run_id": run_id,
-        "paragraph_index": paragraph_index,
-        "status": "ok",
-        "text": result.get("text"),
-        "media_status": media,
-        "downloads": _api()._artifact_downloads(run_id, out_dir, v),
-        "preview": preview,
-        "undo": result.get("undo"),
-        "warnings": [],
-    }
 
 
 @router.post("/api/runs/{run_id}/undo")
@@ -447,7 +424,7 @@ async def undo_last_edit(run_id: str) -> dict[str, Any]:
     """Restore the single undo snapshot from the last successful Liber edit."""
     from case3.run_undo import UndoError, apply_undo
 
-    out_dir = _api()._resolve_run_dir(run_id)
+    out_dir = resolve_run_dir(run_id)
     try:
         result = await asyncio.to_thread(partial(apply_undo, out_dir, rebuild=True))
     except UndoError as exc:
@@ -464,14 +441,8 @@ async def undo_last_edit(run_id: str) -> dict[str, Any]:
             media = {}
     if not isinstance(media, dict):
         media = {}
-    preview = _api()._build_preview_payload(run_id, out_dir, media)
     v = int(time.time())
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={v}"
-    # Cache-bust figures in preview
+    preview = build_preview_payload(run_id, out_dir, media)
     for block in preview.get("blocks") or []:
         if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
             url = str(block["url"])
@@ -482,7 +453,7 @@ async def undo_last_edit(run_id: str) -> dict[str, Any]:
         "run_id": run_id,
         "status": "ok",
         "undone": {"kind": result.get("kind"), "target": result.get("target")},
-        "downloads": files,
+        "downloads": artifact_downloads(run_id, out_dir, v),
         "preview": preview,
         "undo": None,
         "warnings": (

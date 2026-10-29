@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import logging
 import os
 import shutil
@@ -159,7 +161,7 @@ def _reference_docx(project_root: Path | None) -> Path | None:
     if project_root is not None:
         roots.append(project_root.resolve())
     # case3/render.py → src/case3 → src → repo
-    roots.append(Path(__file__).resolve().parents[2])
+    roots.append(repo_root())
     for root in roots:
         cand = root / "assets" / "docx" / "reference.docx"
         if cand.is_file():

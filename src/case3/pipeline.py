@@ -313,6 +313,126 @@ def prepare_run_dirs(
     return run_id, text_path, work, out, logs
 
 
+
+def _pipeline_print_and_summary(
+    *,
+    meta: dict[str, Any],
+    out: Path,
+    logs: Path,
+    root: Path,
+    run_id: str,
+    tex_path: Path,
+    figures: list,
+    charts: list,
+    diagrams: list,
+    status: dict[str, Any],
+    figs_dir: Path,
+    formats: set[str],
+    dry_run: bool,
+    mode: str,
+    intent: str | None,
+    bump: Callable[[str, str | None], None],
+    force_render: bool = False,
+) -> dict[str, Path]:
+    """Shared latex/docx + chat summary after inject (run + resume)."""
+    skip_print = not formats
+    injected_tex = tex_path.read_text(encoding="utf-8")
+
+    def _do_summary() -> tuple[str, str]:
+        def on_delta(piece: str) -> None:
+            BUS.publish(run_id, piece)
+
+        chart_ids = [
+            str(c.get("id") or "")
+            for c in (charts or [])
+            if isinstance(c, dict) and c.get("id")
+        ]
+        fig_ids = [
+            str(f.get("id") or "")
+            for f in (figures or [])
+            if isinstance(f, dict) and f.get("id")
+        ]
+        media_facts = {
+            "charts_planned": len(chart_ids),
+            "figures_planned": len(fig_ids),
+            "diagrams_planned": len(diagrams or []),
+            # Prefer on-disk PNG truth (resume status can be stale-ok).
+            "charts_ok": sum(
+                1 for cid in chart_ids if _media_ok_on_disk(cid, status, figs_dir)
+            ),
+            "figures_ok": sum(
+                1 for fid in fig_ids if _media_ok_on_disk(fid, status, figs_dir)
+            ),
+        }
+        text, status_sum = try_generate_chat_summary(
+            injected_tex,
+            intent=intent,
+            media=media_facts,
+            on_delta=on_delta,
+        )
+        BUS.finish(run_id, text, status_sum)
+        return text, status_sum
+
+    def _do_render() -> dict:
+        return render_tex(
+            tex_path,
+            out_dir=out,
+            formats=formats,
+            extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+            log_dir=logs,
+            project_root=root,
+            force=force_render,
+            on_format=lambda fmt: bump("docx" if fmt == "docx" else "latex"),
+        )
+
+    if dry_run:
+        meta["chat_summary"] = ""
+        meta["summary_status"] = "skipped"
+        BUS.start(run_id)
+        BUS.finish(run_id, "", "skipped")
+        return {} if skip_print else _do_render()
+
+    if skip_print:
+        artifacts: dict[str, Path] = {}
+        BUS.start(run_id)
+        bump("summary")
+        if mode == "diagram":
+            summary_text = _diagram_chat_blurb(diagrams)
+            summary_status = "ok"
+        elif mode == "presentation":
+            summary_text = _presentation_chat_blurb(charts=charts, figures=figures)
+            summary_status = "ok"
+        else:
+            meta["summary_status"] = "streaming"
+            meta["chat_summary"] = ""
+            _write_meta(meta, out, logs)
+            summary_text, summary_status = _do_summary()
+        BUS.finish(run_id, summary_text or "", summary_status)
+        meta["chat_summary"] = summary_text or ""
+        meta["summary_status"] = summary_status
+        if summary_text:
+            (out / "chat_summary.txt").write_text(summary_text, encoding="utf-8")
+            (logs / "chat_summary.txt").write_text(summary_text, encoding="utf-8")
+        return artifacts
+
+    meta["summary_status"] = "streaming"
+    meta["chat_summary"] = ""
+    _write_meta(meta, out, logs)
+    BUS.start(run_id)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_r = pool.submit(_do_render)
+        fut_s = pool.submit(_do_summary)
+        artifacts = fut_r.result()
+        bump("summary")
+        summary_text, summary_status = fut_s.result()
+    meta["chat_summary"] = summary_text or ""
+    meta["summary_status"] = summary_status
+    if summary_text:
+        (out / "chat_summary.txt").write_text(summary_text, encoding="utf-8")
+        (logs / "chat_summary.txt").write_text(summary_text, encoding="utf-8")
+    return artifacts
+
+
 def resume_pipeline(
     run_id: str,
     *,
@@ -553,106 +673,25 @@ def resume_pipeline(
             shutil.copytree(figs_dir, dest)
 
         bump("latex" if formats else "summary")
-        skip_print = not formats
-
-        def _do_summary() -> tuple[str, str]:
-            def on_delta(piece: str) -> None:
-                BUS.publish(run_id, piece)
-
-            media_facts = {
-                "charts_planned": len(charts),
-                "figures_planned": len(figures),
-                "diagrams_planned": len(diagrams),
-                "charts_ok": sum(
-                    1
-                    for c in charts
-                    if _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
-                ),
-                "figures_ok": sum(
-                    1
-                    for f in figures
-                    if _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
-                ),
-            }
-            text, status_sum = try_generate_chat_summary(
-                tex_path.read_text(encoding="utf-8"),
-                intent=intent,
-                media=media_facts,
-                on_delta=on_delta,
-            )
-            BUS.finish(run_id, text, status_sum)
-            return text, status_sum
-
-        if dry_run or skip_print:
-            artifacts = (
-                {}
-                if skip_print
-                else render_tex(
-                    tex_path,
-                    out_dir=out,
-                    formats=formats,
-                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-                    log_dir=logs,
-                    project_root=root,
-                    force=True,
-                    on_format=lambda fmt: bump(
-                        "docx" if fmt == "docx" else "latex"
-                    ),
-                )
-            )
-            if dry_run:
-                meta["chat_summary"] = ""
-                meta["summary_status"] = "skipped"
-                BUS.start(run_id)
-                BUS.finish(run_id, "", "skipped")
-            else:
-                BUS.start(run_id)
-                bump("summary")
-                if mode == "diagram":
-                    summary_text = _diagram_chat_blurb(diagrams)
-                    summary_status = "ok"
-                elif mode == "presentation":
-                    summary_text = _presentation_chat_blurb(
-                        charts=charts, figures=figures
-                    )
-                    summary_status = "ok"
-                else:
-                    summary_text, summary_status = _do_summary()
-                BUS.finish(run_id, summary_text or "", summary_status)
-                meta["chat_summary"] = summary_text or ""
-                meta["summary_status"] = summary_status
-        else:
-            meta["summary_status"] = "streaming"
-            meta["chat_summary"] = ""
-            _write_meta(meta, out, logs)
-            BUS.start(run_id)
-
-            def _do_render() -> dict:
-                return render_tex(
-                    tex_path,
-                    out_dir=out,
-                    formats=formats,
-                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-                    log_dir=logs,
-                    project_root=root,
-                    force=True,
-                    on_format=lambda fmt: bump(
-                        "docx" if fmt == "docx" else "latex"
-                    ),
-                )
-
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                fut_r = pool.submit(_do_render)
-                fut_s = pool.submit(_do_summary)
-                artifacts = fut_r.result()
-                bump("summary")
-                summary_text, summary_status = fut_s.result()
-            meta["chat_summary"] = summary_text or ""
-            meta["summary_status"] = summary_status
-            if summary_text:
-                (out / "chat_summary.txt").write_text(
-                    summary_text, encoding="utf-8"
-                )
+        artifacts = _pipeline_print_and_summary(
+            meta=meta,
+            out=out,
+            logs=logs,
+            root=root,
+            run_id=run_id,
+            tex_path=tex_path,
+            figures=figures,
+            charts=charts,
+            diagrams=diagrams,
+            status=status,
+            figs_dir=figs_dir,
+            formats=formats,
+            dry_run=dry_run,
+            mode=mode,
+            intent=intent,
+            bump=bump,
+            force_render=True,
+        )
 
         raise_if_cancelled(out)
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
@@ -1049,136 +1088,25 @@ def run_pipeline(
             "latex" if formats else "summary",
             sorted(formats),
         )
-        injected_tex = tex_path.read_text(encoding="utf-8")
-        # formats=∅ (output_mode=diagram): skip Docker TeX — Mermaid + summary only.
-        skip_print = not formats
-
-        def _do_summary() -> tuple[str, str]:
-            def on_delta(piece: str) -> None:
-                BUS.publish(run_id, piece)
-
-            chart_ids = [
-                str(c.get("id") or "")
-                for c in (charts or [])
-                if isinstance(c, dict) and c.get("id")
-            ]
-            fig_ids = [
-                str(f.get("id") or "")
-                for f in (figures or [])
-                if isinstance(f, dict) and f.get("id")
-            ]
-            media_facts = {
-                "charts_planned": len(chart_ids),
-                "figures_planned": len(fig_ids),
-                "diagrams_planned": len(diagrams or []),
-                "charts_ok": sum(
-                    1
-                    for cid in chart_ids
-                    if isinstance(status.get(cid), dict) and status[cid].get("ok")
-                ),
-                "figures_ok": sum(
-                    1
-                    for fid in fig_ids
-                    if isinstance(status.get(fid), dict) and status[fid].get("ok")
-                ),
-            }
-
-            text, status_sum = try_generate_chat_summary(
-                injected_tex,
-                intent=intent,
-                media=media_facts,
-                on_delta=on_delta,
-            )
-            BUS.finish(run_id, text, status_sum)
-            return text, status_sum
-
-        # Chat summary streams in parallel with PDF/DOCX (does not block print truth).
-        if dry_run:
-            meta["chat_summary"] = ""
-            meta["summary_status"] = "skipped"
-            BUS.start(run_id)
-            BUS.finish(run_id, "", "skipped")
-            artifacts = (
-                {}
-                if skip_print
-                else render_tex(
-                    tex_path,
-                    out_dir=out,
-                    formats=formats,
-                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-                    log_dir=logs,
-                    project_root=root,
-                    on_format=lambda fmt: bump(
-                        "docx" if fmt == "docx" else "latex"
-                    ),
-                )
-            )
-        elif skip_print:
-            # Diagram + presentation: no second Vision call (slides/Mermaid are the product).
-            # LLM summary was the long hang after charts/images («В очереди…» forever).
-            artifacts = {}
-            BUS.start(run_id)
-            bump("summary")
-            if mode == "diagram":
-                summary_text = _diagram_chat_blurb(diagrams)
-                summary_status = "ok"
-            elif mode == "presentation":
-                summary_text = _presentation_chat_blurb(
-                    charts=charts, figures=figures
-                )
-                summary_status = "ok"
-            else:
-                meta["summary_status"] = "streaming"
-                meta["chat_summary"] = ""
-                _write_meta(meta, out, logs)
-                summary_text, summary_status = _do_summary()
-            BUS.finish(run_id, summary_text or "", summary_status)
-            meta["chat_summary"] = summary_text or ""
-            meta["summary_status"] = summary_status
-            if summary_text:
-                (out / "chat_summary.txt").write_text(
-                    summary_text, encoding="utf-8"
-                )
-                (logs / "chat_summary.txt").write_text(
-                    summary_text, encoding="utf-8"
-                )
-        else:
-            meta["summary_status"] = "streaming"
-            meta["chat_summary"] = ""
-            _write_meta(meta, out, logs)
-            BUS.start(run_id)
-
-            def _do_render() -> dict:
-                return render_tex(
-                    tex_path,
-                    out_dir=out,
-                    formats=formats,
-                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
-                    log_dir=logs,
-                    project_root=root,
-                    on_format=lambda fmt: bump(
-                        "docx" if fmt == "docx" else "latex"
-                    ),
-                )
-
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                fut_r = pool.submit(_do_render)
-                fut_s = pool.submit(_do_summary)
-                artifacts = fut_r.result()
-                # Print is done — don't leave UI stuck on «Собираю DOCX…»
-                # while OpenRouter still streams the chat summary.
-                bump("summary")
-                summary_text, summary_status = fut_s.result()
-
-            meta["chat_summary"] = summary_text or ""
-            meta["summary_status"] = summary_status
-            if summary_text:
-                (out / "chat_summary.txt").write_text(
-                    summary_text, encoding="utf-8"
-                )
-                (logs / "chat_summary.txt").write_text(
-                    summary_text, encoding="utf-8"
-                )
+        artifacts = _pipeline_print_and_summary(
+            meta=meta,
+            out=out,
+            logs=logs,
+            root=root,
+            run_id=run_id,
+            tex_path=tex_path,
+            figures=figures,
+            charts=charts,
+            diagrams=diagrams,
+            status=status,
+            figs_dir=figs_dir,
+            formats=formats,
+            dry_run=dry_run,
+            mode=mode,
+            intent=intent,
+            bump=bump,
+            force_render=False,
+        )
 
         raise_if_cancelled(out)
         meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
@@ -1200,14 +1128,10 @@ def run_pipeline(
                 if isinstance(f, dict) and f.get("id")
             ]
             charts_ok = sum(
-                1
-                for cid in chart_ids
-                if isinstance(status.get(cid), dict) and status[cid].get("ok")
+                1 for cid in chart_ids if _media_ok_on_disk(cid, status, figs_dir)
             )
             figures_ok = sum(
-                1
-                for fid in fig_ids
-                if isinstance(status.get(fid), dict) and status[fid].get("ok")
+                1 for fid in fig_ids if _media_ok_on_disk(fid, status, figs_dir)
             )
             EVENTS.publish_terminal(
                 run_id,

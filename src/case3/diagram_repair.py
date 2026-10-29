@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import re
@@ -31,7 +33,7 @@ class _Completer(Protocol):
 
 
 def _repo_prompt() -> Path:
-    return Path(__file__).resolve().parents[2] / "prompt" / "diagram_repair.md"
+    return repo_root() / "prompt" / "diagram_repair.md"
 
 
 def load_repair_system(palette: str | None = None) -> str:

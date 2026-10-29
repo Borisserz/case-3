@@ -99,6 +99,7 @@ Desk: SSE v1 + **2A** + **2B** + **finish** (mode scripts · `meta.steps[]`) don
 | Схемы Mermaid (UI) | ADR-0007 → KI-liber-ui / KI-pipeline · repair+premium · **edit/legend/regen** `2026-10-23-liber-diagram-edit-legend` |
 | Inline схемы в Preview | spec+plan `liber-inline-preview-diagrams` (после Liber refactor: `liberTypes` / rail) |
 | Фото / Image API | KI-image-api → ADR-0004 → specs image-api |
+| Имена media (`fig_`/`cht_`/photo) | KI-media-names |
 | Деплой на винду | knowledge/ops-windows.md |
 | Презентация / PPTX deck | ADR-0008 · KI-liber-deck · structures `2026-10-22-liber-deck-structures-design` (arc ≠ colors) · Julius UX parity · packs + **structure_id** |
 | Полный аудит / top-10 probes | [`docs/audits/`](audits/) |

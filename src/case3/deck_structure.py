@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 from pathlib import Path
 from typing import Any
@@ -25,7 +27,7 @@ def _structures_dir() -> Path:
 
 
 def _prompt_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "prompt" / "themes"
+    return repo_root() / "prompt" / "themes"
 
 
 def _load_all() -> dict[str, dict[str, Any]]:

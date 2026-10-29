@@ -6,6 +6,8 @@ files; ``apply_undo`` restores and optionally rebuilds PDF/DOCX.
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import shutil
@@ -211,7 +213,7 @@ def apply_undo(out_dir: Path, *, rebuild: bool = True) -> dict[str, Any]:
                     extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
                     log_dir=out / "logs",
                     force=True,
-                    project_root=out.resolve().parents[2],
+                    project_root=repo_root(),
                 )
             except RenderError as exc:
                 log.warning("undo restore ok but rebuild failed: %s", exc)

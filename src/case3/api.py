@@ -21,7 +21,7 @@ from fastapi.responses import (
 )
 
 from case3.chart_html import CHART_TYPES
-from case3.chart_style import intent_palette_lines, normalize_palette_id, palette_public
+from case3.chart_style import palette_public
 from case3.charts import max_charts_from_env
 from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
@@ -38,31 +38,28 @@ from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image
 from case3.run_cancel import mark_cancel_requested
 from case3.summary_bus import BUS
-from case3.slides_media import load_figures_json
-from case3.tex_preview import build_report_preview
 from case3.user_photos import UserPhotoError, save_user_photos
+from case3.intent_compose import build_intent_from_ui
+from case3 import run_store
+from case3.run_store import (
+    RUN_ID_OK as _RUN_ID_OK,
+    build_preview_payload as _build_preview_payload,
+    load_diagrams_from_out as _load_diagrams_from_out,
+    parse_formats_form,
+    resolve_run_dir as _resolve_run_dir,
+    safe_run_file as _safe_run_file,
+)
 
 log = logging.getLogger("case3.api")
 
-_RUN_ID_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
-_FILE_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
-
-# Coalesce concurrent IR patches: latest deck wins, one rebuild worker per run.
-_slides_patch_lock = threading.Lock()
-_slides_patch_pending: dict[str, dict[str, Any]] = {}
-_slides_patch_busy: set[str] = set()
+load_dotenv(run_store.ROOT / ".env")
 
 
-def _repo_root() -> Path:
-    here = Path(__file__).resolve()
-    cand = here.parents[2]
-    if (cand / "Dockerfile").is_file():
-        return cand
-    return Path.cwd()
-
-
-ROOT = _repo_root()
-load_dotenv(ROOT / ".env")
+def __getattr__(name: str):
+    """``api.ROOT`` always tracks ``run_store.ROOT`` (canonical for Liber runs)."""
+    if name == "ROOT":
+        return run_store.ROOT
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 app = FastAPI(title="case-3 demo", version="0.4.0")
 app.add_middleware(
@@ -83,192 +80,6 @@ app.add_middleware(
 def root() -> RedirectResponse:
     """Redirect API root to OpenAPI docs; UI is on :5173."""
     return RedirectResponse("/docs")
-
-
-_CHART_TYPE_LIST = ", ".join(sorted(CHART_TYPES))
-
-
-def parse_formats_form(raw: str | None) -> set[str]:
-    """Parse formats form: pdf|docx|both|none. ``none`` → no print artifacts."""
-    fmt_raw = (raw or "both").strip().lower()
-    if fmt_raw == "both":
-        return {"pdf", "docx"}
-    if fmt_raw in {"pdf", "docx"}:
-        return {fmt_raw}
-    if fmt_raw in {"none", "diagram", "schemas"}:
-        return set()
-    raise ValueError("formats must be pdf|docx|both|none")
-
-
-def _formats_from_edit_body(raw: str | None) -> set[str]:
-    try:
-        return parse_formats_form(raw)
-    except ValueError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
-
-def _artifact_downloads(run_id: str, out_dir: Path, version: int) -> dict[str, str]:
-    files: dict[str, str] = {}
-    for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={version}"
-    return files
-
-
-def _bust_preview_figure_urls(
-    preview: dict[str, Any],
-    version: int,
-    *needles: str,
-) -> None:
-    for block in preview.get("blocks") or []:
-        if isinstance(block, dict) and block.get("type") == "figure" and block.get("url"):
-            url = str(block["url"])
-            if any(n and n in url for n in needles):
-                sep = "&" if "?" in url else "?"
-                block["url"] = f"{url}{sep}v={version}"
-
-
-def build_intent_from_ui(
-    *,
-    chat: str,
-    chart_types: list[str],
-    max_charts: int,
-    max_images: int,
-    forbid_charts: bool,
-    forbid_images: bool,
-    chart_hints: str = "",
-    chart_auto: bool = False,
-    chart_palette: str = "atelier",
-    chart_style: str = "",
-    doc_title: str = "",
-    max_diagrams: int = 2,
-    output_mode: str = "auto",
-    deck_pack: str = "",
-) -> str:
-    """Compose Intent from chat + UI controls.
-
-    chart_auto / empty chart_types → model picks type from CHART_TYPES by Source.
-    chart_hints → free-text wishes (pie, «воронка»…); model maps to whitelist or skips.
-    chart_palette / chart_style → color preset + optional look notes.
-    doc_title → forced \\title (also applied post-LLM).
-    max_* are ceilings, not quotas.
-    max_diagrams → Liber Mermaid schemas (UI-only); independent of charts.
-    output_mode → report|diagram|presentation|auto (Liber composer pills).
-    """
-    parts: list[str] = []
-    chat = (chat or "").strip()
-    if chat:
-        parts.append(chat)
-    mode = (output_mode or "auto").strip().lower()
-    if mode not in {"report", "diagram", "presentation", "auto"}:
-        mode = "auto"
-    req: list[str] = ["Требования UI:"]
-    if mode == "diagram":
-        req.append(
-            "- РЕЖИМ СХЕМА (output_mode=diagram): только Mermaid diagrams[] (1–3) "
-            "и короткий LaTeX-stub — \\title + 1–2 абзаца описания схем; "
-            "без таблиц KPI, без полного отчёта; PDF/DOCX не нужны"
-        )
-    elif mode == "presentation":
-        pack = (deck_pack or "").strip() or "atelier"
-        req.append(
-            f"- РЕЖИМ ПРЕЗЕНТАЦИЯ: без PDF/DOCX — сразу дек (pack «{pack}»). "
-            "Короткий LaTeX-stub + цифры/графики из Source; "
-            "takeaways и KPI слайдопригодные (slides job соберёт PPTX)"
-        )
-    elif mode == "report":
-        req.append("- РЕЖИМ ОТЧЁТ: полный PDF/DOCX как обычно")
-    hints = (chart_hints or "").strip()
-    clean = [t for t in chart_types if t in CHART_TYPES]
-    auto = bool(chart_auto) or (not clean and not hints)
-    palette = normalize_palette_id(chart_palette)
-    title = (doc_title or "").strip()
-    md = max(0, min(int(max_diagrams), 3))
-    if title:
-        # Marker parsed by generate.doc_title_from_intent — keep format stable.
-        req.append(f"- CASE3_DOC_TITLE: {title}")
-        req.append(
-            f"- заголовок документа (\\title): «{title}» — ОБЯЗАТЕЛЬНО этот текст, "
-            "не подменяй и не сокращай"
-        )
-
-    if forbid_charts or max_charts <= 0:
-        req.append("- без HTML-графиков (charts: []; Chart.js) — это не про Mermaid-схемы")
-    else:
-        req.append(
-            f"- не больше {max_charts} HTML-графиков (Chart.js); 0 OK если чисел мало; "
-            "если в Source есть числа/даты/доли — сделай полезные диаграммы, "
-            "не раздувай charts ради квоты"
-        )
-        req.append(
-            f"- JSON charts[].type — только: {_CHART_TYPE_LIST} "
-            "(pie→donut, столбцы→bar, тренд→line, топ-N→horizontal_bar, KPI→kpi)"
-        )
-        req.append(
-            "- при 2+ графиках — РАЗНЫЕ типы (например line+donut или bar+horizontal_bar)"
-        )
-        req.extend(intent_palette_lines(palette, chart_style))
-        req.append(
-            "- caption на русском, конкретный (что сравниваем); "
-            "canvas 1100×560; без фиолетового нейрослопа"
-        )
-        req.append(
-            "- слот %CASE3_CHART:id% один на строке, БЕЗ обёртки \\begin{figure}; "
-            "числа только из Source"
-        )
-        req.append(
-            "- вёрстка: A4 portrait; широкие таблицы — tabularx{\\textwidth}{…} "
-            "или p{…}/X; если всё ещё не влезает (≈6+ колонок) — "
-            "только эту table в \\begin{landscape}…\\end{landscape}; "
-            "не весь документ; не tabular{lll}"
-        )
-        if auto and not hints:
-            req.append(
-                "- типы на усмотрение модели по смыслу данных (playbook time→line, "
-                "share→donut, compare→bar/grouped_bar)"
-            )
-        elif clean:
-            req.append(
-                "- ОБЯЗАТЕЛЬНО типы графиков по порядку (charts[0], charts[1], …): "
-                + ", ".join(clean)
-                + " — не подменяй на line/donut без причины"
-            )
-        if hints:
-            req.append(f"- пожелания по виду/типу: {hints} (сведи к whitelist или пропусти)")
-    if forbid_images or max_images <= 0:
-        req.append("- без фото/иллюстраций (figures: [])")
-    else:
-        req.append(
-            f"- до {max_images} фото/иллюстраций (figures); DEFAULT-ON: если в Source "
-            "есть место/объект/сцена/процесс/продукт — сделай ≥1 фото (лучше до "
-            f"{max_images}, если визуальных зацепок хватает); пустой figures[] только "
-            "при «без фото» в Intent или чисто числовом Source без сцены"
-        )
-        req.append(
-            "- figures[].caption — русская подпись; "
-            "figures[].prompt — English, photorealistic, detailed lighting/subject, "
-            "no Cyrillic/watermark/tiny text; не дублируй числами charts; "
-            "слот %CASE3_FIG:id% рядом с абзацем, не в конце документа"
-        )
-    # Liber Mermaid — independent of charts/photos; default-on when budget ≥ 1.
-    if md <= 0:
-        req.append("- без Mermaid-схем (diagrams: []) — CASE3_MAX_DIAGRAMS=0")
-    else:
-        req.append(
-            f"- до {md} Mermaid-схем (JSON diagrams[], Liber UI only, не в PDF); "
-            "DEFAULT-ON: если в Source есть шаги/роли/ветвления/структура/≥3 раздела — "
-            "сделай ≥1 схему; пустой diagrams[] только при «без схем» в Intent "
-            "или чисто числовом Source без структуры"
-        )
-        req.append(
-            "- diagrams[].type: flowchart|sequence|mindmap|timeline|stateDiagram; "
-            "первая строка mermaid соответствует type; id узлов ASCII, подписи RU из Source; "
-            "для flowchart: каждый узел :::start|process|decision|ok|warn|data + classDef "
-            "(Liber hex, без фиолетового); цвета задаёт модель"
-        )
-    parts.append("\n".join(req))
-    return "\n\n".join(parts).strip()
 
 
 def _parse_chart_types(raw: str | None) -> list[str]:
@@ -375,37 +186,6 @@ def health() -> dict[str, Any]:
 @app.get("/api/chart-types")
 def chart_types() -> dict[str, Any]:
     return {"types": sorted(CHART_TYPES), "palettes": palette_public()}
-
-
-def _load_diagrams_from_out(out_dir: Path) -> list[dict[str, Any]]:
-    """UI-only Mermaid payloads from figures.json (no TeX inject)."""
-    fj = out_dir / "figures.json"
-    if not fj.is_file():
-        return []
-    try:
-        data = json.loads(fj.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    raw = data.get("diagrams") if isinstance(data, dict) else None
-    if not isinstance(raw, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        did = str(item.get("id") or "").strip()
-        mermaid = str(item.get("mermaid") or "").strip()
-        if not did or not mermaid:
-            continue
-        out.append(
-            {
-                "id": did,
-                "title": str(item.get("title") or did).strip()[:80],
-                "type": str(item.get("type") or "").strip(),
-                "mermaid": mermaid,
-            }
-        )
-    return out
 
 
 def _run_result_payload(
@@ -557,7 +337,7 @@ def _bg_run_pipeline(
     try:
         run_pipeline(
             src_path,
-            project_root=ROOT,
+            project_root=run_store.ROOT,
             formats=formats,
             dry_run=dry_run,
             intent=intent,
@@ -573,8 +353,8 @@ def _bg_run_pipeline(
         log.exception("background pipeline failed run_id=%s", run_id)
     except Exception:  # noqa: BLE001
         log.exception("background pipeline crashed run_id=%s", run_id)
-        out = ROOT / "runs" / "out" / run_id
-        logs = ROOT / "runs" / "logs" / run_id
+        out = run_store.ROOT / "runs" / "out" / run_id
+        logs = run_store.ROOT / "runs" / "logs" / run_id
         meta_path = out / "meta.json"
         meta: dict[str, Any] = {}
         if meta_path.is_file():
@@ -607,7 +387,7 @@ async def _quick_photo_edit(
         raise HTTPException(400, detail="upload missing on disk")
     stamp = datetime_stamp()
     run_id = f"photo_edit_{stamp}"
-    out = ROOT / "runs" / "out" / run_id
+    out = run_store.ROOT / "runs" / "out" / run_id
     figs = out / "figures"
     figs.mkdir(parents=True, exist_ok=True)
     dest = figs / "edited.png"
@@ -667,7 +447,7 @@ async def api_photo_edit(
     caption: str = Form(""),
 ) -> JSONResponse:
     """Standalone chat-only img2img (same as photo_mode=edit on /api/run)."""
-    upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
+    upload_dir = run_store.ROOT / "runs" / "uploads" / datetime_stamp()
     upload_dir.mkdir(parents=True, exist_ok=True)
     raw = await image.read()
     try:
@@ -750,7 +530,7 @@ async def api_run(
         max_diagrams = 0
 
     # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
-    upload_dir = ROOT / "runs" / "uploads" / datetime_stamp()
+    upload_dir = run_store.ROOT / "runs" / "uploads" / datetime_stamp()
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # FastAPI may pass a single UploadFile when the client sends one file.
@@ -850,7 +630,7 @@ async def api_run(
     # Reserve run_id + write stage=llm BEFORE kick (Win: 2nd run sat on queued while
     # prior LLM thread still held the desk; Liber must not wait on thread scheduling).
     try:
-        run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=ROOT)
+        run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=run_store.ROOT)
         _bind_pipeline_slot(run_id)
     except Exception:
         _release_pipeline_slot("pending")
@@ -921,11 +701,11 @@ def stream_run_events(run_id: str) -> StreamingResponse:
     """SSE: stage / artifact / done|error|cancelled (no model thoughts)."""
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)):
         raise HTTPException(404, detail="run not found")
-    work = ROOT / "runs" / "work" / run_id
+    work = run_store.ROOT / "runs" / "work" / run_id
     if not out_dir.is_dir() and not work.is_dir():
         raise HTTPException(404, detail="run not found")
 
@@ -1046,12 +826,12 @@ def stream_run_summary(run_id: str) -> StreamingResponse:
     """SSE: chat summary deltas while PDF renders (replay-safe)."""
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)):
         raise HTTPException(404, detail="run not found")
     # Allow stream as soon as run dirs exist (work or out)
-    work = ROOT / "runs" / "work" / run_id
+    work = run_store.ROOT / "runs" / "work" / run_id
     if not out_dir.is_dir() and not work.is_dir():
         raise HTTPException(404, detail="run not found")
 
@@ -1101,13 +881,13 @@ def stream_run_summary(run_id: str) -> StreamingResponse:
 def get_run_status(run_id: str) -> dict[str, Any]:
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)):
         raise HTTPException(404, detail="run not found")
     meta_path = out_dir / "meta.json"
     if not meta_path.is_file():
-        logs_meta = ROOT / "runs" / "logs" / run_id / "meta.json"
+        logs_meta = run_store.ROOT / "runs" / "logs" / run_id / "meta.json"
         if logs_meta.is_file():
             meta_path = logs_meta
         else:
@@ -1165,7 +945,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
                     for fid in (meta.get("figures_planned") or [])
                     if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
                 ]
-        work_dir = ROOT / "runs" / "work" / run_id
+        work_dir = run_store.ROOT / "runs" / "work" / run_id
         from case3.pipeline import can_resume_run
 
         return {
@@ -1185,7 +965,7 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         }
     # ok (or unknown → treat as result payload if out exists)
     if not out_dir.is_dir():
-        out_dir = ROOT / "runs" / "out" / run_id
+        out_dir = run_store.ROOT / "runs" / "out" / run_id
     return _run_result_payload(run_id, out_dir, meta)
 
 
@@ -1213,43 +993,6 @@ def _media_previews(
             }
         )
     return out
-
-
-def _find_out_tex(out_dir: Path) -> Path | None:
-    texs = sorted(out_dir.glob("*.tex"))
-    return texs[0] if texs else None
-
-
-def _load_figures_json(out_dir: Path) -> dict[str, Any]:
-    return load_figures_json(out_dir)
-
-
-def _build_preview_payload(
-    run_id: str, out_dir: Path, media: dict[str, Any]
-) -> dict[str, Any]:
-    tex_path = _find_out_tex(out_dir)
-    if tex_path is None:
-        return {"title": "", "blocks": []}
-    try:
-        tex = tex_path.read_text(encoding="utf-8")
-    except OSError:
-        return {"title": "", "blocks": []}
-    return build_report_preview(
-        tex,
-        run_id=run_id,
-        media_status=media,
-        figures_json=_load_figures_json(out_dir),
-    )
-
-
-def _resolve_run_dir(run_id: str) -> Path:
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)) or not out_dir.is_dir():
-        raise HTTPException(404, detail="run not found")
-    return out_dir
 
 
 @app.get("/api/runs/{run_id}/preview")
@@ -1332,19 +1075,6 @@ def datetime_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _safe_run_file(run_id: str, *parts: str) -> Path:
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    for part in parts:
-        if not _FILE_OK.match(part) or ".." in part or "/" in part or "\\" in part:
-            raise HTTPException(400, detail="invalid path")
-    path = (ROOT / "runs" / "out" / run_id).joinpath(*parts).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
-    if not str(path).startswith(str(out_root)) or not path.is_file():
-        raise HTTPException(404, detail="file not found")
-    return path
-
-
 @app.get("/api/runs/{run_id}/files/{name}")
 def download_file(run_id: str, name: str) -> FileResponse:
     path = _safe_run_file(run_id, name)
@@ -1369,7 +1099,7 @@ def _bg_resume_pipeline(run_id: str) -> None:
     from case3.pipeline import PipelineError, resume_pipeline
 
     try:
-        resume_pipeline(run_id, project_root=ROOT)
+        resume_pipeline(run_id, project_root=run_store.ROOT)
     except PipelineError:
         log.exception("background resume failed run_id=%s", run_id)
     except Exception:  # noqa: BLE001
@@ -1390,14 +1120,14 @@ def resume_run(run_id: str) -> dict[str, Any]:
     """Continue a failed run from failed_stage (same run_id, no LLM)."""
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    work_dir = ROOT / "runs" / "work" / run_id
-    out_root = (ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    work_dir = run_store.ROOT / "runs" / "work" / run_id
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)):
         raise HTTPException(404, detail="run not found")
     meta_path = out_dir / "meta.json"
     if not meta_path.is_file():
-        logs_meta = ROOT / "runs" / "logs" / run_id / "meta.json"
+        logs_meta = run_store.ROOT / "runs" / "logs" / run_id / "meta.json"
         if logs_meta.is_file():
             meta_path = logs_meta
         else:
@@ -1423,7 +1153,7 @@ def resume_run(run_id: str) -> dict[str, Any]:
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs_dir = ROOT / "runs" / "logs" / run_id
+    logs_dir = run_store.ROOT / "runs" / "logs" / run_id
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
     _kick_resume_thread(run_id)
@@ -1435,14 +1165,16 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     """Cooperative stop: UI frees immediately; pipeline/slides exit between stages."""
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)):
         raise HTTPException(404, detail="run not found")
-    logs_dir = ROOT / "runs" / "logs" / run_id
+    logs_dir = run_store.ROOT / "runs" / "logs" / run_id
     if not (out_dir / "meta.json").is_file() and not (logs_dir / "meta.json").is_file():
         raise HTTPException(404, detail="run not found")
     meta = mark_cancel_requested(out_dir, logs_dir=logs_dir)
+    from case3.api_slides import _slides_patch_lock, _slides_patch_pending
+
     with _slides_patch_lock:
         _slides_patch_pending.pop(run_id, None)
     return {

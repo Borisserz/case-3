@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import os
@@ -30,11 +32,7 @@ def is_media_id(mid: str) -> bool:
 
 
 def _repo_root() -> Path:
-    here = Path(__file__).resolve()
-    cand = here.parents[2]
-    if (cand / "Dockerfile").is_file() or (cand / "prompt").is_dir():
-        return cand
-    return Path.cwd()
+    return repo_root()
 
 
 def _diagram_template() -> str:

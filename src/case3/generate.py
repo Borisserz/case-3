@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import os
@@ -143,7 +145,7 @@ def preferred_types_from_intent(intent: str) -> list[str]:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return repo_root()
 
 
 def max_images_from_env() -> int:

@@ -43,39 +43,8 @@ import {
 
 import { PdfFirstPage } from "./lazyPdfFirstPage";
 
-export type PreviewBlock =
-  | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; id?: string; text: string; html?: string }
-  | {
-      type: "list";
-      ordered?: boolean;
-      items: { text: string; html?: string }[];
-    }
-  | {
-      type: "table";
-      caption?: string;
-      headers: string[];
-      rows: string[][];
-    }
-  | {
-      type: "figure";
-      id: string;
-      kind: string;
-      caption?: string;
-      url?: string;
-      chartType?: string;
-      /** G2: last applied / run palette id for edit sheet seed. */
-      palette?: string;
-      /** C10: 1-based PDF page hint from TeX breaks. */
-      pdfPage?: number;
-      insight?: string;
-      highlights?: { label: string; value: string; pct?: string }[];
-    };
-
-export type ReportPreview = {
-  title?: string;
-  blocks: PreviewBlock[];
-};
+import type { ReportPreview } from "./domain/reportPreview";
+export type { PreviewBlock, ReportPreview } from "./domain/reportPreview";
 
 type Downloads = Record<string, string>;
 

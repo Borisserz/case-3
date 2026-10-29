@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import re
 from pathlib import Path
 
@@ -262,7 +264,7 @@ def sanitize_chart_html(html: str) -> str:
     return text
 
 def assets_charts_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "assets" / "charts"
+    return repo_root() / "assets" / "charts"
 
 
 def frame_template_path() -> Path:

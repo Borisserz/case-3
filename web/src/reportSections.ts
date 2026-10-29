@@ -1,6 +1,6 @@
 /** Pure helpers for Liber report section collapse (C11). */
 
-import type { PreviewBlock } from "./ReportView";
+import type { PreviewBlock } from "./domain/reportPreview";
 
 export type HeadingMeta = {
   blockIndex: number;

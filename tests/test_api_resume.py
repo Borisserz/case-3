@@ -39,7 +39,7 @@ def _failed_run(tmp_path: Path, *, failed_stage: str = "latex") -> str:
 
 
 def test_resume_409_when_not_eligible(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("case3.api.ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = _failed_run(tmp_path, failed_stage="llm")
     client = TestClient(app)
     r = client.post(f"/api/runs/{run_id}/resume")
@@ -47,7 +47,7 @@ def test_resume_409_when_not_eligible(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_resume_200_kicks_background(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("case3.api.ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = _failed_run(tmp_path, failed_stage="latex")
     kicked = MagicMock()
     monkeypatch.setattr("case3.api._kick_resume_thread", kicked)
@@ -61,7 +61,7 @@ def test_resume_200_kicks_background(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_status_error_includes_can_resume(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("case3.api.ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = _failed_run(tmp_path, failed_stage="charts")
     client = TestClient(app)
     r = client.get(f"/api/runs/{run_id}/status")

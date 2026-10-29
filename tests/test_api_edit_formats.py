@@ -7,16 +7,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from case3 import api as api_mod
-
-
 @pytest.fixture()
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    runs = tmp_path / "runs"
-    for sub in ("out", "work", "logs", "uploads"):
-        (runs / sub).mkdir(parents=True)
-    monkeypatch.setattr(api_mod, "ROOT", tmp_path)
-    return TestClient(api_mod.app)
+def client(api_client: TestClient) -> TestClient:
+    return api_client
 
 
 def _seed_run(root: Path, run_id: str = "edit_fmt_20260101T000000Z") -> Path:
@@ -33,10 +26,10 @@ def _seed_run(root: Path, run_id: str = "edit_fmt_20260101T000000Z") -> Path:
 
 
 def test_table_edit_bad_formats_mentions_none(
-    client: TestClient, tmp_path: Path
+    client: TestClient, repo_root: Path
 ) -> None:
     run_id = "edit_fmt_20260101T000000Z"
-    _seed_run(tmp_path, run_id)
+    _seed_run(repo_root, run_id)
     r = client.post(
         f"/api/runs/{run_id}/tables/1/edit",
         json={
@@ -61,11 +54,11 @@ def test_figure_edit_404_uses_resolve_run_dir(client: TestClient) -> None:
 
 
 def test_paragraph_edit_accepts_formats_none(
-    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """formats=none must not 400 at parse; rebuild with empty set is ok."""
     run_id = "edit_fmt_none_20260101T000000Z"
-    out = _seed_run(tmp_path, run_id)
+    out = _seed_run(repo_root, run_id)
     (out / "demo.tex").write_text(
         "\\documentclass{article}\\begin{document}\n"
         "\\par First paragraph here.\n"

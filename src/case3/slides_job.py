@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import re
@@ -48,11 +50,7 @@ _META_WRITE = Callable[[dict[str, Any]], None]
 
 
 def _repo_root() -> Path:
-    here = Path(__file__).resolve()
-    cand = here.parents[2]
-    if (cand / "Dockerfile").is_file() or (cand / "prompt").is_dir():
-        return cand
-    return Path.cwd()
+    return repo_root()
 
 
 def _ids_block(ids: list[str], *, empty: str) -> str:

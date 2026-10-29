@@ -13,38 +13,31 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from case3.deck_theme import list_public_packs, normalize_pack_id
+from case3.run_meta import read_meta, write_meta
+from case3 import run_store
+from case3.run_store import FILE_OK, RUN_ID_OK, safe_run_file
 
 log = logging.getLogger("case3.api_slides")
 router = APIRouter(tags=["slides"])
 
+# Coalesce concurrent IR patches: latest deck wins, one rebuild worker per run.
+_slides_patch_lock = threading.Lock()
+_slides_patch_pending: dict[str, dict[str, Any]] = {}
+_slides_patch_busy: set[str] = set()
 
-def _api():
-    import case3.api as api
-
-    return api
 
 def _write_slides_crash(run_id: str, message: str) -> None:
     """Persist slides_status=error so UI does not sit on queued forever."""
-    out = _api().ROOT / "runs" / "out" / run_id
-    logs = _api().ROOT / "runs" / "logs" / run_id
-    meta_path = out / "meta.json"
-    meta: dict[str, Any] = {"run_id": run_id}
-    if meta_path.is_file():
-        try:
-            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                meta = loaded
-        except (OSError, json.JSONDecodeError):
-            pass
+    out = run_store.ROOT / "runs" / "out" / run_id
+    logs = run_store.ROOT / "runs" / "logs" / run_id
+    meta = read_meta(out) or {"run_id": run_id}
+    if "run_id" not in meta:
+        meta["run_id"] = run_id
     meta["slides_status"] = "error"
     meta["slides_stage"] = "error"
     meta["slides_error"] = message
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
     try:
-        out.mkdir(parents=True, exist_ok=True)
-        logs.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(payload, encoding="utf-8")
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
+        write_meta(out, meta, logs_dir=logs)
     except OSError:
         log.exception("could not write slides crash meta run_id=%s", run_id)
 
@@ -78,7 +71,7 @@ def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: P
         meta["slides_error"] = None
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs = _api().ROOT / "runs" / "logs" / run_id
+    logs = run_store.ROOT / "runs" / "logs" / run_id
     try:
         logs.mkdir(parents=True, exist_ok=True)
         (logs / "meta.json").write_text(payload, encoding="utf-8")
@@ -91,7 +84,7 @@ def _bg_run_slides(run_id: str) -> None:
     from case3.slides_job import run_slides_job
 
     try:
-        run_slides_job(run_id, root=_api().ROOT)
+        run_slides_job(run_id, root=run_store.ROOT)
     except Exception as exc:  # noqa: BLE001
         log.exception("slides background job crashed run_id=%s", run_id)
         _write_slides_crash(run_id, f"slides crashed: {exc}")
@@ -126,10 +119,10 @@ async def start_slides(
     run_id: str,
     body: SlidesStartBody | None = Body(default=None),
 ) -> JSONResponse:
-    if not _api()._RUN_ID_OK.match(run_id):
+    if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (_api().ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
         raise HTTPException(404, detail="run not found")
     try:
@@ -169,12 +162,12 @@ async def start_slides(
     meta["slides_error"] = None
     meta.pop("cancel_requested", None)
     # Write meta first, then SSE stage (persist appends into meta.steps).
-    with _api()._slides_patch_lock:
-        _api()._slides_patch_pending.pop(run_id, None)
-        _api()._slides_patch_busy.discard(run_id)
+    with _slides_patch_lock:
+        _slides_patch_pending.pop(run_id, None)
+        _slides_patch_busy.discard(run_id)
     payload = json.dumps(meta, ensure_ascii=False, indent=2)
     (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs = _api().ROOT / "runs" / "logs" / run_id
+    logs = run_store.ROOT / "runs" / "logs" / run_id
     logs.mkdir(parents=True, exist_ok=True)
     (logs / "meta.json").write_text(payload, encoding="utf-8")
     from case3.run_events import EVENTS
@@ -197,10 +190,10 @@ async def start_slides(
 
 @router.get("/api/runs/{run_id}/slides")
 def get_slides(run_id: str) -> dict[str, Any]:
-    if not _api()._RUN_ID_OK.match(run_id):
+    if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (_api().ROOT / "runs" / "out").resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
         raise HTTPException(404, detail="run not found")
     meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
@@ -259,13 +252,13 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
     from case3.slides_job import rebuild_slides_from_deck
 
     while True:
-        with _api()._slides_patch_lock:
-            pending = _api()._slides_patch_pending.pop(run_id, None)
+        with _slides_patch_lock:
+            pending = _slides_patch_pending.pop(run_id, None)
             if pending is None:
-                _api()._slides_patch_busy.discard(run_id)
+                _slides_patch_busy.discard(run_id)
                 return
             deck = pending["deck"]
-            _api()._slides_patch_busy.add(run_id)
+            _slides_patch_busy.add(run_id)
 
         try:
             meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
@@ -282,12 +275,12 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             log.exception("slides patch meta write failed run_id=%s", run_id)
 
         try:
-            rebuild_slides_from_deck(run_id, deck, root=_api().ROOT)
+            rebuild_slides_from_deck(run_id, deck, root=run_store.ROOT)
         except RunCancelled:
             log.info("slides patch cancelled run_id=%s", run_id)
-            with _api()._slides_patch_lock:
-                _api()._slides_patch_pending.pop(run_id, None)
-                _api()._slides_patch_busy.discard(run_id)
+            with _slides_patch_lock:
+                _slides_patch_pending.pop(run_id, None)
+                _slides_patch_busy.discard(run_id)
             return
         except Exception:
             log.exception("slides IR patch rebuild failed run_id=%s", run_id)
@@ -302,17 +295,17 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             except Exception:
                 pass
 
-        with _api()._slides_patch_lock:
-            if run_id not in _api()._slides_patch_pending:
-                _api()._slides_patch_busy.discard(run_id)
+        with _slides_patch_lock:
+            if run_id not in _slides_patch_pending:
+                _slides_patch_busy.discard(run_id)
                 return
 
 
 def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Path]:
     """Shared guards for text + structure slide patches."""
-    if not _api()._RUN_ID_OK.match(run_id):
+    if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
-    out_root = (_api().ROOT / "runs" / "out").resolve()
+    out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir.resolve()).startswith(str(out_root)) or not (
         out_dir / "meta.json"
     ).is_file():
@@ -331,8 +324,8 @@ def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Pa
         if meta.get("slides_status") == "running":
             raise HTTPException(409, detail="slides job already running")
 
-    with _api()._slides_patch_lock:
-        base = (_api()._slides_patch_pending.get(run_id) or {}).get("deck")
+    with _slides_patch_lock:
+        base = (_slides_patch_pending.get(run_id) or {}).get("deck")
     if base is None:
         try:
             base = json.loads(ir_path.read_text(encoding="utf-8"))
@@ -354,11 +347,11 @@ def _enqueue_deck_rebuild(
     except OSError as exc:
         raise HTTPException(500, detail="could not write deck.json") from exc
 
-    with _api()._slides_patch_lock:
-        _api()._slides_patch_pending[run_id] = {"deck": patched}
-        already = run_id in _api()._slides_patch_busy
+    with _slides_patch_lock:
+        _slides_patch_pending[run_id] = {"deck": patched}
+        already = run_id in _slides_patch_busy
         if not already:
-            _api()._slides_patch_busy.add(run_id)
+            _slides_patch_busy.add(run_id)
 
     if not already:
         threading.Thread(
@@ -379,7 +372,7 @@ async def patch_slides_ir(
 
     Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
     """
-    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
     base, ir_path = _load_deck_for_patch(run_id, out_dir)
 
     from case3.slides_ir import DeckIrError
@@ -410,7 +403,7 @@ async def post_slides_structure(
     body: SlidesStructureBody,
 ) -> JSONResponse:
     """Reorder / duplicate / delete slides — IR patch + rebuild twin/PPTX (no LLM)."""
-    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
     base, ir_path = _load_deck_for_patch(run_id, out_dir)
 
     from case3.slides_ir import DeckIrError
@@ -444,21 +437,21 @@ async def post_slides_structure(
 
 @router.get("/api/runs/{run_id}/slides/png/{name}")
 def download_slide_png(run_id: str, name: str) -> FileResponse:
-    if not name.lower().endswith(".png") or not _api()._FILE_OK.match(name):
+    if not name.lower().endswith(".png") or not FILE_OK.match(name):
         raise HTTPException(400, detail="invalid png name")
-    path = _api()._safe_run_file(run_id, "slides", name)
+    path = safe_run_file(run_id, "slides", name)
     return FileResponse(path, media_type="image/png", filename=path.name)
 
 
 @router.get("/api/runs/{run_id}/slides/media/{name}")
 def download_slide_media(run_id: str, name: str) -> FileResponse:
     """Chart/figure PNG from figures/, or diagram PNG from slides/diagrams/."""
-    if not name.lower().endswith(".png") or not _api()._FILE_OK.match(name):
+    if not name.lower().endswith(".png") or not FILE_OK.match(name):
         raise HTTPException(400, detail="invalid media name")
-    out_dir = (_api().ROOT / "runs" / "out" / run_id).resolve()
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
     for parts in (("figures", name), ("slides", "diagrams", name)):
         try:
-            path = _api()._safe_run_file(run_id, *parts)
+            path = safe_run_file(run_id, *parts)
             return FileResponse(path, media_type="image/png", filename=path.name)
         except HTTPException:
             continue

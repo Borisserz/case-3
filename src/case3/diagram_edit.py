@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.paths import repo_root
+
 import json
 import logging
 import re
@@ -118,7 +120,7 @@ def edit_diagram_in_run(
 
 
 def _load_generate_system(*, max_diagrams: int, palette: str) -> str:
-    root = Path(__file__).resolve().parents[2]
+    root = repo_root()
     path = root / "prompt" / "diagram_generate.md"
     text = path.read_text(encoding="utf-8")
     return (

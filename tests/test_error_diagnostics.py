@@ -64,7 +64,7 @@ def test_status_error_exposes_diagnostics(
     (runs / "out" / rid / "meta.json").write_text(
         json.dumps(meta), encoding="utf-8"
     )
-    monkeypatch.setattr(api_mod, "ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     client = TestClient(api_mod.app)
     r = client.get(f"/api/runs/{rid}/status")
     assert r.status_code == 200

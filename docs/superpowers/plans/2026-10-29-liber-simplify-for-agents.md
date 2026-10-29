@@ -130,60 +130,60 @@
 
 **Files:** `tests/conftest.py` (new), `tests/test_api_*.py`, `tests/test_chart_live_preview.py`, …
 
-- [ ] Collect duplicated `ROOT` monkeypatch / `_seed_*` from ≥7 API tests
-- [ ] Fixtures: `repo_root`, `api_client`, `seed_ok_run(tmp_path, **meta)`
-- [ ] Migrate 2–3 highest-duplication tests first (TDD: tests still green)
-- [ ] Migrate remaining API tests in a follow-up commit
-- [ ] `pytest tests/test_api_*.py -q`
+- [x] Collect duplicated `ROOT` monkeypatch / `_seed_*` from ≥7 API tests
+- [x] Fixtures: `repo_root`, `api_client`, `seed_ok_run(tmp_path, **meta)`
+- [x] Migrate 2–3 highest-duplication tests first (TDD: tests still green)
+- [x] Migrate remaining API tests in a follow-up commit
+- [x] `pytest tests/test_api_*.py -q`
 
 ### Task A.2 — Shared post-edit envelope
 
 **Files:** `src/case3/api_edits.py`, `src/case3/chart_edit.py`, `figure_edit.py`, `table_edit.py`, `paragraph_edit.py`, `run_rebuild.py`
 
-- [ ] Sketch one helper: undo snapshot → apply patch → write meta → `rebuild_run_docs` → response envelope (+ rollback on failure)
-- [ ] RED: one edit-formats test that fails if duplicate paths diverge
-- [ ] Wire chart/figure/table/paragraph through the helper
-- [ ] `pytest -k edit -q`
+- [x] Sketch one helper: undo snapshot → apply patch → write meta → `rebuild_run_docs` → response envelope (+ rollback on failure)
+- [x] RED: one edit-formats test that fails if duplicate paths diverge
+- [x] Wire chart/figure/table/paragraph through the helper
+- [x] `pytest -k edit -q`
 
 ### Task A.3 — `run_meta` read/write module
 
 **Files:** new `src/case3/run_meta.py`; callers in `pipeline.py`, `run_events.py`, `slides_job.py`, `api_slides.py`, edit paths
 
-- [ ] `read_meta(out_dir) -> dict`, `write_meta(out_dir, meta, *, atomic=True)` (same atomic pattern as pipeline)
-- [ ] Replace raw `meta.json` writes in slides/edits/resume
-- [ ] Unit test: atomic write leaves valid JSON on interrupt mock
-- [ ] `pytest -k meta -q` (or targeted new test)
+- [x] `read_meta(out_dir) -> dict`, `write_meta(out_dir, meta, *, atomic=True)` (same atomic pattern as pipeline)
+- [x] Replace raw `meta.json` writes in slides/edits/resume
+- [x] Unit test: atomic write leaves valid JSON on interrupt mock
+- [x] `pytest -k meta -q` (or targeted new test)
 
 ### Task A.4 — `run_store.py` (kill `_api()` late-bind)
 
 **Files:** new `src/case3/run_store.py`; slim `api.py`; update `api_edits.py` / `api_slides.py`; patch tests to `case3.run_store`
 
-- [ ] Move `_resolve_run_dir`, preview/download helpers used by edits/slides
-- [ ] Routers import `run_store` directly (no `_api()`)
-- [ ] Fix monkeypatches in tests
-- [ ] `pytest tests/test_api_edits* tests/test_api_slides* tests/test_api_edit_formats.py -q`
+- [x] Move `_resolve_run_dir`, preview/download helpers used by edits/slides
+- [x] Routers import `run_store` directly (no `_api()`)
+- [x] Fix monkeypatches in tests
+- [x] `pytest tests/test_api_edits* tests/test_api_slides* tests/test_api_edit_formats.py -q`
 
 ### Task A.5 — One `repo_root()` helper
 
 **Files:** `src/case3/paths.py` (or extend existing), replace `parents[2]` in `api.py`, `run_rebuild.py`, `run_undo.py`, `diagram_edit.py`, …
 
-- [ ] Single `repo_root() -> Path` (Dockerfile / `.env` sentinel as today)
-- [ ] Grep `parents\[2\]` under `src/case3` → retarget
-- [ ] `pytest -q` smoke
+- [x] Single `repo_root() -> Path` (Dockerfile / `.env` sentinel as today)
+- [x] Grep `parents\[2\]` under `src/case3` → retarget
+- [x] `pytest -q` smoke
 
 ### Task A.6 — `build_intent_from_ui` → `intent_compose.py`
 
 **Files:** new `src/case3/intent_compose.py`; `api.py` becomes thin Form → compose
 
-- [ ] Move intent prose builder unchanged
-- [ ] API imports compose; behavior golden/tests for intent strings if any
-- [ ] Manual: dry_run still gets same intent shape
+- [x] Move intent prose builder unchanged
+- [x] API imports compose; behavior golden/tests for intent strings if any
+- [x] Manual: dry_run still gets same intent shape
 
 ### Task A.7 — Track A verify + docs
 
-- [ ] Full `pytest -q` + health if stack up
-- [ ] Update audit «Applied» + this plan checkboxes
-- [ ] Commit when asked
+- [x] Full `pytest -q` + health if stack up
+- [x] Update audit «Applied» + this plan checkboxes
+- [x] Commit when asked
 
 ---
 
@@ -195,18 +195,18 @@
 
 **Files:** `src/case3/pipeline.py` (+ tests `test_pipeline_*.py`, `test_pipeline_resume.py`)
 
-- [ ] Map shared stages: media → charts → inject → latex/docx → summary
-- [ ] Extract shared body; keep public `run_pipeline` / `resume_pipeline` signatures stable
-- [ ] Resume still honors `failed_stage` / skip-done stages
-- [ ] `pytest -k pipeline -q`
+- [x] Map shared stages: media → charts → inject → latex/docx → summary
+- [x] Extract shared body; keep public `run_pipeline` / `resume_pipeline` signatures stable
+- [x] Resume still honors `failed_stage` / skip-done stages
+- [x] `pytest -k pipeline -q`
 
 ### Task B.2 — Split `chart_types_coerce.py` (~900)
 
 **Files:** e.g. `chart_harden.py`, `chart_donut.py`, `chart_coerce.py` (names verify vs existing tests)
 
-- [ ] Mirror test file split already present (`test_harden_*`, `test_donut_*`, `test_coerce_*`)
-- [ ] Re-export from old module if needed for one release, then delete façade
-- [ ] `pytest -k 'harden or donut or coerce' -q`
+- [x] Mirror test file split already present (`test_harden_*`, `test_donut_*`, `test_coerce_*`)
+- [x] Re-export from old module if needed for one release, then delete façade
+- [x] `pytest -k 'harden or donut or coerce' -q`
 
 ### Task B.3 — (Optional, when touching PPTX) peel `slides_pptx_native` layouts
 
@@ -217,8 +217,8 @@
 
 ### Task B.4 — Track B verify
 
-- [ ] Full pytest; one live resume smoke if desk up
-- [ ] Commit when asked
+- [x] Full pytest; one live resume smoke if desk up
+- [x] Commit when asked
 
 ---
 
@@ -230,16 +230,16 @@
 
 **Files:** `web/src/domain/liberTypes.ts` (or `reportPreview.ts`), `ReportView.tsx`, importers
 
-- [ ] Break domain ← UI import cycle documented in types
-- [ ] `tsc -b`
+- [x] Break domain ← UI import cycle documented in types
+- [x] `tsc -b`
 
 ### Task C.2 — Shrink `LiberSendDeps`
 
 **Files:** `web/src/app/useLiberRun.ts`, `App.tsx`
 
-- [ ] Group deps: `{ composer, runRefs, desk }` (or similar)
-- [ ] Keep behavior identical; tsc + helper tests
-- [ ] Optional: dry_run UI smoke
+- [x] Group deps: `{ composer, runRefs, desk }` (or similar)
+- [x] Keep behavior identical; tsc + helper tests
+- [x] Optional: dry_run UI smoke
 
 ### Task C.3 — `useDeskChrome` / history owner out of `App`
 
@@ -258,13 +258,13 @@
 
 **Files:** `.agents/knowledge/` (e.g. extend KI-liber-ui or new KI-media-names)
 
-- [ ] Table: figure / photo / image / `fig_` / `cht_` / Image API / charts stage
-- [ ] Link from `docs/MEMORY.md` L3 list if useful
+- [x] Table: figure / photo / image / `fig_` / `cht_` / Image API / charts stage
+- [x] Link from `docs/MEMORY.md` L3 list if useful
 
 ### Task C.6 — Track C verify
 
-- [ ] `tsc -b` + `test:helpers` + `npm run build`
-- [ ] Commit when asked
+- [x] `tsc -b` + `test:helpers` + `npm run build`
+- [x] Commit when asked
 
 ---
 
@@ -288,12 +288,12 @@ Defer `color_util` / `chat.css` split / `slides_pptx_native` peel until the next
 
 ## Definition of done (whole plan)
 
-- [ ] Wave 8 + Wave 0 hygiene committed
-- [ ] Track A landed: conftest, edit envelope, run_meta, run_store, repo_root, intent_compose
-- [ ] Track B landed: shared pipeline body + coerce split
-- [ ] Track C: at least C.1 + C.2 (C.3+ optional)
-- [ ] Fresh verify: **pytest green**, **tsc 0**, **test:helpers 54+**, `/api/health` green if desk up
-- [ ] Audit doc «Applied» lists waves; this plan checkboxes updated
+- [x] Wave 8 + Wave 0 hygiene committed
+- [x] Track A landed: conftest, edit envelope, run_meta, run_store, repo_root, intent_compose
+- [x] Track B landed: shared pipeline body + coerce split
+- [x] Track C: at least C.1 + C.2 (C.3+ optional)
+- [x] Fresh verify: **pytest green**, **tsc 0**, **test:helpers 54+**, `/api/health` green if desk up
+- [x] Audit doc «Applied» lists waves; this plan checkboxes updated
 
 ---
 
