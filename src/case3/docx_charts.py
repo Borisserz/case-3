@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.color_util import hex_to_rgb as _hex_to_rgb_tuple
+
 import json
 import logging
 import re
@@ -32,13 +34,10 @@ _EMBED = re.compile(r'r:embed="(rId\d+)"')
 
 
 def _hex_to_rgb(hx: str) -> RGBColor | None:
-    h = (hx or "").strip().lstrip("#")
-    if len(h) != 6:
+    rgb = _hex_to_rgb_tuple(hx)
+    if rgb is None:
         return None
-    try:
-        return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-    except ValueError:
-        return None
+    return RGBColor(*rgb)
 
 
 def _series_colors(hexes: list[str] | None) -> list[RGBColor]:

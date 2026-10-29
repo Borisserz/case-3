@@ -15,7 +15,7 @@ from typing import Any
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import palette_fallback_table, palette_from_intent
 from case3.diagram_style import format_diagram_color_prompt
-from case3.chart_types_coerce import (
+from case3.chart_coerce import (
     coerce_chart_types,
     ensure_all_charts_match_types,
     polish_charts,

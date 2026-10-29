@@ -105,8 +105,8 @@
 ### Task 0.5 — `color_util` (only if touching hex next; else defer to first chart/deck PR)
 
 - [x] **Deferred** (no hex touch this wave) — Add `src/case3/color_util.py` with `norm_hex` / `hex_to_rgb` / `expand_hex`
-- [ ] Retarget `deck_theme`, `slides_pptx_native`, `docx_charts`, `chart_style`, `diagrams` gradually (one PR per area OK)
-- [ ] pytest for hex round-trip
+- [x] Retarget `deck_theme`, `slides_pptx_native`, `docx_charts`, `chart_style`, `diagrams` gradually (one PR per area OK)
+- [x] pytest for hex round-trip
 
 ### Task 0.6 — Doc / Makefile P2
 
@@ -245,14 +245,14 @@
 
 **Files:** new hooks under `web/src/app/`; slim `App.tsx` to wiring
 
-- [ ] Extract history sidebar + toast/rail chrome without changing UX
-- [ ] `tsc` + `test:helpers`
-- [ ] Target: `App.tsx` orchestration-only (aim &lt;800 LOC over 1–2 PRs)
+- [x] Extract history sidebar + toast/rail chrome without changing UX
+- [x] `tsc` + `test:helpers`
+- [x] Target: `App.tsx` orchestration-only (aim &lt;800 LOC over 1–2 PRs) — history/toast extracted; App still ~1235, more peel later
 
 ### Task C.4 — Split `styles/chat.css` (when CSS churn)
 
-- [ ] Peel thinking-fold / diagrams / charts-qa into partials imported from main
-- [ ] Visual smoke Liber empty + thinking fold
+- [x] Peel thinking-fold / diagrams / charts-qa into partials imported from main
+- [x] Visual smoke Liber empty + thinking fold
 
 ### Task C.5 — Glossary KI (cheap)
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from case3.color_util import norm_hex
+
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,6 @@ PACK_IDS = (
     "botanical",
 )
 
-_HEX = re.compile(r"^#?[0-9A-Fa-f]{6}$")
 _PACK_CACHE: dict[str, dict[str, Any]] | None = None
 
 
@@ -82,15 +82,6 @@ def is_dark_pack(style: dict[str, Any] | None) -> bool:
     return str(motif.get("atmosphere") or "") == "dark"
 
 
-def _norm_hex(value: str | None, fallback: str) -> str:
-    raw = (value or "").strip()
-    if not raw:
-        return fallback
-    if not raw.startswith("#"):
-        raw = f"#{raw}"
-    if _HEX.match(raw):
-        return f"#{raw.lstrip('#').upper()}"
-    return fallback
 
 
 @dataclass(frozen=True)
@@ -151,7 +142,7 @@ def resolve_deck_theme(
     fonts_in = dict(raw.get("fonts") or {})
     table_in = dict(raw.get("table") or {})
     series = [
-        _norm_hex(str(x), "#2E4208")
+        norm_hex(str(x), "#2E4208")
         for x in (raw.get("chart_series") or ["#2E4208", "#4F6B14"])
     ]
 
@@ -168,16 +159,16 @@ def resolve_deck_theme(
     }
     for ui_key, color_key in key_map.items():
         if ui_key in settings and settings[ui_key]:
-            colors_in[color_key] = _norm_hex(
+            colors_in[color_key] = norm_hex(
                 str(settings[ui_key]), colors_in.get(color_key, "#14161A")
             )
     # Keep background/sheet/text aliases in sync when overridden.
     if "background" in settings and settings["background"]:
-        bg = _norm_hex(str(settings["background"]), colors_in.get("sheet", "#FFFCF7"))
+        bg = norm_hex(str(settings["background"]), colors_in.get("sheet", "#FFFCF7"))
         colors_in["background"] = bg
         colors_in["sheet"] = bg
     if "text" in settings and settings["text"]:
-        tx = _norm_hex(str(settings["text"]), colors_in.get("ink", "#14161A"))
+        tx = norm_hex(str(settings["text"]), colors_in.get("ink", "#14161A"))
         colors_in["text"] = tx
         colors_in["ink"] = tx
 
@@ -191,20 +182,20 @@ def resolve_deck_theme(
         )
 
     colors = {
-        "primary": _norm_hex(colors_in.get("primary"), "#2E4208"),
-        "accent": _norm_hex(colors_in.get("accent"), "#4F6B14"),
-        "ink": _norm_hex(colors_in.get("ink"), "#14161A"),
-        "ink2": _norm_hex(colors_in.get("ink2"), "#2C3028"),
-        "muted": _norm_hex(colors_in.get("muted"), "#6A7160"),
-        "paper": _norm_hex(colors_in.get("paper"), "#F0EDE4"),
-        "sheet": _norm_hex(colors_in.get("sheet"), "#FFFCF7"),
-        "rule": _norm_hex(colors_in.get("rule"), "#E6E2D8"),
-        "foil": _norm_hex(colors_in.get("foil"), "#B8A36A"),
-        "background": _norm_hex(
+        "primary": norm_hex(colors_in.get("primary"), "#2E4208"),
+        "accent": norm_hex(colors_in.get("accent"), "#4F6B14"),
+        "ink": norm_hex(colors_in.get("ink"), "#14161A"),
+        "ink2": norm_hex(colors_in.get("ink2"), "#2C3028"),
+        "muted": norm_hex(colors_in.get("muted"), "#6A7160"),
+        "paper": norm_hex(colors_in.get("paper"), "#F0EDE4"),
+        "sheet": norm_hex(colors_in.get("sheet"), "#FFFCF7"),
+        "rule": norm_hex(colors_in.get("rule"), "#E6E2D8"),
+        "foil": norm_hex(colors_in.get("foil"), "#B8A36A"),
+        "background": norm_hex(
             colors_in.get("background") or colors_in.get("sheet"), "#FFFCF7"
         ),
-        "text": _norm_hex(colors_in.get("text") or colors_in.get("ink"), "#14161A"),
-        "panel": _norm_hex(
+        "text": norm_hex(colors_in.get("text") or colors_in.get("ink"), "#14161A"),
+        "panel": norm_hex(
             colors_in.get("panel") or colors_in.get("paper"),
             colors_in.get("paper") or "#F0EDE4",
         ),
@@ -216,12 +207,12 @@ def resolve_deck_theme(
         "fallback_pptx": str(fonts_in.get("fallback_pptx") or "Calibri"),
     }
     table = {
-        "header_fill": _norm_hex(table_in.get("header_fill"), colors["primary"]),
-        "header_ink": _norm_hex(table_in.get("header_ink"), colors["sheet"]),
-        "grid": _norm_hex(table_in.get("grid"), colors["rule"]),
+        "header_fill": norm_hex(table_in.get("header_fill"), colors["primary"]),
+        "header_ink": norm_hex(table_in.get("header_ink"), colors["sheet"]),
+        "grid": norm_hex(table_in.get("grid"), colors["rule"]),
     }
     if table_in.get("body_fill"):
-        table["body_fill"] = _norm_hex(str(table_in.get("body_fill")), colors["sheet"])
+        table["body_fill"] = norm_hex(str(table_in.get("body_fill")), colors["sheet"])
     motif_in = raw.get("motif") if isinstance(raw.get("motif"), dict) else {}
     motif: dict[str, Any] = {}
     if "split" in motif_in:
@@ -234,7 +225,7 @@ def resolve_deck_theme(
     panels_raw = motif_in.get("panels")
     if isinstance(panels_raw, list) and panels_raw:
         motif["panels"] = [
-            _norm_hex(str(x), colors["panel"]) for x in panels_raw[:8]
+            norm_hex(str(x), colors["panel"]) for x in panels_raw[:8]
         ]
     if motif_in.get("atmosphere"):
         motif["atmosphere"] = str(motif_in.get("atmosphere")).strip().lower()
@@ -243,7 +234,7 @@ def resolve_deck_theme(
     if "foil_cards" in motif_in:
         motif["foil_cards"] = bool(motif_in.get("foil_cards"))
     if motif_in.get("card_fill"):
-        motif["card_fill"] = _norm_hex(str(motif_in.get("card_fill")), colors["paper"])
+        motif["card_fill"] = norm_hex(str(motif_in.get("card_fill")), colors["paper"])
     return ThemeTokens(
         pack_id=pid,
         label=str(raw.get("label") or pid.title()),

@@ -16,11 +16,9 @@ from case3.chart_style import (
     intent_palette_lines,
     normalize_palette_id,
 )
-from case3.chart_types_coerce import (
-    apply_type_to_chart,
-    enhance_donut_html,
-    harden_chart_html,
-)
+from case3.chart_coerce import apply_type_to_chart
+from case3.chart_donut import enhance_donut_html
+from case3.chart_harden import harden_chart_html
 from case3.charts import render_chart_png
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.render import RenderError

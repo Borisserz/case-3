@@ -12,12 +12,8 @@ from case3.desk_health import build_desk_probes
 
 
 @pytest.fixture()
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    runs = tmp_path / "runs"
-    for sub in ("out", "work", "logs", "uploads"):
-        (runs / sub).mkdir(parents=True)
-    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
-    return TestClient(api_mod.app)
+def client(api_client: TestClient) -> TestClient:
+    return api_client
 
 
 def test_build_desk_probes_five() -> None:

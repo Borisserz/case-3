@@ -52,20 +52,8 @@ import type {
   RunResult,
   SourceDraft,
 } from "../domain/liberTypes";
-import {
-  createFolder,
-  deleteFolder,
-  loadFolders,
-  loadHistory,
-  loadHistoryPayload,
-  moveHistoryToFolder,
-  pushHistory,
-  renameFolder,
-  saveRunPayload,
-  togglePinHistory,
-  type HistoryFolder,
-  type HistoryItem,
-} from "../domain/reportHistory";
+import { useLiberToast } from "./useLiberToast";
+import { useReportHistory } from "./useReportHistory";
 import { loadRailWidth } from "../domain/railWidth";
 import { DeckStyleSheet } from "../DeckStyleSheet";
 import {
@@ -110,7 +98,7 @@ export default function App() {
     figureId: string;
     message: string;
   } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const { toast, setToast, showToast } = useLiberToast();
   /** B21: one-shot undo after last Liber edit */
   const [undoOffer, setUndoOffer] = useState<{
     msgId: string;
@@ -130,9 +118,7 @@ export default function App() {
     useState<DeckThemePackInfo[]>(FALLBACK_DECK_PACKS);
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
-  const [folders, setFolders] = useState<HistoryFolder[]>(() => loadFolders());
+  // history / folders / sidebar → useReportHistory (below, after busy)
   const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(
     null,
   );
@@ -154,6 +140,25 @@ export default function App() {
   const activeRunIdRef = useRef<string | null>(null);
   const cancelRequestedRef = useRef(false);
   const pendingBotIdRef = useRef<string | null>(null);
+
+  const {
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    history,
+    folders,
+    rememberRun,
+    openHistoryItem,
+    onTogglePin,
+    onMoveToFolder,
+    onCreateFolder,
+    onRenameFolder,
+    onDeleteFolder,
+  } = useReportHistory({
+    busy,
+    setMsgs,
+    setChatTitle,
+    showToast,
+  });
 
   const catalog = useMemo(() => {
     const fromApi = health?.chart_types?.filter(Boolean);
@@ -619,40 +624,6 @@ export default function App() {
     chatRef.current?.focus();
   }
 
-  function openHistoryItem(item: HistoryItem) {
-    if (busy) return;
-    const stored = loadHistoryPayload(item.runId);
-    if (!stored?.preview?.blocks?.length) {
-      setToast("Отчёт недоступен в этой сессии");
-      window.setTimeout(() => setToast(null), 2800);
-      return;
-    }
-    const result = stored as RunResult;
-    const id = uid();
-    setChatTitle(item.title || reportTitle(result));
-    setMsgs([
-      {
-        id,
-        role: "bot",
-        text: reportReadyText(result),
-        result,
-      },
-    ]);
-  }
-
-  function rememberRun(result: RunResult) {
-    saveRunPayload(result);
-    const title = reportTitle(result);
-    setChatTitle(title);
-    setHistory(
-      pushHistory({
-        id: result.run_id,
-        title,
-        runId: result.run_id,
-        savedAt: Date.now(),
-      }),
-    );
-  }
 
   const resumeFailedRun = useResumeFailedRun({
     busy,
@@ -770,10 +741,9 @@ export default function App() {
               fileName: draft.fileName,
             });
           } catch (err) {
-            setToast(
+            showToast(
               err instanceof Error ? err.message : "Не удалось прочитать файл",
             );
-            window.setTimeout(() => setToast(null), 2800);
           }
         })();
         continue;
@@ -784,7 +754,7 @@ export default function App() {
         setMaxImages((n) => Math.max(n, 2));
       }
     }
-  }, []);
+  }, [showToast]);
 
   const onDrop = useCallback(
     (e: DragEvent) => {
@@ -923,17 +893,11 @@ export default function App() {
           folders={folders}
           onNew={startNewReport}
           onOpenHistory={openHistoryItem}
-          onTogglePin={(runId) => setHistory(togglePinHistory(runId))}
-          onMoveToFolder={(runId, folderId) =>
-            setHistory(moveHistoryToFolder(runId, folderId))
-          }
-          onCreateFolder={(name) => setFolders(createFolder(name))}
-          onRenameFolder={(id, name) => setFolders(renameFolder(id, name))}
-          onDeleteFolder={(id) => {
-            const next = deleteFolder(id);
-            setFolders(next.folders);
-            setHistory(next.history);
-          }}
+          onTogglePin={onTogglePin}
+          onMoveToFolder={onMoveToFolder}
+          onCreateFolder={onCreateFolder}
+          onRenameFolder={onRenameFolder}
+          onDeleteFolder={onDeleteFolder}
           onSettings={() => setSettingsOpen(true)}
           busy={busy}
         />
@@ -1012,12 +976,11 @@ export default function App() {
                       setChat(prompt);
                     }
                     setDeckApplyHint(null);
-                    setToast(
+                    showToast(
                       chatEmpty
                         ? `Шаблон «${meta.title}» — правьте текст и отправьте`
                         : `Шаблон «${meta.title}» · стиль применён, текст в чате не трогали`,
                     );
-                    window.setTimeout(() => setToast(null), 2800);
                     window.setTimeout(() => {
                       const el = chatRef.current;
                       if (!el) return;
@@ -1220,8 +1183,7 @@ export default function App() {
                             null;
                           return { ...prev, activeDiagramId: keep };
                         });
-                        setToast("Схема обновлена");
-                        window.setTimeout(() => setToast(null), 2200);
+                        showToast("Схема обновлена", 2200);
                       }
                     : undefined
                 }
@@ -1241,8 +1203,7 @@ export default function App() {
         onSave={(s) => {
           setDeckStyle(s);
           saveDeckStyle(s);
-          setToast("Стиль презентации сохранён");
-          window.setTimeout(() => setToast(null), 2200);
+          showToast("Стиль презентации сохранён", 2200);
         }}
       />
 

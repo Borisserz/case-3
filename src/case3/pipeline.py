@@ -228,12 +228,11 @@ def _presentation_chat_blurb(
 
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
-    from case3.run_events import _meta_file_lock, write_meta_atomic
+    from case3.run_events import _meta_file_lock
+    from case3.run_meta import write_meta
 
     with _meta_file_lock:
-        # Drop internal craft cursor from on-disk payload noise (optional keep).
-        payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        write_meta_atomic(out / "meta.json", payload, logs_meta=logs / "meta.json")
+        write_meta(out, meta, logs_dir=logs)
 
 
 def _set_stage(
