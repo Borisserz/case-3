@@ -14,6 +14,8 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 - JSON с `choices` за ≤30 с → Vision ок, дальше `api.cmd` / `web.cmd`
 - таймаут / ошибка → чини хост `:8080` у коллеги (не UI)
+- **404 на `:8080/generate` — нормально (это путь Image API).** Текст: только `/v1/chat/completions`
+- Фото отдельно: `curl.exe -s -o NUL -w "%{http_code}" http://192.168.4.101:8000/` (корень может дать 404 — процесс жив; для генерации нужен `POST /generate`)
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
@@ -86,6 +88,8 @@ scripts\smoke.cmd
 | HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
 | Завис после TeX на «фото» / `stage=images` | Image API `:8000` мёртв — поставь `IMAGE_MAX_IMAGES=0` или подними Image; убей зомби-python |
 | Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
+| HTTP **409** уже идёт прогон | Дождись / убей python — на Win только 1 report за раз |
+| Коллега «404» | Не тот URL: Qwen≠`/generate`; или качаешь PDF пока `status=running` |
 | мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` если ctx позволяет; `max_charts≤2`, рестарт `api.cmd` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |

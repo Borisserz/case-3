@@ -890,6 +890,11 @@ def run_pipeline(
         figs_dir = work / "figures"
 
         if figures and not dry_run and images_budget > 0:
+            log.info(
+                "images stage: %d figures, budget=%d (probe/POST next)",
+                len(figures),
+                images_budget,
+            )
             bump("images")
             status.update(materialize_user_figures(figures, figs_dir))
             need_api = [
@@ -899,6 +904,11 @@ def run_pipeline(
             ]
             cfg = ImageApiConfig.from_env()
             cfg = replace(cfg, max_images=images_budget)
+            log.info(
+                "images cfg base_url=%s need_api=%d",
+                (cfg.base_url or "")[:80] or "-",
+                len(need_api),
+            )
             if need_api and not cfg.base_url:
                 log.warning("figures planned but IMAGE_API_BASE_URL empty — strip slots")
                 for f in need_api:
@@ -981,8 +991,15 @@ def run_pipeline(
             json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+        # Log BEFORE bump: Win AV can stall meta write; without this line stage=inject
+        # looked like a hang inside inject with no pipeline.log progress.
+        log.info(
+            "inject: about to bump run_id=%s figs=%d charts=%d",
+            run_id,
+            len(figures or []),
+            len(charts or []),
+        )
         bump("inject")
-        # Win desk: hangs here looked like «документ» forever with no pipeline.log lines.
         log.info("inject: write_injected start run_id=%s", run_id)
         write_injected(tex_path, figures, status, charts=charts)
         log.info("inject: write_injected done, copy → out/")

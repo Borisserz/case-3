@@ -479,6 +479,51 @@ def _run_result_payload(
     }
 
 
+# Win desk: parallel daemon pipelines share case3 FileHandlers + meta lock and
+# leave zombies (stage=images/inject forever). One report at a time.
+_PIPELINE_SLOT = threading.Lock()
+_PIPELINE_ACTIVE_ID: str | None = None
+_PIPELINE_ACTIVE_GUARD = threading.Lock()
+
+
+def _pipeline_active_run() -> str | None:
+    with _PIPELINE_ACTIVE_GUARD:
+        return _PIPELINE_ACTIVE_ID
+
+
+def _claim_pipeline_slot(run_id: str) -> str | None:
+    """Return None if claimed; else the run_id that still holds the slot."""
+    global _PIPELINE_ACTIVE_ID
+    if not _PIPELINE_SLOT.acquire(blocking=False):
+        return _pipeline_active_run() or "busy"
+    with _PIPELINE_ACTIVE_GUARD:
+        _PIPELINE_ACTIVE_ID = run_id
+    return None
+
+
+def _bind_pipeline_slot(run_id: str) -> None:
+    global _PIPELINE_ACTIVE_ID
+    with _PIPELINE_ACTIVE_GUARD:
+        _PIPELINE_ACTIVE_ID = run_id
+
+
+def _release_pipeline_slot(run_id: str | None = None) -> None:
+    """Drop active label (if ours) and release the desk slot lock."""
+    global _PIPELINE_ACTIVE_ID
+    with _PIPELINE_ACTIVE_GUARD:
+        if run_id is None or _PIPELINE_ACTIVE_ID in {run_id, "pending"} or _PIPELINE_ACTIVE_ID is None:
+            _PIPELINE_ACTIVE_ID = None
+        elif _PIPELINE_ACTIVE_ID == run_id:
+            _PIPELINE_ACTIVE_ID = None
+        else:
+            # finally from our thread — always clear; slot is single-owner
+            _PIPELINE_ACTIVE_ID = None
+    try:
+        _PIPELINE_SLOT.release()
+    except RuntimeError:
+        pass
+
+
 def _bg_run_pipeline(
     src_path: Path,
     *,
@@ -529,6 +574,8 @@ def _bg_run_pipeline(
         out.mkdir(parents=True, exist_ok=True)
         (logs / "meta.json").write_text(payload, encoding="utf-8")
         (out / "meta.json").write_text(payload, encoding="utf-8")
+    finally:
+        _release_pipeline_slot(run_id)
 
 
 def _kick_pipeline_thread(
@@ -549,6 +596,16 @@ def _kick_pipeline_thread(
     BackgroundTasks + asyncio.to_thread can stall on Windows (same bug as slides);
     Liber then polls 200 forever with status=running, stage=queued, error=null.
     """
+    # Used by resume / helpers — /api/run claims the slot itself before prepare.
+    busy = _claim_pipeline_slot(run_id)
+    if busy is not None:
+        raise HTTPException(
+            409,
+            detail=(
+                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
+                "и перезапусти api.cmd — параллельные runs на Win зависают."
+            ),
+        )
     threading.Thread(
         target=_bg_run_pipeline,
         kwargs={
@@ -812,9 +869,26 @@ async def api_run(
     else:
         raise HTTPException(400, detail="provide source file or source_text")
 
+    # One report at a time on Win (parallel FileHandlers + Image hang → zombies).
+    busy = _claim_pipeline_slot("pending")
+    if busy is not None:
+        raise HTTPException(
+            409,
+            detail=(
+                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
+                "и перезапусти api.cmd."
+            ),
+        )
+
     # Reserve run_id + write stage=llm BEFORE kick (Win: 2nd run sat on queued while
     # prior LLM thread still held the desk; Liber must not wait on thread scheduling).
-    run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=ROOT)
+    try:
+        run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=ROOT)
+        _bind_pipeline_slot(run_id)
+    except Exception:
+        _release_pipeline_slot("pending")
+        raise
+
     meta0 = {
         "run_id": run_id,
         "source": str(resolve_text_file(src_path)),
@@ -838,18 +912,24 @@ async def api_run(
     EVENTS.bind_out(run_id, out_dir)
     EVENTS.publish_stage(run_id, "llm", detail="жду модель…", scope="pipeline")
 
-    _kick_pipeline_thread(
-        src_path,
-        run_id=run_id,
-        formats=fmt_set,
-        dry_run=is_dry,
-        intent=full_intent,
-        max_images=max_images,
-        max_charts=max_charts,
-        max_diagrams=max_diagrams,
-        user_figures=user_figures,
-        output_mode=out_mode,
-    )
+    # Slot already claimed — thread only releases in finally (do not claim again).
+    threading.Thread(
+        target=_bg_run_pipeline,
+        kwargs={
+            "src_path": src_path,
+            "run_id": run_id,
+            "formats": fmt_set,
+            "dry_run": is_dry,
+            "intent": full_intent,
+            "max_images": max_images,
+            "max_charts": max_charts,
+            "max_diagrams": max_diagrams,
+            "user_figures": user_figures,
+            "output_mode": out_mode,
+        },
+        name=f"case3-pipeline-{run_id}",
+        daemon=True,
+    ).start()
 
     return JSONResponse(
         status_code=202,

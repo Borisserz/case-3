@@ -107,6 +107,31 @@ def test_run_returns_202_and_status_poll(
     assert payload["run_id"] == run_id
 
 
+def test_run_rejects_second_while_busy(client: TestClient) -> None:
+    """Win desk: parallel pipelines → zombie stage=images/inject; API returns 409."""
+    assert api_mod._claim_pipeline_slot("holder_test") is None
+    try:
+        r = client.post(
+            "/api/run",
+            data={
+                "source_text": "x",
+                "intent": "t",
+                "max_charts": "0",
+                "max_images": "0",
+                "forbid_charts": "true",
+                "forbid_images": "true",
+                "dry_run": "true",
+                "formats": "both",
+            },
+        )
+        assert r.status_code == 409, r.text
+        assert "прогон" in (r.json().get("detail") or "").lower() or "holder" in (
+            r.json().get("detail") or ""
+        )
+    finally:
+        api_mod._release_pipeline_slot("holder_test")
+
+
 def test_chart_edit_404_missing_run(client: TestClient) -> None:
     r = client.post(
         "/api/runs/missing_run_20260101T000000Z/charts/cht_01/edit",
