@@ -4,12 +4,10 @@
 import {
   lazy,
   Suspense,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type DragEvent,
 } from "react";
 import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
@@ -26,7 +24,6 @@ const ChartsQa = lazy(() =>
 import {
   FALLBACK_PALETTES,
   FALLBACK_TYPES,
-  LONG_TEXT_CHARS,
 } from "../domain/liberConstants";
 import { type LiberWorkMode } from "../domain/liberModes";
 import {
@@ -34,7 +31,6 @@ import {
   formatBytes,
   imageChipFromHealth,
   paradeHintFromHealth,
-  readTextFile,
   reportReadyText,
   reportTitle,
   stageLabel,
@@ -48,6 +44,8 @@ import type {
   SourceDraft,
 } from "../domain/liberTypes";
 import { useArtifactHost } from "./useArtifactHost";
+import { useSourceIngest } from "./useSourceIngest";
+import { useStopGeneration } from "./useStopGeneration";
 import { useLiberToast } from "./useLiberToast";
 import { useReportHistory } from "./useReportHistory";
 import { DeckStyleSheet } from "../DeckStyleSheet";
@@ -373,91 +371,15 @@ export default function App() {
     });
 
 
-
-
-
-
-  function stopGeneration() {
-    if (stopping) return;
-    cancelRequestedRef.current = true;
-    const runId = activeRunIdRef.current;
-    const pendingId = pendingBotIdRef.current;
-    setStopping(true);
-    if (pendingId) {
-      setMsgs((m) =>
-        m.map((msg) => {
-          if (msg.id !== pendingId || msg.role !== "bot") return msg;
-          return {
-            ...msg,
-            pending: true,
-            text: "Останавливаю…",
-            error: undefined,
-          };
-        }),
-      );
-    }
-    void (async () => {
-      if (runId) {
-        try {
-          await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
-            method: "POST",
-          });
-        } catch {
-          /* UI still finishes below */
-        }
-        const deadline = Date.now() + 20_000;
-        while (Date.now() < deadline) {
-          try {
-            const st = await fetch(
-              `/api/runs/${encodeURIComponent(runId)}/status`,
-            );
-            const body = await st.json().catch(() => ({}));
-            const pipe = body.status as string | undefined;
-            const slides = body.slides_status as string | undefined;
-            if (
-              pipe === "cancelled" ||
-              slides === "cancelled" ||
-              (pipe !== "running" &&
-                slides !== "running" &&
-                slides !== "queued")
-            ) {
-              break;
-            }
-          } catch {
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 400));
-        }
-      }
-      if (pendingId) {
-        setMsgs((m) =>
-          m.map((msg) => {
-            if (msg.id !== pendingId || msg.role !== "bot") return msg;
-            return {
-              ...msg,
-              pending: false,
-              text: "Остановлено",
-              error: undefined,
-              result: msg.result
-                ? {
-                    ...msg.result,
-                    slides_status:
-                      msg.result.slides_status === "running" ||
-                      msg.result.slides_status === "queued"
-                        ? "cancelled"
-                        : msg.result.slides_status,
-                    slides_error: "Остановлено",
-                  }
-                : msg.result,
-            };
-          }),
-        );
-      }
-      setStopping(false);
-      setBusy(false);
-      activeRunIdRef.current = null;
-    })();
-  }
+  const stopGeneration = useStopGeneration({
+    stopping,
+    setStopping,
+    setBusy,
+    setMsgs,
+    cancelRequestedRef,
+    activeRunIdRef,
+    pendingBotIdRef,
+  });
 
   const makePresentation = useMakePresentation({
     deckStyle,
@@ -470,11 +392,6 @@ export default function App() {
     activeRunIdRef,
     pendingBotIdRef,
   });
-
-
-
-
-
 
 
   function restoreLastReport() {
@@ -582,78 +499,18 @@ export default function App() {
     },
   });
 
-  const capturePastedSource = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (trimmed.length <= LONG_TEXT_CHARS) return false;
-    const draft = {
-      title: "Текст",
-      text: trimmed,
-    };
-    setFile(null);
-    setSourceDraft(draft);
-    setPlaqueDismissed(false);
-    setDeckApplyHint(null);
-    setActiveArtifact({
-      kind: "source",
-      tab: "source",
-      title: draft.title,
-      text: draft.text,
-    });
-    return true;
-  }, []);
-
-  const ingestFiles = useCallback((list: FileList | File[]) => {
-    const arr = Array.from(list);
-    for (const f of arr) {
-      if (
-        /\.(txt|md)$/i.test(f.name) ||
-        f.type === "text/plain" ||
-        f.type === "text/markdown"
-      ) {
-        setFile(f);
-        setPlaqueDismissed(false);
-        setDeckApplyHint(null);
-        void (async () => {
-          try {
-            const text = await readTextFile(f);
-            const draft = {
-              title: f.name,
-              text,
-              fileName: f.name,
-            };
-            setSourceDraft(draft);
-            setActiveArtifact({
-              kind: "source",
-              tab: "source",
-              title: draft.title,
-              text: draft.text,
-              fileName: draft.fileName,
-            });
-          } catch (err) {
-            showToast(
-              err instanceof Error ? err.message : "Не удалось прочитать файл",
-            );
-          }
-        })();
-        continue;
-      }
-      if (/^image\//.test(f.type) || /\.(png|jpe?g)$/i.test(f.name)) {
-        setAttachPhotos((prev) => [...prev, f].slice(0, 2));
-        setForbidImages(false);
-        setMaxImages((n) => Math.max(n, 2));
-      }
-    }
-  }, [showToast]);
-
-  const onDrop = useCallback(
-    (e: DragEvent) => {
-      e.preventDefault();
-      setDrag(false);
-      if (e.dataTransfer.files?.length) ingestFiles(e.dataTransfer.files);
-    },
-    [ingestFiles],
-  );
-
+  const { capturePastedSource, ingestFiles, onDrop } = useSourceIngest({
+    setFile,
+    setSourceDraft,
+    setPlaqueDismissed,
+    setDeckApplyHint,
+    setActiveArtifact,
+    setAttachPhotos,
+    setForbidImages,
+    setMaxImages,
+    setDrag,
+    showToast,
+  });
 
   const healthReady = Boolean(
     health?.vision_configured && health?.docker_ok && health?.playwright_ok,

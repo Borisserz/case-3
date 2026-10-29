@@ -27,12 +27,8 @@ from case3.diagrams import max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.generate import max_images_from_env, resolve_text_file
 from case3.desk_health import build_desk_probes, probe_soffice, probe_vision
-from case3.image_api import (
-    ImageApiConfig,
-    edit_png,
-    image_api_configured,
-    probe_image_api,
-)
+from case3.image_api import image_api_configured, probe_image_api
+from case3.api_photo import quick_photo_edit
 from case3.run_events import EVENTS, seed_events_from_steps
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image
@@ -372,98 +368,6 @@ def _bg_run_pipeline(
         _release_pipeline_slot(run_id)
 
 
-async def _quick_photo_edit(
-    fig: dict[str, Any],
-    *,
-    prompt: str,
-    caption: str,
-) -> JSONResponse:
-    """Img2img one attached photo → chat preview (no TeX/PDF)."""
-    cfg = ImageApiConfig.from_env()
-    if not cfg.base_url:
-        raise HTTPException(400, detail="IMAGE_API_BASE_URL пуст")
-    src = Path(str(fig.get("path") or ""))
-    if not src.is_file():
-        raise HTTPException(400, detail="upload missing on disk")
-    stamp = datetime_stamp()
-    run_id = f"photo_edit_{stamp}"
-    out = run_store.ROOT / "runs" / "out" / run_id
-    figs = out / "figures"
-    figs.mkdir(parents=True, exist_ok=True)
-    dest = figs / "edited.png"
-    try:
-        await asyncio.to_thread(edit_png, cfg, prompt, src, dest)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(502, detail=f"image edit failed: {exc}") from exc
-    v = int(dest.stat().st_mtime)
-    meta = {
-        "run_id": run_id,
-        "status": "ok",
-        "stage": "ok",
-        "mode": "photo_edit",
-        "prompt": prompt[:500],
-        "caption": caption,
-    }
-    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "ok",
-            "mode": "photo_edit",
-            "prompt": prompt,
-            "caption": caption,
-            "preview_figure": {
-                "id": "edited",
-                "kind": "figure",
-                "url": f"/api/runs/{run_id}/figures/edited.png?v={v}",
-                "caption": caption,
-            },
-            "downloads": {},
-            "preview": {
-                "title": caption,
-                "blocks": [
-                    {
-                        "type": "figure",
-                        "id": "edited",
-                        "kind": "figure",
-                        "url": f"/api/runs/{run_id}/figures/edited.png?v={v}",
-                        "caption": caption,
-                    }
-                ],
-            },
-            "figures_ok": 1,
-            "figures_planned": ["edited"],
-            "charts_ok": 0,
-            "charts_planned": [],
-            "warnings": [],
-        }
-    )
-
-
-@app.post("/api/photo/edit")
-async def api_photo_edit(
-    image: UploadFile = File(...),
-    prompt: str = Form(...),
-    caption: str = Form(""),
-) -> JSONResponse:
-    """Standalone chat-only img2img (same as photo_mode=edit on /api/run)."""
-    upload_dir = run_store.ROOT / "runs" / "uploads" / datetime_stamp()
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    raw = await image.read()
-    try:
-        figs = save_user_photos(
-            upload_dir,
-            [(image.filename or "photo.png", raw)],
-            captions=[caption] if caption.strip() else None,
-        )
-    except UserPhotoError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    return await _quick_photo_edit(
-        figs[0],
-        prompt=(prompt or "").strip(),
-        caption=(caption or figs[0].get("caption") or "Правка фото"),
-    )
-
 
 @app.post("/api/run")
 async def api_run(
@@ -562,7 +466,7 @@ async def api_run(
         prompt = (intent or "").strip()
         if not prompt:
             raise HTTPException(400, detail="нужен текст: что изменить на фото")
-        return await _quick_photo_edit(
+        return await quick_photo_edit(
             user_figures[0],
             prompt=prompt,
             caption=(cap_list[0] if cap_list else user_figures[0].get("caption") or "Правка фото"),
@@ -1195,6 +1099,9 @@ def download_figure(run_id: str, name: str) -> FileResponse:
 
 
 from case3.api_edits import router as edits_router
+from case3.api_photo import router as photo_router
 from case3.api_slides import router as slides_router
+
 app.include_router(edits_router)
+app.include_router(photo_router)
 app.include_router(slides_router)
