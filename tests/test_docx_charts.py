@@ -85,11 +85,18 @@ def test_replace_docx_charts_writes_word_charts(tmp_path: Path) -> None:
         assert not media, f"expected no leftover media, got {media}"
         assert "Target=\"media/" not in rels
 
+        # Word-safe: no xlsx package embed / no externalData (cache-only chart)
+        embeds = [n for n in zf.namelist() if n.startswith("word/embeddings/")]
+        assert not embeds, embeds
+
         # (5) no auto chart title (caption under figure stays in document body)
         for cf in charts:
             xml = zf.read(cf).decode("utf-8")
             assert 'autoTitleDeleted val="1"' in xml, cf
             assert not re.search(r"<c:title>.*?</c:title>", xml, re.S)
+            assert "externalData" not in xml
+            assert "numCache" in xml or "strCache" in xml
+
 
 
 def test_try_replace_soft_fail_missing_series(tmp_path: Path) -> None:

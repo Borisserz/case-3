@@ -286,17 +286,19 @@ def render_tex(
 
             lists_ok = try_fix_docx_lists(docx_dst)
             _restore_if_broken("lists")
-            # Native OOXML charts: OFF by default — MS Word often won't open
-            # packages LibreOffice accepts. Opt-in: CASE3_DOCX_NATIVE_CHARTS=1.
+            # Native OOXML charts (editable in Word). Cache-only chart XML —
+            # no pptx xlsx package embed (that broke MS Word open). Opt-out:
+            # CASE3_DOCX_NATIVE_CHARTS=0
             native_ids: list[str] = []
             import os as _os
 
-            native_on = (_os.environ.get("CASE3_DOCX_NATIVE_CHARTS") or "").strip().lower() in {
-                "1",
-                "true",
-                "yes",
+            native_off = (_os.environ.get("CASE3_DOCX_NATIVE_CHARTS") or "1").strip().lower() in {
+                "0",
+                "false",
+                "no",
+                "off",
             }
-            if native_on:
+            if not native_off:
                 try:
                     import json as _json
 

@@ -82,12 +82,30 @@ def _chart_series_for_id(figures: dict[str, Any], cid: str) -> dict[str, Any] | 
     return None
 
 
+def _chart_xml_word_safe(chart_xml: bytes) -> bytes:
+    """Drop c:externalData so Word opens without pptx-style xlsx package embed.
+
+    MS Word often refuses DOCX when chart points at a python-pptx Excel package
+    embedding. Cached strCache/numCache stay — Word still shows the chart and
+    recreates a workbook on edit (editable native chart).
+    """
+    text = chart_xml.decode("utf-8")
+    text = re.sub(
+        r"<c:externalData\b[^>]*>.*?</c:externalData>",
+        "",
+        text,
+        flags=re.S,
+    )
+    text = re.sub(r"<c:externalData\b[^/]*/>", "", text)
+    return text.encode("utf-8")
+
+
 def _build_chart_package(
     series_ir: dict[str, Any],
     *,
     series_hexes: list[str] | None,
-) -> tuple[bytes, bytes, str]:
-    """Return (chart_xml, xlsx_bytes, embedding_filename) via python-pptx."""
+) -> bytes:
+    """Return Word-safe chart1.xml bytes (caches only, no xlsx embed)."""
     from pptx import Presentation
     from pptx.util import Inches
 
@@ -112,20 +130,7 @@ def _build_chart_package(
         prs.save(str(pptx_path))
         with zipfile.ZipFile(pptx_path) as zf:
             chart_xml = zf.read("ppt/charts/chart1.xml")
-            rels = zf.read("ppt/charts/_rels/chart1.xml.rels").decode("utf-8")
-            # Find embedding target
-            m = re.search(r'Target="([^"]+)"', rels)
-            if not m:
-                raise RuntimeError("chart rels missing embedding")
-            emb_target = m.group(1).lstrip("/")
-            # ppt relative: ../embeddings/Foo.xlsx → ppt/embeddings/Foo.xlsx
-            if emb_target.startswith("../"):
-                emb_path = "ppt/" + emb_target[3:]
-            else:
-                emb_path = emb_target
-            xlsx = zf.read(emb_path)
-            emb_name = Path(emb_path).name
-    return chart_xml, xlsx, emb_name
+    return _chart_xml_word_safe(chart_xml)
 
 
 def _next_rid(rels_xml: str) -> int:
@@ -134,17 +139,22 @@ def _next_rid(rels_xml: str) -> int:
 
 
 def _chart_drawing_xml(*, rid: str, extent_cx: str, extent_cy: str, doc_pr_id: str) -> str:
+    # Namespaces on graphic/chart — Word is stricter than LibreOffice.
     return (
         f"<w:drawing>"
-        f"<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">"
-        f"<wp:extent cx=\"{extent_cx}\" cy=\"{extent_cy}\"/>"
-        f"<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>"
-        f"<wp:docPr id=\"{doc_pr_id}\" name=\"Chart\"/>"
-        f"<wp:cNvGraphicFramePr/>"
-        f'<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        f'<wp:inline distT="0" distB="0" distL="0" distR="0" '
+        f'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        f'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        f'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f'<wp:extent cx="{extent_cx}" cy="{extent_cy}"/>'
+        f'<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        f'<wp:docPr id="{doc_pr_id}" name="Chart"/>'
+        f"<wp:cNvGraphicFramePr>"
+        f'<a:graphicFrameLocks noChangeAspect="1"/>'
+        f"</wp:cNvGraphicFramePr>"
+        f"<a:graphic>"
         f'<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
         f'<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
-        f'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         f'r:id="{rid}"/>'
         f"</a:graphicData>"
         f"</a:graphic>"
@@ -269,9 +279,7 @@ def replace_docx_native_charts(
         if ctype not in NATIVE_CHART_TYPES:
             continue
         try:
-            chart_xml, xlsx, emb_name = _build_chart_package(
-                series_ir, series_hexes=series_hexes
-            )
+            chart_xml = _build_chart_package(series_ir, series_hexes=series_hexes)
             chart_xml = _suppress_chart_title(chart_xml)
         except Exception as exc:  # noqa: BLE001
             log.warning("docx native chart build failed %s: %s", cid, exc)
@@ -295,23 +303,18 @@ def replace_docx_native_charts(
                     drop_media.add(f"word/{media_part}")
 
         chart_part = f"word/charts/chart{chart_n}.xml"
-        emb_part = f"word/embeddings/Liber_{cid}_{emb_name}"
         rels_part = f"word/charts/_rels/chart{chart_n}.xml.rels"
         chart_rid = f"rId{rid_n}"
         rid_n += 1
 
-        # Chart → embedding rel (Word path)
-        emb_rel = (
+        # Cache-only chart: empty rels (no xlsx package — Word-safe).
+        empty_rels = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            f'<Relationship Id="rId1" '
-            f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" '
-            f'Target="../embeddings/{Path(emb_part).name}"/>'
             "</Relationships>"
         )
         new_parts[chart_part] = chart_xml
-        new_parts[emb_part] = xlsx
-        new_parts[rels_part] = emb_rel.encode("utf-8")
+        new_parts[rels_part] = empty_rels.encode("utf-8")
 
         # document → chart relationship
         rels = rels.replace(
@@ -323,15 +326,6 @@ def replace_docx_native_charts(
             1,
         )
 
-        # Content types
-        if 'Extension="xlsx"' not in content_types:
-            # Insert Default for xlsx after <Types ...>
-            content_types = re.sub(
-                r"(<Types[^>]*>)",
-                r'\1<Default Extension="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>',
-                content_types,
-                count=1,
-            )
         override = (
             f'<Override PartName="/{chart_part}" '
             f'ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>'
