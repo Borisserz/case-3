@@ -419,9 +419,18 @@ def parse_model_output(
     tex_body, json_body = _pick_fences(raw)
     data = _load_media_payload(raw, json_body)
 
-    # Peek chart/figure ids early so we can rebuild a body if preamble was truncated.
+    # Peek media ids early so we can rebuild a body if preamble was truncated.
     early_charts = _chart_ids_from_data(data, max_charts=max_charts)
     early_figs = _figure_ids_from_data(data, max_images=max_images)
+    early_dias: list[str] = []
+    if max_diagrams > 0 and isinstance(data, dict):
+        early_dias = [
+            str(d.get("id") or "")
+            for d in (
+                parse_diagrams(data.get("diagrams"), max_diagrams=max_diagrams) or []
+            )
+            if isinstance(d, dict) and d.get("id")
+        ]
 
     try:
         if tex_body is None:
@@ -444,9 +453,17 @@ def parse_model_output(
                 )
             tex = extract_tex("```latex\n" + tex_body + "\n```")
     except ValueError as exc:
-        # Last resort: valid JSON charts but unusable TeX → minimal document.
-        if early_charts or early_figs:
-            log.warning("extract_tex failed (%s) — building minimal doc from JSON ids", exc)
+        # Last resort: valid JSON media but unusable TeX → minimal document.
+        # Diagram-only mode often gets thinking + ```json diagrams[] without LaTeX.
+        if early_charts or early_figs or early_dias:
+            log.warning(
+                "extract_tex failed (%s) — building minimal doc "
+                "(charts=%s figs=%s dias=%s)",
+                exc,
+                early_charts,
+                early_figs,
+                early_dias,
+            )
             from case3.tex_utils import _MIN_PREAMBLE
 
             tex = finish_preamble_only_tex(
