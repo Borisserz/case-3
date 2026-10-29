@@ -7,6 +7,7 @@ import logging
 import shutil
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,33 @@ log = logging.getLogger("case3.pipeline")
 
 # Stages eligible for POST /resume (after LLM artifacts exist).
 RESUME_STAGES = frozenset({"images", "charts", "inject", "latex", "docx"})
+
+# Isolate pipeline.log per run when multiple FileHandlers share logger "case3"
+# (Win AV + cross-run emit was a hang amplifier; see debug 114628).
+_PIPELINE_RUN_ID: ContextVar[str] = ContextVar("case3_pipeline_run_id", default="")
+
+
+class _RunIdLogFilter(logging.Filter):
+    """Only emit records while this handler's run_id owns the context."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__()
+        self.run_id = run_id
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return _PIPELINE_RUN_ID.get() == self.run_id
+
+
+def _attach_pipeline_log_handler(logs: Path, run_id: str) -> logging.Handler:
+    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    handler.addFilter(_RunIdLogFilter(run_id))
+    root_logger = logging.getLogger("case3")
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+    return handler
 
 
 def resolve_pipeline_formats(formats: set[str] | None) -> set[str]:
@@ -256,7 +284,12 @@ def _set_stage(
             EVENTS.publish_step(
                 run_id, parent="photos", step_id=det, status="active", label=det
             )
-        EVENTS.scan_artifacts(run_id, out)
+        # Scan out/ only when print artifacts can appear — not every fig/cht bump
+        # (Win AV on glob×N amplified hangs after bump with no following log line).
+        if stage in {"latex", "docx", "summary", "ok", "pipeline_ok"} or (
+            stage == "inject" and not det
+        ):
+            EVENTS.scan_artifacts(run_id, out)
 
 
 def prepare_run_dirs(
@@ -385,13 +418,9 @@ def resume_pipeline(
     dry_run = bool(meta.get("dry_run"))
     failed_from = str(meta.get("failed_stage") or "")
 
-    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
+    handler = _attach_pipeline_log_handler(logs, run_id)
     root_logger = logging.getLogger("case3")
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
+    _run_token = _PIPELINE_RUN_ID.set(run_id)
 
     meta["status"] = "running"
     meta["stage"] = "queued"
@@ -697,6 +726,7 @@ def resume_pipeline(
             _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
+        _PIPELINE_RUN_ID.reset(_run_token)
 
     log.info("resume done run_id=%s out=%s", run_id, out)
     return out
@@ -768,11 +798,9 @@ def run_pipeline(
     _write_meta(meta, out, logs)
     EVENTS.publish_stage(run_id, "llm", detail="жду модель…", scope="pipeline")
 
-    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    handler = _attach_pipeline_log_handler(logs, run_id)
     root_logger = logging.getLogger("case3")
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
+    _run_token = _PIPELINE_RUN_ID.set(run_id)
 
     from case3.stage_eta import load_timings
 
@@ -1236,6 +1264,7 @@ def run_pipeline(
             _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
+        _PIPELINE_RUN_ID.reset(_run_token)
 
     log.info("done run_id=%s out=%s", run_id, out)
     return out
