@@ -61,7 +61,8 @@ def max_charts_from_env() -> int:
 
 def chart_timeout_s() -> float:
     try:
-        return max(3.0, float(os.environ.get("CASE3_CHART_TIMEOUT_S", "15") or "15"))
+        # Win desk Playwright often needs >15s; 15 caused cht_* fail → preza crash.
+        return max(3.0, float(os.environ.get("CASE3_CHART_TIMEOUT_S", "45") or "45"))
     except ValueError:
         return 15.0
 

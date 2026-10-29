@@ -412,6 +412,75 @@ def scrub_invented_numbers(
     return out
 
 
+def scrub_unavailable_media(
+    deck: dict[str, Any],
+    *,
+    allowed_media_ids: frozenset[str] | None,
+) -> dict[str, Any]:
+    """Demote chart/media slides whose ids have no PNG (Playwright fail → empty media).
+
+    Win desk: charts timeout → LLM still emits cht_01 → DeckIrError killed the deck.
+    """
+    if allowed_media_ids is None:
+        return deck
+    allowed = frozenset(allowed_media_ids)
+
+    def _demote_callout(slide: dict[str, Any], fallback: str) -> None:
+        title = str(slide.get("title") or fallback).strip() or fallback
+        body = (
+            str(slide.get("caption") or "").strip()
+            or str(slide.get("body") or "").strip()
+            or title
+        )
+        slide["layout"] = "callout"
+        slide["title"] = title
+        slide["term"] = title[:40]
+        slide["definition"] = body[:220]
+        for key in (
+            "chart_id",
+            "media_id",
+            "rows",
+            "kpis",
+            "cards",
+            "bullets",
+            "caption",
+            "body",
+        ):
+            slide.pop(key, None)
+
+    slides_out: list[dict[str, Any]] = []
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        s2 = dict(s)
+        layout = str(s2.get("layout") or "")
+        if layout in ("chart_hero", "chart_split"):
+            cid = str(s2.get("chart_id") or "").strip()
+            if cid not in allowed:
+                _demote_callout(s2, "График")
+        elif layout in ("media_hero", "media_split"):
+            mid = str(s2.get("media_id") or "").strip()
+            if mid not in allowed:
+                _demote_callout(s2, "Иллюстрация")
+        elif layout == "title":
+            mid = str(s2.get("media_id") or "").strip()
+            if mid and mid not in allowed:
+                s2.pop("media_id", None)
+        elif layout == "closing":
+            mid = str(s2.get("media_id") or "").strip()
+            if mid and mid not in allowed:
+                s2.pop("media_id", None)
+                bullets = s2.get("bullets")
+                if not isinstance(bullets, list) or not any(
+                    str(b).strip() for b in bullets
+                ):
+                    s2["bullets"] = [str(s2.get("title") or "Итоги")]
+        slides_out.append(s2)
+    out = dict(deck)
+    out["slides"] = slides_out
+    return out
+
+
 def _clip_str(val: Any, *, field: str, max_len: int, required: bool = False) -> str:
     if val is None or (isinstance(val, str) and not val.strip()):
         if required:

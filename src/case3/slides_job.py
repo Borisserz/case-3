@@ -420,6 +420,8 @@ def run_slides_job(
             client = llm or LLMClient(LLMConfig.from_env())
 
             def _parse_or_scrub(raw_ir: dict[str, Any]) -> dict[str, Any]:
+                from case3.slides_ir import scrub_unavailable_media
+
                 try:
                     return parse_deck_ir(
                         raw_ir,
@@ -428,11 +430,15 @@ def run_slides_job(
                         allowed_number_strings=allowed_numbers,
                     )
                 except DeckIrError as err:
-                    # Always scrub digits first — also demotes broken tables/KPIs.
+                    # Digits scrub + demote chart/media slides with no PNG
+                    # (Playwright timeout on Win left cht_* planned but unavailable).
                     healed = scrub_invented_numbers(
                         raw_ir,
                         source=source,
                         allowed_number_strings=allowed_numbers,
+                    )
+                    healed = scrub_unavailable_media(
+                        healed, allowed_media_ids=allowed_media
                     )
                     try:
                         deck_h = parse_deck_ir(
@@ -441,9 +447,12 @@ def run_slides_job(
                             allowed_media_ids=allowed_media,
                             allowed_number_strings=allowed_numbers,
                         )
-                    except DeckIrError:
-                        raise err from None
+                    except DeckIrError as scrub_err:
+                        # Prefer the post-scrub error (chart_id after number heal).
+                        raise scrub_err from err
                     meta["slides_number_scrub"] = True
+                    if not allowed_media:
+                        meta["slides_media_scrub"] = True
                     log.warning("deck IR reject healed by scrub: %s", err)
                     return deck_h
 
@@ -492,10 +501,11 @@ def run_slides_job(
         deck["style"] = theme_tokens.as_dict()
         deck["palette"] = palette
 
-        # Every native-eligible cht_* must appear in the deck (inject missing).
+        # Every native-eligible cht_* with a PNG must appear (skip failed renders).
         fj_early = load_figures_json(out_dir)
         attach_series_ir_to_charts(fj_early.get("charts") if isinstance(fj_early, dict) else None)
         series_all = series_map_from_figures(fj_early if isinstance(fj_early, dict) else {})
+        series_all = {k: v for k, v in series_all.items() if k in png_by_id}
         injected = ensure_deck_charts(deck, series_all)
         if injected:
             meta["slides_chart_injected"] = injected
