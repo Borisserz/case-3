@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.color_util import hex_to_rgb
+
 import re
 from typing import Any
 
@@ -20,8 +22,10 @@ def _lum(r: int, g: int, b: int) -> float:
 
 
 def _parse_hex(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    rgb = hex_to_rgb(h)
+    if rgb is None:
+        raise ValueError(f"bad hex: {h!r}")
+    return rgb
 
 
 def apply_hex_series_to_html(

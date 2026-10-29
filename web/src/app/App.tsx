@@ -12,11 +12,7 @@ import {
   type DragEvent,
 } from "react";
 import { useReducedMotion } from "framer-motion";
-import {
-  ArtifactRail,
-  type ActiveArtifact,
-  type ArtifactTab,
-} from "../ArtifactRail";
+import { ArtifactRail } from "../ArtifactRail";
 import { ChatComposer } from "../ChatComposer";
 import { ChatMessages } from "../ChatMessages";
 import { useLiberEdits } from "./useLiberEdits";
@@ -27,7 +23,6 @@ import { useLiberRun } from "./useLiberRun";
 const ChartsQa = lazy(() =>
   import("../ChartsQa").then((m) => ({ default: m.ChartsQa })),
 );
-import { type CraftFilmFrame } from "../domain/craftSteps";
 import {
   FALLBACK_PALETTES,
   FALLBACK_TYPES,
@@ -52,9 +47,9 @@ import type {
   RunResult,
   SourceDraft,
 } from "../domain/liberTypes";
+import { useArtifactHost } from "./useArtifactHost";
 import { useLiberToast } from "./useLiberToast";
 import { useReportHistory } from "./useReportHistory";
-import { loadRailWidth } from "../domain/railWidth";
 import { DeckStyleSheet } from "../DeckStyleSheet";
 import {
   loadDeckStyle,
@@ -119,17 +114,9 @@ export default function App() {
   const [hasStoredReport, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // history / folders / sidebar → useReportHistory (below, after busy)
-  const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(
-    null,
-  );
   /** Text of attached .txt/.md for Source tab / plaque. */
   const [sourceDraft, setSourceDraft] = useState<SourceDraft | null>(null);
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
-  const [narrowRail, setNarrowRail] = useState(false);
-  const [railWidthPct, setRailWidthPct] = useState(() => loadRailWidth());
-  /** Keep rail mounted + desk layout until width→0 finishes (avoids bubble snap). */
-  const [railExiting, setRailExiting] = useState(false);
-  const lastArtifactRef = useRef<ActiveArtifact | null>(null);
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -140,6 +127,29 @@ export default function App() {
   const activeRunIdRef = useRef<string | null>(null);
   const cancelRequestedRef = useRef(false);
   const pendingBotIdRef = useRef<string | null>(null);
+
+  const {
+    activeArtifact,
+    setActiveArtifact,
+    narrowRail,
+    railWidthPct,
+    setRailWidthPct,
+    railExiting,
+    setRailExiting,
+    railLayout,
+    railArtifact,
+    openReportArtifact,
+    openDiagramArtifact,
+    openPresentationArtifact,
+    openDeckSlidesArtifact,
+    openFilmFrame,
+    openSourceArtifact,
+    openIntentArtifact,
+    closeArtifact,
+    finishArtifactClose,
+    setArtifactTab,
+    selectDiagram,
+  } = useArtifactHost({ msgs, activeRunIdRef });
 
   const {
     sidebarCollapsed,
@@ -298,13 +308,6 @@ export default function App() {
     }
   }, [msgs]);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 899px)");
-    const sync = () => setNarrowRail(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
 
   useLiberDevPreviews({
     setMsgs,
@@ -369,70 +372,10 @@ export default function App() {
       undoBusyRef,
     });
 
-  function openReportArtifact(msgId: string, result: RunResult, tab?: ArtifactTab) {
-    const mode = result.output_mode || "auto";
-    const preferPreview = Boolean(result.preview?.blocks?.length);
-    const preferPdf = Boolean(result.downloads?.pdf);
-    let nextTab: ArtifactTab =
-      tab ??
-      (preferPreview ? "preview" : preferPdf ? "pdf" : "source");
-    // Mode-locked defaults (report → preview; diagram → schema; presentation → deck).
-    if (!tab) {
-      if (mode === "diagram" && result.diagrams?.[0]) nextTab = "diagram";
-      else if (mode === "presentation") nextTab = "presentation";
-      else if (mode === "report" && preferPreview) nextTab = "preview";
-    }
-    setRailExiting(false);
-    setActiveArtifact({
-      kind: "report",
-      msgId,
-      tab: nextTab,
-      title: reportTitle(result),
-      activeDiagramId: result.diagrams?.[0]?.id ?? null,
-    });
-  }
 
-  function openDiagramArtifact(
-    msgId: string,
-    result: RunResult,
-    diagramId: string,
-  ) {
-    setRailExiting(false);
-    setActiveArtifact({
-      kind: "report",
-      msgId,
-      tab: "diagram",
-      title: reportTitle(result),
-      activeDiagramId: diagramId,
-    });
-  }
 
-  function openPresentationArtifact(msgId: string, result: RunResult) {
-    openReportArtifact(msgId, result, "presentation");
-  }
 
-  function openDeckSlidesArtifact(msgId: string, result: RunResult) {
-    openReportArtifact(msgId, result, "slides");
-  }
 
-  function openFilmFrame(msgId: string, frame: CraftFilmFrame, runId?: string) {
-    const bot = msgs.find((m) => m.id === msgId && m.role === "bot");
-    const rid =
-      runId ||
-      (bot && bot.role === "bot" ? bot.result?.run_id : undefined) ||
-      activeRunIdRef.current ||
-      "";
-    setRailExiting(false);
-    setActiveArtifact({
-      kind: "media",
-      msgId,
-      tab: "preview",
-      runId: rid,
-      mediaId: frame.id,
-      url: frame.url,
-      title: frame.id,
-    });
-  }
 
   function stopGeneration() {
     if (stopping) return;
@@ -527,66 +470,12 @@ export default function App() {
     activeRunIdRef,
     pendingBotIdRef,
   });
-  function openSourceArtifact(draft: {
-    title: string;
-    text: string;
-    fileName?: string;
-  }) {
-    setRailExiting(false);
-    setActiveArtifact({
-      kind: "source",
-      tab: "source",
-      title: draft.title,
-      text: draft.text,
-      fileName: draft.fileName,
-    });
-  }
 
-  function openIntentArtifact(text: string) {
-    setRailExiting(false);
-    setActiveArtifact({
-      kind: "intent",
-      tab: "source",
-      title: "Текст запроса",
-      text,
-    });
-  }
 
-  function closeArtifact() {
-    if (!activeArtifact || railExiting) return;
-    lastArtifactRef.current = activeArtifact;
-    // Keep activeArtifact until width→0 finishes — nulling early dropped
-    // `closing`/`has-rail` and snapped the user bubble after a long stall.
-    setRailExiting(true);
-  }
 
-  function finishArtifactClose() {
-    setRailExiting(false);
-    setActiveArtifact(null);
-  }
 
-  useEffect(() => {
-    if (activeArtifact && !railExiting) {
-      lastArtifactRef.current = activeArtifact;
-    }
-  }, [activeArtifact, railExiting]);
 
-  function setArtifactTab(tab: ArtifactTab) {
-    setActiveArtifact((prev) => {
-      if (!prev) return prev;
-      if (prev.kind === "report") return { ...prev, tab };
-      if (prev.kind === "media") return { ...prev, tab: "preview" };
-      // source / intent only expose the Source tab
-      return { ...prev, tab: "source" as const };
-    });
-  }
 
-  function selectDiagram(id: string) {
-    setActiveArtifact((prev) => {
-      if (!prev || prev.kind !== "report") return prev;
-      return { ...prev, tab: "diagram", activeDiagramId: id };
-    });
-  }
 
   function restoreLastReport() {
     try {
@@ -781,9 +670,6 @@ export default function App() {
     : null;
   const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
 
-  const railOpen = Boolean(activeArtifact);
-  const railLayout = railOpen || railExiting;
-  const railArtifact = activeArtifact ?? (railExiting ? lastArtifactRef.current : null);
   const pendingBot = msgs.find((m) => m.role === "bot" && m.pending);
   const thinkingLabel =
     pendingBot && pendingBot.role === "bot"

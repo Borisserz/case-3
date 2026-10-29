@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from case3.color_util import hex_to_rgb
+
 import logging
 import os
 import re
@@ -50,19 +52,12 @@ class DiagramError(ValueError):
     """Invalid Mermaid diagram payload."""
 
 
-def _expand_hex(h: str) -> tuple[int, int, int]:
-    raw = h.lstrip("#")
-    if len(raw) == 3:
-        raw = "".join(c * 2 for c in raw)
-    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
-
-
 def _is_purple_hex(hex_color: str) -> bool:
     """Reject purple / violet neon (product: no нейрослоп)."""
-    try:
-        r, g, b = _expand_hex(hex_color)
-    except ValueError:
+    rgb = hex_to_rgb(hex_color)
+    if rgb is None:
         return True
+    r, g, b = rgb
     # High R+B with suppressed G → purple/magenta family.
     if b >= 110 and r >= 90 and g <= min(r, b) * 0.78 and ((r + b) / 2 - g) >= 36:
         return True

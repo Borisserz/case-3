@@ -117,8 +117,8 @@ Still open after safe deletes:
 | 4 | Edit routes → `parse_formats_form` (4× copy) | P1 | **done** |
 | 5 | `edit_run_figure` → `_resolve_run_dir` | P1 | **done** |
 | 6–7 | Shared `_edit_response` + `rebuild_run_docs` | P1 | **done** |
-| 8–10 | Share `load_figures_json` / `_is_dark_pack` / hex parsers | P1 | dark_pack done; hex open |
-| 11–13 | Split `api.py` / pipeline media path / pptx layouts | P1 | routers done; pipeline/pptx open |
+| 8–10 | Share `load_figures_json` / `_is_dark_pack` / hex parsers | P1 | dark_pack done; hex → color_util (deck/docx/charts/diagrams/pptx) |
+| 11–13 | Split `api.py` / pipeline media path / pptx layouts | P1 | routers done; pipeline media shared; pptx layouts still open |
 | 16 | Документация: label counters disagree (`chart_style` vs coerce) | P1 | open |
 | 17 | Bare `except` in `slides_pptx_charts` → log | P1 | **done** (`log.debug`) |
 

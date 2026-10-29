@@ -6,6 +6,8 @@ visual parity with Liber web is not required.
 
 from __future__ import annotations
 
+from case3.color_util import hex_to_rgb
+
 from pathlib import Path
 from typing import Any
 
@@ -39,10 +41,8 @@ def _as_inches(val: Any) -> float:
 
 
 def _hex_rgb(hex_color: str) -> RGBColor:
-    h = (hex_color or "#14161a").lstrip("#")
-    if len(h) == 3:
-        h = "".join(c * 2 for c in h)
-    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    rgb = hex_to_rgb(hex_color or "#14161a") or (0x14, 0x16, 0x1A)
+    return RGBColor(*rgb)
 
 
 def _palette(palette_id: str) -> dict[str, RGBColor]:

@@ -197,6 +197,7 @@
 
 - [x] Map shared stages: media → charts → inject → latex/docx → summary
 - [x] Extract shared body; keep public `run_pipeline` / `resume_pipeline` signatures stable
+- [x] `_pipeline_materialize_media` (images+charts) shared by run/resume (2026-10-30)
 - [x] Resume still honors `failed_stage` / skip-done stages
 - [x] `pytest -k pipeline -q`
 

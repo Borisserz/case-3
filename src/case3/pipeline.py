@@ -313,6 +313,154 @@ def prepare_run_dirs(
 
 
 
+def _pipeline_materialize_media(
+    *,
+    status: dict[str, Any],
+    figures: list,
+    charts: list,
+    fj: dict[str, Any],
+    fj_path: Path,
+    figs_dir: Path,
+    work: Path,
+    images_budget: int,
+    charts_budget: int,
+    dry_run: bool,
+    intent: str | None,
+    meta: dict[str, Any],
+    bump: Callable[[str, str | None], None],
+    run_id: str,
+    only_missing: bool = False,
+    publish_events: bool = False,
+) -> None:
+    """Shared images + charts materialization (run + resume).
+
+    ``only_missing``: resume — skip ids already OK on disk.
+    ``publish_events``: full run publishes EVENTS photo/chart steps.
+    """
+    if figures and not dry_run and images_budget > 0:
+        if publish_events:
+            log.info(
+                "images stage: %d figures, budget=%d (probe/POST next)",
+                len(figures),
+                images_budget,
+            )
+        bump("images")
+        status.update(materialize_user_figures(figures, figs_dir))
+        need_api = [
+            f
+            for f in figures
+            if str(f.get("source") or "") != "upload"
+            and (
+                not only_missing
+                or not _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
+            )
+        ]
+        cfg = ImageApiConfig.from_env()
+        cfg = replace(cfg, max_images=images_budget)
+        if publish_events:
+            log.info(
+                "images cfg base_url=%s need_api=%d",
+                (cfg.base_url or "")[:80] or "-",
+                len(need_api),
+            )
+        if need_api and not cfg.base_url:
+            if publish_events:
+                log.warning(
+                    "figures planned but IMAGE_API_BASE_URL empty — strip slots"
+                )
+            for f in need_api:
+                fid = str(f.get("id") or "")
+                if fid:
+                    status[fid] = {
+                        "ok": False,
+                        "error": "IMAGE_API_BASE_URL empty",
+                        "kind": "figure",
+                    }
+            if publish_events:
+                EVENTS.publish_step(
+                    run_id,
+                    parent="photos",
+                    step_id="photos",
+                    status="skipped",
+                    reason="IMAGE_API_BASE_URL empty",
+                    label="Фото",
+                )
+        elif need_api:
+
+            def _img_progress(fid: str) -> None:
+                bump("images", fid)
+                if publish_events and fid:
+                    EVENTS.publish_step(
+                        run_id,
+                        parent="photos",
+                        step_id=fid,
+                        status="done",
+                        label=fid,
+                    )
+
+            from case3.chart_style import palette_from_intent
+
+            pack_for_photos = (
+                str(meta.get("image_style_pack") or "")
+                or palette_from_intent(intent or "")
+                or "atelier"
+            )
+            if publish_events or not meta.get("image_style_pack"):
+                meta["image_style_pack"] = pack_for_photos
+            targets = figures if not only_missing else need_api
+            status.update(
+                generate_all_figures(
+                    targets,
+                    figs_dir,
+                    cfg=cfg,
+                    on_progress=_img_progress,
+                    pack_id=pack_for_photos,
+                )
+            )
+
+    if charts and not dry_run and charts_budget > 0:
+        bump("charts")
+        chart_targets = (
+            [
+                c
+                for c in charts
+                if not _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
+            ]
+            if only_missing
+            else list(charts)
+        )
+
+        def _chart_progress(cid: str) -> None:
+            bump("charts", cid)
+            if publish_events and cid:
+                EVENTS.publish_step(
+                    run_id,
+                    parent="charts",
+                    step_id=cid,
+                    status="done",
+                    label=cid,
+                )
+
+        to_render = chart_targets if only_missing else charts
+        if to_render:
+            status.update(
+                generate_all_charts(
+                    to_render,
+                    figs_dir,
+                    work_root=work / "chart_work",
+                    max_charts=charts_budget,
+                    on_progress=_chart_progress,
+                )
+            )
+        from case3.slides_chart_data import attach_series_ir_to_charts
+
+        attach_series_ir_to_charts(charts)
+        fj["charts"] = charts
+        fj_path.write_text(
+            json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+
 def _pipeline_print_and_summary(
     *,
     meta: dict[str, Any],
@@ -581,75 +729,24 @@ def resume_pipeline(
             if isinstance(x, dict) and x.get("id")
         )
 
-        if need_media and figures and not dry_run and images_budget > 0:
-            bump("images")
-            status.update(materialize_user_figures(figures, figs_dir))
-            need_api = [
-                f
-                for f in figures
-                if str(f.get("source") or "") != "upload"
-                and not _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
-            ]
-            cfg = ImageApiConfig.from_env()
-            cfg = replace(cfg, max_images=images_budget)
-            if need_api and not cfg.base_url:
-                for f in need_api:
-                    fid = str(f.get("id") or "")
-                    if fid:
-                        status[fid] = {
-                            "ok": False,
-                            "error": "IMAGE_API_BASE_URL empty",
-                            "kind": "figure",
-                        }
-            elif need_api:
-
-                def _img_progress(fid: str) -> None:
-                    bump("images", fid)
-
-                from case3.chart_style import palette_from_intent
-
-                pack_for_photos = (
-                    str(meta.get("image_style_pack") or "")
-                    or palette_from_intent(intent or "")
-                    or "atelier"
-                )
-                status.update(
-                    generate_all_figures(
-                        need_api,
-                        figs_dir,
-                        cfg=cfg,
-                        on_progress=_img_progress,
-                        pack_id=pack_for_photos,
-                    )
-                )
-
-        if need_media and charts and not dry_run and charts_budget > 0:
-            bump("charts")
-            need_charts = [
-                c
-                for c in charts
-                if not _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
-            ]
-
-            def _chart_progress(cid: str) -> None:
-                bump("charts", cid)
-
-            if need_charts:
-                status.update(
-                    generate_all_charts(
-                        need_charts,
-                        figs_dir,
-                        work_root=work / "chart_work",
-                        max_charts=charts_budget,
-                        on_progress=_chart_progress,
-                    )
-                )
-            from case3.slides_chart_data import attach_series_ir_to_charts
-
-            attach_series_ir_to_charts(charts)
-            fj["charts"] = charts
-            fj_path.write_text(
-                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
+        if need_media:
+            _pipeline_materialize_media(
+                status=status,
+                figures=figures,
+                charts=charts,
+                fj=fj,
+                fj_path=fj_path,
+                figs_dir=figs_dir,
+                work=work,
+                images_budget=images_budget,
+                charts_budget=charts_budget,
+                dry_run=dry_run,
+                intent=intent,
+                meta=meta,
+                bump=bump,
+                run_id=run_id,
+                only_missing=True,
+                publish_events=False,
             )
 
         # Keep prior ok entries for ids we skipped
@@ -955,102 +1052,24 @@ def run_pipeline(
         status: dict = {}
         figs_dir = work / "figures"
 
-        if figures and not dry_run and images_budget > 0:
-            log.info(
-                "images stage: %d figures, budget=%d (probe/POST next)",
-                len(figures),
-                images_budget,
-            )
-            bump("images")
-            status.update(materialize_user_figures(figures, figs_dir))
-            need_api = [
-                f
-                for f in figures
-                if str(f.get("source") or "") != "upload"
-            ]
-            cfg = ImageApiConfig.from_env()
-            cfg = replace(cfg, max_images=images_budget)
-            log.info(
-                "images cfg base_url=%s need_api=%d",
-                (cfg.base_url or "")[:80] or "-",
-                len(need_api),
-            )
-            if need_api and not cfg.base_url:
-                log.warning("figures planned but IMAGE_API_BASE_URL empty — strip slots")
-                for f in need_api:
-                    fid = str(f.get("id") or "")
-                    if fid:
-                        status[fid] = {
-                            "ok": False,
-                            "error": "IMAGE_API_BASE_URL empty",
-                            "kind": "figure",
-                        }
-                EVENTS.publish_step(
-                    run_id,
-                    parent="photos",
-                    step_id="photos",
-                    status="skipped",
-                    reason="IMAGE_API_BASE_URL empty",
-                    label="Фото",
-                )
-            elif need_api:
-
-                def _img_progress(fid: str) -> None:
-                    bump("images", fid)
-                    if fid:
-                        EVENTS.publish_step(
-                            run_id,
-                            parent="photos",
-                            step_id=fid,
-                            status="done",
-                            label=fid,
-                        )
-
-                from case3.chart_style import palette_from_intent
-
-                pack_for_photos = palette_from_intent(intent or "") or "atelier"
-                meta["image_style_pack"] = pack_for_photos
-                status.update(
-                    generate_all_figures(
-                        figures,
-                        figs_dir,
-                        cfg=cfg,
-                        on_progress=_img_progress,
-                        pack_id=pack_for_photos,
-                    )
-                )
-
-        if charts and not dry_run and charts_budget > 0:
-            bump("charts")
-
-            def _chart_progress(cid: str) -> None:
-                bump("charts", cid)
-                if cid:
-                    EVENTS.publish_step(
-                        run_id,
-                        parent="charts",
-                        step_id=cid,
-                        status="done",
-                        label=cid,
-                    )
-
-            status.update(
-                generate_all_charts(
-                    charts,
-                    figs_dir,
-                    work_root=work / "chart_work",
-                    max_charts=charts_budget,
-                    on_progress=_chart_progress,
-                )
-            )
-            # Re-attach after harden/render path may have rewritten HTML.
-            from case3.slides_chart_data import attach_series_ir_to_charts
-
-            attach_series_ir_to_charts(charts)
-            fj["charts"] = charts
-            fj_path.write_text(
-                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+        _pipeline_materialize_media(
+            status=status,
+            figures=figures,
+            charts=charts,
+            fj=fj,
+            fj_path=fj_path,
+            figs_dir=figs_dir,
+            work=work,
+            images_budget=images_budget,
+            charts_budget=charts_budget,
+            dry_run=dry_run,
+            intent=intent,
+            meta=meta,
+            bump=bump,
+            run_id=run_id,
+            only_missing=False,
+            publish_events=True,
+        )
 
         meta["media_status"] = status
         (work / "status.json").write_text(
