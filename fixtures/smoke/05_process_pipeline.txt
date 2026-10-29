@@ -1,0 +1,20 @@
+Процесс подготовки отчёта Liber Atelier (роли и шаги).
+
+Роли: Автор Source, Аналитик Intent, Модель Qwen, Рендер TeX, Читатель PDF.
+
+Шаги пайплайна:
+1. Автор загружает Source с фактами и числами.
+2. Аналитик формулирует Intent (язык, структура, лимиты графиков/схем).
+3. Qwen пишет JSON (figures, charts, diagrams) и полный LaTeX.
+4. Image API генерирует фото (если бюджет > 0).
+5. Playwright рендерит Chart.js → PNG.
+6. Inject вставляет слоты CASE3 в TeX.
+7. Docker XeLaTeX собирает PDF; pandoc — DOCX.
+8. Liber показывает chat summary, Preview, вкладку «Схема».
+
+Ветки ошибок:
+- нет чисел → без графиков;
+- «без схем» в Intent → diagrams: [];
+- сбой Image API → soft-fail, PDF всё равно ок.
+
+Состояния run: queued → llm → images → charts → inject → latex → ok|error.

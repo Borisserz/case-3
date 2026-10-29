@@ -738,6 +738,25 @@ def _parse_slide(
     elif layout in ("bullets", "closing"):
         if layout == "bullets":
             out["bullets"] = _parse_bullets(raw.get("bullets"), required=True)
+            # Soft heal: bullets that only echo the title look empty on the deck.
+            title_n = _norm_ws(title).casefold()
+            echoes = [
+                b
+                for b in out["bullets"]
+                if _norm_ws(str(b)).casefold() == title_n
+            ]
+            if out["bullets"] and len(echoes) == len(out["bullets"]):
+                out["layout"] = "section"
+                layout = "section"
+                out.pop("bullets", None)
+                if not out.get("subtitle"):
+                    sub = _clip_str(
+                        raw.get("subtitle") or raw.get("kicker"),
+                        field="subtitle",
+                        max_len=_MAX_SUBTITLE,
+                    )
+                    if sub:
+                        out["subtitle"] = sub
         else:
             # Closing may be hero-bleed (media) or bullet checklist.
             bullets = _parse_bullets(raw.get("bullets"), required=False)

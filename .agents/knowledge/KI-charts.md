@@ -1,0 +1,38 @@
+# KI: Charts
+
+## What
+LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit restyles.
+
+## Entry
+- Gen: `charts.generate_all_charts` after coerce/`polish_charts`
+- Edit: `POST /api/runs/{id}/charts/{cid}/edit` → `chart_edit.edit_chart_in_run`
+- Types: `chart_html.CHART_TYPES`; coerce: `chart_types_coerce.py`
+- Palette: `chart_style.apply_palette_to_html` + `palette_from_intent` — 4 chromatic presets from Okabe–Ito / Paul Tol / Tableau 10 (+ mono greys); no purple; D10 `palette_fallback_table` → `{{PALETTE_TABLE}}`
+- Prompt: freer HTML (layout/cutout/radius); gold `chart_slot.tex` = TeX slot only
+- G2: `charts[].palette` stamped in polish/edit → preview `palette` seeds ChartEditSheet
+- Print legend: `.valued-legend` ≥18px + first-row emphasis in `chart_frame.html`; D7 width ≤0.92`\textwidth`, canvas h≤560
+- Stacked: harden injects white segment borders if missing
+- Legend+tooltip: `ensure_legend_and_tooltips` in polish — Chart.js legend on for multi-series; donut keeps HTML `.valued-legend`; Liber hover tooltips always on (`LiveChart`)
+- `_count_datasets` must ignore scatter `{x,y}` points (else false multi-series legend)
+- Scatter `pointRadius≥10`; line/area ≥5; hbar → per-category color array from palette
+- Offline matrix: `python3 scripts/archive/chart_visual_pack.py` → `runs/chart_visual_pack/` (all types × 4 palettes)
+- Multi-chart (≥2): polish clamps width to 0.82; donut legend col `minmax(320px,1fr)`
+- Visual pack: `scripts/archive/chart_visual_pack.py` → `runs/chart_visual_pack/`
+
+## Invariants
+- Whitelist types only; donut = Chart.js `doughnut`; hbar = `indexAxis:'y'`
+- KPI = HTML cards, not canvas
+- Frame CSP + abort non-file routes in Playwright
+- After gen: polish palette + harden hbar geometry/fill (+ stack gaps)
+
+## Gotchas
+- Type/palette-only edit is **local** (`apply_type_to_chart` + palette); modes include `local_type` / `local_palette`. LLM only when «Как изменить» (style notes) non-empty — never for type-only. Live `POST …/preview` is the same local path (`preview_chart_html`); style notes deferred until Apply.
+- Leaving donut: `_unwrap_donut_layout` + landscape canvas + hide unnamed Chart.js legend (else «undefined»)
+- G8: model picks concrete `charts[].type` + matching HTML; coerce only safety net — **do not** paste gold HTML
+- KPI palette via CSS vars (`apply_kpi_palette_vars`) — frame `.kpi` uses `--kpi-value`, not hardcoded orange; palette-only edit on KPI skips Chart.js remap
+- Donut premium: `enhance_donut_html` after polish when labels/data parseable
+- Tall `#mount` min-height removed — don't bring back 600px empty band
+- Edit rebuilds full PDF/DOCX by default
+
+## See
+ADR-0002 · `prompt/system_tex.md` · tests `test_palette_hue_spread`, `test_harden_stack_gaps`, `test_harden_horizontal_bar`

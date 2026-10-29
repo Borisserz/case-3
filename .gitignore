@@ -8,22 +8,42 @@ __pycache__/
 dist/
 build/
 .local-tests/
+.playwright-browsers/
+.local-wrangler/
+.code-review-graph/
 
-# Local-only knowledge / tests (keep on disk, not in remote)
-.agents/
-docs/
-fixtures/
-tests/
-AGENTS.md
+# Agent local scratch (knowledge under .agents/knowledge is force-added when needed)
+.agents/skills/
+
+# Scratch notes
 notes.txt
 
-# all run artifacts under one tree
+# Run artifacts (keep directory markers)
 runs/work/
 runs/uploads/
 runs/out/*
 !runs/out/.gitkeep
 runs/logs/*
 !runs/logs/.gitkeep
+# One-shot QA / matrix dumps under runs/
+runs/_qa/
+runs/*_matrix*/
+runs/*_matrix/
+runs/e2e_*/
+runs/home_*/
+runs/mac_*/
+runs/full_*/
+runs/freeform_*/
+runs/slides_*/
+runs/slide_*/
+runs/structure_*/
+runs/atelier_*/
+runs/chart_*/
+runs/julius_*/
+runs/vivid_*/
+runs/*.json
+
+# Old debug dumps
 debug-bundle/
 
 web/node_modules/

@@ -1,9 +1,0 @@
-/* Liber Atelier — style modules (barrel; main.tsx imports files directly) */
-@import "./tokens.css";
-@import "./shell.css";
-@import "./chat.css";
-@import "./composer.css";
-@import "./deck.css";
-@import "./rail.css";
-@import "./presentation.css";
-@import "./modals.css";
