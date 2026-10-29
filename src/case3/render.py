@@ -30,6 +30,11 @@ class RenderError(RuntimeError):
         self.log_path = log_path
 
 
+# latexmk / pandoc can be slow; without a timeout Win desks hang forever with no meta bump.
+_DOCKER_TIMEOUT_S = 900.0
+_DOCKER_PROBE_TIMEOUT_S = 45.0
+
+
 def _docker_run(workdir: Path, *cmd: str) -> None:
     if os.name == "nt":
         args = [
@@ -69,7 +74,18 @@ def _docker_run(workdir: Path, *cmd: str) -> None:
         ]
     log.info("exec: %s", " ".join(args))
     try:
-        subprocess.run(args, check=True, capture_output=True, text=True)
+        subprocess.run(
+            args,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=_DOCKER_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RenderError(
+            f"docker {' '.join(cmd[:2])} timed out after {_DOCKER_TIMEOUT_S:.0f}s "
+            "(Docker Desktop hung?)"
+        ) from exc
     except subprocess.CalledProcessError as exc:
         tail = ((exc.stderr or "") + "\n" + (exc.stdout or ""))[-2000:]
         raise RenderError(
@@ -84,11 +100,18 @@ def ensure_image() -> None:
     last = None
     for attempt in range(4):
         # `docker images -q` is more reliable than `image inspect` on some hosts.
-        r = subprocess.run(
-            ["docker", "images", "-q", IMAGE],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            r = subprocess.run(
+                ["docker", "images", "-q", IMAGE],
+                capture_output=True,
+                text=True,
+                timeout=_DOCKER_PROBE_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RenderError(
+                f"docker images timed out after {_DOCKER_PROBE_TIMEOUT_S:.0f}s — "
+                "start Docker Desktop"
+            ) from exc
         if r.returncode == 0 and (r.stdout or "").strip():
             return
         last = r

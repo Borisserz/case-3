@@ -982,7 +982,10 @@ def run_pipeline(
         )
 
         bump("inject")
+        # Win desk: hangs here looked like «документ» forever with no pipeline.log lines.
+        log.info("inject: write_injected start run_id=%s", run_id)
         write_injected(tex_path, figures, status, charts=charts)
+        log.info("inject: write_injected done, copy → out/")
 
         shutil.copy2(tex_path, out / tex_path.name)
         for name in ("figures.json", "status.json", f"{stem}.raw_model.txt"):
@@ -996,6 +999,11 @@ def run_pipeline(
             shutil.copytree(figs_dir, dest)
 
         bump("latex" if formats else "summary")
+        log.info(
+            "post-inject stage=%s formats=%s (docker next if pdf/docx)",
+            "latex" if formats else "summary",
+            sorted(formats),
+        )
         injected_tex = tex_path.read_text(encoding="utf-8")
         # formats=∅ (output_mode=diagram): skip Docker TeX — Mermaid + summary only.
         skip_print = not formats

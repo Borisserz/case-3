@@ -746,9 +746,12 @@ def ensure_preamble(tex: str) -> str:
 
 
 def strip_orphan_slots(tex: str) -> str:
-    """Remove any leftover CASE3 media slots (safety before latexmk)."""
+    """Remove leftover CASE3 media slots (FIG/CHART/DIAG) before latexmk.
+
+    DIAG is Liber UI-only — models still leak ``%CASE3_DIAG:…%`` into TeX figures.
+    """
     return re.sub(
-        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART|DIAG):[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
         "",
         tex,
     )
