@@ -44,6 +44,7 @@ import type {
   SourceDraft,
 } from "../domain/liberTypes";
 import { useArtifactHost } from "./useArtifactHost";
+import { useDeskBootstrap } from "./useDeskBootstrap";
 import { useSourceIngest } from "./useSourceIngest";
 import { useStopGeneration } from "./useStopGeneration";
 import { useLiberToast } from "./useLiberToast";
@@ -180,72 +181,18 @@ export default function App() {
     return FALLBACK_PALETTES;
   }, [health]);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/health")
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`health ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setHealth(data);
-        const d = data?.defaults;
-        if (d && typeof d.max_charts === "number") setMaxCharts(d.max_charts);
-        if (d && typeof d.max_diagrams === "number") setMaxDiagrams(d.max_diagrams);
-        if (d && typeof d.max_images === "number") {
-          setMaxImages(d.max_images);
-          // Office Image API ready → allow photos by default when budget > 0
-          if (
-            d.max_images > 0 &&
-            (data.image_api_configured || data.kandinsky_configured)
-          ) {
-            setForbidImages(false);
-          }
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHealth({
-            ok: false,
-            docker_ok: false,
-            playwright_ok: false,
-            vision_configured: false,
-            kandinsky_configured: false,
-            docker_error: "API unreachable — scripts\\api.cmd на :8000",
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useDeskBootstrap({
+    setHealth,
+    setMaxCharts,
+    setMaxDiagrams,
+    setMaxImages,
+    setForbidImages,
+    setDeckPacks,
+  });
 
   useEffect(() => {
     document.title = chatTitle ? `${chatTitle} · Liber` : "Liber";
   }, [chatTitle]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/deck-themes")
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`deck-themes ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        const packs = data?.packs;
-        if (Array.isArray(packs) && packs.length) {
-          setDeckPacks(packs as DeckThemePackInfo[]);
-        }
-      })
-      .catch(() => {
-        /* keep FALLBACK_DECK_PACKS */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -314,58 +261,15 @@ export default function App() {
     setActiveArtifact,
   });
 
-  function applyEditPayload(
-    msgId: string,
-    runId: string,
-    data: {
-      preview?: RunResult["preview"];
-      downloads?: RunResult["downloads"];
-      warnings?: string[];
-      media_status?: RunResult["media_status"];
-      diagrams?: RunResult["diagrams"];
-      undo?: { kind?: string; target?: string } | null;
-    },
-    toastText: string,
-  ) {
-    setMsgs((list) =>
-      list.map((msg) => {
-        if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
-        const next = {
-          ...msg,
-          result: {
-            ...msg.result,
-            preview: data.preview ?? msg.result.preview,
-            downloads: data.downloads ?? msg.result.downloads,
-            warnings:
-              Array.isArray(data.warnings) && data.warnings.length
-                ? data.warnings
-                : msg.result.warnings,
-            media_status: data.media_status ?? msg.result.media_status,
-            diagrams: data.diagrams ?? msg.result.diagrams,
-          },
-        };
-        if (next.result) rememberRun(next.result);
-        return next;
-      }),
-    );
-    if (data.undo && data.undo.kind) {
-      setUndoOffer({ msgId, runId });
-    } else {
-      setUndoOffer(null);
-    }
-    setToast(toastText);
-    setDownloadsPulseMsgId(msgId);
-    window.setTimeout(() => setToast(null), 4200);
-    window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
-  }
-
   const { editFigure, editImage, editTable, editParagraph, undoLastEdit } =
     useLiberEdits({
-      applyEditPayload,
+      setMsgs,
+      rememberRun,
       setEditBusy,
       setEditError,
       setUndoOffer,
       setToast,
+      setDownloadsPulseMsgId,
       undoOffer,
       undoBusyRef,
     });

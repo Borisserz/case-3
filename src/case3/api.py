@@ -17,7 +17,6 @@ from fastapi.responses import (
     FileResponse,
     JSONResponse,
     RedirectResponse,
-    StreamingResponse,
 )
 
 from case3.chart_html import CHART_TYPES
@@ -29,11 +28,10 @@ from case3.generate import max_images_from_env, resolve_text_file
 from case3.desk_health import build_desk_probes, probe_soffice, probe_vision
 from case3.image_api import image_api_configured, probe_image_api
 from case3.api_photo import quick_photo_edit
-from case3.run_events import EVENTS, seed_events_from_steps
+from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image
 from case3.run_cancel import mark_cancel_requested
-from case3.summary_bus import BUS
 from case3.user_photos import UserPhotoError, save_user_photos
 from case3.intent_compose import build_intent_from_ui
 from case3 import run_store
@@ -368,7 +366,6 @@ def _bg_run_pipeline(
         _release_pipeline_slot(run_id)
 
 
-
 @app.post("/api/run")
 async def api_run(
     source: UploadFile | None = File(None),
@@ -592,191 +589,6 @@ async def api_run(
             "max_charts": max_charts,
             "max_images": max_images,
             "max_diagrams": max_diagrams,
-        },
-    )
-
-
-def _sse_pack(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-@app.get("/api/runs/{run_id}/events")
-def stream_run_events(run_id: str) -> StreamingResponse:
-    """SSE: stage / artifact / done|error|cancelled (no model thoughts)."""
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (run_store.ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)):
-        raise HTTPException(404, detail="run not found")
-    work = run_store.ROOT / "runs" / "work" / run_id
-    if not out_dir.is_dir() and not work.is_dir():
-        raise HTTPException(404, detail="run not found")
-
-    def gen():
-        import time as _time
-
-        # Late join: seed bus from meta if empty (API restart / missed start).
-        snap = EVENTS.snapshot(run_id)
-        meta_path = out_dir / "meta.json"
-        if meta_path.is_file() and snap.get("count", 0) == 0:
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                meta = {}
-            EVENTS.bind_out(run_id, out_dir)
-            durable = meta.get("steps") if isinstance(meta.get("steps"), list) else []
-            st = str(meta.get("status") or "")
-            stage = str(meta.get("stage") or "queued")
-            detail = meta.get("stage_detail")
-            if durable:
-                # While still running, drop terminal entries so SSE stays open
-                # (pipeline may have logged done before slides reopen).
-                playable = (
-                    [
-                        s
-                        for s in durable
-                        if isinstance(s, dict)
-                        and str(s.get("event") or "")
-                        not in {"done", "error", "cancelled"}
-                    ]
-                    if st == "running"
-                    or (
-                        st == "ok"
-                        and str(meta.get("slides_status") or "")
-                        in {"running", "queued"}
-                    )
-                    else durable
-                )
-                seeded = seed_events_from_steps(EVENTS, run_id, playable)
-                if seeded and (
-                    st == "running"
-                    or (
-                        st == "ok"
-                        and str(meta.get("slides_status") or "")
-                        in {"running", "queued"}
-                    )
-                ):
-                    EVENTS.ensure(run_id)
-                    EVENTS.scan_artifacts(run_id, out_dir)
-                elif seeded and st in {"ok", "error", "cancelled"}:
-                    # Terminal already in seeded events — subscribe will flush & end.
-                    pass
-                elif st == "running":
-                    EVENTS.publish_stage(
-                        run_id,
-                        stage,
-                        detail=str(detail) if detail else None,
-                        scope="pipeline",
-                    )
-                    EVENTS.scan_artifacts(run_id, out_dir)
-            elif st == "running":
-                EVENTS.publish_stage(
-                    run_id, stage, detail=str(detail) if detail else None, scope="pipeline"
-                )
-                EVENTS.scan_artifacts(run_id, out_dir)
-            elif st in {"ok", "error", "cancelled"}:
-                slides_st = str(meta.get("slides_status") or "idle")
-                out_mode = str(meta.get("output_mode") or "")
-                if st == "ok" and slides_st in {"running", "queued"}:
-                    EVENTS.reopen(run_id)
-                    EVENTS.publish_stage(
-                        run_id,
-                        str(meta.get("slides_stage") or "starting"),
-                        scope="slides",
-                    )
-                    EVENTS.scan_artifacts(run_id, out_dir)
-                elif (
-                    st == "ok"
-                    and out_mode == "presentation"
-                    and slides_st in {"idle", ""}
-                ):
-                    # Pipeline done; slides not kicked yet — keep SSE open.
-                    EVENTS.ensure(run_id)
-                    EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
-                    EVENTS.scan_artifacts(run_id, out_dir)
-                else:
-                    kind = "done" if st == "ok" else st
-                    payload: dict[str, Any] = {"status": st, "t": _time.time()}
-                    if meta.get("error"):
-                        payload["error"] = meta.get("error")
-                    yield _sse_pack(kind, payload)
-                    return
-
-        for ev in EVENTS.subscribe(run_id, timeout_s=1200.0, keepalive_s=15.0):
-            kind = str(ev.get("event") or "stage")
-            # SSE comment — keeps Vite proxy / TCP alive during long llm waits
-            if kind == "ping":
-                yield ": keepalive\n\n"
-                continue
-            data = {k: v for k, v in ev.items() if k != "event"}
-            yield _sse_pack(kind, data)
-            if kind in {"done", "error", "cancelled"}:
-                return
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.get("/api/runs/{run_id}/summary/stream")
-def stream_run_summary(run_id: str) -> StreamingResponse:
-    """SSE: chat summary deltas while PDF renders (replay-safe)."""
-    if not _RUN_ID_OK.match(run_id):
-        raise HTTPException(400, detail="invalid run_id")
-    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
-    out_root = (run_store.ROOT / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)):
-        raise HTTPException(404, detail="run not found")
-    # Allow stream as soon as run dirs exist (work or out)
-    work = run_store.ROOT / "runs" / "work" / run_id
-    if not out_dir.is_dir() and not work.is_dir():
-        raise HTTPException(404, detail="run not found")
-
-    def gen():
-        # If bus already finished, subscribe still replays.
-        # If meta already has final summary and bus never started (restart), emit once.
-        snap = BUS.snapshot(run_id)
-        meta_path = out_dir / "meta.json"
-        if meta_path.is_file() and not snap.get("done") and not snap.get("text"):
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                meta = {}
-            final = str(meta.get("chat_summary") or "")
-            st = str(meta.get("summary_status") or "")
-            if final and st in {"ok", "error", "skipped"}:
-                if final:
-                    yield _sse_pack("delta", {"text": final})
-                yield _sse_pack("done", {"text": final, "status": st or "ok"})
-                return
-
-        for ev in BUS.subscribe(run_id, timeout_s=180.0):
-            kind = ev.get("event") or "delta"
-            if kind == "delta":
-                yield _sse_pack("delta", {"text": ev.get("text") or ""})
-            else:
-                yield _sse_pack(
-                    "done",
-                    {
-                        "text": ev.get("text") or "",
-                        "status": ev.get("status") or "ok",
-                    },
-                )
-
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
         },
     )
 
@@ -1101,7 +913,9 @@ def download_figure(run_id: str, name: str) -> FileResponse:
 from case3.api_edits import router as edits_router
 from case3.api_photo import router as photo_router
 from case3.api_slides import router as slides_router
+from case3.api_stream import router as stream_router
 
 app.include_router(edits_router)
 app.include_router(photo_router)
 app.include_router(slides_router)
+app.include_router(stream_router)

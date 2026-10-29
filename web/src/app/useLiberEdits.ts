@@ -1,54 +1,106 @@
 /** Liber Preview edit/undo handlers (charts, figures, tables, paragraphs). */
 
-import { useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { ChartEditRequest } from "../ChartEditSheet";
 import type { ImageEditRequest } from "../ImageEditModal";
 import type { ParagraphEditRequest } from "../ParagraphEditSheet";
 import type { TableEditRequest } from "../TableEditSheet";
 import { asDownloads } from "../domain/runHelpers";
-import type { RunResult } from "../domain/liberTypes";
+import type { Msg, RunResult } from "../domain/liberTypes";
 import { mapTableEditHttpError, postJsonEdit } from "./postJsonEdit";
 
 export type EditBusy = { msgId: string; figureId: string } | null;
 export type EditError = { msgId: string; figureId: string; message: string } | null;
 export type UndoOffer = { msgId: string; runId: string } | null;
 
-type ApplyEditPayload = (
-  msgId: string,
-  runId: string,
-  data: {
-    preview?: RunResult["preview"];
-    downloads?: RunResult["downloads"];
-    warnings?: string[];
-    media_status?: RunResult["media_status"];
-    diagrams?: RunResult["diagrams"];
-    undo?: { kind?: string; target?: string } | null;
-  },
-  toastText: string,
-) => void;
+type EditPayloadData = {
+  preview?: RunResult["preview"];
+  downloads?: RunResult["downloads"];
+  warnings?: string[];
+  media_status?: RunResult["media_status"];
+  diagrams?: RunResult["diagrams"];
+  undo?: { kind?: string; target?: string } | null;
+};
 
 type Args = {
-  applyEditPayload: ApplyEditPayload;
+  setMsgs: Dispatch<SetStateAction<Msg[]>>;
+  rememberRun: (result: RunResult) => void;
   setEditBusy: Dispatch<SetStateAction<EditBusy>>;
   setEditError: Dispatch<SetStateAction<EditError>>;
   setUndoOffer: Dispatch<SetStateAction<UndoOffer>>;
   setToast: Dispatch<SetStateAction<string | null>>;
+  setDownloadsPulseMsgId: Dispatch<SetStateAction<string | null>>;
   undoOffer: UndoOffer;
   undoBusyRef?: MutableRefObject<boolean>;
 };
 
 export function useLiberEdits({
-  applyEditPayload,
+  setMsgs,
+  rememberRun,
   setEditBusy,
   setEditError,
   setUndoOffer,
   setToast,
+  setDownloadsPulseMsgId,
   undoOffer,
   undoBusyRef: undoBusyRefProp,
 }: Args) {
   const editLock = useRef(false);
   const undoBusyLocal = useRef(false);
   const undoBusyRef = undoBusyRefProp ?? undoBusyLocal;
+
+  const applyEditPayload = useCallback(
+    (
+      msgId: string,
+      runId: string,
+      data: EditPayloadData,
+      toastText: string,
+    ) => {
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const next = {
+            ...msg,
+            result: {
+              ...msg.result,
+              preview: data.preview ?? msg.result.preview,
+              downloads: data.downloads ?? msg.result.downloads,
+              warnings:
+                Array.isArray(data.warnings) && data.warnings.length
+                  ? data.warnings
+                  : msg.result.warnings,
+              media_status: data.media_status ?? msg.result.media_status,
+              diagrams: data.diagrams ?? msg.result.diagrams,
+            },
+          };
+          if (next.result) rememberRun(next.result);
+          return next;
+        }),
+      );
+      if (data.undo && data.undo.kind) {
+        setUndoOffer({ msgId, runId });
+      } else {
+        setUndoOffer(null);
+      }
+      setToast(toastText);
+      setDownloadsPulseMsgId(msgId);
+      window.setTimeout(() => setToast(null), 4200);
+      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+    },
+    [
+      setMsgs,
+      rememberRun,
+      setUndoOffer,
+      setToast,
+      setDownloadsPulseMsgId,
+    ],
+  );
 
   async function undoLastEdit() {
     if (!undoOffer || undoBusyRef.current) return;
