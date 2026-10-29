@@ -29,12 +29,59 @@ from case3.user_photos import (
 )
 log = logging.getLogger("case3.pipeline")
 
+# Stages eligible for POST /resume (after LLM artifacts exist).
+RESUME_STAGES = frozenset({"images", "charts", "inject", "latex", "docx"})
+
 
 def resolve_pipeline_formats(formats: set[str] | None) -> set[str]:
     """Default print formats. ``None`` → ``{pdf}``; empty set stays empty (none)."""
     if formats is None:
         return {"pdf"}
     return set(formats)
+
+
+def _find_run_tex(work: Path, out: Path) -> Path | None:
+    for d in (work, out):
+        if not d.is_dir():
+            continue
+        cands = sorted(
+            p for p in d.glob("*.tex") if ".raw_model" not in p.name
+        )
+        if cands:
+            return cands[0]
+    return None
+
+
+def _media_ok_on_disk(mid: str, status: dict[str, Any], figs_dir: Path) -> bool:
+    st = status.get(mid)
+    if not (isinstance(st, dict) and st.get("ok")):
+        return False
+    return (figs_dir / f"{mid}.png").is_file()
+
+
+def can_resume_run(
+    meta: dict[str, Any], *, work: Path, out: Path
+) -> bool:
+    """True when Liber may offer «Продолжить» for this failed run."""
+    if str(meta.get("status") or "") != "error":
+        return False
+    if str(meta.get("failed_stage") or "") not in RESUME_STAGES:
+        return False
+    if _find_run_tex(work, out) is None:
+        return False
+    fj = work / "figures.json"
+    if not fj.is_file():
+        fj = out / "figures.json"
+    return fj.is_file()
+
+
+def _record_failed_stage(meta: dict[str, Any]) -> None:
+    """Keep the real craft stage when flipping status to error."""
+    prev = str(meta.get("stage") or "").strip()
+    if prev and prev not in {"error", "ok", "cancelled", "queued"}:
+        meta["failed_stage"] = prev
+    elif not meta.get("failed_stage"):
+        meta["failed_stage"] = prev or "error"
 
 
 class PipelineError(RuntimeError):
@@ -233,6 +280,428 @@ def prepare_run_dirs(
     return run_id, text_path, work, out, logs
 
 
+def resume_pipeline(
+    run_id: str,
+    *,
+    project_root: Path,
+    on_stage: Callable[[str, str | None], None] | None = None,
+) -> Path:
+    """Continue a failed run without LLM: missing media → inject → render.
+
+    Requires ``meta.status=error``, ``failed_stage`` in ``RESUME_STAGES``, and
+    existing TeX + ``figures.json`` under work/out.
+    """
+    root = project_root.resolve()
+    work = root / "runs" / "work" / run_id
+    out = root / "runs" / "out" / run_id
+    logs = root / "runs" / "logs" / run_id
+    for d in (work, out, logs):
+        d.mkdir(parents=True, exist_ok=True)
+
+    meta_path = out / "meta.json"
+    if not meta_path.is_file():
+        meta_path = logs / "meta.json"
+    if not meta_path.is_file():
+        raise PipelineError(
+            "resume: meta.json missing",
+            run_id=run_id,
+            out_dir=out,
+            logs_dir=logs,
+            meta={"run_id": run_id, "status": "error"},
+        )
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PipelineError(
+            f"resume: corrupt meta.json ({exc})",
+            run_id=run_id,
+            out_dir=out,
+            logs_dir=logs,
+            meta={"run_id": run_id, "status": "error"},
+        ) from exc
+    if not isinstance(meta, dict):
+        meta = {"run_id": run_id}
+
+    if not can_resume_run(meta, work=work, out=out):
+        raise PipelineError(
+            "resume: run is not eligible",
+            run_id=run_id,
+            out_dir=out,
+            logs_dir=logs,
+            meta=meta,
+        )
+
+    tex_path = _find_run_tex(work, out)
+    assert tex_path is not None  # can_resume_run checked
+    # Prefer work copy for inject mutability
+    if tex_path.parent != work:
+        work_tex = work / tex_path.name
+        shutil.copy2(tex_path, work_tex)
+        tex_path = work_tex
+
+    fj_path = work / "figures.json"
+    if not fj_path.is_file():
+        src_fj = out / "figures.json"
+        shutil.copy2(src_fj, fj_path)
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        fj = {}
+    if not isinstance(fj, dict):
+        fj = {}
+    figures = [f for f in (fj.get("figures") or []) if isinstance(f, dict)]
+    charts = [c for c in (fj.get("charts") or []) if isinstance(c, dict)]
+    diagrams = [d for d in (fj.get("diagrams") or []) if isinstance(d, dict)]
+
+    status: dict[str, Any] = {}
+    for candidate in (work / "status.json", out / "status.json"):
+        if candidate.is_file():
+            try:
+                loaded = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    status = dict(loaded)
+                    break
+            except (OSError, json.JSONDecodeError):
+                pass
+    if not status and isinstance(meta.get("media_status"), dict):
+        status = dict(meta["media_status"])
+
+    raw_fmt = meta.get("formats")
+    if isinstance(raw_fmt, list):
+        formats = set(str(x) for x in raw_fmt)
+    elif isinstance(raw_fmt, (set, frozenset)):
+        formats = set(raw_fmt)
+    else:
+        formats = {"pdf"}
+    formats = resolve_pipeline_formats(formats)
+    intent = meta.get("intent")
+    if intent is not None:
+        intent = str(intent)
+    images_budget = int(meta.get("max_images") if meta.get("max_images") is not None else max_images_from_env())
+    charts_budget = int(meta.get("max_charts") if meta.get("max_charts") is not None else max_charts_from_env())
+    mode = str(meta.get("output_mode") or "auto").strip().lower()
+    if mode not in {"report", "diagram", "presentation", "auto"}:
+        mode = "auto"
+    dry_run = bool(meta.get("dry_run"))
+    failed_from = str(meta.get("failed_stage") or "")
+
+    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root_logger = logging.getLogger("case3")
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
+    meta["status"] = "running"
+    meta["stage"] = "queued"
+    meta.pop("error", None)
+    meta.pop("traceback", None)
+    meta.pop("latex_log_tail", None)
+    meta.pop("cancel_requested", None)
+    meta["resumed_from_stage"] = failed_from
+    meta["resume_count"] = int(meta.get("resume_count") or 0) + 1
+    meta["run_id"] = run_id
+    stem = tex_path.stem
+    figs_dir = work / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    # Restore PNGs from out/figures if work is empty but out has them
+    out_figs = out / "figures"
+    if out_figs.is_dir():
+        for png in out_figs.glob("*.png"):
+            dest = figs_dir / png.name
+            if not dest.is_file():
+                shutil.copy2(png, dest)
+
+    from case3.stage_eta import load_timings
+
+    load_timings(root)
+    EVENTS.ensure(run_id)
+    _write_meta(meta, out, logs)
+    EVENTS.publish_stage(run_id, "queued", scope="pipeline")
+
+    def bump(stage: str, detail: str | None = None) -> None:
+        raise_if_cancelled(out)
+        _set_stage(meta, out, logs, stage, detail=detail, project_root=root)
+        if on_stage:
+            on_stage(stage, detail)
+
+    try:
+        need_media = failed_from in {"images", "charts"} or any(
+            not _media_ok_on_disk(str(x.get("id") or ""), status, figs_dir)
+            for x in figures + charts
+            if isinstance(x, dict) and x.get("id")
+        )
+
+        if need_media and figures and not dry_run and images_budget > 0:
+            bump("images")
+            status.update(materialize_user_figures(figures, figs_dir))
+            need_api = [
+                f
+                for f in figures
+                if str(f.get("source") or "") != "upload"
+                and not _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
+            ]
+            cfg = ImageApiConfig.from_env()
+            cfg = replace(cfg, max_images=images_budget)
+            if need_api and not cfg.base_url:
+                for f in need_api:
+                    fid = str(f.get("id") or "")
+                    if fid:
+                        status[fid] = {
+                            "ok": False,
+                            "error": "IMAGE_API_BASE_URL empty",
+                            "kind": "figure",
+                        }
+            elif need_api:
+
+                def _img_progress(fid: str) -> None:
+                    bump("images", fid)
+
+                from case3.chart_style import palette_from_intent
+
+                pack_for_photos = (
+                    str(meta.get("image_style_pack") or "")
+                    or palette_from_intent(intent or "")
+                    or "atelier"
+                )
+                status.update(
+                    generate_all_figures(
+                        need_api,
+                        figs_dir,
+                        cfg=cfg,
+                        on_progress=_img_progress,
+                        pack_id=pack_for_photos,
+                    )
+                )
+
+        if need_media and charts and not dry_run and charts_budget > 0:
+            bump("charts")
+            need_charts = [
+                c
+                for c in charts
+                if not _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
+            ]
+
+            def _chart_progress(cid: str) -> None:
+                bump("charts", cid)
+
+            if need_charts:
+                status.update(
+                    generate_all_charts(
+                        need_charts,
+                        figs_dir,
+                        work_root=work / "chart_work",
+                        max_charts=charts_budget,
+                        on_progress=_chart_progress,
+                    )
+                )
+            from case3.slides_chart_data import attach_series_ir_to_charts
+
+            attach_series_ir_to_charts(charts)
+            fj["charts"] = charts
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
+        # Keep prior ok entries for ids we skipped
+        meta["media_status"] = status
+        (work / "status.json").write_text(
+            json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        bump("inject")
+        write_injected(tex_path, figures, status, charts=charts)
+        shutil.copy2(tex_path, out / tex_path.name)
+        for name in ("figures.json", "status.json"):
+            p = work / name
+            if p.is_file():
+                shutil.copy2(p, out / name)
+        if figs_dir.is_dir() and any(figs_dir.glob("*.png")):
+            dest = out / "figures"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(figs_dir, dest)
+
+        bump("latex" if formats else "summary")
+        skip_print = not formats
+
+        def _do_summary() -> tuple[str, str]:
+            def on_delta(piece: str) -> None:
+                BUS.publish(run_id, piece)
+
+            media_facts = {
+                "charts_planned": len(charts),
+                "figures_planned": len(figures),
+                "diagrams_planned": len(diagrams),
+                "charts_ok": sum(
+                    1
+                    for c in charts
+                    if _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
+                ),
+                "figures_ok": sum(
+                    1
+                    for f in figures
+                    if _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
+                ),
+            }
+            text, status_sum = try_generate_chat_summary(
+                tex_path.read_text(encoding="utf-8"),
+                intent=intent,
+                media=media_facts,
+                on_delta=on_delta,
+            )
+            BUS.finish(run_id, text, status_sum)
+            return text, status_sum
+
+        if dry_run or skip_print:
+            artifacts = (
+                {}
+                if skip_print
+                else render_tex(
+                    tex_path,
+                    out_dir=out,
+                    formats=formats,
+                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+                    log_dir=logs,
+                    project_root=root,
+                    force=True,
+                    on_format=lambda fmt: bump(
+                        "docx" if fmt == "docx" else "latex"
+                    ),
+                )
+            )
+            if dry_run:
+                meta["chat_summary"] = ""
+                meta["summary_status"] = "skipped"
+                BUS.start(run_id)
+                BUS.finish(run_id, "", "skipped")
+            else:
+                BUS.start(run_id)
+                bump("summary")
+                if mode == "diagram":
+                    summary_text = _diagram_chat_blurb(diagrams)
+                    summary_status = "ok"
+                elif mode == "presentation":
+                    summary_text = _presentation_chat_blurb(
+                        charts=charts, figures=figures
+                    )
+                    summary_status = "ok"
+                else:
+                    summary_text, summary_status = _do_summary()
+                BUS.finish(run_id, summary_text or "", summary_status)
+                meta["chat_summary"] = summary_text or ""
+                meta["summary_status"] = summary_status
+        else:
+            meta["summary_status"] = "streaming"
+            meta["chat_summary"] = ""
+            _write_meta(meta, out, logs)
+            BUS.start(run_id)
+
+            def _do_render() -> dict:
+                return render_tex(
+                    tex_path,
+                    out_dir=out,
+                    formats=formats,
+                    extra_dirs=[figs_dir] if figs_dir.is_dir() else None,
+                    log_dir=logs,
+                    project_root=root,
+                    force=True,
+                    on_format=lambda fmt: bump(
+                        "docx" if fmt == "docx" else "latex"
+                    ),
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_r = pool.submit(_do_render)
+                fut_s = pool.submit(_do_summary)
+                artifacts = fut_r.result()
+                bump("summary")
+                summary_text, summary_status = fut_s.result()
+            meta["chat_summary"] = summary_text or ""
+            meta["summary_status"] = summary_status
+            if summary_text:
+                (out / "chat_summary.txt").write_text(
+                    summary_text, encoding="utf-8"
+                )
+
+        raise_if_cancelled(out)
+        meta["artifacts"] = {k: str(v) for k, v in artifacts.items()}
+        meta["status"] = "ok"
+        meta["stage"] = "ok"
+        meta.pop("stage_detail", None)
+        meta.pop("failed_stage", None)
+        EVENTS.scan_artifacts(run_id, out)
+        if mode != "presentation":
+            EVENTS.publish_terminal(
+                run_id,
+                "ok",
+                recap=EVENTS.success_recap(
+                    run_id,
+                    charts=sum(
+                        1
+                        for c in charts
+                        if _media_ok_on_disk(str(c.get("id") or ""), status, figs_dir)
+                    ),
+                    figures=sum(
+                        1
+                        for f in figures
+                        if _media_ok_on_disk(str(f.get("id") or ""), status, figs_dir)
+                    ),
+                ),
+            )
+        else:
+            EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
+    except RunCancelled:
+        meta["status"] = "cancelled"
+        meta["stage"] = "cancelled"
+        meta["error"] = "Остановлено"
+        meta.pop("stage_detail", None)
+        _write_meta(meta, out, logs)
+        EVENTS.publish_terminal(run_id, "cancelled", error="Остановлено")
+        return out
+    except Exception as exc:
+        _record_failed_stage(meta)
+        meta["status"] = "error"
+        meta["stage"] = "error"
+        log_path = getattr(exc, "log_path", None) if isinstance(exc, RenderError) else None
+        meta.update(
+            _attach_error_diagnostics(
+                meta,
+                logs_dir=logs,
+                error=str(exc),
+                log_path=Path(log_path) if log_path else None,
+            )
+        )
+        meta["traceback"] = traceback.format_exc()
+        log.exception("resume pipeline failed")
+        (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
+        _write_meta(meta, out, logs)
+        from case3.stage_eta import error_hint
+
+        EVENTS.publish_terminal(
+            run_id,
+            "error",
+            error=str(meta.get("error") or exc),
+            hint=error_hint(exc, stage=str(meta.get("failed_stage") or "")),
+        )
+        raise PipelineError(
+            str(meta.get("error") or exc),
+            run_id=run_id,
+            out_dir=out,
+            logs_dir=logs,
+            meta=meta,
+        ) from exc
+    finally:
+        if meta.get("status") not in {"error", "cancelled"}:
+            _write_meta(meta, out, logs)
+        root_logger.removeHandler(handler)
+        handler.close()
+
+    log.info("resume done run_id=%s out=%s", run_id, out)
+    return out
+
+
 def run_pipeline(
     source: Path,
     *,
@@ -273,12 +742,9 @@ def run_pipeline(
     if user_figs:
         images_budget = max(images_budget, len(user_figs))
         images_budget = min(images_budget, 8)
-    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root_logger = logging.getLogger("case3")
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
 
+    # Heartbeat BEFORE FileHandler / load_timings: on Win those can stall (AV lock)
+    # and Liber sat forever on status=running stage=queued («Читаю Source»).
     meta: dict = {
         "run_id": run_id,
         "source": str(text_path),
@@ -292,14 +758,25 @@ def run_pipeline(
         "user_figures": [f.get("id") for f in user_figs],
         "started_at": stamp,
         "status": "running",
-        "stage": "queued",
+        "stage": "llm",
+        "stage_detail": "жду модель…",
     }
+    EVENTS.ensure(run_id)
+    from case3.run_events import note_craft_stage
+
+    note_craft_stage(meta, stage="llm", scope="pipeline", detail="жду модель…")
+    _write_meta(meta, out, logs)
+    EVENTS.publish_stage(run_id, "llm", detail="жду модель…", scope="pipeline")
+
+    handler = logging.FileHandler(logs / "pipeline.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root_logger = logging.getLogger("case3")
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
     from case3.stage_eta import load_timings
 
     load_timings(root)
-    EVENTS.ensure(run_id)
-    _write_meta(meta, out, logs)
-    EVENTS.publish_stage(run_id, "queued", scope="pipeline")
 
     def bump(stage: str, detail: str | None = None) -> None:
         raise_if_cancelled(out)
@@ -310,6 +787,7 @@ def run_pipeline(
             on_stage(stage, detail)
 
     try:
+        # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
         # Reserve slots for uploads so the LLM plans fewer generated photos.
@@ -697,6 +1175,7 @@ def run_pipeline(
         EVENTS.publish_terminal(run_id, "cancelled", error="Остановлено")
         return out
     except Exception as exc:
+        _record_failed_stage(meta)
         meta["status"] = "error"
         meta["stage"] = "error"
         log_path = getattr(exc, "log_path", None) if isinstance(exc, RenderError) else None

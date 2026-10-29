@@ -126,7 +126,9 @@ export function craftStepForStage(
     if (raw === "queued") return "source";
     if (raw === "llm") return "layout";
     if (raw === "charts") return "charts";
-    if (raw === "images" || raw === "inject") return "photos";
+    // images = media gen; inject = bind slots into IR — not «Собираю медиа»
+    if (raw === "images") return "photos";
+    if (raw === "inject") return "slides_plan";
     if (raw === "latex" || raw === "docx" || raw === "summary") return "slides_plan";
     return "layout";
   }
@@ -149,7 +151,10 @@ export function craftStepForStage(
   if (raw === "queued") return "source";
   if (raw === "llm") return "layout";
   if (raw === "charts") return "charts";
-  if (raw === "images" || raw === "inject") return "photos";
+  // Win desk: inject≠photos. With max_images=0 pipeline skips images→inject,
+  // and Liber falsely showed «Собираю фото» while TeX slots were binding.
+  if (raw === "images") return "photos";
+  if (raw === "inject") return "pdf";
   if (raw === "latex" || raw === "summary") return "pdf";
   if (raw === "docx") return "docx";
   return "layout";

@@ -492,6 +492,8 @@ def _bg_run_pipeline(
     user_figures: list[dict[str, Any]] | None = None,
     output_mode: str = "auto",
 ) -> None:
+    # print+flush: uvicorn often hides case3.api INFO; Win desk needs a visible line.
+    print(f"[case3] pipeline thread start run_id={run_id}", flush=True)
     log.info("pipeline thread start run_id=%s", run_id)
     try:
         run_pipeline(
@@ -810,7 +812,8 @@ async def api_run(
     else:
         raise HTTPException(400, detail="provide source file or source_text")
 
-    # Reserve run_id + write meta stage=queued so Liber can poll immediately.
+    # Reserve run_id + write stage=llm BEFORE kick (Win: 2nd run sat on queued while
+    # prior LLM thread still held the desk; Liber must not wait on thread scheduling).
     run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=ROOT)
     meta0 = {
         "run_id": run_id,
@@ -824,14 +827,16 @@ async def api_run(
         "max_diagrams": max_diagrams,
         "user_figures": [f.get("id") for f in user_figures],
         "status": "running",
-        "stage": "queued",
+        "stage": "llm",
+        "stage_detail": "жду модель…",
     }
+    from case3.run_events import write_meta_atomic
+
     payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
-    (logs_dir / "meta.json").write_text(payload0, encoding="utf-8")
-    (out_dir / "meta.json").write_text(payload0, encoding="utf-8")
+    write_meta_atomic(out_dir / "meta.json", payload0, logs_meta=logs_dir / "meta.json")
     EVENTS.start(run_id)
     EVENTS.bind_out(run_id, out_dir)
-    EVENTS.publish_stage(run_id, "queued", scope="pipeline")
+    EVENTS.publish_stage(run_id, "llm", detail="жду модель…", scope="pipeline")
 
     _kick_pipeline_thread(
         src_path,
@@ -851,7 +856,7 @@ async def api_run(
         content={
             "run_id": run_id,
             "status": "started",
-            "stage": "queued",
+            "stage": "llm",
             "output_mode": out_mode,
             "max_charts": max_charts,
             "max_images": max_images,
@@ -1113,6 +1118,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
                     for fid in (meta.get("figures_planned") or [])
                     if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
                 ]
+        work_dir = ROOT / "runs" / "work" / run_id
+        from case3.pipeline import can_resume_run
+
         return {
             "run_id": run_id,
             "status": "error",
@@ -1122,6 +1130,8 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "hint": f"logs: runs/logs/{run_id}",
             "failed_charts": failed_c,
             "failed_figures": failed_f,
+            "failed_stage": meta.get("failed_stage"),
+            "can_resume": can_resume_run(meta, work=work_dir, out=out_dir),
             "latex_log_tail": meta.get("latex_log_tail") or "",
             "max_charts": meta.get("max_charts"),
             "max_images": meta.get("max_images"),
@@ -2120,6 +2130,73 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             if run_id not in _slides_patch_pending:
                 _slides_patch_busy.discard(run_id)
                 return
+
+
+def _bg_resume_pipeline(run_id: str) -> None:
+    print(f"[case3] resume thread start run_id={run_id}", flush=True)
+    log.info("resume thread start run_id=%s", run_id)
+    from case3.pipeline import PipelineError, resume_pipeline
+
+    try:
+        resume_pipeline(run_id, project_root=ROOT)
+    except PipelineError:
+        log.exception("background resume failed run_id=%s", run_id)
+    except Exception:  # noqa: BLE001
+        log.exception("background resume crashed run_id=%s", run_id)
+
+
+def _kick_resume_thread(run_id: str) -> None:
+    threading.Thread(
+        target=_bg_resume_pipeline,
+        kwargs={"run_id": run_id},
+        name=f"case3-resume-{run_id}",
+        daemon=True,
+    ).start()
+
+
+@app.post("/api/runs/{run_id}/resume")
+def resume_run(run_id: str) -> dict[str, Any]:
+    """Continue a failed run from failed_stage (same run_id, no LLM)."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    out_dir = (ROOT / "runs" / "out" / run_id).resolve()
+    work_dir = ROOT / "runs" / "work" / run_id
+    out_root = (ROOT / "runs" / "out").resolve()
+    if not str(out_dir).startswith(str(out_root)):
+        raise HTTPException(404, detail="run not found")
+    meta_path = out_dir / "meta.json"
+    if not meta_path.is_file():
+        logs_meta = ROOT / "runs" / "logs" / run_id / "meta.json"
+        if logs_meta.is_file():
+            meta_path = logs_meta
+        else:
+            raise HTTPException(404, detail="run not found")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, detail="corrupt meta.json") from exc
+    if not isinstance(meta, dict):
+        meta = {}
+    from case3.pipeline import can_resume_run
+
+    if not can_resume_run(meta, work=work_dir, out=out_dir):
+        raise HTTPException(
+            409,
+            detail="run is not eligible to resume (need error after LLM on media/render)",
+        )
+    # Flip to running so Liber poll leaves the error card immediately.
+    meta["status"] = "running"
+    meta["stage"] = meta.get("failed_stage") or "queued"
+    meta.pop("cancel_requested", None)
+    meta.pop("error", None)
+    payload = json.dumps(meta, ensure_ascii=False, indent=2)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+    logs_dir = ROOT / "runs" / "logs" / run_id
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "meta.json").write_text(payload, encoding="utf-8")
+    _kick_resume_thread(run_id)
+    return {"run_id": run_id, "status": "started", "resumed_from": meta.get("failed_stage")}
 
 
 @app.post("/api/runs/{run_id}/cancel")

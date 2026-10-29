@@ -3,8 +3,12 @@ import { describe, it } from "node:test";
 import {
   craftParentId,
   craftProgress,
+  craftStepForStage,
+  craftTemplate,
+  effectiveCraftMode,
   formatCraftRecap,
   formatEtaSuffix,
+  hydrateCraftFromSteps,
   upsertCraftFilm,
   upsertCraftSubstep,
 } from "./craftSteps.ts";
@@ -93,5 +97,57 @@ describe("craftSteps phase 2A", () => {
     });
     assert.equal(film.length, 1);
     assert.match(film[0].url, /v=2/);
+  });
+});
+
+describe("craftSteps SSE finish", () => {
+  it("switches to presentation template on slides_* stages", () => {
+    assert.equal(effectiveCraftMode("report", "latex"), "report");
+    assert.equal(effectiveCraftMode("report", "slides_pptx"), "presentation");
+    assert.equal(effectiveCraftMode("diagram", "slides_render"), "presentation");
+    const ids = craftTemplate(effectiveCraftMode("report", "slides_starting")).map(
+      (s) => s.id,
+    );
+    assert.ok(ids.includes("slides_pack"));
+    assert.ok(!ids.includes("docx"));
+  });
+
+  it("hydrates stage + substeps + skipped from meta.steps", () => {
+    const h = hydrateCraftFromSteps([
+      { event: "stage", stage: "charts", scope: "pipeline", t: 1 },
+      {
+        event: "step",
+        parent: "charts",
+        id: "cht_01",
+        status: "done",
+        label: "cht_01",
+      },
+      {
+        event: "step",
+        parent: "photos",
+        id: "photos",
+        status: "skipped",
+        reason: "IMAGE_API_BASE_URL empty",
+      },
+      { event: "stage", stage: "starting", scope: "slides", t: 2 },
+    ]);
+    assert.equal(h.stage, "slides_starting");
+    assert.equal(h.substeps.length, 2);
+    assert.equal(h.substeps[0].status, "done");
+    assert.match(h.skipped.photos || "", /IMAGE/);
+  });
+
+  it("keeps diagram mid-pipeline on layout, not false «Отдаю в чат»", () => {
+    const rows = craftProgress("images", "diagram", { live: true });
+    const active = rows.find((r) => r.state === "active");
+    assert.equal(active?.id, "layout");
+  });
+
+  it("maps inject to pdf, not photos (max_images=0 still hits inject)", () => {
+    assert.equal(craftStepForStage("images", "report"), "photos");
+    assert.equal(craftStepForStage("inject", "report"), "pdf");
+    assert.equal(craftStepForStage("inject", "presentation"), "slides_plan");
+    const rows = craftProgress("inject", "report", { live: true });
+    assert.equal(rows.find((r) => r.state === "active")?.id, "pdf");
   });
 });
