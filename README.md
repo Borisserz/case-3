@@ -84,6 +84,8 @@ scripts\smoke.cmd
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
 | нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
 | HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
+| Завис после TeX на «фото» / `stage=images` | Image API `:8000` мёртв — поставь `IMAGE_MAX_IMAGES=0` или подними Image; убей зомби-python |
+| Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
 | мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` если ctx позволяет; `max_charts≤2`, рестарт `api.cmd` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |

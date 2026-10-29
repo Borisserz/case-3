@@ -112,9 +112,13 @@ def max_images_from_env() -> int:
     return ImageApiConfig.from_env().max_images
 
 
-def probe_image_api(*, timeout_s: float = 1.5) -> tuple[bool, str | None]:
-    """Live ping of IMAGE_API_BASE_URL (short timeout). Does not block report runs."""
-    cfg = ImageApiConfig.from_env()
+def probe_image_api(
+    *,
+    timeout_s: float = 1.5,
+    cfg: ImageApiConfig | None = None,
+) -> tuple[bool, str | None]:
+    """Live ping of Image API (short timeout). Does not block report runs."""
+    cfg = cfg or ImageApiConfig.from_env()
     if not cfg.base_url:
         return False, "IMAGE_API_BASE_URL empty"
     url = cfg.health_url
@@ -393,8 +397,10 @@ def generate_png(
         len(body["prompt"]),
         pack_id or "-",
     )
+    # connect=5s: fail fast when LAN Image API is down (Win 10061).
+    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
     try:
-        with httpx.Client(timeout=cfg.timeout_s) as client:
+        with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=body, headers=_headers(cfg))
             resp.raise_for_status()
             payload = _parse_http_body(resp)
@@ -520,11 +526,29 @@ def generate_all_figures(
     api_figs = [
         f for f in figures if str(f.get("source") or "") != "upload"
     ][:api_budget]
+    if not api_figs:
+        return status
+
+    # Win desk: dead Image API used to hang ~180s/fig with no log after TeX.
+    # Probe first; skip all slots so inject/latex can finish.
+    ok_probe, probe_err = probe_image_api(timeout_s=3.0, cfg=cfg)
+    if not ok_probe:
+        reason = probe_err or "Image API unreachable"
+        log.warning("image probe failed — skip %d figures: %s", len(api_figs), reason)
+        for fig in api_figs:
+            fid = str(fig.get("id") or "")
+            if fid:
+                status[fid] = {
+                    "ok": False,
+                    "error": f"Image API probe failed: {reason}"[:300],
+                    "kind": "figure",
+                }
+        return status
+
     for fig in api_figs:
         fid = fig["id"]
-        if on_progress:
-            on_progress(fid)
         dest = figures_dir / f"{fid}.png"
+        log.info("image generate start %s → %s", fid, cfg.generate_url)
         try:
             generate_png(
                 cfg,
@@ -534,6 +558,8 @@ def generate_all_figures(
             )
             status[fid] = {"ok": True, "path": str(dest), "kind": "figure"}
             log.info("image ok %s → %s", fid, dest)
+            if on_progress:
+                on_progress(fid)
         except (
             httpx.HTTPError,
             urllib.error.URLError,
