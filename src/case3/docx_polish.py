@@ -94,7 +94,7 @@ def _border(tag: str, *, sz: int, color: str, val: str = "single") -> object:
 
 
 def _apply_booktabs_table(table) -> None:  # noqa: ANN001
-    """Full width + booktabs-ish rules (no vertical grid)."""
+    """Full width + Liber grid: outer frame + row/column dividers (Word-visible)."""
     from docx.oxml import OxmlElement
 
     tbl = table._tbl
@@ -116,13 +116,13 @@ def _apply_booktabs_table(table) -> None:  # noqa: ANN001
     tbl_pr.append(jc)
 
     borders = OxmlElement("w:tblBorders")
-    # Top / bottom thicker; insideH light; verticals off
-    borders.append(_border("top", sz=18, color=_RULE_COLOR))
-    borders.append(_border("left", sz=0, color=_RULE_COLOR, val="nil"))
-    borders.append(_border("bottom", sz=18, color=_RULE_COLOR))
-    borders.append(_border("right", sz=0, color=_RULE_COLOR, val="nil"))
+    # Outer frame + insideH/V so columns and rows read as a grid in Word.
+    borders.append(_border("top", sz=12, color=_RULE_COLOR))
+    borders.append(_border("left", sz=8, color=_BODY_RULE))
+    borders.append(_border("bottom", sz=12, color=_RULE_COLOR))
+    borders.append(_border("right", sz=8, color=_BODY_RULE))
     borders.append(_border("insideH", sz=6, color=_BODY_RULE))
-    borders.append(_border("insideV", sz=0, color=_BODY_RULE, val="nil"))
+    borders.append(_border("insideV", sz=6, color=_BODY_RULE))
     tbl_pr.append(borders)
 
 
@@ -144,7 +144,7 @@ def _style_header_row(row) -> None:  # noqa: ANN001
 
 
 def polish_docx(path: Path | str) -> Path:
-    """Liber table look: mist header, booktabs borders, numeric align."""
+    """Liber table look: mist header, visible grid borders, numeric align."""
     try:
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH

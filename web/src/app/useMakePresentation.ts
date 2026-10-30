@@ -11,15 +11,17 @@ import {
 } from "../domain/craftSteps";
 import {
   appendBotThinking,
+  reportTitle,
   slidesJobInFlight,
   slidesJobNeedsKick,
 } from "../domain/runHelpers";
+import { attachSlidesPayload } from "../domain/attachSlidesPayload";
 import type { Msg, RunResult } from "../domain/liberTypes";
 import {
   deckStyleToApiPayload,
   type DeckStyle,
 } from "../deckStyle";
-import type { ActiveArtifact } from "../ArtifactRail";
+import type { ActiveArtifact, ArtifactTab } from "../ArtifactRail";
 
 type Args = {
   deckStyle: DeckStyle;
@@ -154,37 +156,65 @@ async (msgId: string, result: RunResult) => {
         );
       }
       const slidesStatus = (stBody.slides_status as string) || "idle";
-      const slidesStage = (stBody.slides_stage as string) || null;
-      const slidesError = (stBody.slides_error as string) || null;
-      const downloads = (stBody.downloads || {}) as Record<string, string>;
-      let slidePngs: string[] = [];
-      let deckIr: RunResult["deck"] = null;
-      let deckPdfMode: string | null = null;
+      // Prefer GET /slides (deck IR); status already carries twin PNG URLs.
+      let payload = stBody as Record<string, unknown>;
       if (slidesStatus === "ok") {
         const g = await fetch(
           `/api/runs/${encodeURIComponent(runId)}/slides`,
         );
         const gBody = await g.json().catch(() => ({}));
-        if (g.ok && Array.isArray(gBody.slide_pngs)) {
-          slidePngs = gBody.slide_pngs as string[];
-        }
-        if (g.ok && gBody.deck) deckIr = gBody.deck;
-        if (g.ok && typeof gBody.deck_pdf_mode === "string") {
-          deckPdfMode = gBody.deck_pdf_mode;
+        if (g.ok) {
+          payload = { ...stBody, ...gBody };
         }
       }
-      if (!deckPdfMode) {
-        const art = stBody.slides_artifacts as
-          | { deck_pdf_mode?: string }
-          | undefined;
-        if (art && typeof art.deck_pdf_mode === "string") {
-          deckPdfMode = art.deck_pdf_mode;
+      if (
+        !payload.deck_pdf_mode &&
+        stBody.slides_artifacts &&
+        typeof stBody.slides_artifacts === "object"
+      ) {
+        const art = stBody.slides_artifacts as { deck_pdf_mode?: string };
+        if (typeof art.deck_pdf_mode === "string") {
+          payload = { ...payload, deck_pdf_mode: art.deck_pdf_mode };
         }
       }
+      const baseDownloads = {
+        ...((stBody.downloads || {}) as Record<string, string>),
+      };
+      // Build hydrate outside setState so we can open the rail with thumbs.
+      const hydratedShell: RunResult = attachSlidesPayload(
+        {
+          run_id: runId,
+          status: "ok",
+          downloads: baseDownloads,
+          charts_ok: 0,
+          figures_ok: 0,
+          charts_planned: [],
+          figures_planned: [],
+          warnings: [],
+          slides_status: slidesStatus,
+          slides_stage: (stBody.slides_stage as string) || null,
+          slides_error: (stBody.slides_error as string) || null,
+          output_mode: "presentation",
+        },
+        payload,
+      );
       setMsgs((m) =>
         m.map((msg) => {
           if (msg.id !== msgId || msg.role !== "bot" || !msg.result)
             return msg;
+          const nextResult = attachSlidesPayload(
+            {
+              ...msg.result,
+              downloads: {
+                ...msg.result.downloads,
+                ...baseDownloads,
+              },
+              slides_status: slidesStatus,
+              slides_stage: (stBody.slides_stage as string) || null,
+              slides_error: (stBody.slides_error as string) || null,
+            },
+            payload,
+          );
           return {
             ...msg,
             pending: false,
@@ -194,22 +224,23 @@ async (msgId: string, result: RunResult) => {
                   Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
                 )
               : msg.thinkingElapsedSec,
-            result: {
-              ...msg.result,
-              downloads: { ...msg.result.downloads, ...downloads },
-              slides_status: slidesStatus,
-              slides_stage: slidesStage,
-              slides_error: slidesError,
-              slide_pngs: slidePngs,
-              deck: deckIr ?? msg.result.deck,
-              deck_pdf_mode: deckPdfMode ?? msg.result.deck_pdf_mode,
-            },
+            result: nextResult,
           };
         }),
       );
       if (slidesStatus === "ok") {
         setDownloadsPulseMsgId(msgId);
         window.setTimeout(() => setDownloadsPulseMsgId(null), 2400);
+        // Open rail with thumbs — chat cards alone looked “empty” without PNGs.
+        const tab: ArtifactTab = "presentation";
+        setRailExiting(false);
+        setActiveArtifact({
+          kind: "report",
+          msgId,
+          tab,
+          title: reportTitle(hydratedShell),
+          activeDiagramId: null,
+        });
       }
     };
 

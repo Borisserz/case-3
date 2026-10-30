@@ -269,3 +269,33 @@ def test_downloads_do_not_collide_deck_pdf(client: TestClient, tmp_path: Path) -
     assert d["pdf"].endswith("report.pdf")
     assert d["deck_pdf"].endswith("report_deck.pdf")
     assert d["pptx"].endswith("report_slides.pptx")
+
+
+def test_status_includes_slide_pngs_when_twins_exist(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """Liber chat/rail hydrate from /status — pptx alone left preview empty."""
+    run_id = "run_status_pngs"
+    out = _seed_ok_run(tmp_path, run_id)
+    slides = out / "slides"
+    slides.mkdir(parents=True, exist_ok=True)
+    (slides / "slide_01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (slides / "slide_02.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["slides_status"] = "ok"
+    meta["slides_artifacts"] = {
+        "pptx": "report_slides.pptx",
+        "deck_pdf": "report_deck.pdf",
+        "png_count": 2,
+    }
+    (out / "report_slides.pptx").write_bytes(b"PK fake")
+    (out / "report_deck.pdf").write_bytes(b"%PDF")
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    st = client.get(f"/api/runs/{run_id}/status")
+    assert st.status_code == 200
+    body = st.json()
+    pngs = body.get("slide_pngs") or []
+    assert len(pngs) == 2
+    assert pngs[0].endswith("/slides/png/slide_01.png")
+    assert pngs[1].endswith("/slides/png/slide_02.png")

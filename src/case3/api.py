@@ -234,6 +234,15 @@ def _run_result_payload(
     summary_status = str(meta.get("summary_status") or "")
     if not summary_status and chat_summary:
         summary_status = "ok"
+    slides_dir = out_dir / "slides"
+    slide_pngs = (
+        [
+            f"/api/runs/{run_id}/slides/png/{p.name}"
+            for p in sorted(slides_dir.glob("slide_*.png"))
+        ]
+        if slides_dir.is_dir()
+        else []
+    )
     return {
         "run_id": run_id,
         "status": meta.get("status", "ok"),
@@ -261,6 +270,8 @@ def _run_result_payload(
         "slides_stage": meta.get("slides_stage"),
         "slides_error": meta.get("slides_error"),
         "slides_artifacts": meta.get("slides_artifacts"),
+        # Twin thumbs for Liber chat/rail — without these, pptx-ready runs look empty.
+        "slide_pngs": slide_pngs,
         "output_mode": meta.get("output_mode") or "auto",
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),

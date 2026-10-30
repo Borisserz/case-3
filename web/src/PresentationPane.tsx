@@ -98,6 +98,32 @@ export function PresentationPane({
     setSaveError(null);
   }, [runId]);
 
+  // Safety net: rail opened with pptx downloads but empty twin/deck (old status).
+  useEffect(() => {
+    if (status !== "ok") return;
+    if (slidePngs.length > 0 || deckProp) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+        const gBody = await g.json().catch(() => ({}));
+        if (cancelled || !g.ok) return;
+        const pngs = Array.isArray(gBody.slide_pngs)
+          ? (gBody.slide_pngs as string[])
+          : [];
+        if (gBody.deck) setDeck(gBody.deck as DeckIR);
+        if (pngs.length || gBody.deck) {
+          onDeckUpdated?.(gBody.deck as DeckIR, pngs);
+        }
+      } catch {
+        /* keep empty */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, status, slidePngs.length, deckProp, onDeckUpdated]);
+
   useEffect(() => {
     const el = document.querySelector(
       `.presentation-thumb:nth-child(${safeIdx + 1})`,

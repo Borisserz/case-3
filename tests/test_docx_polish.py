@@ -50,10 +50,15 @@ def test_polish_docx_header_fill_and_booktabs_borders(tmp_path: Path) -> None:
     header_xml = "".join(c._tc.xml for c in table.rows[0].cells)
     assert "D5DEC0" in header_xml.upper() or "E8EDD8" in header_xml.upper()
     assert "shd" in header_xml or "w:fill" in header_xml
-    # Booktabs-ish: top/bottom present; verticals nil/none
+    # Grid: outer + insideH + insideV so Word shows column/row dividers
     tbl_xml = table._tbl.xml
     assert "tblBorders" in tbl_xml
-    assert 'w:val="nil"' in tbl_xml or 'w:val="none"' in tbl_xml
+    assert "insideV" in tbl_xml
+    assert "insideH" in tbl_xml
+    # Verticals must be real lines (not nil/none)
+    assert 'w:insideV w:val="nil"' not in tbl_xml
+    assert 'w:insideV w:val="none"' not in tbl_xml
+    assert 'w:val="single"' in tbl_xml
     # Full-ish width
     assert 'w:type="pct"' in tbl_xml or "tblW" in tbl_xml
 

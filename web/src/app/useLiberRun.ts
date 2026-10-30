@@ -35,6 +35,10 @@ import {
   stageLabel,
   uid,
 } from "../domain/runHelpers";
+import {
+  attachSlidesPayload,
+  needsSlidesHydrate,
+} from "../domain/attachSlidesPayload";
 import type {
   Health,
   Msg,
@@ -510,7 +514,23 @@ async () => {
             },
           );
         }
-        return body as RunResult;
+        let result = attachSlidesPayload(body as RunResult, body);
+        // Deck IR lives on GET /slides — pull when twins still missing or deck absent.
+        if (
+          needsSlidesHydrate(result) ||
+          (result.slides_status === "ok" && !result.deck)
+        ) {
+          try {
+            const g = await fetch(
+              `/api/runs/${encodeURIComponent(runId)}/slides`,
+            );
+            const gBody = await g.json().catch(() => ({}));
+            if (g.ok) result = attachSlidesPayload(result, gBody);
+          } catch {
+            /* keep status-only twins */
+          }
+        }
+        return result;
       };
 
       /** Status poll — used as SSE fallback (Windows proxies). */
