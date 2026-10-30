@@ -13,7 +13,7 @@
 | Слой | Путь |
 |------|------|
 | Pipeline | `src/case3/pipeline.py` |
-| LLM → TeX | `src/case3/generate.py`, `prompt/system_tex.md` |
+| LLM prompts | `prompt/MANIFEST.md` + `case3.prompts` · TeX via `generate.py` |
 | Charts | `chart_*.py`, Playwright, `templates/chart_frame.html` |
 | Images | `image_api.py`, `workers/case3-image/` |
 | Render | `render.py` → Docker `case-3:tex` |

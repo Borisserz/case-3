@@ -90,6 +90,7 @@ Desk: SSE v1 + **2A** + **2B** + **finish** (mode scripts · `meta.steps[]`) don
 
 | Задача | Сначала |
 |--------|---------|
+| Промпт LLM (правка / новый) | [`prompt/MANIFEST.md`](../prompt/MANIFEST.md) → `case3.prompts` · spec `2026-10-30-prompt-catalog` |
 | Баг пайплайна / PDF | KI-pipeline → KI-tex-render → ADR-0001 |
 | График / палитра / edit | KI-charts → ADR-0002 |
 | Таблица / абзац в Preview (edit) | KI-liber-ui · `table_edit.py` / `paragraph_edit.py` · specs table-edit + `2026-10-25-liber-report-depth-c1-c2-c4` |

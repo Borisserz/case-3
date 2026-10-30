@@ -6,26 +6,14 @@ from dataclasses import replace
 from typing import Any
 
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.prompts import load as load_prompt
 from case3.tex_preview import tex_to_preview_blocks
 
 # Chat blurb must not stall print UX for a full VISION_TIMEOUT_S (often 300s).
 _SUMMARY_TIMEOUT_S = 90.0
 _SUMMARY_RETRIES = 0
 
-SUMMARY_SYSTEM = """Ты — Liber Atelier: спокойный ассистент за рабочим столом.
-Пользователь только что получил готовый отчёт. Напиши короткое сообщение в чат (как Cursor / DeepSeek): что собрано и что внутри.
-
-Правила:
-- Пиши на языке outline / Intent (по умолчанию русский).
-- Факты и числа — только из OUTLINE и MEDIA_DELIVERED. Ничего не выдумывай.
-- Intent — пожелание пользователя, НЕ отчёт о результате. Если Intent просит N графиков,
-  а MEDIA_DELIVERED.charts_ok = 0 — не пиши, что графики подготовлены.
-- Считай графики только по charts_ok / строкам CHART:; иллюстрации — figures_ok / FIGURE:.
-- 2–4 коротких абзаца, примерно 80–180 слов. Допустим лёгкий markdown (**жирный**, короткий список).
-- Без клише («в современном мире», «важно отметить»), без эмодзи, без заголовка «Сводка».
-- В конце одной фразой скажи, что подробности — в полном документе (превью / PDF).
-- Не цитируй TeX и не упоминай пайплайн/слоты/JSON."""
-
+SUMMARY_SYSTEM = load_prompt("summary_system").strip()
 _MAX_PARAS = 6
 _MAX_HEADINGS = 12
 _MAX_FIGS = 8

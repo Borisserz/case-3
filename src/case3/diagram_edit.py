@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from case3.paths import repo_root
-
 import json
 import logging
 import re
@@ -120,12 +118,12 @@ def edit_diagram_in_run(
 
 
 def _load_generate_system(*, max_diagrams: int, palette: str) -> str:
-    root = repo_root()
-    path = root / "prompt" / "diagram_generate.md"
-    text = path.read_text(encoding="utf-8")
-    return (
-        text.replace("{{MAX_DIAGRAMS}}", str(max_diagrams))
-        .replace("{{DIAGRAM_COLOR_TABLE}}", format_diagram_color_prompt(palette))
+    from case3.prompts import load as load_prompt
+
+    return load_prompt(
+        "diagram_generate",
+        MAX_DIAGRAMS=max_diagrams,
+        DIAGRAM_COLOR_TABLE=format_diagram_color_prompt(palette),
     )
 
 

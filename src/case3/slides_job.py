@@ -93,17 +93,10 @@ def _media_catalog_block(out_dir: Path) -> str:
 def _theme_overlay(theme_pack: str | None) -> str:
     """Optional visual/tone overlay from prompt/themes/slides_{pack}.md."""
     from case3.deck_theme import normalize_pack_id
+    from case3.prompts import load_theme
 
     pack = normalize_pack_id(theme_pack)
-    path = _repo_root() / "prompt" / "themes" / f"slides_{pack}.md"
-    if not path.is_file():
-        path = _repo_root() / "prompt" / "themes" / "slides_atelier.md"
-    if not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
+    return load_theme("slides", pack, fallback="atelier")
 
 
 def load_slides_system_prompt(
@@ -120,30 +113,23 @@ def load_slides_system_prompt(
     beat_overlay: str | None = None,
 ) -> str:
     from case3.deck_structure import structure_overlay
+    from case3.prompts import load as load_prompt
 
-    path = _repo_root() / "prompt" / "system_slides.md"
-    text = path.read_text(encoding="utf-8")
     overlay = _theme_overlay(theme_pack)
     struct = (beat_overlay or "").strip() or structure_overlay(structure_id)
-    return (
-        text.replace("{{PALETTE}}", palette)
-        .replace("{{THEME_OVERLAY}}", overlay)
-        .replace("{{STRUCTURE_OVERLAY}}", struct)
-        .replace(
-            "{{CHART_IDS}}",
-            _ids_block(chart_ids, empty="(none — do not use chart_hero / chart_split)"),
-        )
-        .replace(
-            "{{FIGURE_IDS}}",
-            _ids_block(figure_ids, empty="(none — no photos)"),
-        )
-        .replace(
-            "{{DIAGRAM_IDS}}",
-            _ids_block(diagram_ids, empty="(none — no diagrams)"),
-        )
-        .replace("{{MEDIA_CATALOG}}", media_catalog or "(no media catalog)")
-        .replace("{{INTENT}}", intent or "")
-        .replace("{{SOURCE}}", source or "")
+    return load_prompt(
+        "system_slides",
+        PALETTE=palette,
+        THEME_OVERLAY=overlay,
+        STRUCTURE_OVERLAY=struct,
+        CHART_IDS=_ids_block(
+            chart_ids, empty="(none — do not use chart_hero / chart_split)"
+        ),
+        FIGURE_IDS=_ids_block(figure_ids, empty="(none — no photos)"),
+        DIAGRAM_IDS=_ids_block(diagram_ids, empty="(none — no diagrams)"),
+        MEDIA_CATALOG=media_catalog or "(no media catalog)",
+        INTENT=intent or "",
+        SOURCE=source or "",
     )
 
 

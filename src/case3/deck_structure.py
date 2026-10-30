@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from case3.paths import repo_root
-
 import json
 from pathlib import Path
 from typing import Any
@@ -24,10 +22,6 @@ _CACHE: dict[str, dict[str, Any]] | None = None
 
 def _structures_dir() -> Path:
     return Path(__file__).resolve().parent / "deck_structures"
-
-
-def _prompt_dir() -> Path:
-    return repo_root() / "prompt" / "themes"
 
 
 def _load_all() -> dict[str, dict[str, Any]]:
@@ -95,16 +89,12 @@ def list_structures() -> list[dict[str, Any]]:
 
 
 def structure_overlay(structure_id: str | None) -> str:
+    from case3.prompts import load_theme
+
     sid = normalize_structure_id(structure_id)
     if not sid:
         return ""
-    path = _prompt_dir() / f"structure_{sid}.md"
-    if not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
+    return load_theme("structure", sid)
 
 
 def structure_meta(structure_id: str | None) -> dict[str, Any] | None:

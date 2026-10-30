@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from case3.paths import repo_root
-
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any, Protocol
 
 from case3.diagrams import parse_diagrams
@@ -32,13 +29,10 @@ class _Completer(Protocol):
     ) -> str: ...
 
 
-def _repo_prompt() -> Path:
-    return repo_root() / "prompt" / "diagram_repair.md"
-
-
 def load_repair_system(palette: str | None = None) -> str:
-    path = _repo_prompt()
-    text = path.read_text(encoding="utf-8")
+    from case3.prompts import load as load_prompt
+
+    text = load_prompt("diagram_repair")
     try:
         from case3.diagram_style import format_diagram_color_prompt
 
