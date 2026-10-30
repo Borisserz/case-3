@@ -990,6 +990,45 @@ def run_pipeline(
         else:
             fj = {}
 
+        # Mode «Схема»: if first LLM pass returned no diagrams (CoT / missing JSON),
+        # dedicated regenerate via diagram_generate.md (same as Liber «Ещё вариант»).
+        if mode == "diagram" and not diagrams and not dry_run and diagrams_budget >= 1:
+            bump("diagram_generate", "повтор: только Mermaid JSON…")
+            try:
+                from case3.chart_style import palette_from_intent
+                from case3.diagram_edit import _load_generate_system
+                from case3.diagram_repair import parse_repair_response
+                from case3.diagram_style import format_diagram_color_prompt
+                from case3.llm_client import LLMClient, LLMConfig
+
+                source_text = text_path.read_text(encoding="utf-8")
+                pal = palette_from_intent(intent or "")
+                system = _load_generate_system(
+                    max_diagrams=diagrams_budget, palette=pal
+                )
+                user = (
+                    f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
+                    f"## Source\n{source_text[:12000]}\n\n"
+                    f"{format_diagram_color_prompt(pal)}\n\n"
+                    "Return ONLY one ```json fence with a diagrams array "
+                    f"(1–{diagrams_budget} Mermaid). No prose before the fence."
+                )
+                raw_d = LLMClient(LLMConfig.from_env()).complete(
+                    system=system, user_text=user
+                )
+                diagrams = parse_repair_response(
+                    raw_d or "", max_diagrams=diagrams_budget
+                )
+                meta["diagrams_recovery"] = "generate" if diagrams else "empty"
+                log.info(
+                    "diagram recovery → %d diagrams (budget=%d)",
+                    len(diagrams),
+                    diagrams_budget,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("diagram recovery failed: %s", exc)
+                meta["diagrams_recovery_error"] = str(exc)[:200]
+
         # Mode «Схема»: optional second LLM pass. Skip when draft already has Mermaid
         # (default) — set CASE3_DIAGRAM_REPAIR=1 to force. Soft-fail keeps draft.
         if mode == "diagram" and diagrams and not dry_run:
@@ -1094,6 +1133,13 @@ def run_pipeline(
             p = work / name
             if p.is_file():
                 shutil.copy2(p, out / name)
+        # Debug prompts dump (CASE3_DUMP_PROMPTS) lives under work/ — mirror to out/
+        prompts_src = work / "prompts_used"
+        if prompts_src.is_dir():
+            prompts_dst = out / "prompts_used"
+            if prompts_dst.exists():
+                shutil.rmtree(prompts_dst)
+            shutil.copytree(prompts_src, prompts_dst)
         if figs_dir.is_dir() and any(figs_dir.glob("*.png")):
             dest = out / "figures"
             if dest.exists():

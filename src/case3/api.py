@@ -342,6 +342,47 @@ def _bg_run_pipeline(
             user_figures=user_figures,
             output_mode=output_mode,
         )
+        # Presentation: Liber UI also POSTs /slides; auto-kick so CLI/matrix
+        # get PPTX without a browser (idempotent if already running).
+        if (output_mode or "").strip().lower() == "presentation":
+            try:
+                from case3.api_slides import _kick_slides_thread
+                from case3.deck_theme import normalize_pack_id
+                from case3.run_events import EVENTS as _EV
+                from case3.run_meta import read_meta, write_meta
+
+                out = run_store.ROOT / "runs" / "out" / run_id
+                meta = read_meta(out) or {}
+                st_slides = str(meta.get("slides_status") or "idle")
+                if str(meta.get("status") or "") == "ok" and st_slides in {
+                    "idle",
+                    "",
+                    "error",
+                }:
+                    pack = normalize_pack_id(
+                        (meta.get("slides_theme_pack") or meta.get("deck_pack") or "atelier")
+                    )
+                    meta["slides_style"] = {
+                        "theme_pack": pack,
+                        "structure_id": meta.get("slides_structure_id"),
+                        "style_settings": None,
+                    }
+                    meta["slides_theme_pack"] = pack
+                    meta["slides_status"] = "running"
+                    meta["slides_stage"] = "starting"
+                    meta["slides_error"] = None
+                    write_meta(
+                        out,
+                        meta,
+                        logs_dir=run_store.ROOT / "runs" / "logs" / run_id,
+                    )
+                    _EV.reopen(run_id)
+                    _EV.bind_out(run_id, out)
+                    _EV.publish_stage(run_id, "starting", scope="slides")
+                    _kick_slides_thread(run_id)
+                    log.info("auto-kicked slides for presentation run_id=%s", run_id)
+            except Exception:  # noqa: BLE001
+                log.exception("auto-kick slides failed run_id=%s", run_id)
     except PipelineError:
         # meta already written with status=error
         log.exception("background pipeline failed run_id=%s", run_id)
@@ -537,6 +578,7 @@ async def api_run(
         _release_pipeline_slot("pending")
         raise
 
+    pack0 = (deck_pack or "").strip()[:40] or "atelier"
     meta0 = {
         "run_id": run_id,
         "source": str(resolve_text_file(src_path)),
@@ -548,6 +590,8 @@ async def api_run(
         "max_charts": max_charts,
         "max_diagrams": max_diagrams,
         "user_figures": [f.get("id") for f in user_figures],
+        "deck_pack": pack0,
+        "slides_theme_pack": pack0,
         "status": "running",
         "stage": "llm",
         "stage_detail": "жду модель…",
