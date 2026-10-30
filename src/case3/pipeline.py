@@ -291,6 +291,25 @@ def _set_stage(
             EVENTS.scan_artifacts(run_id, out)
 
 
+_DESK_SLIDES_KEYS = (
+    "deck_pack",
+    "slides_theme_pack",
+    "slides_structure_id",
+    "slides_style",
+)
+
+
+def merge_desk_slides_fields(
+    meta: dict[str, Any], previous: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Keep Liber desk deck pack/structure/style stamped by ``/api/run``."""
+    prev = previous or {}
+    for key in _DESK_SLIDES_KEYS:
+        if prev.get(key) is not None:
+            meta[key] = prev[key]
+    return meta
+
+
 def prepare_run_dirs(
     source: Path,
     *,
@@ -910,6 +929,10 @@ def run_pipeline(
 
     # Heartbeat BEFORE FileHandler / load_timings: on Win those can stall (AV lock)
     # and Liber sat forever on status=running stage=queued («Читаю Source»).
+    # Preserve deck style stamped by /api/run (auto-kick slides needs structure_id).
+    from case3.run_meta import read_meta as _read_meta_desk
+
+    prev_desk = _read_meta_desk(out)
     meta: dict = {
         "run_id": run_id,
         "source": str(text_path),
@@ -926,6 +949,7 @@ def run_pipeline(
         "stage": "llm",
         "stage_detail": "жду модель…",
     }
+    merge_desk_slides_fields(meta, prev_desk)
     EVENTS.ensure(run_id)
     from case3.run_events import note_craft_stage
 

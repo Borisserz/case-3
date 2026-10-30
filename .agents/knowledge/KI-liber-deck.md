@@ -39,7 +39,7 @@
 - Structures: eight unique pairs (board_update/board … workshop/studio).
 - UI: `DeckStyleSheet` + `DeckTemplateGallery`; `localStorage liber.deckStyle.v1`.
 - Presentation UX: Preview → Slide → Edit; Present = click-advance + idle chrome hide + Space/←/→; Esc exits; concurrent IR PATCH coalesces (no 409).
-- API: `POST …/slides` may send `theme_pack` + `style_settings` → `meta.slides_style`.
+- API: `POST /api/run` stamps `deck_pack` + `deck_structure_id` + `deck_style_json` → `meta.slides_style` (survives pipeline rewrite via `merge_desk_slides_fields`). Auto-kick slides uses that style (`slides_kick_source=api_auto`). `POST …/slides` may still send `theme_pack` + `style_settings` as backup.
 - Roadmap: [`docs/superpowers/specs/2026-10-22-julius-live-ux-parity-design.md`](../../docs/superpowers/specs/2026-10-22-julius-live-ux-parity-design.md).
 
 ## Fonts (PPTX)

@@ -123,7 +123,10 @@ type Props = {
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   makingPresentation?: boolean;
-  onDiagramsUpdated?: (diagrams: DiagramInfo[]) => void;
+  onDiagramsUpdated?: (
+    diagrams: DiagramInfo[],
+    meta?: import("./DiagramPane").DiagramUpdateMeta,
+  ) => void;
 };
 
 export function ArtifactRail({
@@ -166,13 +169,22 @@ export function ArtifactRail({
       : null;
   const activeDiagram =
     diagrams.find((d) => d.id === activeDiagramId) || diagrams[0] || null;
-  const showDiagramSurface = tab === "diagram" && Boolean(activeDiagram);
   const surfaces = modeSurfaces(report?.outputMode);
+  const showDiagramEmpty =
+    tab === "diagram" &&
+    !activeDiagram &&
+    surfaces.showDiagram &&
+    Boolean(report?.runId);
+  const showDiagramSurface =
+    (tab === "diagram" && Boolean(activeDiagram)) || showDiagramEmpty;
   const hasPreview =
     surfaces.showReportPreview && Boolean(report?.preview?.blocks?.length);
   const hasPdf =
     surfaces.showReportPdf && Boolean(report?.downloads?.pdf);
-  const hasDiagrams = surfaces.showDiagram && diagrams.length > 0;
+  /** Diagram mode always keeps the tab — even when generation returned 0. */
+  const hasDiagrams =
+    surfaces.showDiagram &&
+    (diagrams.length > 0 || report?.outputMode === "diagram");
   const slidesStatus = isReport ? report?.slidesStatus || null : null;
   /* Show tab only when deck exists or failed — never open rail mid-build. */
   const hasPresentationTab =
@@ -615,9 +627,10 @@ export function ArtifactRail({
                 </div>
               ) : null}
 
-              {showDiagramSurface && activeDiagram ? (
+              {showDiagramSurface ? (
                 <DiagramPane
                   diagram={activeDiagram}
+                  emptyMode={showDiagramEmpty}
                   siblings={diagrams.length > 1 ? diagrams : undefined}
                   onSelectSibling={onSelectDiagram}
                   runId={report?.runId}

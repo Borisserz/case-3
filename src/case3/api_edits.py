@@ -226,6 +226,7 @@ async def regenerate_run_diagrams(
         "diagrams": result.get("diagrams") or load_diagrams_from_out(out_dir),
         "diagrams_repaired": bool(result.get("diagrams_repaired")),
         "diagrams_ok": int(result.get("diagrams_ok") or 0),
+        "undo": result.get("undo"),
     }
 
 

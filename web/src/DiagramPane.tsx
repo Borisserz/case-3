@@ -23,20 +23,31 @@ import {
   slugDiagramFilename,
 } from "./downloadDiagramPng";
 
+export type DiagramUpdateMeta = {
+  undo?: { kind?: string; target?: string } | null;
+  toast?: string;
+};
+
 type Props = {
-  diagram: DiagramInfo;
+  diagram?: DiagramInfo | null;
   siblings?: DiagramInfo[];
   onSelectSibling?: (id: string) => void;
   runId?: string | null;
-  onDiagramsUpdated?: (diagrams: DiagramInfo[]) => void;
+  onDiagramsUpdated?: (
+    diagrams: DiagramInfo[],
+    meta?: DiagramUpdateMeta,
+  ) => void;
+  /** Empty-run CTA: regenerate without a current diagram. */
+  emptyMode?: boolean;
 };
 
 export function DiagramPane({
-  diagram,
+  diagram = null,
   siblings,
   onSelectSibling,
   runId,
   onDiagramsUpdated,
+  emptyMode = false,
 }: Props) {
   const paneSvgRef = useRef<SVGSVGElement | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -44,24 +55,25 @@ export function DiagramPane({
   const [editOpen, setEditOpen] = useState(false);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
-  const visualOk = isSupportedFlowchartSubset(diagram.mermaid || "");
   const [err, setErr] = useState<string | null>(null);
   const [activeRole, setActiveRole] = useState<string | null>(null);
+  const mermaidSrc = diagram?.mermaid || "";
+  const visualOk = isSupportedFlowchartSubset(mermaidSrc);
 
   const legend = useMemo(
-    () => parseDiagramLegend(diagram.mermaid || ""),
-    [diagram.mermaid],
+    () => parseDiagramLegend(mermaidSrc),
+    [mermaidSrc],
   );
   const metrics = useMemo(
-    () => parseDiagramMetrics(diagram.mermaid || ""),
-    [diagram.mermaid],
+    () => parseDiagramMetrics(mermaidSrc),
+    [mermaidSrc],
   );
-  const typeRu = diagramTypeLabel(diagram.type);
+  const typeRu = diagramTypeLabel(diagram?.type);
 
   const highlightNodeIds = useMemo(() => {
     if (!activeRole) return null;
-    return nodeIdsForRole(diagram.mermaid || "", activeRole);
-  }, [activeRole, diagram.mermaid]);
+    return nodeIdsForRole(mermaidSrc, activeRole);
+  }, [activeRole, mermaidSrc]);
 
   const onPaneSvg = useCallback((el: SVGSVGElement | null) => {
     paneSvgRef.current = el;
@@ -78,7 +90,7 @@ export function DiagramPane({
 
   const doDownloadPng = useCallback(
     async (el: SVGSVGElement | null) => {
-      if (!el) {
+      if (!el || !diagram) {
         setErr("Схема ещё не готова");
         return;
       }
@@ -95,11 +107,15 @@ export function DiagramPane({
         setBusy(false);
       }
     },
-    [diagram.id, diagram.title],
+    [diagram],
   );
 
   const doDownloadSvg = useCallback(
     async (el: SVGSVGElement | null) => {
+      if (!diagram) {
+        setErr("Схема ещё не готова");
+        return;
+      }
       setBusy(true);
       setErr(null);
       try {
@@ -128,12 +144,12 @@ export function DiagramPane({
         setBusy(false);
       }
     },
-    [diagram.id, diagram.title, runId],
+    [diagram, runId],
   );
 
   const doApplyEdit = useCallback(
     async (mermaid: string, title: string) => {
-      if (!runId) {
+      if (!runId || !diagram) {
         setErr("Нет run_id");
         return;
       }
@@ -157,7 +173,10 @@ export function DiagramPane({
           );
         }
         const next = Array.isArray(data.diagrams) ? data.diagrams : [];
-        onDiagramsUpdated?.(next);
+        onDiagramsUpdated?.(next, {
+          undo: data.undo ?? null,
+          toast: "Схема сохранена",
+        });
         setEditOpen(false);
         setFocusNodeId(null);
       } catch (e) {
@@ -166,8 +185,79 @@ export function DiagramPane({
         setEditBusy(false);
       }
     },
-    [diagram.id, onDiagramsUpdated, runId],
+    [diagram, onDiagramsUpdated, runId],
   );
+
+  const doRegenerate = useCallback(async () => {
+    if (!runId) {
+      setErr("Нет run_id");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/diagrams/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : data.error || res.statusText,
+        );
+      }
+      const next = Array.isArray(data.diagrams) ? data.diagrams : [];
+      if (!next.length) {
+        throw new Error("Модель не вернула схему — попробуйте ещё раз");
+      }
+      onDiagramsUpdated?.(next, {
+        undo: data.undo ?? null,
+        toast: "Новый вариант схемы",
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [onDiagramsUpdated, runId]);
+
+  if (emptyMode || !diagram) {
+    return (
+      <div className="diagram-pane is-premium is-empty">
+        <header className="diagram-pane-hero">
+          <div className="diagram-pane-hero-text">
+            <p className="diagram-pane-eyebrow">Схема</p>
+            <h3 className="diagram-pane-title">Схема не собралась</h3>
+            <p className="diagram-pane-empty-hint muted">
+              Можно запросить новый вариант из того же Source — или отправить
+              запрос снова.
+            </p>
+          </div>
+          <div className="diagram-pane-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy || !runId}
+              onClick={() => void doRegenerate()}
+            >
+              {busy ? "…" : "Ещё вариант"}
+            </button>
+          </div>
+        </header>
+        {err ? (
+          <p className="diagram-pane-err" role="alert">
+            {err}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="diagram-pane is-premium">
@@ -213,6 +303,15 @@ export function DiagramPane({
           <button
             type="button"
             className="btn ghost"
+            disabled={busy || !runId}
+            title="Сгенерировать новый вариант схемы"
+            onClick={() => void doRegenerate()}
+          >
+            {busy ? "…" : "Ещё вариант"}
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
             disabled={busy}
             onClick={() => openEditor(null)}
           >
@@ -255,7 +354,7 @@ export function DiagramPane({
           Двойной клик по блоку — редактор · клик по легенде — подсветка роли
         </p>
         <DiagramZoomView
-          source={diagram.mermaid}
+          source={mermaidSrc}
           onSvgReady={onPaneSvg}
           className="is-premium"
           highlightNodeIds={highlightNodeIds}

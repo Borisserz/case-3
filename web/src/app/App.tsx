@@ -47,6 +47,7 @@ import { useSourceIngest } from "./useSourceIngest";
 import { useStopGeneration } from "./useStopGeneration";
 import { useLiberToast } from "./useLiberToast";
 import { LiberToastBar } from "./LiberToastBar";
+import { applyDiagramsUpdate } from "./applyDiagramsUpdate";
 import { useReportHistory } from "./useReportHistory";
 import { DeckStyleSheet } from "../DeckStyleSheet";
 import {
@@ -91,7 +92,7 @@ export default function App() {
     figureId: string;
     message: string;
   } | null>(null);
-  const { toast, setToast, showToast } = useLiberToast();
+  const { toast, toastTone, setToast, showToast } = useLiberToast();
   /** B21: one-shot undo after last Liber edit */
   const [undoOffer, setUndoOffer] = useState<{
     msgId: string;
@@ -436,6 +437,7 @@ export default function App() {
     >
       <LiberToastBar
         toast={toast}
+        toastTone={toastTone}
         undoOffer={undoOffer}
         onUndo={() => void undoLastEdit()}
       />
@@ -716,36 +718,20 @@ export default function App() {
                     : undefined
                 }
                 onDiagramsUpdated={
-                  railArtifact.kind === "report" && activeReportMsg
-                    ? (diagrams) => {
-                        const mid = activeReportMsg.id;
-                        setMsgs((list) =>
-                          list.map((msg) => {
-                            if (
-                              msg.id !== mid ||
-                              msg.role !== "bot" ||
-                              !msg.result
-                            )
-                              return msg;
-                            const next = {
-                              ...msg,
-                              result: { ...msg.result, diagrams },
-                            };
-                            if (next.result) rememberRun(next.result);
-                            return next;
-                          }),
-                        );
-                        setActiveArtifact((prev) => {
-                          if (!prev || prev.kind !== "report") return prev;
-                          const keep =
-                            diagrams.find((d) => d.id === prev.activeDiagramId)
-                              ?.id ??
-                            diagrams[0]?.id ??
-                            null;
-                          return { ...prev, activeDiagramId: keep };
-                        });
-                        showToast("Схема обновлена", 2200);
-                      }
+                  railArtifact.kind === "report" &&
+                  activeReportMsg?.role === "bot"
+                    ? (diagrams, meta) =>
+                        applyDiagramsUpdate({
+                          msgId: activeReportMsg.id,
+                          runId: activeReportMsg.result?.run_id,
+                          diagrams,
+                          meta,
+                          setMsgs,
+                          setActiveArtifact,
+                          setUndoOffer,
+                          rememberRun,
+                          showToast,
+                        })
                     : undefined
                 }
               />

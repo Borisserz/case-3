@@ -53,7 +53,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
         tab ??
         (preferPreview ? "preview" : preferPdf ? "pdf" : "source");
       if (!tab) {
-        if (mode === "diagram" && result.diagrams?.[0]) nextTab = "diagram";
+        if (mode === "diagram") nextTab = "diagram";
         else if (mode === "presentation") nextTab = "presentation";
         else if (mode === "report" && preferPreview) nextTab = "preview";
       }

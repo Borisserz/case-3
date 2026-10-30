@@ -6,7 +6,7 @@ Mermaid `diagrams[]` парсятся в LLM-стадии и пишутся в `
 **Default-on:** при `max_diagrams≥1` модель должна дать ≥1 схему, если в Source есть структура (шаги/роли/ветки/≥3 раздела); Intent UI явно нудит. Soft-drop → `diagrams_dropped` в figures.json/meta.  
 **Режим Схема** (`output_mode=diagram`): после llm всегда stage `diagram_repair` (`prompt/diagram_repair.md`) — 2-й LLM обогащает граф из Source; soft-fail → draft; meta `diagrams_repaired`, draft в `figures.json` → `diagrams_draft`.  
 **Annotated flow:** числа из Source на labels (`["Заявка<br/>820"]`, `|62%|`) — prompts short, без role-кодов в тексте узла; Liber chips «Числа на схеме» (`diagramMetrics.ts`). Не дублировать chart series. Без живой БД (v1 = Source only). **Не в PDF** (ADR-0007).  
-Палитра Settings → `format_diagram_color_prompt` в generate/repair. Liber API: `POST …/diagrams/{id}/edit`; `…/regenerate` есть на бэке, UI-кнопки «Ещё вариант» нет.
+Палитра Settings → `format_diagram_color_prompt` в generate/repair. Liber API: `POST …/diagrams/{id}/edit`; `…/regenerate` + UI «Ещё вариант» (DiagramPane, undo slot `diagram_regen`). Empty diagram mode → honest chat text + empty pane CTA.
 
 ## Entry
 - CLI: `case3` / `scripts/run.cmd`

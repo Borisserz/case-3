@@ -50,9 +50,52 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
     const n = result.diagrams?.length || 0;
     return n
       ? `Схема готова (${n}). Откройте карточку ниже, чтобы развернуть.`
-      : "Схема готова";
+      : "Схема не собралась — нажмите «Ещё вариант» в панели или отправьте снова.";
   }
   return "Отчёт готов";
+}
+
+/** RU toast when charts/photos soft-failed but run status is ok. */
+export function softMediaFailToast(result?: {
+  warnings?: string[];
+  failed_charts?: string[];
+  failed_figures?: string[];
+  media_status?: Record<string, unknown>;
+}): string | null {
+  if (!result) return null;
+  const failedC = Array.isArray(result.failed_charts)
+    ? result.failed_charts.filter(Boolean)
+    : [];
+  const failedF = Array.isArray(result.failed_figures)
+    ? result.failed_figures.filter(Boolean)
+    : [];
+  const warns = Array.isArray(result.warnings)
+    ? result.warnings.filter((w) => typeof w === "string" && w.trim())
+    : [];
+  if (!failedC.length && !failedF.length && !warns.length) {
+    // Infer from media_status if present
+    const media = result.media_status;
+    if (media && typeof media === "object") {
+      for (const [id, st] of Object.entries(media)) {
+        const ok =
+          st && typeof st === "object" && "ok" in st
+            ? (st as { ok?: boolean }).ok
+            : undefined;
+        if (ok === false) {
+          if (id.startsWith("cht_")) failedC.push(id);
+          else failedF.push(id);
+        }
+      }
+    }
+  }
+  if (!failedC.length && !failedF.length && !warns.length) return null;
+  const parts: string[] = [];
+  if (failedC.length) parts.push(`график: ${failedC.slice(0, 3).join(", ")}`);
+  if (failedF.length) parts.push(`фото: ${failedF.slice(0, 3).join(", ")}`);
+  if (!parts.length && warns.length) {
+    return `Часть медиа не собралась: ${warns[0]}`;
+  }
+  return `Часть медиа не собралась (${parts.join("; ")}). PDF может быть без них.`;
 }
 
 export function stageLabel(

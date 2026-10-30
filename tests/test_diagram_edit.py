@@ -111,5 +111,9 @@ def test_regenerate_replaces_diagrams_with_llm(tmp_path: Path) -> None:
     assert result["diagrams"][0]["title"] == "Согласование"
     assert "КИН" in result["diagrams"][0]["mermaid"]
     assert fake.calls >= 1
+    assert result.get("undo") and result["undo"].get("kind") == "diagram_regen"
     fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
     assert fj["diagrams"][0]["title"] == "Согласование"
+    # Pre-regen snapshot kept «Черновик»
+    draft = fj.get("diagrams_draft") or []
+    assert draft and draft[0]["title"] == "Черновик"

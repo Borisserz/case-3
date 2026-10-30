@@ -8,6 +8,7 @@ import {
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
+  softMediaFailToast,
   stageLabel,
 } from "./domain/runHelpers";
 
@@ -31,6 +32,27 @@ describe("liberRunHelpers", () => {
     );
     assert.equal(reportReadyText(undefined, " streamed "), "streamed");
     assert.equal(reportReadyText(), "Отчёт готов");
+  });
+
+  it("reportReadyText is honest when diagram mode has zero diagrams", () => {
+    assert.match(
+      reportReadyText({
+        output_mode: "diagram",
+        diagrams: [],
+      } as never),
+      /не собралась|Ещё вариант/i,
+    );
+  });
+
+  it("softMediaFailToast surfaces failed charts", () => {
+    assert.match(
+      softMediaFailToast({
+        failed_charts: ["cht_01"],
+        failed_figures: [],
+      }) || "",
+      /график.*cht_01/,
+    );
+    assert.equal(softMediaFailToast({ warnings: [] }), null);
   });
 
   it("reportTitle prefers preview.title", () => {

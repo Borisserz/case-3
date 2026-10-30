@@ -360,17 +360,36 @@ def _bg_run_pipeline(
                     "error",
                 }:
                     pack = normalize_pack_id(
-                        (meta.get("slides_theme_pack") or meta.get("deck_pack") or "atelier")
+                        (
+                            meta.get("slides_theme_pack")
+                            or meta.get("deck_pack")
+                            or "atelier"
+                        )
                     )
+                    prev_style = meta.get("slides_style")
+                    if not isinstance(prev_style, dict):
+                        prev_style = {}
+                    structure_id = (
+                        prev_style.get("structure_id")
+                        if prev_style.get("structure_id") is not None
+                        else meta.get("slides_structure_id")
+                    )
+                    style_settings = prev_style.get("style_settings")
+                    if style_settings is not None and not isinstance(
+                        style_settings, dict
+                    ):
+                        style_settings = None
                     meta["slides_style"] = {
                         "theme_pack": pack,
-                        "structure_id": meta.get("slides_structure_id"),
-                        "style_settings": None,
+                        "structure_id": structure_id,
+                        "style_settings": style_settings,
                     }
                     meta["slides_theme_pack"] = pack
+                    meta["slides_structure_id"] = structure_id
                     meta["slides_status"] = "running"
                     meta["slides_stage"] = "starting"
                     meta["slides_error"] = None
+                    meta["slides_kick_source"] = "api_auto"
                     write_meta(
                         out,
                         meta,
@@ -380,7 +399,12 @@ def _bg_run_pipeline(
                     _EV.bind_out(run_id, out)
                     _EV.publish_stage(run_id, "starting", scope="slides")
                     _kick_slides_thread(run_id)
-                    log.info("auto-kicked slides for presentation run_id=%s", run_id)
+                    log.info(
+                        "auto-kicked slides run_id=%s pack=%s structure=%s",
+                        run_id,
+                        pack,
+                        structure_id,
+                    )
             except Exception:  # noqa: BLE001
                 log.exception("auto-kick slides failed run_id=%s", run_id)
     except PipelineError:
@@ -428,6 +452,8 @@ async def api_run(
     photo_mode: str = Form("document"),
     output_mode: str = Form("auto"),
     deck_pack: str = Form(""),
+    deck_structure_id: str = Form(""),
+    deck_style_json: str = Form(""),
     photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
 ) -> JSONResponse:
@@ -578,7 +604,29 @@ async def api_run(
         _release_pipeline_slot("pending")
         raise
 
-    pack0 = (deck_pack or "").strip()[:40] or "atelier"
+    from case3.deck_structure import normalize_structure_id
+    from case3.deck_theme import normalize_pack_id
+
+    pack0 = normalize_pack_id((deck_pack or "").strip()[:40] or "atelier")
+    structure0 = normalize_structure_id((deck_structure_id or "").strip() or None)
+    style_settings0: dict[str, Any] | None = None
+    raw_style = (deck_style_json or "").strip()
+    if raw_style:
+        try:
+            parsed_style = json.loads(raw_style)
+            if isinstance(parsed_style, dict):
+                style_settings0 = {
+                    str(k): str(v)
+                    for k, v in parsed_style.items()
+                    if isinstance(k, str) and v is not None
+                }
+        except json.JSONDecodeError:
+            style_settings0 = None
+    slides_style0 = {
+        "theme_pack": pack0,
+        "structure_id": structure0,
+        "style_settings": style_settings0,
+    }
     meta0 = {
         "run_id": run_id,
         "source": str(resolve_text_file(src_path)),
@@ -592,6 +640,8 @@ async def api_run(
         "user_figures": [f.get("id") for f in user_figures],
         "deck_pack": pack0,
         "slides_theme_pack": pack0,
+        "slides_structure_id": structure0,
+        "slides_style": slides_style0,
         "status": "running",
         "stage": "llm",
         "stage_detail": "жду модель…",

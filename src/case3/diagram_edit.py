@@ -172,6 +172,10 @@ def regenerate_diagrams_in_run(
         )
         repaired = bool(rmeta.get("diagrams_repaired"))
 
+    from case3.run_undo import capture_before_edit, undo_meta
+
+    capture_before_edit(out_dir, kind="diagram_regen", target="*")
+
     fj = _load_fj(out_dir)
     fj["diagrams_draft"] = fj.get("diagrams")
     fj["diagrams"] = diagrams
@@ -191,4 +195,5 @@ def regenerate_diagrams_in_run(
         "diagrams": diagrams,
         "diagrams_repaired": repaired,
         "diagrams_ok": len(diagrams),
+        "undo": undo_meta(out_dir),
     }

@@ -31,6 +31,7 @@ import {
   RunFailedError,
   slidesJobInFlight,
   slidesJobTerminal,
+  softMediaFailToast,
   stageLabel,
   uid,
 } from "../domain/runHelpers";
@@ -311,6 +312,11 @@ async () => {
   );
   fd.append("output_mode", outMode);
   fd.append("deck_pack", deckStyle.themePack || "atelier");
+  const deckPayload = deckStyleToApiPayload(deckStyle);
+  if (deckPayload.structure_id) {
+    fd.append("deck_structure_id", deckPayload.structure_id);
+  }
+  fd.append("deck_style_json", JSON.stringify(deckPayload.style_settings || {}));
   fd.append(
     "formats",
     outMode === "diagram" || outMode === "presentation" ? "none" : "both",
@@ -917,12 +923,19 @@ async () => {
         openReportArtifact(pendingId, result, "presentation");
       } else if (result.output_mode === "diagram" && result.diagrams?.[0]) {
         openDiagramArtifact(pendingId, result, result.diagrams[0].id);
+      } else if (result.output_mode === "diagram") {
+        openReportArtifact(pendingId, result, "diagram");
       } else if (
         result.output_mode === "report" ||
         result.output_mode === "auto" ||
         !result.output_mode
       ) {
         openReportArtifact(pendingId, result);
+      }
+      const mediaToast = softMediaFailToast(result);
+      if (mediaToast) {
+        setToast(mediaToast);
+        window.setTimeout(() => setToast(null), 7200);
       }
     }
   } catch (err) {
