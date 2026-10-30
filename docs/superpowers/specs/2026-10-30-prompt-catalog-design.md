@@ -12,7 +12,8 @@
   - `continuation_tex.md` ← `build_continuation_prompt`
   - `summary_system.md` ← `SUMMARY_SYSTEM`
 - Existing md (`system_tex`, `system_slides`, themes, diagrams, gold) stay; loaders may call `prompts.load`.
-- **Out of scope:** split `system_tex.md` (B); Prompt Studio UI (C); `image_prompt.py` ban/style dicts (code policy); chat memory.
+- **Follow-on shipped same day:** split `system_tex` → `parts/tex/`; `CASE3_DUMP_PROMPTS`; scaffold smoke.  
+- **Still out:** Prompt Studio UI (C); `image_prompt.py` ban/style dicts (code policy); chat memory.
 
 ## Vars convention
 

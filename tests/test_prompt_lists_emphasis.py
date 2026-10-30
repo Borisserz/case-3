@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-PROMPT = Path(__file__).resolve().parents[1] / "prompt" / "system_tex.md"
+from case3.prompts import load
 
 
 def test_system_tex_lists_and_emphasis_guidance() -> None:
-    text = PROMPT.read_text(encoding="utf-8")
+    text = load(
+        "system_tex",
+        MAX_IMAGES=0,
+        MAX_CHARTS=0,
+        MAX_DIAGRAMS=0,
+        PALETTE_TABLE="",
+    )
     assert r"\begin{itemize}" in text
     assert r"\begin{enumerate}" in text
     assert r"\textbf{" in text or r"\textbf{…}" in text

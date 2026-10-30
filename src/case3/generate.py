@@ -654,6 +654,8 @@ def generate_document(
     else:
         max_diagrams = max(0, min(int(max_diagrams), 3))
 
+    from case3.prompts import dump_prompts
+
     gold_paths = select_gold(gold_dir, intent_text, max_items=3, max_images=max_images)
     system = load_system_prompt(
         max_images=max_images, max_charts=max_charts, max_diagrams=max_diagrams
@@ -676,6 +678,7 @@ def generate_document(
     )
 
     out_tex.parent.mkdir(parents=True, exist_ok=True)
+    dump_prompts(out_tex.parent, system=system, user=user)
 
     if dry_run:
         stub = Path(__file__).resolve().parent / "templates" / "article_skeleton.tex"
@@ -707,13 +710,17 @@ def generate_document(
             len(raw or ""),
             finish,
         )
+        cont_user = build_continuation_prompt(
+            partial=raw or "",
+            source=source_text,
+            max_charts=max_charts,
+        )
+        dump_prompts(
+            out_tex.parent, system=system, user=user, continuation=cont_user
+        )
         cont = llm.complete(
             system=system,
-            user_text=build_continuation_prompt(
-                partial=raw or "",
-                source=source_text,
-                max_charts=max_charts,
-            ),
+            user_text=cont_user,
             cancel_check=cancel_check,
         )
         raw = merge_continuation(raw or "", cont or "")

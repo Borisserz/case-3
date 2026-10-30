@@ -35,4 +35,4 @@ LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit resty
 - Edit rebuilds full PDF/DOCX by default
 
 ## See
-ADR-0002 · `prompt/system_tex.md` · tests `test_palette_hue_spread`, `test_harden_stack_gaps`, `test_harden_horizontal_bar`
+ADR-0002 · `prompt/parts/tex/` (system_tex) · tests `test_palette_hue_spread`, `test_harden_stack_gaps`, `test_harden_horizontal_bar`

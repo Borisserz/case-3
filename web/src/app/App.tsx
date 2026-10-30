@@ -31,23 +31,22 @@ import {
   formatBytes,
   imageChipFromHealth,
   paradeHintFromHealth,
-  reportReadyText,
-  reportTitle,
   stageLabel,
-  uid,
 } from "../domain/runHelpers";
 import type {
   Health,
   Msg,
   PaletteInfo,
-  RunResult,
   SourceDraft,
 } from "../domain/liberTypes";
 import { useArtifactHost } from "./useArtifactHost";
 import { useDeskBootstrap } from "./useDeskBootstrap";
+import { useChatChrome } from "./useChatChrome";
+import { useReportSession } from "./useReportSession";
 import { useSourceIngest } from "./useSourceIngest";
 import { useStopGeneration } from "./useStopGeneration";
 import { useLiberToast } from "./useLiberToast";
+import { LiberToastBar } from "./LiberToastBar";
 import { useReportHistory } from "./useReportHistory";
 import { DeckStyleSheet } from "../DeckStyleSheet";
 import {
@@ -190,69 +189,16 @@ export default function App() {
     setDeckPacks,
   });
 
-  useEffect(() => {
-    document.title = chatTitle ? `${chatTitle} · Liber` : "Liber";
-  }, [chatTitle]);
-
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-      stickBottom.current = gap < 96;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    const jumpBottom = (smooth: boolean) => {
-      const el = messagesRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      bottomRef.current?.scrollIntoView({
-        behavior: smooth ? "smooth" : "auto",
-        block: "end",
-      });
-    };
-    // Dev previews: land on the card (retry after PDF thumb layout).
-    if (/preview=(artifact|deck)/.test(window.location.search)) {
-      stickBottom.current = true;
-      jumpBottom(false);
-      const t1 = window.setTimeout(() => jumpBottom(false), 120);
-      const t2 = window.setTimeout(() => jumpBottom(false), 480);
-      return () => {
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
-      };
-    }
-    // Don't yank the chat while the user is reading earlier messages.
-    if (!stickBottom.current) return;
-    jumpBottom(true);
-  }, [msgs]);
-
-  useEffect(() => {
-    const el = chatRef.current;
-    if (!el) return;
-    el.style.height = "0px";
-    // Standard chat composer: ~1–4 lines, then internal scroll (not a tall slab).
-    const next = Math.min(Math.max(el.scrollHeight, 44), 112);
-    el.style.height = `${next}px`;
-  }, [chat]);
-
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("liber-last-report");
-      if (!raw) {
-        setHasStoredReport(false);
-        return;
-      }
-      const result = JSON.parse(raw) as RunResult;
-      setHasStoredReport(Boolean(result?.preview?.blocks?.length));
-    } catch {
-      setHasStoredReport(false);
-    }
-  }, [msgs]);
-
+  useChatChrome({
+    chatTitle,
+    msgs,
+    chat,
+    messagesRef,
+    bottomRef,
+    chatRef,
+    stickBottom,
+    setHasStoredReport,
+  });
 
   useLiberDevPreviews({
     setMsgs,
@@ -298,42 +244,19 @@ export default function App() {
   });
 
 
-  function restoreLastReport() {
-    try {
-      const raw = sessionStorage.getItem("liber-last-report");
-      if (!raw) return;
-      const result = JSON.parse(raw) as RunResult;
-      if (!result?.preview?.blocks?.length) return;
-      const id = uid();
-      setChatTitle(reportTitle(result));
-      setMsgs([
-        {
-          id,
-          role: "bot",
-          text: reportReadyText(result),
-          result,
-        },
-      ]);
-      // Julius: card in chat; rail only on «Открыть»
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function startNewReport() {
-    setMsgs([]);
-    setChatTitle(null);
-    setChat("");
-    setFile(null);
-    setSourceDraft(null);
-    setAttachPhotos([]);
-    setRailExiting(false);
-    setActiveArtifact(null);
-    setPlaqueDismissed(false);
-    setEditError(null);
-    chatRef.current?.focus();
-  }
-
+  const { restoreLastReport, startNewReport } = useReportSession({
+    setMsgs,
+    setChatTitle,
+    setChat,
+    setFile,
+    setSourceDraft,
+    setAttachPhotos,
+    setRailExiting,
+    setActiveArtifact,
+    setPlaqueDismissed,
+    setEditError,
+    chatRef,
+  });
 
   const resumeFailedRun = useResumeFailedRun({
     busy,
@@ -511,20 +434,11 @@ export default function App() {
       }}
       onDrop={onDrop}
     >
-      {toast && (
-        <div className="liber-toast" role="status" aria-live="polite">
-          <span>{toast}</span>
-          {undoOffer ? (
-            <button
-              type="button"
-              className="liber-toast-undo"
-              onClick={() => void undoLastEdit()}
-            >
-              Отменить
-            </button>
-          ) : null}
-        </div>
-      )}
+      <LiberToastBar
+        toast={toast}
+        undoOffer={undoOffer}
+        onUndo={() => void undoLastEdit()}
+      />
 
       <div className="app-shell">
         <Sidebar

@@ -12,6 +12,6 @@
 
 - каталог/эвристики типов из `chart_playbook.yaml` (line / horizontal_bar / donut / …);
 - слот `%CASE3_CHART:…%` в `chart_slot.tex`;
-- HTML-рецепты Chart.js — в `prompt/system_tex.md`.
+- HTML-рецепты Chart.js — в `prompt/parts/tex/` (composed `system_tex`).
 
 Бюджет графиков везде только через env **`CASE3_MAX_CHARTS`**.
