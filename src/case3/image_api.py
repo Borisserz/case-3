@@ -68,13 +68,16 @@ class ImageApiConfig:
 
     @classmethod
     def from_env(cls) -> ImageApiConfig:
-        max_images = int(
-            _safe_number(
-                _env("IMAGE_MAX_IMAGES", "KANDINSKY_MAX_IMAGES", default="0"),
-                0,
-                int,
-            )
-        )
+        base_url = (_env("IMAGE_API_BASE_URL", "KANDINSKY_API_BASE_URL") or "").strip()
+        # Win desk often sets IMAGE_API_BASE_URL but forgets IMAGE_MAX_IMAGES.
+        # Old default "0" → Liber intent «без фото» and /generate never called.
+        # If URL is configured and max unset → default 2 (matches .env.example).
+        max_raw = _env("IMAGE_MAX_IMAGES", "KANDINSKY_MAX_IMAGES")
+        if max_raw is None:
+            max_default = 2 if base_url else 0
+        else:
+            max_default = int(_safe_number(max_raw, 0, int))
+        max_images = max(0, max_default)
         allow_url = (_env("IMAGE_ALLOW_URL_DOWNLOAD", "KANDINSKY_ALLOW_URL_DOWNLOAD", default="0") or "0").lower() in {
             "1",
             "true",
@@ -91,9 +94,9 @@ class ImageApiConfig:
         w = int(_safe_number(_env("IMAGE_WIDTH", default=str(w)), w, int))
         h = int(_safe_number(_env("IMAGE_HEIGHT", default=str(h)), h, int))
         return cls(
-            base_url=_env("IMAGE_API_BASE_URL", "KANDINSKY_API_BASE_URL") or "",
+            base_url=base_url,
             timeout_s=_safe_number(_env("IMAGE_TIMEOUT_S", "KANDINSKY_TIMEOUT_S", default="180"), 180.0, float),
-            max_images=max(0, max_images),
+            max_images=max_images,
             width=max(64, min(w, 2048)),
             height=max(64, min(h, 2048)),
             steps=int(_safe_number(_env("IMAGE_STEPS", default="4"), 4, int)),
