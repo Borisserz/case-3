@@ -57,7 +57,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Schema tab: premium hero (type RU · Liber·PNG + serif title); PNG primary; zoom ± / % / short hint; PNG via viewBox + slug(title); fullscreen has own SVG ref
 - Mode **Схема**: after llm, pipeline stage `diagram_repair` (2nd LLM) enriches Mermaid from Source; soft-fail keeps draft; meta `diagrams_repaired` / `diagrams_draft` in figures.json — see `docs/superpowers/specs/2026-10-23-liber-diagram-repair-premium-design.md`
 - Diagram colors: **model-owned** Mermaid `:::role` + `classDef` (start/process/decision/ok/warn/data, Liber hex by Settings palette); sanitize strips `click` + purple neon → sage (`diagrams.sanitize_mermaid`)
-- Schema pane: legend · Copy Mermaid · **Изменить** → visual React Flow editor (flowchart IR; Mermaid textarea fallback) · «Ещё вариант» regenerate · `POST …/diagrams/{id}/edit` — specs `diagram-edit-legend` + `diagram-visual-editor`
+- Schema pane: legend · **Ещё вариант** (`POST …/diagrams/regenerate` + undo) · **Изменить** → visual React Flow editor (flowchart IR; Mermaid textarea fallback) · `POST …/diagrams/{id}/edit` — specs `diagram-edit-legend` + `diagram-visual-editor`. Empty mode keeps tab + CTA.
 
 ## Gotchas
 - C8: run error bubble may include `график …` / `TeX: …` from status `failed_charts` + `latex_log_tail`

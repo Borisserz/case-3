@@ -305,6 +305,8 @@ def main() -> int:
             "max_diagrams": "0",
             "chart_palette": "atelier",
             "deck_pack": "atelier",
+            "deck_structure_id": "investor",
+            "deck_style_json": '{"primary":"#004D47","accent":"#EE7733"}',
             "doc_title": "Liber Atelier — пилот B2B Q4",
         },
         check_presentation,

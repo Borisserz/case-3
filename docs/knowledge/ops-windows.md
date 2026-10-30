@@ -21,6 +21,8 @@ cd web && npm install
 
 Restart api + web. If charts blank: `python -m playwright install chromium`.
 
+`scripts\*.cmd` are CRLF. API refuses to start without `python-pptx` (`scripts\setup.cmd`). Health must show `vision_configured` + `docker_ok` + `playwright_ok` before Liber runs.
+
 ## Common fixes
 
 | Symptom | Fix |

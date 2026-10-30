@@ -35,7 +35,8 @@ Accepted
 - ADR-0001 print truth unchanged for charts/photos.
 - **2026-10-23:** в `output_mode=diagram` после llm всегда `diagram_repair` (2-й LLM, soft-fail) — см. spec repair+premium.
 - **2026-10-23 (annotated flow):** числа из Source на labels узлов/рёбер (`Заявка<br/>820`, `|62%|`); Liber chips «Числа на схеме»; prompts short labels (без SDR/SE в тексте узла). Spec: `2026-10-23-annotated-flow-design.md`.
-- **2026-10-23 (UX):** legend highlight (prefixed Mermaid ids), PNG via data-URI, fullscreen scroll top, UI без кнопки «Ещё вариант» (API regenerate остаётся).
+- **2026-10-23 (UX):** legend highlight (prefixed Mermaid ids), PNG via data-URI, fullscreen scroll top.
+- **2026-10-30 (UX):** Liber «Ещё вариант» → `POST …/diagrams/regenerate` + undo `diagram_regen`; empty diagram mode — honest chat + empty-pane CTA.
 
 ## See
 Spec: `docs/superpowers/specs/2026-10-21-liber-semantic-diagrams-design.md`  
