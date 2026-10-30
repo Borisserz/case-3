@@ -105,3 +105,37 @@ def test_try_replace_soft_fail_missing_series(tmp_path: Path) -> None:
     fj.write_text(json.dumps({"charts": [{"id": "cht_01", "type": "kpi"}]}), encoding="utf-8")
     ok = try_replace_docx_native_charts(docx, figures_path=fj)
     assert ok == []  # nothing replaced, no raise
+
+
+def test_build_chart_xml_uses_memory_not_temp_pptx() -> None:
+    """Disk-full desks: chart XML via BytesIO — no throwaway .pptx on disk."""
+    from case3 import docx_charts as dc
+
+    # Guard: module must not import tempfile for chart packaging.
+    assert not hasattr(dc, "tempfile")
+    series = {
+        "type": "bar",
+        "categories": ["A", "B"],
+        "series": [{"name": "S", "values": [1.0, 2.0]}],
+    }
+    xml = dc._build_chart_package(series, series_hexes=["#2E4208", "#4F6B14"])
+    assert b"numCache" in xml or b"strCache" in xml
+    assert b"externalData" not in xml
+    src = Path(dc.__file__).read_text(encoding="utf-8")
+    assert "TemporaryDirectory" not in src
+    assert "BytesIO" in src
+
+
+def test_prune_replaced_chart_pngs_frees_docx_media(tmp_path: Path) -> None:
+    from case3.docx_charts import prune_replaced_chart_pngs
+
+    media = tmp_path / "docx_media" / "figures"
+    media.mkdir(parents=True)
+    (media / "cht_01.png").write_bytes(b"png1")
+    (media / "cht_02.png").write_bytes(b"png2")
+    (media / "fig_01.png").write_bytes(b"fig")
+    n = prune_replaced_chart_pngs(tmp_path / "docx_media", ["cht_01", "cht_02"])
+    assert n == 2
+    assert not (media / "cht_01.png").exists()
+    assert not (media / "cht_02.png").exists()
+    assert (media / "fig_01.png").is_file()

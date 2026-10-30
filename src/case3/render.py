@@ -332,17 +332,37 @@ def render_tex(
                         )
                         shutil.copy2(docx_backup, docx_dst)
                         native_ids = []
+                    # Stamp meta so Liber/status can show native vs PNG honestly.
+                    if meta_p.is_file() and native_ids:
+                        try:
+                            meta = _json.loads(meta_p.read_text(encoding="utf-8"))
+                            if isinstance(meta, dict):
+                                meta["docx_native_charts"] = list(native_ids)
+                                meta_p.write_text(
+                                    _json.dumps(meta, ensure_ascii=False, indent=2),
+                                    encoding="utf-8",
+                                )
+                        except (OSError, _json.JSONDecodeError, TypeError):
+                            pass
                 except Exception as exc:  # noqa: BLE001 — never break DOCX
                     log.warning("docx native charts hook failed: %s", exc)
                     shutil.copy2(docx_backup, docx_dst)
                     native_ids = []
             results["docx"] = docx_dst
             media_src = work / media_dir
+            if native_ids and media_src.is_dir():
+                from case3.docx_charts import prune_replaced_chart_pngs
+
+                prune_replaced_chart_pngs(media_src, native_ids)
             if media_src.is_dir() and any(media_src.rglob("*")):
                 media_dst = out_dir / media_dir
                 if media_dst.exists():
                     shutil.rmtree(media_dst)
                 shutil.copytree(media_src, media_dst)
+                if native_ids:
+                    from case3.docx_charts import prune_replaced_chart_pngs
+
+                    prune_replaced_chart_pngs(media_dst, native_ids)
             log.info(
                 "wrote %s%s%s%s%s",
                 docx_dst,

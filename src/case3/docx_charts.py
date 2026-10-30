@@ -7,8 +7,8 @@ from case3.color_util import hex_to_rgb as _hex_to_rgb_tuple
 import json
 import logging
 import re
-import tempfile
 import zipfile
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +104,11 @@ def _build_chart_package(
     *,
     series_hexes: list[str] | None,
 ) -> bytes:
-    """Return Word-safe chart1.xml bytes (caches only, no xlsx embed)."""
+    """Return Word-safe chart1.xml bytes (caches only, no xlsx embed).
+
+    Builds via python-pptx in-memory (BytesIO) — no throwaway .pptx on disk,
+    so a full Windows desk does not fail mid-replace and leave PNG charts.
+    """
     from pptx import Presentation
     from pptx.util import Inches
 
@@ -124,12 +128,32 @@ def _build_chart_package(
     if not ok:
         raise RuntimeError("add_native_chart failed")
 
-    with tempfile.TemporaryDirectory() as td:
-        pptx_path = Path(td) / "c.pptx"
-        prs.save(str(pptx_path))
-        with zipfile.ZipFile(pptx_path) as zf:
-            chart_xml = zf.read("ppt/charts/chart1.xml")
+    buf = BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    with zipfile.ZipFile(buf) as zf:
+        chart_xml = zf.read("ppt/charts/chart1.xml")
     return _chart_xml_word_safe(chart_xml)
+
+
+def prune_replaced_chart_pngs(media_root: Path | str, chart_ids: list[str]) -> int:
+    """Delete replaced cht_*.png under docx_media (and nested figures/)."""
+    root = Path(media_root)
+    if not root.is_dir() or not chart_ids:
+        return 0
+    removed = 0
+    for cid in chart_ids:
+        stem = str(cid or "").strip()
+        if not stem.startswith("cht_"):
+            continue
+        for p in root.rglob(f"{stem}.png"):
+            try:
+                p.unlink()
+                removed += 1
+                log.info("pruned replaced chart PNG %s", p)
+            except OSError as exc:
+                log.warning("could not prune %s: %s", p, exc)
+    return removed
 
 
 def _next_rid(rels_xml: str) -> int:
