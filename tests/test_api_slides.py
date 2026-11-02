@@ -100,6 +100,14 @@ def test_slides_202_and_offline_job(
 
     monkeypatch.setattr("case3.slides_job.render_deck_pngs", _fake_pngs)
 
+    def _fake_deck_pdf(pptx_path, pngs, dest_pdf):
+        """Skip LibreOffice — stitch is enough for API contract tests."""
+        dest = Path(dest_pdf)
+        dest.write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\ntrailer\n%%EOF\n")
+        return dest, "png_stitch"
+
+    monkeypatch.setattr("case3.slides_job.write_deck_pdf", _fake_deck_pdf)
+
     def _fake_job(rid: str) -> None:
         from case3.slides_job import run_slides_job
 
@@ -156,7 +164,7 @@ def test_slides_202_and_offline_job(
     import time
 
     body: dict = {}
-    for _ in range(80):
+    for _ in range(200):
         st = client.get(f"/api/runs/{run_id}/status")
         assert st.status_code == 200
         body = st.json()

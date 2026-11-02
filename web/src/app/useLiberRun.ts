@@ -49,14 +49,7 @@ import type {
 import type { DeckStyle } from "../deckStyle";
 import { deckStyleToApiPayload } from "../deckStyle";
 import type { ActiveArtifact, ArtifactTab } from "../ArtifactRail";
-
-/** Fixed run defaults — chart type/style/title come from model + ChartEditSheet. */
-const CHART_AUTO = true;
-const CHART_TYPES: string[] = [];
-const CHART_HINTS = "";
-const CHART_PALETTE = "atelier";
-const CHART_STYLE = "";
-const DOC_TITLE = "";
+import { buildRunFormData } from "./buildRunFormData";
 
 /** Grouped deps so App wiring stays scannable (composer / desk / runRefs). */
 export type LiberSendDeps = {
@@ -277,66 +270,21 @@ async () => {
     );
   }
 
-  const fd = new FormData();
-  // Photo-edit UI parked; Liber desk always posts document runs.
-  // Standalone img2img remains POST /api/photo/edit.
-  fd.append("photo_mode", "document");
-  for (const p of photosSnapshot) fd.append("photos", p);
-  if (file) {
-    fd.append("source", file);
-    fd.append("intent", intentText);
-  } else if (draftSnap?.text) {
-    fd.append("source_text", draftSnap.text);
-    fd.append("intent", intentText);
-  } else {
-    // Chat-only: same text is Source + Intent
-    fd.append("source_text", chatTrim);
-    fd.append("intent", intentText);
-  }
-  fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
-  fd.append("max_diagrams", String(maxDiagrams));
-  fd.append(
-    "max_images",
-    String(
-      forbidImages && !photosSnapshot.length
-        ? 0
-        : Math.max(maxImages, photosSnapshot.length),
-    ),
-  );
-  fd.append("chart_types", CHART_AUTO ? "" : CHART_TYPES.join(","));
-  fd.append("chart_hints", CHART_HINTS.trim());
-  fd.append("chart_auto", String(CHART_AUTO));
-  fd.append("chart_palette", CHART_PALETTE);
-  fd.append("chart_style", CHART_STYLE.trim());
-  fd.append("doc_title", DOC_TITLE.trim().slice(0, 200));
-  fd.append("forbid_charts", String(forbidCharts));
-  fd.append(
-    "forbid_images",
-    String(forbidImages && photosSnapshot.length === 0),
-  );
-  fd.append("output_mode", outMode);
-  fd.append("deck_pack", deckStyle.themePack || "atelier");
-  const deckPayload = deckStyleToApiPayload(deckStyle);
-  if (deckPayload.structure_id) {
-    fd.append("deck_structure_id", deckPayload.structure_id);
-  }
-  fd.append("deck_style_json", JSON.stringify(deckPayload.style_settings || {}));
-  fd.append(
-    "formats",
-    outMode === "diagram" || outMode === "presentation" ? "none" : "both",
-  );
-  fd.append("dry_run", String(dryRun));
-  if (outMode === "diagram") {
-    fd.set("max_charts", "0");
-    fd.set("max_images", "0");
-    fd.set("forbid_charts", "true");
-    fd.set("forbid_images", "true");
-    fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
-  }
-  if (outMode === "presentation") {
-    // Liber Mermaid UI schemas off — deck only (PPTX + PDF twin).
-    fd.set("max_diagrams", "0");
-  }
+  const fd = buildRunFormData({
+    file,
+    draftSnap,
+    chatTrim,
+    intentText,
+    photosSnapshot,
+    forbidCharts,
+    forbidImages,
+    maxCharts,
+    maxImages,
+    maxDiagrams,
+    dryRun,
+    workMode,
+    deckStyle,
+  });
 
   try {
     const res = await fetch("/api/run", { method: "POST", body: fd });

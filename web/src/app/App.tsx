@@ -2,7 +2,6 @@
 
 /* premium-home-bust */
 import {
-  lazy,
   Suspense,
   useEffect,
   useMemo,
@@ -13,14 +12,11 @@ import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
 import { ChatComposer } from "../ChatComposer";
 import { ChatMessages } from "../ChatMessages";
+import { ChartsQa } from "../lazyChartsQa";
 import { useLiberEdits } from "./useLiberEdits";
 import { useMakePresentation } from "./useMakePresentation";
 import { useResumeFailedRun } from "./useResumeFailedRun";
 import { useLiberRun } from "./useLiberRun";
-
-const ChartsQa = lazy(() =>
-  import("../ChartsQa").then((m) => ({ default: m.ChartsQa })),
-);
 import {
   FALLBACK_PALETTES,
   FALLBACK_TYPES,
