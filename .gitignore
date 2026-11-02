@@ -12,11 +12,18 @@ build/
 .local-wrangler/
 .code-review-graph/
 
-# Agent local scratch (knowledge under .agents/knowledge is force-added when needed)
-.agents/skills/
+# Agent / memory — home-only; do not sync to work desk
+AGENTS.md
+CLAUDE.md
+.agents/
+.cursor/
+docs/
 
 # Scratch notes
 notes.txt
+.cursorignore
+_qa/
+.cursor/*.png
 
 # Run artifacts (keep directory markers)
 runs/work/
