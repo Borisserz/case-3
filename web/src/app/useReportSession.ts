@@ -18,6 +18,7 @@ type Deps = {
   setSourceDraft: Dispatch<SetStateAction<SourceDraft | null>>;
   setAttachPhotos: Dispatch<SetStateAction<File[]>>;
   setRailExiting: Dispatch<SetStateAction<boolean>>;
+  setRailCollapsed: Dispatch<SetStateAction<boolean>>;
   setActiveArtifact: Dispatch<SetStateAction<ActiveArtifact | null>>;
   setPlaqueDismissed: Dispatch<SetStateAction<boolean>>;
   setEditError: Dispatch<SetStateAction<EditError>>;
@@ -32,6 +33,7 @@ export function useReportSession({
   setSourceDraft,
   setAttachPhotos,
   setRailExiting,
+  setRailCollapsed,
   setActiveArtifact,
   setPlaqueDismissed,
   setEditError,
@@ -66,6 +68,7 @@ export function useReportSession({
     setSourceDraft(null);
     setAttachPhotos([]);
     setRailExiting(false);
+    setRailCollapsed(false);
     setActiveArtifact(null);
     setPlaqueDismissed(false);
     setEditError(null);

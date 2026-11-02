@@ -28,6 +28,8 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   const [narrowRail, setNarrowRail] = useState(false);
   const [railWidthPct, setRailWidthPct] = useState(() => loadRailWidth());
   const [railExiting, setRailExiting] = useState(false);
+  /** After close animation: thin right stub so user can reopen (like left sidebar). */
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const lastArtifactRef = useRef<ActiveArtifact | null>(null);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
         else if (mode === "report" && preferPreview) nextTab = "preview";
       }
       setRailExiting(false);
+      setRailCollapsed(false);
       setActiveArtifact({
         kind: "report",
         msgId,
@@ -72,6 +75,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   const openDiagramArtifact = useCallback(
     (msgId: string, result: RunResult, diagramId: string) => {
       setRailExiting(false);
+      setRailCollapsed(false);
       setActiveArtifact({
         kind: "report",
         msgId,
@@ -106,6 +110,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
         activeRunIdRef.current ||
         "";
       setRailExiting(false);
+      setRailCollapsed(false);
       setActiveArtifact({
         kind: "media",
         msgId,
@@ -122,6 +127,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   const openSourceArtifact = useCallback(
     (draft: Pick<SourceDraft, "title" | "text"> & { fileName?: string }) => {
       setRailExiting(false);
+      setRailCollapsed(false);
       setActiveArtifact({
         kind: "source",
         tab: "source",
@@ -135,6 +141,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
 
   const openIntentArtifact = useCallback((text: string) => {
     setRailExiting(false);
+    setRailCollapsed(false);
     setActiveArtifact({
       kind: "intent",
       tab: "source",
@@ -152,6 +159,19 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   const finishArtifactClose = useCallback(() => {
     setRailExiting(false);
     setActiveArtifact(null);
+    // Keep a reopen stub when we still have something to show.
+    setRailCollapsed(Boolean(lastArtifactRef.current));
+  }, []);
+
+  const reopenRail = useCallback(() => {
+    const last = lastArtifactRef.current;
+    if (!last) {
+      setRailCollapsed(false);
+      return;
+    }
+    setRailCollapsed(false);
+    setRailExiting(false);
+    setActiveArtifact(last);
   }, []);
 
   const setArtifactTab = useCallback((tab: ArtifactTab) => {
@@ -171,7 +191,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   }, []);
 
   const railOpen = Boolean(activeArtifact);
-  const railLayout = railOpen || railExiting;
+  const railLayout = railOpen || railExiting || railCollapsed;
   const railArtifact =
     activeArtifact ?? (railExiting ? lastArtifactRef.current : null);
 
@@ -183,6 +203,8 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
     setRailWidthPct,
     railExiting,
     setRailExiting,
+    railCollapsed,
+    setRailCollapsed,
     railOpen,
     railLayout,
     railArtifact,
@@ -195,6 +217,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
     openIntentArtifact,
     closeArtifact,
     finishArtifactClose,
+    reopenRail,
     setArtifactTab,
     selectDiagram,
   };

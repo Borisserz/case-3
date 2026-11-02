@@ -13,6 +13,7 @@ import { ArtifactRail } from "../ArtifactRail";
 import { ChatComposer } from "../ChatComposer";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../lazyChartsQa";
+import { IconPanelRight } from "../icons";
 import { useLiberEdits } from "./useLiberEdits";
 import { useMakePresentation } from "./useMakePresentation";
 import { useResumeFailedRun } from "./useResumeFailedRun";
@@ -131,6 +132,8 @@ export default function App() {
     setRailWidthPct,
     railExiting,
     setRailExiting,
+    railCollapsed,
+    setRailCollapsed,
     railLayout,
     railArtifact,
     openReportArtifact,
@@ -142,6 +145,7 @@ export default function App() {
     openIntentArtifact,
     closeArtifact,
     finishArtifactClose,
+    reopenRail,
     setArtifactTab,
     selectDiagram,
   } = useArtifactHost({ msgs, activeRunIdRef });
@@ -241,6 +245,7 @@ export default function App() {
     setMsgs,
     setBusy,
     setRailExiting,
+    setRailCollapsed,
     setActiveArtifact,
     setDownloadsPulseMsgId,
     cancelRequestedRef,
@@ -257,6 +262,7 @@ export default function App() {
     setSourceDraft,
     setAttachPhotos,
     setRailExiting,
+    setRailCollapsed,
     setActiveArtifact,
     setPlaqueDismissed,
     setEditError,
@@ -318,6 +324,7 @@ export default function App() {
       setToast,
       setDeckApplyHint,
       setRailExiting,
+      setRailCollapsed,
       setActiveArtifact,
     },
     runRefs: {
@@ -764,6 +771,17 @@ export default function App() {
                 }
               />
               )}
+              {railCollapsed && !railArtifact && !narrowRail ? (
+                <button
+                  type="button"
+                  className="artifact-rail-stub"
+                  aria-label="Развернуть панель"
+                  title="Развернуть панель"
+                  onClick={reopenRail}
+                >
+                  <IconPanelRight size={16} />
+                </button>
+              ) : null}
             </div>
           </main>
         </div>

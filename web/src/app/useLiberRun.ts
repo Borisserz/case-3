@@ -83,6 +83,7 @@ export type LiberSendDeps = {
     setToast: Dispatch<SetStateAction<string | null>>;
     setDeckApplyHint: Dispatch<SetStateAction<string | null>>;
     setRailExiting: Dispatch<SetStateAction<boolean>>;
+    setRailCollapsed: Dispatch<SetStateAction<boolean>>;
     setActiveArtifact: Dispatch<SetStateAction<ActiveArtifact | null>>;
   };
   runRefs: {
@@ -136,6 +137,7 @@ export function useLiberRun(deps: LiberSendDeps) {
       setToast,
       setDeckApplyHint,
       setRailExiting,
+      setRailCollapsed,
       setActiveArtifact,
     },
     runRefs: {
@@ -224,6 +226,7 @@ async () => {
   // Presentation builds stay on the chat sheet — close rail if open.
   if (outMode === "presentation") {
     setRailExiting(false);
+    setRailCollapsed(false);
     setActiveArtifact(null);
   }
   setMsgs((m) => [
@@ -961,6 +964,7 @@ async () => {
       setToast,
       setDeckApplyHint,
       setRailExiting,
+      setRailCollapsed,
       setActiveArtifact,
       chatRef,
       cancelRequestedRef,

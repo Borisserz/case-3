@@ -24,7 +24,6 @@ import { DeckSlidesFilm } from "./DeckSlidesFilm";
 import { PresentationPane } from "./PresentationPane";
 import type { ReportPreview } from "./domain/reportPreview";
 import { ReportView } from "./ReportView";
-import { RailToc, buildToc } from "./RailToc";
 import { IconPanelRight } from "./icons";
 import { reportDownloadLinks } from "./domain/reportDownloads";
 import { modeSurfaces } from "./domain/liberModes";
@@ -233,21 +232,13 @@ export function ArtifactRail({
     needles: string[];
     token: number;
   } | null>(null);
-  const [tocActive, setTocActive] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
   const setBodyRef = useCallback((el: HTMLDivElement | null) => {
     bodyRef.current = el;
-    setBodyEl(el);
   }, []);
-
-  const toc = useMemo(
-    () => buildToc(report?.preview?.blocks),
-    [report?.preview?.blocks],
-  );
 
   const visibleTabs = useMemo(() => {
     if (isMedia) {
@@ -327,13 +318,6 @@ export function ArtifactRail({
     root.addEventListener("keydown", onTabKey);
     return () => root.removeEventListener("keydown", onTabKey);
   }, [narrow, tab]);
-
-  const jumpToc = useCallback((id: string) => {
-    setTocActive(id);
-    const el = bodyRef.current?.querySelector(`#${CSS.escape(id)}`);
-    // block:start + .report-h scroll-margin-top clears sticky TOC.
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
 
   const jumpFigureToPdf = useCallback(
     (info: {
@@ -599,16 +583,6 @@ export function ArtifactRail({
         </header>
 
         <div className="artifact-rail-body" ref={setBodyRef}>
-          {!showDiagramSurface && tab === "preview" && toc.length >= 2 ? (
-            <RailToc
-              items={toc}
-              activeId={tocActive}
-              onJump={jumpToc}
-              onActiveChange={setTocActive}
-              root={bodyEl}
-            />
-          ) : null}
-
           <AnimatePresence mode="wait">
             <motion.div
               key={

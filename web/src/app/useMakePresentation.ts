@@ -28,6 +28,7 @@ type Args = {
   setMsgs: Dispatch<SetStateAction<Msg[]>>;
   setBusy: Dispatch<SetStateAction<boolean>>;
   setRailExiting: Dispatch<SetStateAction<boolean>>;
+  setRailCollapsed: Dispatch<SetStateAction<boolean>>;
   setActiveArtifact: Dispatch<SetStateAction<ActiveArtifact | null>>;
   setDownloadsPulseMsgId: Dispatch<SetStateAction<string | null>>;
   cancelRequestedRef: MutableRefObject<boolean>;
@@ -40,6 +41,7 @@ export function useMakePresentation({
   setMsgs,
   setBusy,
   setRailExiting,
+  setRailCollapsed,
   setActiveArtifact,
   setDownloadsPulseMsgId,
   cancelRequestedRef,
@@ -52,6 +54,7 @@ async (msgId: string, result: RunResult) => {
   if (!runId) return;
   // Julius: deck builds on the main chat — never park progress in the rail.
   setRailExiting(false);
+  setRailCollapsed(false);
   setActiveArtifact(null);
   cancelRequestedRef.current = false;
   activeRunIdRef.current = runId;
@@ -234,6 +237,7 @@ async (msgId: string, result: RunResult) => {
         // Open rail with thumbs — chat cards alone looked “empty” without PNGs.
         const tab: ArtifactTab = "presentation";
         setRailExiting(false);
+        setRailCollapsed(false);
         setActiveArtifact({
           kind: "report",
           msgId,
@@ -422,6 +426,7 @@ async (msgId: string, result: RunResult) => {
       setMsgs,
       setBusy,
       setRailExiting,
+      setRailCollapsed,
       setActiveArtifact,
       setDownloadsPulseMsgId,
       cancelRequestedRef,
