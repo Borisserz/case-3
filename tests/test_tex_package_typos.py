@@ -22,7 +22,7 @@ Hi
 def test_tabularx_colspec_junk_after_brace_removed() -> None:
     tex = r"""\documentclass[a4paper,12pt]{article}
 \begin{document}
-\begin{tabularx}{\textwidth}{lXX}X r X}
+\begin{tabularx}{\textwidth}{YYY}X r X}
 \toprule
 A & B & C \\
 \midrule
@@ -32,9 +32,9 @@ A & B & C \\
 \end{document}
 """
     out = ensure_document_preamble(tex)
-    assert r"{lXX}X r X}" not in out
-    assert r"\begin{tabularx}{\textwidth}{lXX}" in out.replace(" ", "") or (
-        r"\begin{tabularx}{\textwidth}{lXX}" in out
+    assert r"{YYY}X r X}" not in out
+    assert r"\begin{tabularx}{\textwidth}{YYY}" in out.replace(" ", "") or (
+        r"\begin{tabularx}{\textwidth}{YYY}" in out
     )
 
 
@@ -54,7 +54,7 @@ A & B & C & D & E \\
     assert r"\raggedright" not in out.split(r"\begin{tabularx}", 1)[1].split(
         r"\toprule", 1
     )[0]
-    assert r"{lXXXX}" in out.replace(" ", "") or r"{lXXXX}" in out
+    assert "{YYYYY}" in out.replace(" ", "")
 
 
 def test_tabularx_closed_with_tabular_fixed() -> None:

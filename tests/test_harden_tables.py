@@ -6,6 +6,7 @@ from case3.tex_preamble import (
     ensure_document_preamble,
     ensure_font_aliases,
     harden_tabularx_colcount,
+    harden_tabularx_wrap_cols,
     harden_wide_tables,
 )
 from case3.tex_tables import harden_table_rules
@@ -22,7 +23,7 @@ A & B & C \\
 \end{table}
 """
     out = harden_wide_tables(src)
-    assert r"\begin{tabularx}{\textwidth}{lXX}" in out.replace(" ", "")
+    assert r"\begin{tabularx}{\textwidth}{YYY}" in out.replace(" ", "")
     assert r"\end{tabularx}" in out
     assert r"\begin{tabular}{l l l}" not in out
 
@@ -38,7 +39,7 @@ def test_already_p_column_unchanged() -> None:
 
 
 def test_tabularx_already_ok() -> None:
-    src = r"\begin{tabularx}{\textwidth}{lXX} a & b & c \\ \end{tabularx}"
+    src = r"\begin{tabularx}{\textwidth}{YYY} a & b & c \\ \end{tabularx}"
     assert harden_wide_tables(src) == src
 
 
@@ -54,7 +55,7 @@ def test_tabularx_with_thinspace_numbers_stays_aligned() -> None:
 \end{tabularx}
 """
     out = harden_tabularx_colcount(tex)
-    assert r"{lXXXXX}" in out.replace(" ", "")
+    assert r"{YYYYYY}" in out.replace(" ", "")
     assert r"85\,000" in out
 
 
@@ -66,7 +67,7 @@ def test_tabularx_colcount_mismatch_fixed() -> None:
         r"\bottomrule\end{tabularx}"
     )
     out = harden_tabularx_colcount(src)
-    assert r"{lXXXXX}" in out.replace(" ", "")
+    assert r"{YYYYYY}" in out.replace(" ", "")
 
 
 def test_dejavu_mono_aliased() -> None:
@@ -111,3 +112,37 @@ A & 1 \\
 """
     out = ensure_document_preamble(raw)
     assert r"\hline\hline" not in out.replace(" ", "")
+
+
+def test_tabularx_wrap_cols_all_y() -> None:
+    """lXXXX squeezes text cols — rewrite to wrapping Y columns."""
+    src = r"""
+\begin{tabularx}{\textwidth}{lXXXX}
+\toprule
+Инструмент & Лицензия & Язык / API & Типичный объём & Ограничения экспорта \\
+\midrule
+Excel & проприетарная & VBA / Office Scripts & до миллионов строк & xlsx, csv \\
+\bottomrule
+\end{tabularx}
+"""
+    out = harden_tabularx_wrap_cols(src)
+    assert "{YYYYY}" in out.replace(" ", "")
+    assert "{lXXXX}" not in out.replace(" ", "")
+
+
+def test_ensure_preamble_injects_y_columntype() -> None:
+    raw = r"""\documentclass[a4paper,12pt]{article}
+\usepackage{fontspec}
+\begin{document}
+\begin{tabularx}{\textwidth}{lXXXX}
+\toprule
+A & проприетарная & C & D & E \\
+\bottomrule
+\end{tabularx}
+\end{document}
+"""
+    out = ensure_document_preamble(raw)
+    assert r"\usepackage{array}" in out
+    assert r"\newcolumntype{Y}" in out
+    assert "{YYYYY}" in out.replace(" ", "")
+    assert "hspace{0pt}" in out

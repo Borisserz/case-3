@@ -56,7 +56,9 @@ def test_ensure_preamble_strips_colspec_junk_and_repairs_rows() -> None:
         + r"\end{document}"
     )
     out = ensure_document_preamble(tex)
-    assert r"\raggedright\arraybackslash" not in out
+    # Wrapping Y columntype in preamble is OK; junk after colspec must stay gone.
+    between = out.split(r"\begin{tabularx}", 1)[1].split(r"\toprule", 1)[0]
+    assert r"\raggedright" not in between
     assert r"p{2.4cm}" not in out.split(r"\begin{tabularx}", 1)[-1].split(r"\toprule", 1)[0]
     assert "Excel &\nПроприетарная" not in out
     assert r"Excel & Проприетарная &" in out

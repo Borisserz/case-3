@@ -30,6 +30,8 @@ export type ChartEditDraft = {
 
 type Props = {
   open: boolean;
+  /** When false, skip focus trap (multi-open edit desk). */
+  trapFocus?: boolean;
   figureId: string;
   runId?: string;
   caption?: string;
@@ -48,6 +50,7 @@ type Props = {
 
 export function ChartEditSheet({
   open,
+  trapFocus = true,
   figureId,
   runId,
   caption,
@@ -72,7 +75,7 @@ export function ChartEditSheet({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSeq = useRef(0);
   const sheetRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(sheetRef, { active: open });
+  useFocusTrap(sheetRef, { active: open && trapFocus });
 
   useEffect(() => {
     if (!open) return;

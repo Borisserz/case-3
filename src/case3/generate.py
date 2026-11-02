@@ -385,7 +385,7 @@ def _emit_tabularx(rows: list[list[str]]) -> list[str]:
     if not rows:
         return []
     ncol = max(len(r) for r in rows)
-    spec = "l" + ("X" * max(0, ncol - 1))
+    spec = "Y" * max(ncol, 1)
     out = [
         rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}",
         r"\toprule",

@@ -16,6 +16,8 @@ import type { ChartEditRequest, PaletteInfo } from "./ChartEditSheet";
 import type { ImageEditRequest } from "./ImageEditModal";
 import type { TableEditRequest } from "./TableEditSheet";
 import type { ParagraphEditRequest } from "./ParagraphEditSheet";
+import type { HeadingEditRequest } from "./HeadingEditTypes";
+import type { ListEditRequest } from "./ListEditTypes";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { DeckSlidesFilm } from "./DeckSlidesFilm";
@@ -121,6 +123,8 @@ type Props = {
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
+  onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
+  onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (
@@ -153,6 +157,8 @@ export function ArtifactRail({
   onEditImage,
   onEditTable,
   onEditParagraph,
+  onEditHeading,
+  onEditList,
   onEditCancel,
   makingPresentation = false,
   onDiagramsUpdated,
@@ -662,6 +668,8 @@ export function ArtifactRail({
                   onEditImage={onEditImage}
                   onEditTable={onEditTable}
                   onEditParagraph={onEditParagraph}
+                  onEditHeading={onEditHeading}
+                  onEditList={onEditList}
                   onEditCancel={onEditCancel}
                 />
               ) : null}

@@ -24,6 +24,8 @@ from case3.diagram_edit import (
 )
 from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+from case3.heading_edit import HeadingEditError, edit_heading_in_run
+from case3.list_edit import ListEditError, edit_list_in_run
 from case3.paragraph_edit import ParagraphEditError, edit_paragraph_in_run
 from case3.render import RenderError
 from case3.table_edit import TableEditError, edit_table_in_run
@@ -89,6 +91,20 @@ class ParagraphEditBody(BaseModel):
     text: str = Field(default="")
     formats: str = Field(default="both")
 
+
+class HeadingEditBody(BaseModel):
+    """Plain title replace → patch TeX section/subsection → rebuild."""
+
+    text: str = Field(default="")
+    formats: str = Field(default="both")
+
+
+class ListEditBody(BaseModel):
+    """Replace list items → patch TeX itemize/enumerate → rebuild."""
+
+    items: list[str] = Field(default_factory=list)
+    ordered: bool | None = Field(default=None)
+    formats: str = Field(default="both")
 
 @router.get("/api/runs/{run_id}/charts/{chart_id}")
 def get_run_chart(run_id: str, chart_id: str) -> dict[str, Any]:
@@ -416,6 +432,82 @@ async def edit_run_paragraph(
         extra={
             "paragraph_index": paragraph_index,
             "text": result.get("text"),
+        },
+    )
+
+
+
+@router.post("/api/runs/{run_id}/headings/{heading_index}/edit")
+async def edit_run_heading(
+    run_id: str, heading_index: int, body: HeadingEditBody
+) -> dict[str, Any]:
+    """Replace one preview heading and rebuild PDF/DOCX."""
+    out_dir = resolve_run_dir(run_id)
+    if heading_index < 1:
+        raise HTTPException(400, detail="heading_index must be ≥ 1")
+
+    fmt_set = formats_from_edit_body(body.formats)
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_heading_in_run,
+                out_dir,
+                heading_index,
+                text=str(body.text or ""),
+                formats=fmt_set,
+            )
+        )
+    except HeadingEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "heading_index": heading_index,
+            "text": result.get("text"),
+        },
+    )
+
+
+@router.post("/api/runs/{run_id}/lists/{list_index}/edit")
+async def edit_run_list(
+    run_id: str, list_index: int, body: ListEditBody
+) -> dict[str, Any]:
+    """Replace one preview list (list-N) and rebuild PDF/DOCX."""
+    out_dir = resolve_run_dir(run_id)
+    if list_index < 1:
+        raise HTTPException(400, detail="list_index must be ≥ 1")
+
+    fmt_set = formats_from_edit_body(body.formats)
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_list_in_run,
+                out_dir,
+                list_index,
+                items=list(body.items or []),
+                ordered=body.ordered,
+                formats=fmt_set,
+            )
+        )
+    except ListEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "list_index": list_index,
+            "items": result.get("items"),
         },
     )
 

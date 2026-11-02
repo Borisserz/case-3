@@ -520,10 +520,6 @@ export function Sidebar({
           <IconSettings size={17} />
           <span className="liber-side-label">Настройки</span>
         </button>
-        <p className="liber-sidebar-foot-label liber-side-label">
-          Atelier
-          <span>PDF · DOCX · Source</span>
-        </p>
         <span className="liber-sidebar-foot-dot" aria-hidden />
       </div>
     </aside>

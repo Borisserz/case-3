@@ -472,7 +472,7 @@
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: -0.02em;
-  color: var(--ink);
+  color: #121212;
 }
 
 .report-title.muted {
@@ -511,7 +511,7 @@
   margin: 0.55rem 0 0;
   font-family: var(--serif);
   font-weight: 650;
-  color: var(--ink);
+  color: #121212;
   letter-spacing: -0.01em;
   /* Clear sticky rail TOC when jumpToc / scrollIntoView lands on heading. */
   scroll-margin-top: 3.25rem;
@@ -578,7 +578,7 @@
 
 .report-h2 {
   font-size: 1.02rem;
-  color: color-mix(in srgb, var(--ink) 85%, var(--muted));
+  color: #121212;
 }
 
 .report-empty-warn {
@@ -687,7 +687,7 @@
 .report-table-scroll {
   overflow-x: auto;
   border-radius: 8px;
-  border: 1px solid var(--rule);
+  border: 1.5px solid #121212;
   background: color-mix(in srgb, var(--paper) 70%, var(--sheet));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
@@ -704,7 +704,7 @@
   padding: 0.48rem 0.6rem;
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid var(--rule);
+  border: 1px solid #c8c8c4;
 }
 
 .report-table th.num,
@@ -717,8 +717,10 @@
 
 .report-table thead th {
   font-weight: 650;
-  border-bottom: 1.5px solid color-mix(in srgb, var(--ink) 35%, var(--rule));
-  background: color-mix(in srgb, var(--secondary) 45%, var(--sheet));
+  border: 1px solid #a8a8a4;
+  border-bottom: 1.5px solid #121212;
+  background: var(--sheet);
+  color: #121212;
 }
 
 .report-table tbody tr:nth-child(even) td {
@@ -726,7 +728,7 @@
 }
 
 .report-table tbody tr:last-child td {
-  border-bottom: none;
+  border-bottom: 1px solid #c8c8c4;
 }
 
 .report-table-toolbar {
@@ -845,7 +847,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet));
+  background: var(--sheet);
   border-bottom: 1.5px solid color-mix(in srgb, var(--ink) 22%, var(--rule));
 }
 
@@ -905,7 +907,7 @@
 
 .table-edit-grid thead .table-edit-gutter {
   z-index: 3;
-  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet)) !important;
+  background: var(--sheet) !important;
 }
 
 .table-edit-grid tbody tr:hover .table-edit-gutter {
@@ -2291,3 +2293,69 @@
   border-color: var(--accent, #6b8f76);
 }
 
+
+
+/* Full-open Preview edit — inline prose / heading / list */
+.inline-block-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+.inline-block-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+.inline-block-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--ink, #1c1917) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper, #fff) 92%, #e8e4dc);
+  color: inherit;
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  resize: vertical;
+}
+.inline-block-input.is-heading {
+  font-size: 1.15rem;
+  font-weight: 650;
+  resize: none;
+}
+.inline-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.inline-block-save {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  background: var(--ink, #1c1917);
+  color: var(--paper, #fff);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.inline-block-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.inline-block-hint {
+  font-size: 0.75rem;
+  opacity: 0.55;
+}
+.report-h-edit {
+  flex: 1;
+  min-width: 0;
+}
+.report.is-editing-mode .report-h-toggle:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.report-list-wrap {
+  margin: 0.75rem 0 1rem;
+}

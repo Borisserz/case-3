@@ -109,3 +109,19 @@ def test_scrub_title_with_case3() -> None:
     out = scrub_project_branding(raw)
     assert "case-3" not in out
     assert r"\author{Иванов}" in out
+
+
+def test_ensure_forces_black_hyperref_links() -> None:
+    raw = r"""\documentclass[a4paper,12pt]{article}
+\usepackage{fontspec}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=cyan}
+\begin{document}
+\section{Выручка}
+Ok
+\end{document}
+"""
+    out = ensure_document_preamble(raw)
+    assert "linkcolor=black" in out
+    assert "linkcolor=blue" not in out
+    assert "urlcolor=black" in out

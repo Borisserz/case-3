@@ -10,6 +10,8 @@ import {
 import type { ChartEditRequest } from "../ChartEditSheet";
 import type { ImageEditRequest } from "../ImageEditModal";
 import type { ParagraphEditRequest } from "../ParagraphEditSheet";
+import type { HeadingEditRequest } from "../HeadingEditTypes";
+import type { ListEditRequest } from "../ListEditTypes";
 import type { TableEditRequest } from "../TableEditSheet";
 import { asDownloads } from "../domain/runHelpers";
 import type { Msg, RunResult } from "../domain/liberTypes";
@@ -318,11 +320,124 @@ export function useLiberEdits({
     }
   }
 
+
+  async function editHeading(
+    msgId: string,
+    runId: string,
+    req: HeadingEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: `heading:${req.headingIndex}`,
+        message: "Нет run_id — открой отчёт из свежего запуска",
+      });
+      return false;
+    }
+    editLock.current = true;
+    const headId = `heading:${req.headingIndex}`;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: headId });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(rid)}/headings/${req.headingIndex}/edit`,
+        { text: req.text, formats: "both" },
+        "heading edit failed",
+      );
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        "Заголовок обновлён",
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: headId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function editList(
+    msgId: string,
+    runId: string,
+    req: ListEditRequest,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: `list:${req.listIndex}`,
+        message: "Нет run_id — открой отчёт из свежего запуска",
+      });
+      return false;
+    }
+    editLock.current = true;
+    const listId = `list:${req.listIndex}`;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: listId });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(rid)}/lists/${req.listIndex}/edit`,
+        {
+          items: req.items,
+          ordered: req.ordered,
+          formats: "both",
+        },
+        "list edit failed",
+      );
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        "Список обновлён",
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: listId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
   return {
     editFigure,
     editImage,
     editTable,
     editParagraph,
+    editHeading,
+    editList,
     undoLastEdit,
   };
 }

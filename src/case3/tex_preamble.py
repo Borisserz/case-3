@@ -11,6 +11,7 @@ REQUIRED_PACKAGES = (
     "polyglossia",
     "geometry",
     "booktabs",
+    "array",  # >{…} col types for wrapping tabularx
     "tabularx",
     "longtable",
     "float",
@@ -138,7 +139,7 @@ def harden_wide_tables(tex: str) -> str:
         if not re.fullmatch(r"[lcr\s]+", (spec or "").strip()):
             return m.group(0)
         letters = re.findall(r"[lcr]", spec)
-        new_spec = letters[0] + ("X" * (len(letters) - 1))
+        new_spec = "Y" * len(letters)
         return (
             rf"\begin{{tabularx}}{{\textwidth}}{{{new_spec}}}"
             + body
@@ -242,6 +243,61 @@ def strip_invented_cites(tex: str, *, allowed_keys: set[str] | None = None) -> s
     return out
 
 
+
+_Y_COLUMNTYPE = (
+    r"\newcolumntype{Y}{>{\hspace{0pt}\raggedright\arraybackslash}X}"
+)
+
+
+def ensure_wrap_columntype(tex: str) -> str:
+    """Define wrapping tabularx column ``Y`` (ragged + hyphenation)."""
+    out = tex or ""
+    if r"\newcolumntype{Y}" in out:
+        return out
+    # Prefer right after array or tabularx package.
+    for needle in (r"\usepackage{array}", r"\usepackage{tabularx}"):
+        if needle in out:
+            return out.replace(needle, needle + "\n" + _Y_COLUMNTYPE, 1)
+    parts = _split_preamble(out)
+    if not parts:
+        return out
+    head, body = parts
+    return head.rstrip() + "\n" + _Y_COLUMNTYPE + "\n" + body
+
+
+def harden_tabularx_wrap_cols(tex: str) -> str:
+    """Rewrite plain ``l/c/r/X`` tabularx specs to wrapping ``Y`` columns.
+
+    ``{lXXXX}`` lets the first ``l`` steal width (e.g. «LibreOffice Calc»),
+    then long words in narrow ``X`` cells overflow into the next column.
+    """
+
+    def _repl(m: re.Match[str]) -> str:
+        width, spec, body = m.group(1), m.group(2), m.group(3)
+        # Already uses Y or p{…} / >{…} — leave alone.
+        if "Y" in spec or "p{" in spec or ">{" in spec:
+            return m.group(0)
+        letters = re.findall(r"[lcrX]", spec)
+        if len(letters) < 2:
+            return m.group(0)
+        # Only rewrite simple letter specs (no | @{} etc. beyond spaces).
+        if not re.fullmatch(r"[lcrX\s]+", (spec or "").strip()):
+            return m.group(0)
+        new_spec = "Y" * len(letters)
+        return (
+            rf"\begin{{tabularx}}{{{width}}}{{{new_spec}}}"
+            + body
+            + r"\end{tabularx}"
+        )
+
+    return re.sub(
+        r"\\begin\{tabularx\}\{([^}]*)\}\{([^}]*)\}([\s\S]*?)\\end\{tabularx\}",
+        _repl,
+        tex or "",
+    )
+
+
+
 def harden_tabularx_colcount(tex: str) -> str:
     """Fix ``tabularx{…}{lrrrr}`` when the header has more ``&`` than columns."""
 
@@ -275,8 +331,8 @@ def harden_tabularx_colcount(tex: str) -> str:
         letters = re.findall(r"[lcrX]", spec)
         if len(letters) == ncol_body:
             return m.group(0)
-        # rebuild: first col l, rest X (safe for A4)
-        new_spec = "l" + ("X" * (ncol_body - 1))
+        # rebuild: all wrapping Y (equal share of textwidth)
+        new_spec = "Y" * ncol_body
         return (
             rf"\begin{{tabularx}}{{\textwidth}}{{{new_spec}}}"
             + body
@@ -704,6 +760,78 @@ def order_definecolor_before_hypersetup(tex: str) -> str:
     return head_wo + body
 
 
+
+def ensure_black_hyperref_links(tex: str) -> str:
+    """Force black TOC/section links — never default hyperref blue."""
+    out = tex or ""
+    setup = (
+        r"\hypersetup{colorlinks=true,linkcolor=black,"
+        r"urlcolor=black,citecolor=black,filecolor=black}"
+    )
+
+    def _blacken(m: re.Match[str]) -> str:
+        body = m.group(1)
+        for key in ("linkcolor", "urlcolor", "citecolor", "filecolor"):
+            body = re.sub(
+                rf"{key}\s*=\s*[^,}}\s]+",
+                f"{key}=black",
+                body,
+                flags=re.I,
+            )
+        if "linkcolor=" not in body.lower():
+            body = body.rstrip(",") + ",linkcolor=black"
+        if "colorlinks" not in body.lower():
+            body = "colorlinks=true," + body
+        return r"\hypersetup{" + body + "}"
+
+    if r"\hypersetup" in out:
+        out = re.sub(r"\\hypersetup\s*\{([^}]*)\}", _blacken, out)
+    else:
+        needle = r"\usepackage{hyperref}"
+        if needle in out:
+            out = out.replace(needle, needle + "\n" + setup, 1)
+        else:
+            parts = _split_preamble(out)
+            if parts:
+                head, body = parts
+                out = head.rstrip() + "\n" + setup + "\n" + body
+    return out
+
+
+
+def tex_for_pandoc(tex: str) -> str:
+    """Simplify Liber TeX so pandoc can build DOCX tables.
+
+    Custom ``Y`` wrap columns are PDF-only; pandoc dumps them as literal text.
+    """
+    out = tex or ""
+    # Strip \newcolumntype{Y}{…} even with nested braces inside >{…}.
+    while True:
+        m_y = re.search(r"\\newcolumntype\{Y\}\{", out)
+        if not m_y:
+            break
+        i = m_y.end()
+        depth = 1
+        while i < len(out) and depth:
+            if out[i] == "{":
+                depth += 1
+            elif out[i] == "}":
+                depth -= 1
+            i += 1
+        out = out[: m_y.start()] + out[i:].lstrip("\n")
+
+    def _spec(m: re.Match[str]) -> str:
+        width, spec = m.group(1), m.group(2)
+        return rf"\begin{{tabularx}}{{{width}}}{{{spec.replace('Y', 'X')}}}"
+
+    return re.sub(
+        r"\\begin\{tabularx\}\{([^}]*)\}\{([^}]*)\}",
+        _spec,
+        out,
+    )
+
+
+
 def ensure_document_preamble(tex: str) -> str:
     """Packages + Cyrillic fonts + A4 + report style + branding scrub + tables."""
     from case3.tex_utils import _MIN_PREAMBLE
@@ -724,11 +852,14 @@ def ensure_document_preamble(tex: str) -> str:
     out = ensure_a4_layout(out)
     out = ensure_report_style(out)
     out = order_definecolor_before_hypersetup(out)
+    out = ensure_black_hyperref_links(out)
     out = fix_tabularx_colspec_junk(out)
     out = fix_tabularx_end_mismatch(out)
     out = repair_tabularx_row_breaks(out)
     out = harden_wide_tables(out)
     out = harden_tabularx_colcount(out)
+    out = ensure_wrap_columntype(out)
+    out = harden_tabularx_wrap_cols(out)
     out = maybe_landscape_wide_tables(out)
     out = strip_orphan_table_markup(out)
     out = strip_invented_cites(out, allowed_keys=set())

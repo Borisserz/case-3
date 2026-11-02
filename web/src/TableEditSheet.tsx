@@ -18,6 +18,8 @@ export type TableEditDraft = {
 
 type Props = {
   open: boolean;
+  /** When false, skip focus trap (multi-open edit desk). */
+  trapFocus?: boolean;
   tableIndex: number;
   initialCaption?: string;
   initialHeaders: string[];
@@ -68,6 +70,7 @@ function colIsNumeric(headers: string[], rows: string[][], ci: number): boolean 
 
 export function TableEditSheet({
   open,
+  trapFocus = true,
   tableIndex,
   initialCaption = "",
   initialHeaders,
@@ -85,7 +88,7 @@ export function TableEditSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLInputElement>(null);
   const uid = useId();
-  useFocusTrap(sheetRef, { active: open });
+  useFocusTrap(sheetRef, { active: open && trapFocus });
 
   useEffect(() => {
     if (!open) return;

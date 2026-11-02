@@ -26,13 +26,15 @@ import {
   type TableEditDraft,
   type TableEditRequest,
 } from "./TableEditSheet";
-import {
-  ParagraphEditSheet,
-  type ParagraphEditRequest,
-} from "./ParagraphEditSheet";
+import { type ParagraphEditRequest } from "./ParagraphEditSheet";
+import { InlineBlockEditor } from "./InlineBlockEditor";
+import type { HeadingEditRequest } from "./HeadingEditTypes";
+import type { ListEditRequest } from "./ListEditTypes";
 import { PipelineFlow } from "./PipelineFlow";
 import {
   blockEditVisible,
+  collapseSetForEditMode,
+  reportEditModeHint,
   reportEditToggleVisible,
 } from "./domain/reportEditMode";
 import {
@@ -80,6 +82,8 @@ type Props = {
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
+  onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
+  onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
 };
 
@@ -130,6 +134,8 @@ export function ReportView({
   onEditImage,
   onEditTable,
   onEditParagraph,
+  onEditHeading,
+  onEditList,
   onEditCancel,
 }: Props) {
   const blocks = preview.blocks || [];
@@ -137,17 +143,18 @@ export function ReportView({
   let tabN = 0;
   let headN = 0;
   let paraN = 0;
+  let listN = 0;
   const [lightbox, setLightbox] = useState<{
     url: string;
     caption: string;
   } | null>(null);
-  const [sheetFor, setSheetFor] = useState<string | null>(null);
-  const [imageFor, setImageFor] = useState<string | null>(null);
-  const [tableFor, setTableFor] = useState<number | null>(null);
-  const [tableDraft, setTableDraft] = useState<TableEditDraft | null>(null);
-  const [paraFor, setParaFor] = useState<number | null>(null);
-  const [draft, setDraft] = useState<ChartEditDraft | null>(null);
-  const [sheetPreviewHtml, setSheetPreviewHtml] = useState<string | null>(null);
+  const [tableDraftByN, setTableDraftByN] = useState<
+    Record<number, TableEditDraft>
+  >({});
+  const [draftById, setDraftById] = useState<Record<string, ChartEditDraft>>({});
+  const [sheetPreviewHtmlById, setSheetPreviewHtmlById] = useState<
+    Record<string, string | null>
+  >({});
   const [editMode, setEditMode] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => loadCollapsedIds(runId || ""),
@@ -158,8 +165,12 @@ export function ReportView({
     onEditImage,
     onEditTable,
     onEditParagraph,
+    onEditHeading,
+    onEditList,
   });
   const canEditPara = blockEditVisible(editMode, Boolean(onEditParagraph));
+  const canEditHeading = blockEditVisible(editMode, Boolean(onEditHeading));
+  const canEditList = blockEditVisible(editMode, Boolean(onEditList));
   const canEditTable = blockEditVisible(editMode, Boolean(onEditTable));
   const canEditFigure = blockEditVisible(editMode, Boolean(onEditFigure));
   const canEditImage = blockEditVisible(editMode, Boolean(onEditImage));
@@ -171,15 +182,20 @@ export function ReportView({
 
   const leaveEditMode = useCallback(() => {
     setEditMode(false);
-    setSheetFor(null);
-    setDraft(null);
-    setSheetPreviewHtml(null);
-    setImageFor(null);
-    setTableFor(null);
-    setTableDraft(null);
-    setParaFor(null);
+    setDraftById({});
+    setSheetPreviewHtmlById({});
+    setTableDraftByN({});
     onEditCancel?.();
   }, [onEditCancel]);
+
+  const enterEditMode = useCallback(() => {
+    const cleared = collapseSetForEditMode(true);
+    if (cleared) {
+      setCollapsed(cleared);
+      saveCollapsedIds(runId || "", cleared);
+    }
+    setEditMode(true);
+  }, [runId]);
 
   const toggleSection = useCallback(
     (headingId: string) => {
@@ -193,29 +209,6 @@ export function ReportView({
     },
     [runId],
   );
-
-  const closeSheet = useCallback(() => {
-    setSheetFor(null);
-    setDraft(null);
-    setSheetPreviewHtml(null);
-    onEditCancel?.();
-  }, [onEditCancel]);
-
-  const closeImage = useCallback(() => {
-    setImageFor(null);
-    onEditCancel?.();
-  }, [onEditCancel]);
-
-  const closeTable = useCallback(() => {
-    setTableFor(null);
-    setTableDraft(null);
-    onEditCancel?.();
-  }, [onEditCancel]);
-
-  const closePara = useCallback(() => {
-    setParaFor(null);
-    onEditCancel?.();
-  }, [onEditCancel]);
 
   const closeLb = useCallback(() => setLightbox(null), []);
 
@@ -233,9 +226,6 @@ export function ReportView({
     };
   }, [lightbox, closeLb]);
 
-  useEffect(() => {
-    if (editingFigureId) setSheetFor(editingFigureId);
-  }, [editingFigureId]);
   return (
     <article className={`report${editMode ? " is-editing-mode" : ""}`}>
       <div className="report-rail" aria-hidden />
@@ -243,9 +233,7 @@ export function ReportView({
       {showEditToggle ? (
         <div className="report-edit-bar">
           <p className="report-edit-bar-hint">
-            {editMode
-              ? "Режим правки — «Изменить» у абзацев, таблиц, графиков и фото"
-              : "Чтение · правки PDF/DOCX из того же Source"}
+            {reportEditModeHint(editMode)}
           </p>
           <button
             type="button"
@@ -253,7 +241,7 @@ export function ReportView({
             aria-pressed={editMode}
             onClick={() => {
               if (editMode) leaveEditMode();
-              else setEditMode(true);
+              else enterEditMode();
             }}
           >
             {editMode ? "Готово" : "Редактировать"}
@@ -308,15 +296,22 @@ export function ReportView({
 
           if (b.type === "heading") {
             headN += 1;
-            const headingId = `rail-h-${headN}`;
+            const headingIndex = headN;
+            const headingId = `rail-h-${headingIndex}`;
+            const headEditId = `heading:${headingIndex}`;
             // Nested under a collapsed ancestor — hide (parent heading stays).
             if (hiddenByCollapse) return null;
             const Tag = b.level >= 2 ? "h3" : "h2";
             const expanded = !collapsed.has(headingId);
+            const isEditingHead = editingFigureId === headEditId;
+            const headError =
+              isEditingHead || editErrorFigureId === headEditId
+                ? editError
+                : null;
             return (
               <div
                 key={i}
-                className={`report-h-row report-block report-h${b.level}`}
+                className={`report-h-row report-block report-h${b.level}${canEditHeading ? " is-editing-open" : ""}${isEditingHead ? " is-editing" : ""}`}
                 style={delayStyle}
               >
                 <button
@@ -327,17 +322,32 @@ export function ReportView({
                     expanded ? `Свернуть «${b.text}»` : `Развернуть «${b.text}»`
                   }
                   onClick={() => toggleSection(headingId)}
+                  disabled={editMode}
                 >
                   <span className="report-h-toggle-chevron" aria-hidden>
                     ▸
                   </span>
                 </button>
-                <Tag
-                  id={headingId}
-                  className={`report-h report-h${b.level}`}
-                >
-                  {b.text}
-                </Tag>
+                {canEditHeading ? (
+                  <div className="report-h-edit" id={headingId}>
+                    <InlineBlockEditor
+                      kind="heading"
+                      initialText={b.text}
+                      busy={isEditingHead}
+                      error={headError}
+                      onSave={(text) => {
+                        void onEditHeading?.({ headingIndex, text });
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <Tag
+                    id={headingId}
+                    className={`report-h report-h${b.level}`}
+                  >
+                    {b.text}
+                  </Tag>
+                )}
               </div>
             );
           }
@@ -347,6 +357,11 @@ export function ReportView({
             if (b.type === "figure") figN += 1;
             if (b.type === "table") tabN += 1;
             if (b.type === "paragraph") paraN += 1;
+            if (b.type === "list") {
+              const idMatch = b.id ? /^list-(\d+)$/.exec(b.id) : null;
+              if (idMatch) listN = Math.max(listN, Number(idMatch[1]));
+              else listN += 1;
+            }
             return null;
           }
 
@@ -357,17 +372,26 @@ export function ReportView({
             if (idMatch) paraN = Math.max(paraN, n);
             const paraId = `para:${n}`;
             const isEditingPara = editingFigureId === paraId;
-            const sheetOpen = paraFor === n;
             const sheetError =
-              sheetOpen && editErrorFigureId === paraId ? editError : null;
+              editErrorFigureId === paraId ? editError : null;
             return (
               <div
                 key={i}
-                className={`report-para-wrap report-block${sheetOpen ? " is-tuning" : ""}${isEditingPara ? " is-editing" : ""}`}
+                className={`report-para-wrap report-block${canEditPara ? " is-tuning" : ""}${isEditingPara ? " is-editing" : ""}`}
                 style={delayStyle}
               >
                 <div className="report-para-frame">
-                  {b.html ? (
+                  {canEditPara ? (
+                    <InlineBlockEditor
+                      kind="paragraph"
+                      initialText={b.text}
+                      busy={isEditingPara}
+                      error={sheetError}
+                      onSave={(text) => {
+                        void onEditParagraph?.({ paragraphIndex: n, text });
+                      }}
+                    />
+                  ) : b.html ? (
                     <p
                       className="report-p"
                       dangerouslySetInnerHTML={{ __html: b.html }}
@@ -375,53 +399,49 @@ export function ReportView({
                   ) : (
                     <p className="report-p">{b.text}</p>
                   )}
-                  {canEditPara && !isEditingPara && (
-                    <button
-                      type="button"
-                      className={`report-fig-edit report-para-edit${sheetOpen ? " is-open" : ""}`}
-                      aria-expanded={sheetOpen}
-                      onClick={() => {
-                        if (sheetOpen) closePara();
-                        else {
-                          setSheetFor(null);
-                          setImageFor(null);
-                          setTableFor(null);
-                          setParaFor(n);
-                        }
-                      }}
-                    >
-                      {sheetOpen ? "Закрыть" : "Изменить"}
-                    </button>
-                  )}
                   {isEditingPara && (
                     <div className="report-fig-busy" aria-live="polite">
                       <p className="fig-press-label">Пересобираю абзац…</p>
                     </div>
                   )}
                 </div>
-                {editMode && sheetOpen && onEditParagraph && (
-                  <ParagraphEditSheet
-                    open
-                    paragraphIndex={n}
-                    initialText={b.text}
-                    busy={isEditingPara}
-                    error={sheetError}
-                    onCancel={() => {
-                      if (!editingFigureId) closePara();
-                    }}
-                    onSubmit={(req) => {
-                      void (async () => {
-                        const ok = await onEditParagraph(req);
-                        if (ok) closePara();
-                      })();
-                    }}
-                  />
-                )}
               </div>
             );
           }
           if (b.type === "list") {
+            listN += 1;
+            const idMatch = b.id ? /^list-(\d+)$/.exec(b.id) : null;
+            const n = idMatch ? Number(idMatch[1]) : listN;
+            if (idMatch) listN = Math.max(listN, n);
+            const listId = `list:${n}`;
+            const isEditingList = editingFigureId === listId;
+            const listError =
+              editErrorFigureId === listId ? editError : null;
             const Tag = b.ordered ? "ol" : "ul";
+            if (canEditList) {
+              return (
+                <div
+                  key={i}
+                  className={`report-list-wrap report-block${isEditingList ? " is-editing" : ""}`}
+                  style={delayStyle}
+                >
+                  <InlineBlockEditor
+                    kind="list"
+                    ordered={Boolean(b.ordered)}
+                    initialItems={(b.items || []).map((it) => it.text)}
+                    busy={isEditingList}
+                    error={listError}
+                    onSave={(items) => {
+                      void onEditList?.({
+                        listIndex: n,
+                        items,
+                        ordered: Boolean(b.ordered),
+                      });
+                    }}
+                  />
+                </div>
+              );
+            }
             return (
               <Tag
                 key={i}
@@ -445,13 +465,13 @@ export function ReportView({
             tabN += 1;
             const n = tabN;
             const tableId = `tab:${n}`;
-            const tableOpen = tableFor === n;
+            const tableOpen = canEditTable;
             const isEditingTable = editingFigureId === tableId;
             const tableError =
               tableOpen && editErrorFigureId === tableId ? editError : null;
             const live =
-              tableOpen && tableDraft
-                ? tableDraft
+              tableOpen && tableDraftByN[n]
+                ? tableDraftByN[n]
                 : {
                     caption: b.caption || "",
                     headers: b.headers || [],
@@ -478,27 +498,6 @@ export function ReportView({
                       <span className="report-table-draft-tag"> черновик</span>
                     ) : null}
                   </figcaption>
-                  {canEditTable && !isEditingTable && (
-                    <button
-                      type="button"
-                      className={`report-fig-edit${tableOpen ? " is-open" : ""}`}
-                      aria-expanded={tableOpen}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (tableOpen) closeTable();
-                        else {
-                          setSheetFor(null);
-                          setImageFor(null);
-                          setParaFor(null);
-                          setTableDraft(null);
-                          setTableFor(n);
-                        }
-                      }}
-                    >
-                      {tableOpen ? "Закрыть" : "Изменить"}
-                    </button>
-                  )}
                 </div>
                 <div className="report-table-scroll">
                   <table className="report-table">
@@ -538,24 +537,28 @@ export function ReportView({
                     <p className="fig-press-hint">TeX · PDF · DOCX</p>
                   </div>
                 )}
-                {editMode && tableOpen && onEditTable && (
+                {tableOpen && onEditTable && (
                   <TableEditSheet
                     open
+                    trapFocus={false}
                     tableIndex={n}
                     initialCaption={b.caption || ""}
                     initialHeaders={b.headers || []}
                     initialRows={b.rows || []}
                     busy={isEditingTable}
                     error={tableError}
-                    onDraftChange={setTableDraft}
+                    onDraftChange={(d) =>
+                      setTableDraftByN((prev) => ({ ...prev, [n]: d }))
+                    }
                     onCancel={() => {
-                      if (!editingFigureId) closeTable();
+                      setTableDraftByN((prev) => {
+                        const next = { ...prev };
+                        delete next[n];
+                        return next;
+                      });
                     }}
                     onSubmit={(req) => {
-                      void (async () => {
-                        const ok = await onEditTable(req);
-                        if (ok) closeTable();
-                      })();
+                      void onEditTable(req);
                     }}
                   />
                 )}
@@ -572,14 +575,16 @@ export function ReportView({
             const isChart = b.kind === "chart";
             const isPhoto = !isChart;
             const isEditing = editingFigureId === b.id;
-            const sheetOpen = sheetFor === b.id;
-            const imageOpen = imageFor === b.id;
+            const sheetOpen = isChart && canEditFigure;
+            const imageOpen = isPhoto && canEditImage;
             const sheetError =
               (sheetOpen || imageOpen) && editErrorFigureId === b.id
                 ? editError
                 : null;
             const intent =
-              sheetOpen && draft && !isEditing ? draft : null;
+              sheetOpen && draftById[b.id] && !isEditing
+                ? draftById[b.id]
+                : null;
             const jumpPdf = () => {
               onJumpToPdf?.({
                 id: b.id,
@@ -599,7 +604,7 @@ export function ReportView({
                       fallbackUrl={b.url}
                       version={bustFromUrl(b.url)}
                       htmlOverride={
-                        sheetOpen ? sheetPreviewHtml : null
+                        sheetOpen ? sheetPreviewHtmlById[b.id] ?? null : null
                       }
                       disabled={isEditing}
                       onJumpToPdf={onJumpToPdf ? jumpPdf : undefined}
@@ -662,49 +667,6 @@ export function ReportView({
                       }}
                     >
                       ↗
-                    </button>
-                  )}
-                  {isChart && canEditFigure && !isEditing && (
-                    <button
-                      type="button"
-                      className={`report-fig-edit${sheetOpen ? " is-open" : ""}`}
-                      disabled={false}
-                      aria-expanded={sheetOpen}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (sheetOpen) closeSheet();
-                        else {
-                          setImageFor(null);
-                          setTableFor(null);
-                          setParaFor(null);
-                          setDraft(null);
-                          setSheetFor(b.id);
-                        }
-                      }}
-                    >
-                      {sheetOpen ? "Закрыть" : "Изменить"}
-                    </button>
-                  )}
-                  {isPhoto && canEditImage && !isEditing && (
-                    <button
-                      type="button"
-                      className={`report-fig-edit${imageOpen ? " is-open" : ""}`}
-                      disabled={false}
-                      aria-expanded={imageOpen}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (imageOpen) closeImage();
-                        else {
-                          setSheetFor(null);
-                          setTableFor(null);
-                          setParaFor(null);
-                          setImageFor(b.id);
-                        }
-                      }}
-                    >
-                      {imageOpen ? "Закрыть" : "Изменить"}
                     </button>
                   )}
                   {isEditing && (
@@ -784,9 +746,10 @@ export function ReportView({
                   {caption}
                 </figcaption>
 
-                {editMode && isChart && sheetOpen && onEditFigure && (
+                {sheetOpen && onEditFigure && (
                   <ChartEditSheet
                     open
+                    trapFocus={false}
                     figureId={b.id}
                     runId={runId}
                     caption={b.caption || caption}
@@ -800,35 +763,44 @@ export function ReportView({
                     initialType={b.chartType || ""}
                     busy={isEditing}
                     error={sheetError}
-                    onDraftChange={setDraft}
-                    onPreviewHtml={setSheetPreviewHtml}
+                    onDraftChange={(d) =>
+                      setDraftById((prev) => ({ ...prev, [b.id]: d }))
+                    }
+                    onPreviewHtml={(html) =>
+                      setSheetPreviewHtmlById((prev) => ({
+                        ...prev,
+                        [b.id]: html,
+                      }))
+                    }
                     onCancel={() => {
-                      if (!editingFigureId) closeSheet();
+                      setDraftById((prev) => {
+                        const next = { ...prev };
+                        delete next[b.id];
+                        return next;
+                      });
+                      setSheetPreviewHtmlById((prev) => {
+                        const next = { ...prev };
+                        delete next[b.id];
+                        return next;
+                      });
                     }}
                     onSubmit={(req) => {
-                      void (async () => {
-                        const ok = await onEditFigure(req);
-                        if (ok) closeSheet();
-                      })();
+                      void onEditFigure(req);
                     }}
                   />
                 )}
-                {editMode && isPhoto && imageOpen && onEditImage && (
+                {imageOpen && onEditImage && (
                   <ImageEditModal
                     open
+                    trapFocus={false}
                     figureId={b.id}
                     caption={b.caption || caption}
                     previewUrl={b.url}
                     busy={isEditing}
                     error={sheetError}
-                    onCancel={() => {
-                      if (!editingFigureId) closeImage();
-                    }}
+                    onCancel={() => {}}
                     onSubmit={(req) => {
-                      void (async () => {
-                        const ok = await onEditImage(req);
-                        if (ok) closeImage();
-                      })();
+                      void onEditImage(req);
                     }}
                   />
                 )}

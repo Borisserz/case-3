@@ -110,12 +110,12 @@ def serialize_tabular_body(
     specs: list[str] = []
     for ci in range(ncols):
         if use_tabularx:
-            specs.append("X" if not _col_is_numeric(headers, rows, ci) else "r")
+            # Y = wrapping X (defined in tex_preamble); r for numeric.
+            specs.append("Y" if not _col_is_numeric(headers, rows, ci) else "r")
         else:
             specs.append("r" if _col_is_numeric(headers, rows, ci) else "l")
-    # Prefer first col left for label-like headers when mixed
     if use_tabularx and specs and specs[0] == "r":
-        specs[0] = "l"
+        specs[0] = "Y"
     elif not use_tabularx and specs:
         specs[0] = "l"
     colspec = "".join(specs)

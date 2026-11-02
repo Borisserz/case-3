@@ -5,6 +5,7 @@ export type PreviewBlock =
   | { type: "paragraph"; id?: string; text: string; html?: string }
   | {
       type: "list";
+      id?: string;
       ordered?: boolean;
       items: { text: string; html?: string }[];
     }

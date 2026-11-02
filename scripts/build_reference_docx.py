@@ -120,6 +120,7 @@ def main() -> int:
     set_font(normal, 12)
     _set_spacing(normal, before_pt=0, after_pt=6, line=1.15)
 
+    ink = RGBColor(0x12, 0x12, 0x12)
     for name, size, bold, before, after in (
         ("Title", 18, True, 0, 10),
         ("Heading 1", 14, True, 14, 6),
@@ -130,6 +131,7 @@ def main() -> int:
         except KeyError:
             continue
         set_font(st, size, bold=bold)
+        st.font.color.rgb = ink
         _set_spacing(st, before_pt=before, after_pt=after)
 
     try:
@@ -138,6 +140,7 @@ def main() -> int:
         h3 = doc.styles.add_style("Heading 3", WD_STYLE_TYPE.PARAGRAPH)
         h3.base_style = doc.styles["Heading 2"]
     set_font(h3, 12, bold=True)
+    h3.font.color.rgb = ink
     _set_spacing(h3, before_pt=10, after_pt=4)
 
     try:

@@ -322,6 +322,52 @@ def find_paragraph_spans(tex: str) -> list[tuple[int, int]]:
     return spans
 
 
+
+def find_heading_spans(tex: str) -> list[tuple[int, int]]:
+    """Absolute [start, end) spans for each preview heading (\\section / \\subsection)."""
+    body, body_off = _body_bounds(tex)
+    spans: list[tuple[int, int]] = []
+    for m in _SECTION.finditer(body):
+        spans.append((body_off + m.start(), body_off + m.end()))
+    return spans
+
+
+def find_list_spans(tex: str) -> list[tuple[int, int]]:
+    """Absolute [start, end) spans for each top-level itemize/enumerate block."""
+    body, body_off = _body_bounds(tex)
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while pos < len(body):
+        m = _STRUCT_TOKEN.search(body, pos)
+        if not m:
+            break
+        tok = m.group(1)
+        if tok.startswith(r"\begin{itemize}") or tok.startswith(r"\begin{enumerate}"):
+            env = "itemize" if "itemize" in tok else "enumerate"
+            em = re.search(rf"\\end\{{{env}\}}", body[m.start() :], re.S | re.I)
+            if not em:
+                pos = m.end()
+                continue
+            end = m.start() + em.end()
+            spans.append((body_off + m.start(), body_off + end))
+            pos = end
+            continue
+        if tok.startswith(r"\begin{table}"):
+            em = re.search(r"\\end\{table\*?\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        if tok.startswith(r"\begin{figure}"):
+            em = re.search(r"\\end\{figure\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        if tok.startswith(r"\begin{landscape}"):
+            em = re.search(r"\\end\{landscape\}", body[m.start() :], re.S)
+            pos = m.start() + em.end() if em else m.end()
+            continue
+        pos = m.end()
+    return spans
+
+
 def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
     """Extract title + ordered content blocks from a full document."""
     title_m = _TITLE.search(tex or "")
@@ -329,6 +375,7 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
     body = _body(tex)
     blocks: list[dict[str, Any]] = []
     para_n = 0
+    list_n = 0
 
     pos = 0
     while pos < len(body):
@@ -433,6 +480,8 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             if lm:
                 lst = _parse_list_block(lm.group(1), lm.group(2))
                 if lst:
+                    list_n += 1
+                    lst["id"] = f"list-{list_n}"
                     blocks.append(lst)
             pos = end
             continue

@@ -81,3 +81,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 
 ## See
 ADR-0003 · ADR-0006 · `docs/superpowers/specs/2026-10-21-liber-soft-premium-ui-design.md`
+
+## Preview full edit (2026-11-02)
+
+Top «Редактировать» expands all sections and opens inline prose/heading/list editors + media sheets (no per-block «Изменить»). APIs: `/headings/{n}/edit`, `/lists/{n}/edit`. Spec: `docs/superpowers/specs/2026-11-02-liber-preview-full-edit-design.md`.

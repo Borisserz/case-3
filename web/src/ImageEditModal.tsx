@@ -14,6 +14,8 @@ export type ImageEditRequest = {
 
 type Props = {
   open: boolean;
+  /** When false, skip focus trap (multi-open edit desk). */
+  trapFocus?: boolean;
   figureId: string;
   caption?: string;
   /** @deprecated Kept for callers; preview stays on the figure above (как графики). */
@@ -26,6 +28,7 @@ type Props = {
 
 export function ImageEditModal({
   open,
+  trapFocus = true,
   figureId,
   caption: initialCaption,
   busy,
@@ -37,7 +40,7 @@ export function ImageEditModal({
   const [prompt, setPrompt] = useState("");
   const [caption, setCaption] = useState("");
   const sheetRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(sheetRef, { active: open });
+  useFocusTrap(sheetRef, { active: open && trapFocus });
 
   useEffect(() => {
     if (!open) return;

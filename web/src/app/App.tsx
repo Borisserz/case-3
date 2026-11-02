@@ -208,7 +208,15 @@ export default function App() {
     setActiveArtifact,
   });
 
-  const { editFigure, editImage, editTable, editParagraph, undoLastEdit } =
+  const {
+    editFigure,
+    editImage,
+    editTable,
+    editParagraph,
+    editHeading,
+    editList,
+    undoLastEdit,
+  } =
     useLiberEdits({
       setMsgs,
       rememberRun,
@@ -711,6 +719,30 @@ export default function App() {
                   activeReport.run_id
                     ? (req) =>
                         editParagraph(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+                onEditHeading={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (req) =>
+                        editHeading(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
+                onEditList={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (req) =>
+                        editList(
                           railArtifact.msgId,
                           activeReport.run_id,
                           req,

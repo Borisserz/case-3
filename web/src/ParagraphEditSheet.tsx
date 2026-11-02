@@ -10,6 +10,8 @@ export type ParagraphEditRequest = {
 
 type Props = {
   open: boolean;
+  /** When false, skip focus trap (multi-open edit desk). */
+  trapFocus?: boolean;
   paragraphIndex: number;
   initialText?: string;
   busy?: boolean;
@@ -20,6 +22,7 @@ type Props = {
 
 export function ParagraphEditSheet({
   open,
+  trapFocus = true,
   paragraphIndex,
   initialText = "",
   busy,
@@ -31,7 +34,7 @@ export function ParagraphEditSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const uid = useId();
-  useFocusTrap(sheetRef, { active: open });
+  useFocusTrap(sheetRef, { active: open && trapFocus });
 
   useEffect(() => {
     if (!open) return;

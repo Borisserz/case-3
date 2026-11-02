@@ -240,9 +240,17 @@ def render_tex(
             if on_format:
                 on_format("docx")
             media_dir = "docx_media"
+            from case3.tex_preamble import tex_for_pandoc
+
+            pandoc_name = f"{stem}.pandoc.tex"
+            pandoc_tex = work / pandoc_name
+            pandoc_tex.write_text(
+                tex_for_pandoc((work / tex_path.name).read_text(encoding="utf-8")),
+                encoding="utf-8",
+            )
             pandoc_cmd = [
                 "pandoc",
-                tex_path.name,
+                pandoc_name,
                 "-f",
                 "latex",
                 "-t",

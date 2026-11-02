@@ -12,10 +12,11 @@ _NUM = re.compile(
     r"^[-+]?(?:\d{1,3}(?:[ \u00a0]\d{3})*|\d+)(?:[.,]\d+)?%?$"
 )
 
-# Liber atelier mist — soft header band (no purple).
-_HEADER_FILL = "D5DEC0"
+# Header cells: white fill (override pandoc/reference firstRow greens).
+_HEADER_FILL = "FFFFFF"
 _RULE_COLOR = "3F5210"  # readable olive ink on white
 _BODY_RULE = "C5CDB0"
+_INK = "121212"
 
 
 def _cell_text(cell) -> str:  # noqa: ANN001
@@ -129,6 +130,7 @@ def _apply_booktabs_table(table) -> None:  # noqa: ANN001
 def _style_header_row(row) -> None:  # noqa: ANN001
     for cell in row.cells:
         _ensure_runs_bold(cell)
+        # Force white — Word table styles (reference.docx) tint firstRow green.
         _set_cell_shading(cell, _HEADER_FILL)
         _set_cell_margins(cell, dxa=90)
         # Slight bottom emphasis via cell bottom border
@@ -143,8 +145,37 @@ def _style_header_row(row) -> None:  # noqa: ANN001
         tc_pr.append(tc_borders)
 
 
+
+def _force_black_headings(doc) -> None:  # noqa: ANN001
+    """Title / Heading styles → black ink (reference.docx used theme blue)."""
+    from docx.oxml import OxmlElement
+    from docx.shared import RGBColor
+
+    ink = RGBColor(0x12, 0x12, 0x12)
+    for name in ("Title", "Heading 1", "Heading 2", "Heading 3"):
+        try:
+            st = doc.styles[name]
+        except KeyError:
+            continue
+        st.font.color.rgb = ink
+        rpr = st.element.get_or_add_rPr()
+        for child in list(rpr):
+            if child.tag == _qn("w:color"):
+                rpr.remove(child)
+        color = OxmlElement("w:color")
+        color.set(_qn("w:val"), _INK)
+        rpr.append(color)
+    # Also pin runs on heading paragraphs (pandoc may set theme color on runs).
+    for p in doc.paragraphs:
+        style_name = (p.style.name if p.style else "") or ""
+        if style_name not in {"Title", "Heading 1", "Heading 2", "Heading 3"}:
+            continue
+        for run in p.runs:
+            run.font.color.rgb = ink
+
+
 def polish_docx(path: Path | str) -> Path:
-    """Liber table look: mist header, visible grid borders, numeric align."""
+    """Liber table look: white header, visible grid borders, numeric align."""
     try:
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -153,6 +184,7 @@ def polish_docx(path: Path | str) -> Path:
 
     path = Path(path)
     doc = Document(str(path))
+    _force_black_headings(doc)
     for table in doc.tables:
         if not table.rows:
             continue
