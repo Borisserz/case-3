@@ -19,6 +19,9 @@ CLAUDE.md
 .cursor/
 docs/
 
+# Dev smoke Source texts (not needed on work desk)
+fixtures/
+
 # Scratch notes
 notes.txt
 .cursorignore
