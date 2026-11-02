@@ -200,6 +200,8 @@ export function ChatMessages({
                       slidesStatus={m.result.slides_status}
                       slidesStage={m.result.slides_stage}
                       slidePngs={m.result.slide_pngs}
+                      deck={m.result.deck}
+                      runId={m.result.run_id}
                       outputMode={m.result.output_mode}
                       onView={() => {
                         const r = m.result!;

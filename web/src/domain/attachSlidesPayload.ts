@@ -49,9 +49,11 @@ export function attachSlidesPayload(
   return next;
 }
 
-/** True when status says deck is ready but chat/rail still has no twin thumbs. */
+/** True when status says deck is ready but chat/rail still lacks twin PNGs or deck IR. */
 export function needsSlidesHydrate(result: RunResult): boolean {
   const st = result.slides_status || "";
   if (st !== "ok" && !result.downloads?.pptx) return false;
-  return !(result.slide_pngs && result.slide_pngs.length > 0);
+  const noPngs = !(result.slide_pngs && result.slide_pngs.length > 0);
+  const noDeck = !(result.deck?.slides && result.deck.slides.length > 0);
+  return noPngs || noDeck;
 }

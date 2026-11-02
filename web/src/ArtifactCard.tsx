@@ -2,6 +2,7 @@
 
 import { DeckFileCard } from "./DeckFileCard";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
+import type { DeckIR } from "./deckTypes";
 import { reportDownloadLinks } from "./domain/reportDownloads";
 import { modeSurfaces } from "./domain/liberModes";
 
@@ -20,6 +21,9 @@ type Props = {
   slidesStage?: string | null;
   /** Twin preview thumbs (HTML→PNG); same tokens as PPTX. */
   slidePngs?: string[];
+  /** Live deck IR for crisp chat hero (vs PNG downscale). */
+  deck?: DeckIR | null;
+  runId?: string | null;
   /** Liber run mode — gates which cards/CTAs appear. */
   outputMode?: string | null;
   onView: () => void;
@@ -125,6 +129,8 @@ export function ArtifactCard({
   slidesStatus = null,
   slidesStage = null,
   slidePngs = [],
+  deck = null,
+  runId = null,
   outputMode = null,
   onView,
   onOpenDiagram,
@@ -211,12 +217,14 @@ export function ArtifactCard({
                 previewUrl={hero}
                 fileLabel={pptxName}
                 filmstrip={slidePngs}
+                deck={deck}
+                runId={runId}
                 onPrimary={onOpenPresentation}
                 primaryLabel="Просмотр"
               />
             </section>
           ) : null}
-          {showPdfGallery && (downloads?.deck_pdf || hero) ? (
+          {showPdfGallery && (downloads?.deck_pdf || hero || deck) ? (
             <section className="artifact-card-block">
               <p className="artifact-card-quiet-label">
                 Презентация · PDF
@@ -234,6 +242,8 @@ export function ArtifactCard({
                     : "deck.pdf"
                 }
                 filmstrip={slidePngs}
+                deck={deck}
+                runId={runId}
                 onPrimary={onOpenDeckSlides || onOpenPresentation}
                 primaryLabel="Просмотр"
               />

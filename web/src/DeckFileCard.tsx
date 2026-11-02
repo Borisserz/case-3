@@ -1,5 +1,8 @@
 /** Julius-style file card: matte stage, icon, hover CTA, footer. */
 
+import { DeckChatHero } from "./DeckChatHero";
+import { prefersLiveChatHero } from "./domain/chatDeckHero";
+import type { DeckIR } from "./deckTypes";
 import { PdfThumb } from "./PdfThumb";
 
 type Kind = "pptx" | "deck_pdf" | "pdf" | "docx";
@@ -19,6 +22,9 @@ type Props = {
   primaryLabel?: string;
   /** Extra slide thumbs under the hero (deck). */
   filmstrip?: string[];
+  /** Live IR twin for crisp chat hero (PPTX / deck PDF cards). */
+  deck?: DeckIR | null;
+  runId?: string | null;
 };
 
 function FileGlyph({ kind }: { kind: Kind }) {
@@ -144,6 +150,8 @@ export function DeckFileCard({
   onPrimary,
   primaryLabel,
   filmstrip = [],
+  deck = null,
+  runId = null,
 }: Props) {
   const isPptx = kind === "pptx";
   const isReportPdf = kind === "pdf";
@@ -168,13 +176,22 @@ export function DeckFileCard({
         : "Презентация · PDF";
   const defaultPrimary = isPptx || isDeckPdf ? "Просмотр" : "Открыть";
   const actionLabel = primaryLabel || defaultPrimary;
-  const kindClass = isPptx
-    ? "is-pptx"
-    : isReportPdf
-      ? "is-pdf is-report-pdf"
-      : isDocx
-        ? "is-docx is-report-docx"
-        : "is-pdf is-deck-pdf";
+  const liveHero =
+    (isPptx || isDeckPdf) &&
+    Boolean(runId) &&
+    prefersLiveChatHero(deck);
+  const kindClass = [
+    isPptx
+      ? "is-pptx"
+      : isReportPdf
+        ? "is-pdf is-report-pdf"
+        : isDocx
+          ? "is-docx is-report-docx"
+          : "is-pdf is-deck-pdf",
+    liveHero ? "has-live-twin" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const emptyHint = isPptx
     ? "Презентация · PPTX"
     : isReportPdf
@@ -302,21 +319,35 @@ export function DeckFileCard({
         </span>
       </header>
 
-      <button
-        type="button"
-        className="deck-file-card-preview"
+      <div
+        className={`deck-file-card-preview${onPrimary ? " is-action" : ""}`}
+        role={onPrimary ? "button" : undefined}
+        tabIndex={onPrimary ? 0 : undefined}
         onClick={onPrimary}
-        disabled={!onPrimary}
+        onKeyDown={
+          onPrimary
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onPrimary();
+                }
+              }
+            : undefined
+        }
         aria-label={
           onPrimary ? `${actionLabel}: ${title}` : `Превью ${title}`
         }
       >
         <span
           className="deck-file-card-mat"
-          aria-hidden={!previewUrl && !pdfUrl}
+          aria-hidden={!liveHero && !previewUrl && !pdfUrl}
         >
-          <span className="deck-file-card-sheet">
-            {previewUrl ? (
+          <span
+            className={`deck-file-card-sheet${liveHero ? " is-live-twin" : ""}`}
+          >
+            {liveHero && deck && runId ? (
+              <DeckChatHero runId={runId} deck={deck} />
+            ) : previewUrl ? (
               <img src={previewUrl} alt="" />
             ) : pdfUrl ? (
               <PdfThumb
@@ -337,7 +368,7 @@ export function DeckFileCard({
             </span>
           </span>
         ) : null}
-      </button>
+      </div>
 
       {strip.length > 1 ? (
         <div className="deck-file-card-filmstrip" role="list" aria-label="Слайды">

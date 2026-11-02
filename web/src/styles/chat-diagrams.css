@@ -1403,12 +1403,21 @@
   padding: 0;
   border: none;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
   overflow: hidden;
 }
 
-.deck-file-card-preview:disabled {
-  cursor: default;
+.deck-file-card-preview.is-action {
+  cursor: pointer;
+}
+
+.deck-file-card-preview:focus {
+  outline: none;
+}
+
+.deck-file-card-preview:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: -2px;
 }
 
 .deck-file-card-mat {
@@ -1419,6 +1428,17 @@
       180deg,
       color-mix(in srgb, var(--paper, #efebe0) 88%, var(--sheet)) 0%,
       color-mix(in srgb, var(--surface-2, #e8e4d8) 70%, var(--sheet)) 100%
+    );
+}
+
+/* Live IR twin: denser matte so slide colors stay punchy (less washed). */
+.deck-file-card.has-live-twin .deck-file-card-mat {
+  padding: 0.85rem 0.9rem 1rem;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ink) 4%, var(--sheet)) 0%,
+      color-mix(in srgb, var(--ink) 7%, var(--sheet)) 100%
     );
 }
 
@@ -1618,6 +1638,37 @@
 .deck-file-card.is-pptx .deck-file-card-sheet {
   aspect-ratio: 16 / 9;
   min-height: 16rem;
+}
+
+.deck-file-card.is-pptx .deck-file-card-sheet.is-live-twin,
+.deck-file-card.is-deck-pdf .deck-file-card-sheet.is-live-twin {
+  aspect-ratio: 16 / 9;
+  min-height: 0;
+  background: var(--deck-sheet, #fffcf7);
+}
+
+.deck-file-card-live-host {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.deck-file-card-live-scale {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.deck-file-card-live-scale .deck-cv {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .deck-file-card-sheet.is-diagram-sheet {

@@ -50,7 +50,12 @@ describe("needsSlidesHydrate", () => {
   it("true when slides ok / pptx but no twin thumbs", () => {
     assert.equal(needsSlidesHydrate(base()), true);
     assert.equal(
-      needsSlidesHydrate(base({ slide_pngs: ["/a.png"] })),
+      needsSlidesHydrate(
+        base({
+          slide_pngs: ["/a.png"],
+          deck: { slides: [{ id: "s1", layout: "title" }] },
+        }),
+      ),
       false,
     );
     assert.equal(
@@ -58,6 +63,26 @@ describe("needsSlidesHydrate", () => {
         base({ slides_status: "running", downloads: {} }),
       ),
       false,
+    );
+  });
+
+  it("true when pngs exist but deck IR missing (chat live twin)", () => {
+    assert.equal(
+      needsSlidesHydrate(base({ slide_pngs: ["/a.png"] })),
+      true,
+    );
+  });
+});
+
+describe("prefersLiveChatHero", () => {
+  it("live when deck has slides; else png fallback", async () => {
+    const { prefersLiveChatHero } = await import("./chatDeckHero");
+    assert.equal(prefersLiveChatHero(null), false);
+    assert.equal(prefersLiveChatHero(undefined), false);
+    assert.equal(prefersLiveChatHero({ slides: [] }), false);
+    assert.equal(
+      prefersLiveChatHero({ slides: [{ id: "s1", layout: "title" }] }),
+      true,
     );
   });
 });
