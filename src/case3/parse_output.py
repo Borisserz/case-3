@@ -21,12 +21,15 @@ _FENCE = re.compile(r"```(\w*)\s*([\s\S]*?)```", re.I)
 _LANG_OPEN = re.compile(r"```(\w+)\s*\n", re.I)
 _LONE_CLOSE = re.compile(r"(?m)^```[ \t]*\r?$")
 _ID_OK = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-# Same line-anchored pattern as inject (slots must be alone on a line).
-_FIG_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?$")
-_CHART_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[ \t]*\r?$")
-_CHART_SLOT_LINE = re.compile(
-    r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?"
+# Slot at line start; tolerate LLM trailing notes: `%CASE3_CHART:cht_01%  (SLA)`.
+# Strict `$` after the slot missed those lines → false "no slots" → dump before \end{document}.
+_FIG_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
 )
+_CHART_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
+_CHART_SLOT_LINE = _CHART_SLOT
 
 
 class ParseError(ValueError):
@@ -595,7 +598,7 @@ def parse_model_output(
             tex = re.sub(
                 r"(?m)^[ \t]*%CASE3_FIG:("
                 + "|".join(re.escape(s) for s in missing_figs)
-                + r")%[ \t]*\r?\n?",
+                + r")%[^\n]*\r?\n?",
                 "",
                 tex,
             )
@@ -603,7 +606,7 @@ def parse_model_output(
     else:
         if fig_slots:
             tex = re.sub(
-                r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+                r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
                 "",
                 tex,
             )

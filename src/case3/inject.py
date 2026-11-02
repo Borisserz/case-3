@@ -9,8 +9,13 @@ from typing import Any
 from case3.tex_preamble import ensure_document_preamble, strip_orphan_slots
 from case3.tex_safe import escape_tex_text, sanitize_width
 
-_FIG_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
-_CHART_SLOT = re.compile(r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[ \t]*\r?\n?")
+# Consume the whole line so LLM notes after the slot (`% … %  (caption hint)`) disappear.
+_FIG_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_FIG:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
+_CHART_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
 # Model sometimes wraps a slot in figure; after a failed chart we must drop the shell.
 _EMPTY_FIGURE = re.compile(
     r"\\begin\{figure\}(?:\[[^\]]*\])?\{?\}?\s*"
