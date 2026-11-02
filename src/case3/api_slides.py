@@ -144,11 +144,48 @@ async def start_slides(
         )
     from case3.deck_structure import normalize_structure_id
 
-    pack = normalize_pack_id((body.theme_pack if body else None) or "atelier")
-    structure_id = normalize_structure_id(body.structure_id if body else None)
-    settings = (body.style_settings if body else None) or None
-    if settings is not None and not isinstance(settings, dict):
-        settings = None
+    # Merge with desk-stamped style: Liber UI kick often omits structure_id
+    # (stale deckStyle / race with auto-kick) and would freeform-collapse the deck.
+    prev_style = meta.get("slides_style")
+    if not isinstance(prev_style, dict):
+        prev_style = {}
+    body_structure = body.structure_id if body else None
+    body_pack = body.theme_pack if body else None
+    body_settings = body.style_settings if body else None
+
+    structure_id = normalize_structure_id(body_structure)
+    if structure_id is None:
+        structure_id = normalize_structure_id(
+            prev_style.get("structure_id")
+            if prev_style.get("structure_id") is not None
+            else meta.get("slides_structure_id")
+        )
+
+    prev_pack = normalize_pack_id(
+        meta.get("slides_theme_pack") or prev_style.get("theme_pack") or "atelier"
+    )
+    restored_desk_pack = False
+    if body_pack:
+        pack = normalize_pack_id(body_pack)
+        # Default atelier in the body without an explicit structure change must
+        # not clobber a non-atelier pack already stamped for this run.
+        if (
+            body_structure is None
+            and structure_id
+            and pack == "atelier"
+            and prev_pack != "atelier"
+        ):
+            pack = prev_pack
+            restored_desk_pack = True
+    else:
+        pack = prev_pack
+
+    settings = body_settings if isinstance(body_settings, dict) else None
+    if (settings is None or restored_desk_pack) and isinstance(
+        prev_style.get("style_settings"), dict
+    ):
+        settings = prev_style.get("style_settings")
+
     meta["slides_style"] = {
         "theme_pack": pack,
         "structure_id": structure_id,

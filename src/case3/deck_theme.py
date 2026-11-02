@@ -215,13 +215,13 @@ def resolve_deck_theme(
         table["body_fill"] = norm_hex(str(table_in.get("body_fill")), colors["sheet"])
     motif_in = raw.get("motif") if isinstance(raw.get("motif"), dict) else {}
     motif: dict[str, Any] = {}
+    # Split titles only when the pack motif declares them (relay/pastel).
+    # Do not infer split from colors.panel — every craft pack has panel fills.
     if "split" in motif_in:
         try:
             motif["split"] = max(0.35, min(0.8, float(motif_in["split"])))
         except (TypeError, ValueError):
             motif["split"] = 0.55
-    if colors_in.get("panel"):
-        motif.setdefault("split", 0.55)
     panels_raw = motif_in.get("panels")
     if isinstance(panels_raw, list) and panels_raw:
         motif["panels"] = [

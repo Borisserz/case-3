@@ -452,11 +452,15 @@ export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261024v6";
+const PREVIEW_CACHE_BUST = "20261102v3-ru";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {
-  const id = TEMPLATE_PREVIEW_SLIDES[structureId] ? structureId : "board_update";
+  const id = PREMIUM_PREVIEW_COUNTS[structureId]
+    ? structureId
+    : TEMPLATE_PREVIEW_SLIDES[structureId]
+      ? structureId
+      : "board_update";
   const n = PREMIUM_PREVIEW_COUNTS[id] ?? 6;
   return Array.from({ length: n }, (_, i) => i + 1).map(
     (k) =>
@@ -465,7 +469,6 @@ export function previewPngUrls(structureId: string): string[] {
 }
 
 export function hasPreviewPngs(structureId: string): boolean {
-  // PNG twins are still English; gallery uses Russian CSS mocks until re-rendered.
-  void structureId;
-  return false;
+  const id = structureId in PREMIUM_PREVIEW_COUNTS ? structureId : "";
+  return Boolean(id && (PREMIUM_PREVIEW_COUNTS[id] ?? 0) >= 6);
 }
