@@ -17,6 +17,7 @@ from case3.inject import (
     strip_diagram_includegraphics,
     strip_missing_media_includes,
 )
+from case3.procutil import run_captured
 from case3.tex_preamble import (
     TexStructureError,
     assert_tex_structure,
@@ -81,11 +82,10 @@ def _docker_run(workdir: Path, *cmd: str) -> None:
         ]
     log.info("exec: %s", " ".join(args))
     try:
-        subprocess.run(
+        # encoding=utf-8: Win cp1251 locale crashes on Cyrillic TeX/docker logs.
+        run_captured(
             args,
             check=True,
-            capture_output=True,
-            text=True,
             timeout=_DOCKER_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
@@ -108,10 +108,8 @@ def ensure_image() -> None:
     for attempt in range(4):
         # `docker images -q` is more reliable than `image inspect` on some hosts.
         try:
-            r = subprocess.run(
+            r = run_captured(
                 ["docker", "images", "-q", IMAGE],
-                capture_output=True,
-                text=True,
                 timeout=_DOCKER_PROBE_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired as exc:

@@ -9,10 +9,11 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+
+from case3.procutil import run_captured
 
 log = logging.getLogger(__name__)
 
@@ -98,10 +99,8 @@ def convert_pptx_to_pdf(
         str(src),
     ]
     try:
-        proc = subprocess.run(
+        proc = run_captured(
             cmd,
-            capture_output=True,
-            text=True,
             timeout=timeout_s,
             check=False,
         )
@@ -124,10 +123,8 @@ def convert_pptx_to_pdf(
                 str(out_dir),
                 str(src),
             ]
-            proc2 = subprocess.run(
+            proc2 = run_captured(
                 cmd_plain,
-                capture_output=True,
-                text=True,
                 timeout=timeout_s,
                 check=False,
             )
