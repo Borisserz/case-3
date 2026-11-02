@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from case3.image_api import ImageApiConfig, edit_png
+from case3.image_prompt import ImagePromptError, ensure_english_image_prompt
 from case3 import run_store
 from case3.run_meta import write_meta
 from case3.user_photos import UserPhotoError, save_user_photos
@@ -45,7 +46,11 @@ async def quick_photo_edit(
     figs.mkdir(parents=True, exist_ok=True)
     dest = figs / "edited.png"
     try:
-        await asyncio.to_thread(edit_png, cfg, prompt, src, dest)
+        prompt_en = await asyncio.to_thread(ensure_english_image_prompt, prompt)
+    except ImagePromptError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    try:
+        await asyncio.to_thread(edit_png, cfg, prompt_en, src, dest)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, detail=f"image edit failed: {exc}") from exc
     v = int(dest.stat().st_mtime)
@@ -54,7 +59,7 @@ async def quick_photo_edit(
         "status": "ok",
         "stage": "ok",
         "mode": "photo_edit",
-        "prompt": prompt[:500],
+        "prompt": prompt_en[:500],
         "caption": caption,
     }
     write_meta(out, meta)
@@ -64,7 +69,7 @@ async def quick_photo_edit(
             "run_id": run_id,
             "status": "ok",
             "mode": "photo_edit",
-            "prompt": prompt,
+            "prompt": prompt_en,
             "caption": caption,
             "preview_figure": {
                 "id": "edited",

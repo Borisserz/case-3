@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+from typing import Any, Protocol
+
+log = logging.getLogger("case3.image_prompt")
 
 _CYRILLIC = re.compile(r"[\u0400-\u04FF]")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -206,3 +210,72 @@ def prepare_image_prompt(
         # Prefer keeping subject + short lock; trim Avoid first
         text = text[:max_len].rsplit(" ", 1)[0].rstrip(" ,.;")
     return text
+
+
+class _Completes(Protocol):
+    def complete(self, **kwargs: Any) -> str: ...
+
+
+_TRANSLATE_SYSTEM = (
+    "You translate image generation or edit instructions into a concise "
+    "English photo prompt for an image API.\n"
+    "Rules:\n"
+    "- Return ONLY the English prompt text.\n"
+    "- No quotes, markdown, bullets, or explanation.\n"
+    "- Keep subject, setting, lighting, and edit intent.\n"
+    "- No logos, watermarks, or readable text overlays.\n"
+    "- Latin letters only."
+)
+
+
+def needs_english_translation(prompt: str) -> bool:
+    """True when prompt has Cyrillic or other non-Latin letters."""
+    text = " ".join((prompt or "").split())
+    if not text:
+        return False
+    if _CYRILLIC.search(text):
+        return True
+    return any(ch.isalpha() and ord(ch) > 127 for ch in text)
+
+
+def ensure_english_image_prompt(
+    prompt: str,
+    *,
+    llm: _Completes | None = None,
+) -> str:
+    """Pass through English; translate RU (etc.) via Qwen to EN for Image API.
+
+    Does not apply pack/brand harden — callers still use prepare_image_prompt
+    / generate_png / edit_png.
+    """
+    text = " ".join((prompt or "").split())
+    if not text:
+        raise ImagePromptError("empty image prompt")
+    if not needs_english_translation(text):
+        return text
+
+    from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
+
+    client: _Completes = llm or LLMClient(LLMConfig.from_env())
+    try:
+        raw = client.complete(
+            system=_TRANSLATE_SYSTEM,
+            user_text=text,
+            reasoning="off",
+        )
+    except (LLMConfigError, LLMError) as exc:
+        raise ImagePromptError(f"не удалось перевести промпт на English: {exc}") from exc
+
+    out = " ".join((raw or "").split())
+    # Strip accidental wrapping quotes / fences
+    if out.startswith("```"):
+        out = out.strip("`")
+        out = " ".join(out.split())
+    if len(out) >= 2 and out[0] == out[-1] and out[0] in "\"'":
+        out = out[1:-1].strip()
+    if not out:
+        raise ImagePromptError("пустой перевод промпта на English")
+    if needs_english_translation(out):
+        log.warning("image prompt translation still non-Latin; stripping check deferred to sanitize")
+    log.info("image prompt translated to EN len=%d", len(out))
+    return out

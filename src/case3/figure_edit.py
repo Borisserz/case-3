@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from case3.image_api import ImageApiConfig, edit_png, generate_png
+from case3.image_prompt import ImagePromptError, ensure_english_image_prompt
 from case3.render import RenderError
 from case3.run_rebuild import rebuild_run_docs
 from case3.tex_safe import escape_tex_text
@@ -68,6 +69,10 @@ def edit_figure_in_run(
         raise FigureEditError("mode must be generate|edit")
     if figure_id.startswith("cht_"):
         raise FigureEditError("это график — используйте правку charts, не figures")
+    try:
+        prompt = ensure_english_image_prompt(prompt)
+    except ImagePromptError as exc:
+        raise FigureEditError(str(exc)) from exc
 
     caption_new = (caption or "").strip()
 

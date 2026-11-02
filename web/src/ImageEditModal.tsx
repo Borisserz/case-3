@@ -69,7 +69,7 @@ export function ImageEditModal({
     >
       <header className="chart-edit-head">
         <div>
-          <p className="chart-edit-eyebrow">живая правка · фото · Image API</p>
+          <p className="chart-edit-eyebrow">живая правка · фото</p>
           <h3 className="chart-edit-title">{(initialCaption || "").trim() || figureId}</h3>
         </div>
         <button
@@ -105,8 +105,8 @@ export function ImageEditModal({
         </div>
         <p className="chart-edit-foot-hint" style={{ marginTop: "0.45rem" }}>
           {mode === "generate"
-            ? "С нуля по промпту → POST /generate"
-            : "Текущее фото + правки → POST /edit"}
+            ? "Новое фото по вашему описанию"
+            : "Правки поверх текущего кадра"}
         </p>
       </section>
 
@@ -126,7 +126,7 @@ export function ImageEditModal({
 
       <section className="chart-edit-block">
         <label className="field" htmlFor={`img-prompt-${figureId}`}>
-          {mode === "generate" ? "Описание нового фото (EN)" : "Что изменить (EN)"}
+          {mode === "generate" ? "Описание нового фото" : "Что изменить"}
         </label>
         <textarea
           id={`img-prompt-${figureId}`}
@@ -134,8 +134,8 @@ export function ImageEditModal({
           className="img-edit-textarea"
           placeholder={
             mode === "generate"
-              ? "sharp photo of a modern office lobby, daylight, no text…"
-              : "make lighting warmer, remove clutter on the desk…"
+              ? "современный офисный холл, дневной свет, без текста на кадре…"
+              : "сделай свет теплее, убери лишнее со стола…"
           }
           value={prompt}
           disabled={busy}
