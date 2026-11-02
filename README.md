@@ -23,10 +23,10 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 **Preview edit:** графики / фото / **таблицы** («Изменить» → sheet → Сохранить в отчёт = TeX + PDF/DOCX). Таблицы: `POST /api/runs/{id}/tables/{n}/edit`.
 
-**Память проекта (агенты и люди):** [`docs/MEMORY.md`](docs/MEMORY.md) · [`AGENTS.md`](AGENTS.md)
-
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
 DOCX: `assets/docx/reference.docx` (pandoc `--reference-doc`).
+
+**Скрипты на Windows:** только `setup.cmd` · `api.cmd` · `web.cmd` · `push-debug.cmd`.
 
 ## Запуск на Windows (из корня `case-3\`)
 
@@ -52,20 +52,7 @@ scripts\web.cmd
 - API: http://127.0.0.1:8000/docs · health: `/api/health`
 - Сборка в Liber идёт с прогрессом (`POST /api/run` → poll `/status`); `api.cmd` **без** `--reload` (иначе рвёт длинные job). Dev-reload: `set CASE3_RELOAD=1` перед `api.cmd`.
 
-**CLI:**
-
-```cmd
-scripts\run.cmd notes.txt -p "краткий отчёт" --dry-run
-scripts\run.cmd notes.txt -p "сделай отчёт" --format both
-```
-
-**Smoke (готовые Source в `fixtures\smoke\`):**
-
-```cmd
-scripts\smoke.cmd
-```
-
-Каждый файл → `run --format both`. Результат: `runs\out\<run_id>\`
+Сборка и артефакты: через Liber UI → `runs\out\<run_id>\`.
 
 ## Env (`.env`)
 
@@ -99,12 +86,12 @@ scripts\smoke.cmd
 
 ## Папки
 
-`scripts\` · `web\` · `src\` · `prompt\` · `assets\charts\` · `assets\docx\reference.docx` · `runs\` (out / logs / work / uploads)
+`scripts\` (4 cmd) · `web\` · `src\` · `prompt\` · `assets\` · `runs\` (out / logs / work / uploads)
 
 ## Windows checklist после pull
 
-1. Docker Desktop запущен → `scripts\setup.cmd` (образ `case-3:tex`, Playwright, `pip install -e .`)
+1. Docker Desktop → `scripts\setup.cmd` (образ `case-3:tex`, Playwright, `pip install -e .`)
 2. `.env` с Qwen URL; `.env` не в git
 3. `scripts\api.cmd` + `scripts\web.cmd` → health `ok` / `vision_configured`
-4. В Liber: Source + тип `kpi` / `line` / … → «Собрать»; стадии в pending; PDF/DOCX качаются
-5. CLI smoke: `scripts\smoke.cmd` (нужен живой Vision)
+4. Liber: Source → «Собрать»; PDF/DOCX в панели
+5. Логи коллеге: `scripts\push-debug.cmd`
