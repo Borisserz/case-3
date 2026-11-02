@@ -6,6 +6,7 @@ import {
   applyMermaidRoleHighlight,
   mermaidNodeIdFromElement,
 } from "./mermaidSvgInteract";
+import { repairMermaidSource } from "./repairMermaidSource";
 
 type Props = {
   source: string;
@@ -68,7 +69,7 @@ export function MermaidView({
     let cancelled = false;
     const host = hostRef.current;
     if (!host) return;
-    const src = (source || "").trim();
+    const src = repairMermaidSource(source || "");
     setLoading(true);
     if (!src) {
       host.innerHTML = "";
@@ -143,6 +144,9 @@ export function MermaidView({
       {error ? (
         <div className="mermaid-view-error" role="alert">
           <p>Не удалось отрисовать схему</p>
+          {error !== "Пустая схема" ? (
+            <p className="mermaid-view-error-detail">{error}</p>
+          ) : null}
           <button
             type="button"
             className="btn ghost"

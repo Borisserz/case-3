@@ -162,7 +162,7 @@ export function ReportBody({
             return (
               <div
                 key={i}
-                className={`report-h-row report-block report-h${b.level}${canEditHeading ? " is-editing-open" : ""}${isEditingHead ? " is-editing" : ""}`}
+                className={`report-h-row report-block${canEditHeading ? " is-editing-open" : ""}${isEditingHead ? " is-editing" : ""}`}
                 style={delayStyle}
               >
                 <button

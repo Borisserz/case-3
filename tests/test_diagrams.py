@@ -29,6 +29,36 @@ def test_sanitize_keeps_classdef_colors() -> None:
     assert "#f3e6c8" in out
 
 
+def test_sanitize_repairs_multi_classname_class_line() -> None:
+    """LLM emits `class A,B,C start decision process` — invalid; zip 1:1."""
+    raw = (
+        "flowchart TD\n"
+        "  A[Старт]:::start --> B{Ок?}:::decision\n"
+        "  B --> C[Шаг]\n"
+        "  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n"
+        "  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22\n"
+        "  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22\n"
+        "  class A,B,C start decision process\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "class A,B,C start decision process" not in out
+    assert "class A start" in out
+    assert "class B decision" in out
+    assert "class C process" in out
+    assert "classDef start" in out
+
+
+def test_sanitize_drops_unmappable_multi_class_line() -> None:
+    raw = (
+        "flowchart TD\n"
+        "  A-->B\n"
+        "  class A,B start decision process process process\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "class A,B" not in out
+    assert "A-->B" in out
+
+
 def test_sanitize_rewrites_purple_and_strips_click() -> None:
     raw = (
         "flowchart TD\n"

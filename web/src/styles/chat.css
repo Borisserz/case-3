@@ -570,13 +570,14 @@
   transform: rotate(0deg);
 }
 
-.report-h1 {
+/* Border only on the heading text — not on .report-h-row (same class → double line). */
+.report-h.report-h1 {
   font-size: 1.18rem;
   padding-bottom: 0.2rem;
   border-bottom: 1px solid color-mix(in srgb, var(--primary) 22%, var(--rule));
 }
 
-.report-h2 {
+.report-h.report-h2 {
   font-size: 1.02rem;
   color: #121212;
 }

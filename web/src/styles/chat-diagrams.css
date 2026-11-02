@@ -1024,6 +1024,16 @@
   color: #7a3a3a;
 }
 
+.mermaid-view-error-detail {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, #7a3a3a 75%, var(--muted, #666));
+  word-break: break-word;
+  max-height: 4.5rem;
+  overflow: auto;
+}
+
 .mermaid-view-raw {
   margin-top: 0.5rem;
   padding: 0.6rem;

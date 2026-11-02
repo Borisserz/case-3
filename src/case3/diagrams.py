@@ -42,6 +42,12 @@ _MAX_TITLE = 80
 _FIRST_TOKEN = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
 _HEX_COLOR = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
 _CLICK_LINE = re.compile(r"(?im)^\s*click\s+.*$")
+# `class A,B foo` is valid; `class A,B foo bar baz` (N names) is not — LLM leak.
+_CLASS_ASSIGN_LINE = re.compile(
+    r"(?im)^([ \t]*)class(?!Def\b)[ \t]+([A-Za-z][\w,-]*)[ \t]+(.+?)\s*$"
+)
+# Spaces inside edge labels: `B -- |Да| C` → `B -->|Да| C`.
+_EDGE_LABEL_SPACES = re.compile(r"([-=.~]{2,})\s+\|([^|]+)\|\s+")
 
 # Liber soft-premium fallbacks (atelier) — never purple neon.
 _SAFE_FILL = "#dce8df"
@@ -80,11 +86,49 @@ def _rewrite_unsafe_colors(mermaid: str) -> str:
     return _HEX_COLOR.sub(repl, mermaid)
 
 
+def _repair_class_assign_lines(mermaid: str) -> str:
+    """Fix LLM ``class A,B,C start decision process`` → one class per node.
+
+    Mermaid allows only one className per ``class`` statement. When node count
+    matches name count, zip 1:1; otherwise drop the line (``:::role`` may remain).
+    """
+    out: list[str] = []
+    for line in (mermaid or "").splitlines():
+        m = _CLASS_ASSIGN_LINE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        indent, nodes_raw, rest = m.group(1), m.group(2), m.group(3).strip()
+        names = rest.split()
+        nodes = [n.strip() for n in nodes_raw.split(",") if n.strip()]
+        if len(names) <= 1:
+            out.append(line)
+            continue
+        if len(names) == len(nodes) and all(
+            re.match(r"^[A-Za-z][\w-]*$", n) for n in names
+        ):
+            for node, cls in zip(nodes, names):
+                out.append(f"{indent}class {node} {cls}")
+            continue
+        log.warning(
+            "dropped invalid mermaid class line (%d nodes / %d names): %s",
+            len(nodes),
+            len(names),
+            line.strip()[:120],
+        )
+    return "\n".join(out)
+
+
+def _normalize_edge_label_spaces(mermaid: str) -> str:
+    """``B -- |Да| C`` → ``B -->|Да| C`` (tolerant of LLM spacing)."""
+    return _EDGE_LABEL_SPACES.sub(r"\1|\2| ", mermaid or "")
+
+
 def sanitize_mermaid(text: str) -> str:
     """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart.
 
     Keeps model ``classDef`` / ``:::role`` / ``style`` coloring. Strips ``click``
-    lines; rewrites purple hex fills to Liber sage.
+    lines; rewrites purple hex fills to Liber sage; repairs broken ``class`` lines.
     """
     raw = (text or "").strip()
     if not raw:
@@ -104,6 +148,8 @@ def sanitize_mermaid(text: str) -> str:
     # Mermaid accepts `graph` as alias of flowchart — normalize for Liber + type gate.
     raw = re.sub(r"(?i)^graph(\s+)", r"flowchart\1", raw, count=1)
     raw = _CLICK_LINE.sub("", raw)
+    raw = _repair_class_assign_lines(raw)
+    raw = _normalize_edge_label_spaces(raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
     raw = _rewrite_unsafe_colors(raw)
     return raw
