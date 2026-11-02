@@ -24,6 +24,78 @@ _EMPTY_FIGURE_LOOSE = re.compile(
     r"\\begin\{figure\}.*?\\end\{figure\}",
     re.S,
 )
+# LLM sometimes writes \includegraphics{fig_02.png} instead of a CASE3 slot.
+_MEDIA_INCLUDEGRAPHICS = re.compile(
+    r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?((?:fig|cht|usr)_[a-z0-9_]+)\.png\}",
+    re.I,
+)
+
+
+def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -> str:
+    """Force media PNG paths under ``rel_dir/`` (bare fig_02.png → figures/fig_02.png)."""
+
+    def _repl(m: re.Match[str]) -> str:
+        opts = m.group(1) or ""
+        mid = m.group(2)
+        return f"\\includegraphics{opts}{{{rel_dir}/{mid}.png}}"
+
+    return _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex or "")
+
+
+def strip_failed_media_includes(tex: str, status: dict[str, Any]) -> str:
+    """Remove \\includegraphics for media ids marked not ok in status."""
+    failed = {
+        mid
+        for mid, st in (status or {}).items()
+        if isinstance(st, dict) and not st.get("ok")
+    }
+    if not failed or not tex:
+        return tex or ""
+
+    def _repl(m: re.Match[str]) -> str:
+        mid = m.group(2)
+        if mid in failed:
+            return ""
+        return m.group(0)
+
+    return _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex)
+
+
+def _drop_hollow_figures(tex: str) -> str:
+    """Remove figure envs that no longer contain includegraphics / TikZ / tables."""
+
+    def _drop(m: re.Match[str]) -> str:
+        body = m.group(0)
+        if r"\includegraphics" in body:
+            return body
+        if re.search(
+            r"\\begin\{(?:tikzpicture|tabularx|tabular|minipage)\}", body
+        ):
+            return body
+        return ""
+
+    return _EMPTY_FIGURE_LOOSE.sub(_drop, tex or "")
+
+
+def strip_missing_media_includes(tex: str, work_dir: Path) -> str:
+    """Remove media \\includegraphics whose PNG is absent under ``work_dir``.
+
+    Soft safety net before latexmk (avoids graphics Division-by-0).
+    """
+    root = Path(work_dir)
+    if not tex:
+        return tex or ""
+
+    def _repl(m: re.Match[str]) -> str:
+        mid = m.group(2)
+        # Match rewritten form figures/<id>.png or bare (rewrite should run first).
+        for cand in (root / "figures" / f"{mid}.png", root / f"{mid}.png"):
+            if cand.is_file():
+                return m.group(0)
+        return ""
+
+    out = _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex)
+    return _drop_hollow_figures(out)
 
 
 def _includegraphics_line(fid: str, meta: dict[str, Any], *, rel_dir: str) -> str:
@@ -126,18 +198,9 @@ def inject_media(
 
     out = _CHART_SLOT.sub(repl_chart, out)
     out = strip_orphan_slots(out)
-    # Drop figure envs that only held a failed CASE3 slot (keep TikZ / tabular floats).
-    def _drop_empty_fig(m: re.Match[str]) -> str:
-        body = m.group(0)
-        if r"\includegraphics" in body:
-            return body
-        if re.search(
-            r"\\begin\{(?:tikzpicture|tabularx|tabular|minipage)\}", body
-        ):
-            return body
-        return ""
-
-    out = _EMPTY_FIGURE_LOOSE.sub(_drop_empty_fig, out)
+    out = rewrite_media_includegraphics_paths(out, rel_dir=rel_dir)
+    out = strip_failed_media_includes(out, status)
+    out = _drop_hollow_figures(out)
     out = ensure_document_preamble(out)
     return out
 

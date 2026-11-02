@@ -12,6 +12,10 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
+from case3.inject import (
+    rewrite_media_includegraphics_paths,
+    strip_missing_media_includes,
+)
 from case3.tex_preamble import (
     TexStructureError,
     assert_tex_structure,
@@ -200,6 +204,19 @@ def render_tex(
                 shutil.copytree(d, dest)
         if ref_docx is not None:
             shutil.copy2(ref_docx, work / "reference.docx")
+
+        # Soft-fail: rewrite bare fig_/cht_ paths + drop includes for missing PNGs
+        # so latexmk does not Division-by-0 on absent files.
+        work_tex = work / tex_path.name
+        raw_work = work_tex.read_text(encoding="utf-8")
+        cleaned = rewrite_media_includegraphics_paths(raw_work)
+        cleaned = strip_missing_media_includes(cleaned, work)
+        if cleaned != raw_work:
+            work_tex.write_text(cleaned, encoding="utf-8")
+            log.warning(
+                "render: rewrote/stripped media includegraphics before latexmk (%s)",
+                work_tex.name,
+            )
 
         # PDF is the primary, reliable artifact.
         if "pdf" in formats:
