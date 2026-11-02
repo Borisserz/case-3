@@ -29,6 +29,16 @@ _MEDIA_INCLUDEGRAPHICS = re.compile(
     r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?((?:fig|cht|usr)_[a-z0-9_]+)\.png\}",
     re.I,
 )
+# Diagrams are Liber UI-only — never a print PNG (ADR-0007).
+_DIAG_INCLUDEGRAPHICS = re.compile(
+    r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?dia_[a-z0-9_]+\.png\}",
+    re.I,
+)
+# Any relative PNG include — used only for missing-file soft strip.
+_ANY_PNG_INCLUDEGRAPHICS = re.compile(
+    r"\\includegraphics(\[[^\]]*\])?\{([^}]+\.png)\}",
+    re.I,
+)
 
 
 def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -> str:
@@ -40,6 +50,11 @@ def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -
         return f"\\includegraphics{opts}{{{rel_dir}/{mid}.png}}"
 
     return _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex or "")
+
+
+def strip_diagram_includegraphics(tex: str) -> str:
+    """Drop diagram PNG includes — Mermaid lives in Liber UI, not PDF/DOCX."""
+    return _DIAG_INCLUDEGRAPHICS.sub("", tex or "")
 
 
 def strip_failed_media_includes(tex: str, status: dict[str, Any]) -> str:
@@ -78,23 +93,27 @@ def _drop_hollow_figures(tex: str) -> str:
 
 
 def strip_missing_media_includes(tex: str, work_dir: Path) -> str:
-    """Remove media \\includegraphics whose PNG is absent under ``work_dir``.
+    """Remove \\includegraphics{…png} whose file is absent under ``work_dir``.
 
-    Soft safety net before latexmk (avoids graphics Division-by-0).
+    Soft safety net before latexmk (avoids graphics Division-by-0). Covers
+    fig_/cht_/usr_ and leaked dia_* / bare paths.
     """
     root = Path(work_dir)
     if not tex:
         return tex or ""
 
     def _repl(m: re.Match[str]) -> str:
-        mid = m.group(2)
-        # Match rewritten form figures/<id>.png or bare (rewrite should run first).
-        for cand in (root / "figures" / f"{mid}.png", root / f"{mid}.png"):
-            if cand.is_file():
-                return m.group(0)
+        rel = (m.group(2) or "").strip()
+        if not rel or rel.startswith("/") or rel.startswith("\\"):
+            return m.group(0)
+        parts = Path(rel).parts
+        if ".." in parts:
+            return m.group(0)
+        if (root / rel).is_file():
+            return m.group(0)
         return ""
 
-    out = _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex)
+    out = _ANY_PNG_INCLUDEGRAPHICS.sub(_repl, tex)
     return _drop_hollow_figures(out)
 
 
@@ -200,6 +219,7 @@ def inject_media(
     out = strip_orphan_slots(out)
     out = rewrite_media_includegraphics_paths(out, rel_dir=rel_dir)
     out = strip_failed_media_includes(out, status)
+    out = strip_diagram_includegraphics(out)
     out = _drop_hollow_figures(out)
     out = ensure_document_preamble(out)
     return out

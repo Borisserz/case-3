@@ -27,3 +27,14 @@ def test_strips_missing_png_keeps_present(tmp_path: Path) -> None:
     assert "fig_02" not in out
     assert "cht_01" not in out
     assert r"\begin{figure}" not in out
+
+
+def test_strips_missing_bare_dia_png(tmp_path: Path) -> None:
+    tex = r"""\documentclass{article}
+\begin{document}
+\includegraphics[width=0.85\textwidth]{dia_0.png}
+\end{document}
+"""
+    out = strip_missing_media_includes(tex, tmp_path)
+    assert "dia_0" not in out
+    assert r"\includegraphics" not in out

@@ -51,3 +51,24 @@ def test_leaves_correct_figures_path_unchanged() -> None:
     figures = [{"id": "fig_01", "caption": "A", "width": r"0.85\textwidth"}]
     out = inject_media(tex, figures, [], status)
     assert out.count(r"\includegraphics[width=0.85\textwidth]{figures/fig_01.png}") == 1
+
+
+def test_strips_diagram_includegraphics_never_in_pdf() -> None:
+    """Diagrams are Liber UI-only (ADR-0007); model still leaks dia_*.png into TeX."""
+    tex = r"""\documentclass{article}
+\begin{document}
+See flow.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{dia_0.png}
+\caption{Schema}
+\end{figure}
+Done.
+\end{document}
+"""
+    out = inject_media(tex, [], [], {})
+    assert "dia_0" not in out
+    assert r"\includegraphics" not in out
+    assert r"\begin{figure}" not in out
+    assert "See flow." in out
+    assert "Done." in out
