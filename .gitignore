@@ -22,6 +22,9 @@ docs/
 # Dev smoke Source texts (not needed on work desk)
 fixtures/
 
+# Cloudflare image worker — home/dev only (work desk uses office IMAGE_API)
+workers/
+
 # Scripts — work desk only needs setup / api / web / push-debug
 scripts/**
 !scripts/setup.cmd
