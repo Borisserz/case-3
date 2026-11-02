@@ -764,7 +764,8 @@
 }
 
 .artifact-source-pre,
-.artifact-source-md {
+.artifact-source-md,
+.artifact-source-editor {
   margin: 0;
   padding: 0.85rem 1rem;
   border-radius: var(--radius-sm);
@@ -773,6 +774,37 @@
   font-size: 0.84rem;
   line-height: 1.55;
   word-break: break-word;
+}
+
+.artifact-source-pre.is-editable,
+.artifact-source-md.is-editable {
+  cursor: text;
+}
+
+.artifact-source-pre.is-editable:hover,
+.artifact-source-md.is-editable:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--rule));
+}
+
+.artifact-source-editor {
+  display: block;
+  width: 100%;
+  min-height: min(28rem, 62vh);
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  color: var(--ink);
+  outline: none;
+}
+
+.artifact-source-editor:focus {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--rule));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.artifact-source-edit-hint {
+  font-size: 0.78rem;
 }
 
 .artifact-source-pre {

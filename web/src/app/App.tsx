@@ -638,6 +638,15 @@ export default function App() {
                 }
                 sourceText={railSourceText}
                 sourceTitle={railSourceTitle}
+                sourceEditable={
+                  Boolean(sourceDraft) && railArtifact.kind !== "intent"
+                }
+                onSourceTextChange={(next) => {
+                  setSourceDraft((d) => (d ? { ...d, text: next } : d));
+                  setActiveArtifact((a) =>
+                    a?.kind === "source" ? { ...a, text: next } : a,
+                  );
+                }}
                 palettes={palettes}
                 catalogTypes={catalog}
                 defaultPalette={chartPalette}

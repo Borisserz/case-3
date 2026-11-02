@@ -102,6 +102,9 @@ type Props = {
   report: ReportBundle | null;
   sourceText?: string | null;
   sourceTitle?: string | null;
+  /** Pre-run sourceDraft — Source tab click-to-edit. */
+  sourceEditable?: boolean;
+  onSourceTextChange?: (text: string) => void;
   palettes?: PaletteInfo[];
   catalogTypes?: string[];
   defaultPalette?: string;
@@ -137,6 +140,8 @@ export function ArtifactRail({
   report,
   sourceText,
   sourceTitle,
+  sourceEditable = false,
+  onSourceTextChange,
   palettes = [],
   catalogTypes = [],
   defaultPalette = "atelier",
@@ -289,6 +294,8 @@ export function ArtifactRail({
       // Diagram fullscreen owns Esc while open.
       if (document.querySelector(".diagram-fullscreen")) return;
       if (document.querySelector(".presentation-fullscreen")) return;
+      // Source draft click-to-edit: Esc exits editor first (not rail).
+      if (document.querySelector(".artifact-source.is-editing")) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -693,8 +700,10 @@ export function ArtifactRail({
               {!showDiagramSurface && tab === "source" ? (
                 <SourcePane
                   title={displaySourceTitle}
-                  text={displaySource || "Нет текста источника."}
+                  text={displaySource}
                   fileName={sourceFileName}
+                  editable={sourceEditable}
+                  onTextChange={onSourceTextChange}
                 />
               ) : null}
 
