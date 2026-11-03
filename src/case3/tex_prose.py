@@ -203,19 +203,74 @@ _SKIP_ENVS = (
     "tikzpicture",
 )
 
-_BULLET_LINE = re.compile(r"^([ \t]*)([-•])\s+(\S.*)$")
+# Markdown ``* `` / ``- `` / ``• `` — LLM outline dumps use asterisks a lot.
+_BULLET_LINE = re.compile(r"^([ \t]*)([-•*])\s+(\S.*)$")
 _BEGIN_ENV = re.compile(r"\\begin\{([a-zA-Z*]+)\}")
 _END_ENV = re.compile(r"\\end\{([a-zA-Z*]+)\}")
+# Emoji / dingbats in \\section titles break Liber print look (Win desk 070133).
+_EMOJI_IN_TITLE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"  # symbols & pictographs
+    "\U00002700-\U000027BF"  # dingbats
+    "\U00002600-\U000026FF"  # misc symbols
+    "\U0000FE0F"  # variation selector
+    "]+",
+)
+
+
+def scrub_emoji_from_headings(tex: str) -> str:
+    """Strip emoji from ``\\section{…}`` / ``\\subsection{…}`` titles."""
+    if not tex or not _HEADING_OPEN.search(tex):
+        return tex
+    out: list[str] = []
+    i = 0
+    while i < len(tex):
+        m = _HEADING_OPEN.match(tex, i)
+        if not m:
+            out.append(tex[i])
+            i += 1
+            continue
+        out.append(m.group(0))
+        i = m.end()
+        depth = 1
+        title_chars: list[str] = []
+        while i < len(tex) and depth > 0:
+            ch = tex[i]
+            if ch == "{":
+                depth += 1
+                title_chars.append(ch)
+                i += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    cleaned = _EMOJI_IN_TITLE.sub("", "".join(title_chars))
+                    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip(" \t")
+                    out.append(cleaned)
+                    out.append("}")
+                    i += 1
+                else:
+                    title_chars.append(ch)
+                    i += 1
+            else:
+                title_chars.append(ch)
+                i += 1
+        if depth > 0:
+            cleaned = _EMOJI_IN_TITLE.sub("", "".join(title_chars))
+            out.append(cleaned)
+            out.append("}")
+    return "".join(out)
 
 
 def harden_prose_lists(tex: str) -> str:
-    """Turn consecutive ``- `` / ``• `` lines outside skip-envs into itemize.
+    """Turn consecutive ``- `` / ``• `` / ``* `` lines outside skip-envs into itemize.
 
     Leaves existing itemize/enumerate/tabular bodies untouched. Idempotent.
     """
-    if not tex or ("- " not in tex and "•" not in tex and "• " not in tex):
+    if not tex or (
+        "- " not in tex and "* " not in tex and "•" not in tex and "• " not in tex
+    ):
         # Fast path: still allow "•foo" without space? require space via regex.
-        if "•" not in tex and "- " not in tex:
+        if "•" not in tex and "- " not in tex and "* " not in tex:
             return tex
 
     lines = tex.splitlines(keepends=True)

@@ -29,6 +29,13 @@ _EMPTY_FIGURE_LOOSE = re.compile(
     r"\\begin\{figure\}.*?\\end\{figure\}",
     re.S,
 )
+# LLM puts the slot *inside* includegraphics — TeX then treats % as comment and
+# eats the closing ``}`` (Gin@ii / runaway caption cascade). Line-anchored slot
+# inject misses these.
+_INLINE_SLOT_INCLUDEGRAPHICS = re.compile(
+    r"\\includegraphics(\[[^\]]*\])?\{%CASE3_(?:FIG|CHART):([a-z][a-z0-9_]{0,31})%\}",
+    re.I,
+)
 # LLM sometimes writes \includegraphics{fig_02.png} instead of a CASE3 slot.
 _MEDIA_INCLUDEGRAPHICS = re.compile(
     r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?((?:fig|cht|usr)_[a-z0-9_]+)\.png\}",
@@ -44,6 +51,17 @@ _ANY_PNG_INCLUDEGRAPHICS = re.compile(
     r"\\includegraphics(\[[^\]]*\])?\{([^}]+\.png)\}",
     re.I,
 )
+
+
+def rewrite_inline_slot_includegraphics(tex: str, *, rel_dir: str = "figures") -> str:
+    """``\\includegraphics{…%CASE3_FIG:id%}`` → ``figures/id.png`` (before latexmk)."""
+
+    def _repl(m: re.Match[str]) -> str:
+        opts = m.group(1) or ""
+        mid = m.group(2)
+        return f"\\includegraphics{opts}{{{rel_dir}/{mid}.png}}"
+
+    return _INLINE_SLOT_INCLUDEGRAPHICS.sub(_repl, tex or "")
 
 
 def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -> str:
@@ -221,6 +239,8 @@ def inject_media(
         return _figure_env(cid, meta, rel_dir=rel_dir, label_prefix="chart")
 
     out = _CHART_SLOT.sub(repl_chart, out)
+    # Before orphan strip: heal slots trapped inside \\includegraphics{…%…%}.
+    out = rewrite_inline_slot_includegraphics(out, rel_dir=rel_dir)
     out = strip_orphan_slots(out)
     out = rewrite_media_includegraphics_paths(out, rel_dir=rel_dir)
     out = strip_failed_media_includes(out, status)
