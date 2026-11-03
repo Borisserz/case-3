@@ -174,8 +174,97 @@ def _force_black_headings(doc) -> None:  # noqa: ANN001
             run.font.color.rgb = ink
 
 
+_CAPTION_ALREADY = re.compile(
+    r"^(?:Рис\.|Рисунок|Fig\.|Figure)\s*\d*",
+    re.IGNORECASE,
+)
+_MAX_CAPTION_CHARS = 300
+
+
+def _para_has_media(para) -> bool:  # noqa: ANN001
+    """True if paragraph holds a drawing, VML pict, or chart graphic."""
+    return bool(
+        para._p.xpath(
+            './/*[local-name()="drawing" or local-name()="pict" or local-name()="chart"]'
+        )
+    )
+
+
+def _style_caption_runs(para) -> None:  # noqa: ANN001
+    from docx.shared import Pt, RGBColor
+
+    ink = RGBColor(0x12, 0x12, 0x12)
+    for run in para.runs:
+        if not (run.text or "").strip() and not run.text:
+            continue
+        run.font.color.rgb = ink
+        run.font.size = Pt(11)
+        run.font.italic = False
+
+
+def _rewrite_caption_text(para, text: str) -> None:  # noqa: ANN001
+    """Replace paragraph text with a single styled run (drop gray/tiny pandoc runs)."""
+    from docx.shared import Pt, RGBColor
+
+    # Clear existing runs' text first (keeps paragraph properties).
+    for run in list(para.runs):
+        run.text = ""
+    if para.runs:
+        run = para.runs[0]
+        run.text = text
+    else:
+        run = para.add_run(text)
+    run.font.color.rgb = RGBColor(0x12, 0x12, 0x12)
+    run.font.size = Pt(11)
+    run.font.italic = False
+    run.bold = False
+
+
+def polish_media_captions(doc) -> int:  # noqa: ANN001
+    """Center media paras; next short caption → ``Рис. N. …`` centered Liber ink.
+
+    Returns how many captions were numbered/rewritten (0 if none).
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    paras = list(doc.paragraphs)
+    fig_n = 0
+    touched = 0
+    i = 0
+    while i < len(paras):
+        p = paras[i]
+        if not _para_has_media(p):
+            i += 1
+            continue
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        j = i + 1
+        while j < len(paras) and not (paras[j].text or "").strip():
+            j += 1
+        if j >= len(paras):
+            i += 1
+            continue
+        cap = paras[j]
+        style_name = (cap.style.name if cap.style else "") or ""
+        if style_name.startswith("Heading") or _para_has_media(cap):
+            i += 1
+            continue
+        raw = (cap.text or "").strip()
+        if not raw or len(raw) > _MAX_CAPTION_CHARS:
+            i += 1
+            continue
+        fig_n += 1
+        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if _CAPTION_ALREADY.match(raw):
+            _style_caption_runs(cap)
+        else:
+            _rewrite_caption_text(cap, f"Рис. {fig_n}. {raw}")
+            touched += 1
+        i = j + 1
+    return touched
+
+
 def polish_docx(path: Path | str) -> Path:
-    """Liber table look: white header, visible grid borders, numeric align."""
+    """Liber tables + centered media + ``Рис. N.`` captions."""
     try:
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -197,8 +286,9 @@ def polish_docx(path: Path | str) -> Path:
                     continue
                 for p in cell.paragraphs:
                     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    n_caps = polish_media_captions(doc)
     doc.save(str(path))
-    log.info("polished DOCX tables → %s", path)
+    log.info("polished DOCX tables + media captions (%d) → %s", n_caps, path)
     return path
 
 

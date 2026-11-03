@@ -107,6 +107,84 @@ def test_reference_docx_has_liber_margins_and_header() -> None:
     assert "PAGE" in footer_xml or "fldChar" in footer_xml or "w:instrText" in footer_xml
 
 
+def _tiny_png(path: Path) -> None:
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    idat = zlib.compress(b"\x00\xff\x00\x00")
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", idat)
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_polish_centers_picture_and_prefixes_ris_caption(tmp_path: Path) -> None:
+    from docx.shared import Inches, Pt, RGBColor
+
+    png = tmp_path / "px.png"
+    _tiny_png(png)
+    path = tmp_path / "media.docx"
+    doc = Document()
+    doc.add_paragraph("Intro")
+    doc.add_picture(str(png), width=Inches(1.5))
+    cap = doc.add_paragraph("Ночной склад в Бресте")
+    # Simulate pandoc gray tiny caption
+    for run in cap.runs:
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+    doc.add_paragraph("Длинный абзац прозы после подписи, который не должен стать Рис.")
+    doc.save(str(path))
+
+    polish_docx(path)
+    out = Document(str(path))
+    media_i = next(
+        i
+        for i, p in enumerate(out.paragraphs)
+        if p._p.xpath('.//*[local-name()="drawing"]')
+    )
+    assert out.paragraphs[media_i].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    cap_p = out.paragraphs[media_i + 1]
+    assert cap_p.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert cap_p.text.startswith("Рис. 1. ")
+    assert "Ночной склад в Бресте" in cap_p.text
+    assert any(
+        (r.font.color.rgb == RGBColor(0x12, 0x12, 0x12))
+        or (r.font.size and r.font.size.pt >= 10)
+        for r in cap_p.runs
+        if r.text
+    )
+    # Body unchanged
+    assert not any(p.text.startswith("Рис.") and "Длинный" in p.text for p in out.paragraphs)
+
+
+def test_polish_caption_idempotent_keeps_existing_ris_prefix(tmp_path: Path) -> None:
+    from docx.shared import Inches
+
+    png = tmp_path / "px.png"
+    _tiny_png(png)
+    path = tmp_path / "media2.docx"
+    doc = Document()
+    doc.add_picture(str(png), width=Inches(1.2))
+    doc.add_paragraph("Рис. 1. Уже готовая подпись")
+    doc.save(str(path))
+    polish_docx(path)
+    polish_docx(path)
+    text = Document(str(path)).paragraphs[1].text
+    assert text == "Рис. 1. Уже готовая подпись"
+    assert text.count("Рис.") == 1
+
+
 def test_polish_docx_forces_black_headings(tmp_path: Path) -> None:
     from docx.oxml.ns import qn
     from docx.shared import RGBColor
