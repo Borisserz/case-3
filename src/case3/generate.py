@@ -654,20 +654,40 @@ def fill_sparse_tex_with_source(
         r"\maketitle",
         "",
     ]
-    parts.extend(body_lines[:mid])
-    parts.append("")
-    if figure_ids or chart_ids:
-        parts.append(r"\section{Иллюстрации}")
+    # Interleave slots after section headings — never dump \\section{Иллюстрации}.
+    media_slots = [f"%CASE3_FIG:{fid}%" for fid in figure_ids] + [
+        f"%CASE3_CHART:{cid}%" for cid in chart_ids
+    ]
+    section_idxs = [
+        i for i, ln in enumerate(body_lines) if ln.startswith(r"\section{")
+    ]
+    if media_slots and section_idxs:
+        # Place one slot after each section body start (round-robin extras at end).
+        enriched: list[str] = []
+        slot_i = 0
+        for i, ln in enumerate(body_lines):
+            enriched.append(ln)
+            if i in section_idxs and slot_i < len(media_slots):
+                # skip blank after heading, then inject
+                enriched.append("")
+                enriched.append(media_slots[slot_i])
+                enriched.append("")
+                slot_i += 1
+        while slot_i < len(media_slots):
+            enriched.append(media_slots[slot_i])
+            enriched.append("")
+            slot_i += 1
+        body_lines = enriched
+        parts.extend(body_lines)
+    else:
+        parts.extend(body_lines[:mid])
         parts.append("")
-    for fid in figure_ids:
-        parts.append(f"%CASE3_FIG:{fid}%")
-        parts.append("")
-    for cid in chart_ids:
-        parts.append(f"%CASE3_CHART:{cid}%")
-        parts.append("")
-    if body_lines[mid:]:
-        parts.extend(body_lines[mid:])
-        parts.append("")
+        for s in media_slots:
+            parts.append(s)
+            parts.append("")
+        if body_lines[mid:]:
+            parts.extend(body_lines[mid:])
+            parts.append("")
     parts.append(r"\end{document}")
 
     new_body = "\n".join(parts) + "\n"
@@ -873,6 +893,19 @@ def generate_document(
             "parse failed; raw saved at %s (%d chars)", raw_path, len(raw or "")
         )
         raise
+
+    # Model often dumps all slots under \\section{Визуализация}/Иллюстрации (081536).
+    from case3.tex_media_place import redistribute_gallery_slots
+
+    before = tex
+    tex = redistribute_gallery_slots(tex, figures=figures, charts=charts)
+    if tex != before:
+        log.warning(
+            "redistributed trailing gallery slots into prose sections "
+            "(figs=%d charts=%d)",
+            len(figures),
+            len(charts),
+        )
 
     preferred = preferred_types_from_intent(intent_text)
     if preferred:

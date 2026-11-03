@@ -9,7 +9,7 @@ But if the chart ceiling is **≥ 1** and Source **has usable numbers**, you **s
 1. Source has **explicit numbers** (≥2 comparable points, shares, time series, or one clear KPI).
 2. A chart helps the reader more than (or alongside) a table.
 3. Every plotted value is from Source (only simple % / differences allowed).
-4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains.
+4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains. **Forbidden:** trailing dump sections named «Визуализация данных» / «Иллюстрации» / «Графики» that only list charts/photos — scatter slots through the report body instead.
 5. `caption`: Russian, specific («Клиенты по годам», not «График 1»).
 6. Optional chat card meta (numbers **only from Source**): `insight` (1 short Russian sentence) and `highlights: [{label, value, pct?}]` for the top categories — never invent figures.
 
@@ -48,5 +48,5 @@ Only skip (`"figures": []`) when **all** hold: budget is 0, **or** Intent says �
 - Photo prompts **MUST NOT**: handshake, stock smiling team in glass office, purple/violet/magenta neon glow, hologram UI, watermark / Shutterstock look, plastic 3D people, confetti/trophy slam energy.
 - Prefer photorealistic clarity; avoid readable faces of real people when possible. Server also hardens brand-safe + pack style-lock.
 - Never use figures for KPI/number comparisons — those are `charts`.
-- Place each `%CASE3_FIG:id%` slot near the prose it illustrates (not dumped at the end).
+- Place each `%CASE3_FIG:id%` slot near the prose it illustrates. **Never** gather photos into a final `\section{Иллюстрации}` (or similar) — one slot beside the matching paragraph.
 - If {{MAX_IMAGES}} is 0 → `"figures": []`, no `%CASE3_FIG:%` slots.
