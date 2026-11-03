@@ -60,6 +60,53 @@ def fix_unclosed_textbf(tex: str) -> str:
     return "".join(out)
 
 
+# \\section / \\subsection go through \\@dblarg → \\@xdblarg. Missing ``}`` yields
+# ``File ended while scanning use of \\@xdblarg`` (latexmk exit 12).
+_HEADING_OPEN = re.compile(
+    r"\\(chapter|section|subsection|subsubsection|paragraph)\*?\{"
+)
+
+
+def fix_unclosed_heading_args(tex: str) -> str:
+    """Close ``\\section{…`` / ``\\subsection{…`` when the brace never closes.
+
+    Titles are single-line in our reports: at depth 1, a newline ends the title.
+    """
+    if not tex or not _HEADING_OPEN.search(tex):
+        return tex
+    out: list[str] = []
+    i = 0
+    while i < len(tex):
+        m = _HEADING_OPEN.match(tex, i)
+        if not m:
+            out.append(tex[i])
+            i += 1
+            continue
+        out.append(m.group(0))
+        i = m.end()
+        depth = 1
+        while i < len(tex) and depth > 0:
+            ch = tex[i]
+            if ch == "{":
+                depth += 1
+                out.append(ch)
+                i += 1
+            elif ch == "}":
+                depth -= 1
+                out.append(ch)
+                i += 1
+            elif ch == "\n" and depth == 1:
+                out.append("}")
+                depth = 0
+                break
+            else:
+                out.append(ch)
+                i += 1
+        if depth > 0:
+            out.append("}")
+    return "".join(out)
+
+
 def fix_markdown_bold_leaks(tex: str) -> str:
     """Repair ``\\textbf{…**``, leftover ``**…**``, and unclosed ``\\textbf{``."""
     if not tex:

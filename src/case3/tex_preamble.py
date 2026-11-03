@@ -863,10 +863,15 @@ def ensure_document_preamble(tex: str) -> str:
     out = maybe_landscape_wide_tables(out)
     out = strip_orphan_table_markup(out)
     out = strip_invented_cites(out, allowed_keys=set())
-    from case3.tex_prose import fix_markdown_bold_leaks, harden_prose_lists
+    from case3.tex_prose import (
+        fix_markdown_bold_leaks,
+        fix_unclosed_heading_args,
+        harden_prose_lists,
+    )
     from case3.tex_tables import harden_table_rules
 
     out = fix_markdown_bold_leaks(out)
+    out = fix_unclosed_heading_args(out)
     out = harden_prose_lists(out)
     return harden_table_rules(out)
 
