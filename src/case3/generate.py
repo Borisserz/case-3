@@ -401,15 +401,40 @@ def _emit_tabularx(rows: list[list[str]]) -> list[str]:
     return out
 
 
+_EMOJI_CHARS = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U00002600-\U000026FF"
+    "\U0000FE0F"
+    "]+"
+)
+_MD_BULLET = re.compile(r"^([-*•]|\d+\.)\s+(\S.*)$")
+# Meta-skeleton kits (Win desk 070133): instruction wrappers, not report prose.
+_DROP_SOURCE_LINE = re.compile(
+    r"(?i)^("
+    r"понял вас|ниже представлен|вот текст|конечно[,.]?|"
+    r"ниже данны|скопируй|для построения график|"
+    r".*полный комплект.*|"
+    r".*\bскелет\b.*|"
+    r".*вы можете взять.*|"
+    r".*используйте эт(у|о|и).*|"
+    r".*блок\s*\d+.*"
+    r").*"
+)
+
+
+def _scrub_heading_text(text: str) -> str:
+    cleaned = _EMOJI_CHARS.sub("", text or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip(" \t")
+    return cleaned
+
+
 def _source_lines_to_tex(source: str) -> list[str]:
     """Turn Source (plain / light Markdown) into TeX body lines — not raw dumps."""
     text = (source or "").replace("\r\n", "\n").strip()
     # Markdown tables often arrive with blank lines between rows — normalize.
     text = re.sub(r"(\|[^\n]*\|)\n(?:\s*\n)+(?=\s*\|)", r"\1\n", text)
-    drop_re = re.compile(
-        r"(?i)^(понял вас|ниже представлен|вот текст|конечно[,.]?|"
-        r"ниже данны|скопируй|для построения график).*"
-    )
     lines_out: list[str] = []
     i = 0
     raw_lines = text.split("\n")
@@ -419,7 +444,7 @@ def _source_lines_to_tex(source: str) -> list[str]:
         if not stripped or stripped in {"***", "---"}:
             i += 1
             continue
-        if drop_re.match(stripped):
+        if _DROP_SOURCE_LINE.match(stripped):
             i += 1
             continue
         if stripped.startswith(">"):
@@ -478,7 +503,7 @@ def _source_lines_to_tex(source: str) -> list[str]:
         m_h = re.match(r"^(#{1,3})\s+(.+)$", stripped)
         if m_h:
             level = len(m_h.group(1))
-            heading = escape_tex_text(m_h.group(2).strip())
+            heading = escape_tex_text(_scrub_heading_text(m_h.group(2)))
             if level == 1 and title is None:
                 title = heading
             elif level <= 2:
@@ -489,22 +514,54 @@ def _source_lines_to_tex(source: str) -> list[str]:
                 lines_out.append("")
             i += 1
             continue
+        # Markdown / outline bullets → itemize (Win desk skeleton dumps).
+        m_b = _MD_BULLET.match(stripped)
+        if m_b:
+            items: list[str] = []
+            while i < len(raw_lines):
+                row = raw_lines[i].strip()
+                if not row:
+                    j, nxt = _next_nonempty(raw_lines, i + 1)
+                    if nxt and _MD_BULLET.match(nxt):
+                        i = j
+                        continue
+                    break
+                mb = _MD_BULLET.match(row)
+                if not mb:
+                    break
+                item = re.sub(r"\*\*(.+?)\*\*", r"«\1»", mb.group(2).strip())
+                items.append(escape_tex_text(item))
+                i += 1
+            if items:
+                lines_out.append(r"\begin{itemize}")
+                for it in items:
+                    lines_out.append(rf"\item {it}")
+                lines_out.append(r"\end{itemize}")
+                lines_out.append("")
+            continue
         chunk = [stripped]
         i += 1
         while i < len(raw_lines):
             nxt = raw_lines[i].strip()
-            if not nxt or nxt.startswith("#") or nxt.startswith("|") or nxt.startswith(
-                ">"
-            ) or nxt in {
-                "***",
-                "---",
-            }:
+            if (
+                not nxt
+                or nxt.startswith("#")
+                or nxt.startswith("|")
+                or nxt.startswith(">")
+                or _MD_BULLET.match(nxt)
+                or nxt in {
+                    "***",
+                    "---",
+                }
+            ):
                 break
             chunk.append(nxt)
             i += 1
         para = " ".join(chunk)
         para = re.sub(r"\*\*(.+?)\*\*", r"«\1»", para)
         para = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"«\1»", para)
+        if _DROP_SOURCE_LINE.match(para):
+            continue
         lines_out.append(escape_tex_text(para))
         lines_out.append("")
         if len(lines_out) > 120:
@@ -726,6 +783,9 @@ def generate_document(
         raw = merge_continuation(raw or "", cont or "")
         log.info("continuation merged → %d chars", len(raw or ""))
 
+    # Re-mkdir: Win desk 073916 lost work/ during the long LLM call
+    # (cleanup / sync / cancel race) → FileNotFoundError on write.
+    out_tex.parent.mkdir(parents=True, exist_ok=True)
     raw_path = out_tex.parent / f"{stem}.raw_model.txt"
     raw_path.write_text(raw or "", encoding="utf-8")
     if not (raw or "").strip():
