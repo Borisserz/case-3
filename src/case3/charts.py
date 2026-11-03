@@ -61,10 +61,11 @@ def max_charts_from_env() -> int:
 
 def chart_timeout_s() -> float:
     try:
-        # Win desk Playwright often needs >15s; 15 caused cht_* fail → preza crash.
-        return max(3.0, float(os.environ.get("CASE3_CHART_TIMEOUT_S", "45") or "45"))
+        # Win desk 091728 still had CASE3_CHART_TIMEOUT_S=15 → bar/line READY waits
+        # burned the whole budget on JS throw. Floor 45s; prefer fixing HTML too.
+        return max(45.0, float(os.environ.get("CASE3_CHART_TIMEOUT_S", "45") or "45"))
     except ValueError:
-        return 15.0
+        return 45.0
 
 
 def file_url_to_path(url: str) -> Path:
@@ -213,11 +214,18 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                     """(html) => {
                       const mount = document.getElementById('mount');
                       window.__CASE3_CHART_READY = false;
+                      window.__CASE3_CHART_ERROR = null;
                       mount.innerHTML = html;
                       for (const old of Array.from(mount.querySelectorAll('script'))) {
-                        const s = document.createElement('script');
-                        s.textContent = old.textContent;
-                        old.replaceWith(s);
+                        const src = old.textContent || '';
+                        old.remove();
+                        try {
+                          // eval so Chart ctor throws are catchable (replaceWith is not).
+                          (0, eval)(src);
+                        } catch (err) {
+                          window.__CASE3_CHART_ERROR = String(err && err.message || err);
+                          window.__CASE3_CHART_READY = true;
+                        }
                       }
                     }""",
                     html,
@@ -226,6 +234,9 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
                     "() => window.__CASE3_CHART_READY === true",
                     timeout=timeout_ms,
                 )
+                js_err = page.evaluate("() => window.__CASE3_CHART_ERROR")
+                if js_err:
+                    raise RuntimeError(f"chart JS error: {js_err}")
                 _force_chart_paint(page)
                 # Poll until canvas has ink — READY can still beat first paint.
                 # Under matrix load 2.5s was too short (grouped_bar → painted=0).

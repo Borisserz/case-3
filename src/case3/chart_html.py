@@ -235,6 +235,32 @@ def _repair_scripts(text: str) -> str:
     return repaired + f"<script>{_DEFER_READY}</script>"
 
 
+def nest_orphan_scale_titles(html: str) -> str:
+    """``scales:{y:{…},title:{…}}`` → nest title under y (Chart.js throws otherwise).
+
+    Win desk 091728: cht_02/cht_04 hung on wait_for_READY — Chart constructor threw
+    on an orphan ``title`` scale id beside ``y``/``x``.
+    """
+    if not html or "scales" not in html:
+        return html
+    out = html
+    for axis in ("y", "x"):
+        out = re.sub(
+            rf"(scales\s*:\s*\{{\s*{axis}\s*:\s*\{{)([^}}]*)(\}})\s*,\s*title\s*:\s*(\{{[^{{}}]*\}})",
+            rf"\1\2,title:\4\3",
+            out,
+            flags=re.I,
+        )
+    # ``scales:{x:{…},animation:false}`` — animation is not a scale.
+    out = re.sub(
+        r"(scales\s*:\s*\{(?:[^{}]|\{[^{}]*\})*?),\s*animation\s*:\s*false(\s*\})",
+        r"\1\2",
+        out,
+        flags=re.I,
+    )
+    return out
+
+
 def sanitize_chart_html(html: str) -> str:
     text = (html or "").strip()
     if not text:
@@ -259,6 +285,7 @@ def sanitize_chart_html(html: str) -> str:
         text,
         flags=re.I,
     )
+    text = nest_orphan_scale_titles(text)
     # Drop broken tooltip/tick callbacks; defer READY via a single double-rAF.
     text = _repair_scripts(text)
     return text
