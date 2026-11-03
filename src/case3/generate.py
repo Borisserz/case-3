@@ -331,32 +331,67 @@ def merge_continuation(raw: str, cont: str) -> str:
     return base + "\n" + extra
 
 
-def tex_body_is_sparse(tex: str) -> bool:
-    """True when the document has almost no prose (charts/slots only)."""
+def _tex_body_prose_stats(tex: str) -> tuple[int, int, int]:
+    """Return (prose_letters, media_slots_or_figures, section_count)."""
     m = re.search(r"\\begin\{document\}([\s\S]*?)\\end\{document\}", tex or "")
     if not m:
-        return True
+        return 0, 0, 0
     body = m.group(1)
-    body = re.sub(r"\\maketitle", "", body)
-    body = re.sub(
-        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
-        "",
-        body,
+    media = len(
+        re.findall(
+            r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%",
+            body,
+        )
     )
-    body = re.sub(r"\\begin\{figure\}[\s\S]*?\\end\{figure\}", "", body)
-    body = re.sub(r"\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}", "", body)
-    body = re.sub(r"\\caption\{[^}]*\}", "", body)
-    body = re.sub(r"\\label\{[^}]*\}", "", body)
-    body = re.sub(r"\\centering", "", body)
-    # Headings alone must not count as prose (charts-only + long \\section titles).
-    body = re.sub(
+    media += len(re.findall(r"\\begin\{figure\}", body))
+    sections = len(
+        re.findall(
+            r"\\(?:chapter|section|subsection|subsubsection)\*?",
+            body,
+        )
+    )
+    prose = re.sub(r"\\maketitle", "", body)
+    prose = re.sub(
+        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
+        "",
+        prose,
+    )
+    prose = re.sub(r"\\begin\{figure\}[\s\S]*?\\end\{figure\}", "", prose)
+    prose = re.sub(r"\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}", "", prose)
+    prose = re.sub(r"\\caption\{[^}]*\}", "", prose)
+    prose = re.sub(r"\\label\{[^}]*\}", "", prose)
+    prose = re.sub(r"\\centering", "", prose)
+    prose = re.sub(
         r"\\(?:chapter|section|subsection|subsubsection|paragraph)\*?\{[^{}]*\}",
         "",
-        body,
+        prose,
     )
-    body = re.sub(r"%[^\n]*", "", body)
-    letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", body))
+    prose = re.sub(r"%[^\n]*", "", prose)
+    letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", prose))
+    return letters, media, sections
+
+
+def tex_body_is_sparse(tex: str) -> bool:
+    """True when the document has almost no prose (charts/slots only)."""
+    letters, _media, _sections = _tex_body_prose_stats(tex)
     return letters < 40
+
+
+def tex_body_needs_source_fill(tex: str) -> bool:
+    """Sparse OR truncated media-dump: 1 short section + many trailing slots/figs.
+
+    Win desk 080546: finish_reason=length → JSON ok, LaTeX ~1 paragraph, then
+    parse appends all fig/cht slots at EOF. Letter count >40 so sparse-fill
+    skipped → PDF is «no text / all illustrations piled».
+    """
+    letters, media, sections = _tex_body_prose_stats(tex)
+    if letters < 40:
+        return True
+    if media >= 4 and sections <= 1 and letters < 900:
+        return True
+    if media >= 6 and letters < 1200 and sections <= 2:
+        return True
+    return False
 
 
 def _is_md_table_sep(line: str) -> bool:
@@ -419,7 +454,10 @@ _DROP_SOURCE_LINE = re.compile(
     r".*\bскелет\b.*|"
     r".*вы можете взять.*|"
     r".*используйте эт(у|о|и).*|"
-    r".*блок\s*\d+.*"
+    r".*блок\s*\d+.*|"
+    r".*расширенн\w+ и углубленн\w+ верси.*|"
+    r"^я добавил\b.*|"
+    r".*готовом? к копированию.*"
     r").*"
 )
 
@@ -755,12 +793,33 @@ def generate_document(
         return out_tex, [], [], []
 
     cfg = LLMConfig.from_env()
+    # 8 charts HTML ≈ burns 4k tokens alone — Win desk still had VISION_MAX_TOKENS=4096.
+    floor_tok = 12288 if max_charts >= 4 or max_images >= 4 else 8192
+    if cfg.max_tokens < floor_tok:
+        log.warning(
+            "VISION_MAX_TOKENS=%d too low for charts=%d images=%d — bumping to %d",
+            cfg.max_tokens,
+            max_charts,
+            max_images,
+            floor_tok,
+        )
+        cfg = LLMConfig(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            model=cfg.model,
+            timeout_s=cfg.timeout_s,
+            max_retries=cfg.max_retries,
+            temperature=cfg.temperature,
+            reasoning=cfg.reasoning,
+            max_tokens=floor_tok,
+        )
     llm = client or LLMClient(cfg)
     raw = llm.complete(
         system=system, user_text=user, cancel_check=cancel_check
     )
     finish = getattr(llm, "last_finish_reason", "") or ""
     need_cont = output_looks_truncated(raw or "") or finish == "length"
+    hard_trunc = finish == "length"
     if need_cont:
         log.warning(
             "model output looks truncated (%d chars, finish_reason=%r) — continuation pass",
@@ -780,8 +839,16 @@ def generate_document(
             user_text=cont_user,
             cancel_check=cancel_check,
         )
+        cont_finish = getattr(llm, "last_finish_reason", "") or ""
+        if cont_finish == "length":
+            hard_trunc = True
+            log.warning(
+                "continuation also truncated (finish_reason=length) — will force Source fill if TeX thin"
+            )
         raw = merge_continuation(raw or "", cont or "")
         log.info("continuation merged → %d chars", len(raw or ""))
+    else:
+        hard_trunc = False
 
     # Re-mkdir: Win desk 073916 lost work/ during the long LLM call
     # (cleanup / sync / cancel race) → FileNotFoundError on write.
@@ -821,9 +888,12 @@ def generate_document(
         tex = apply_doc_title(tex, forced_title)
     tex = ensure_title_block(tex)
 
-    if tex_body_is_sparse(tex) and source_text.strip():
+    # Truncation often leaves 1 short section + all slots appended (letter count >40).
+    need_fill = bool(source_text.strip()) and tex_body_needs_source_fill(tex)
+    if need_fill:
         log.warning(
-            "TeX body is charts-only — filling prose from Source (%d chars)",
+            "TeX body thin/media-dump (hard_trunc=%s) — filling prose from Source (%d chars)",
+            hard_trunc,
             len(source_text),
         )
         tex = fill_sparse_tex_with_source(
