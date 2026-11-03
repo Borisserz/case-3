@@ -48,8 +48,13 @@ _FIRST_TOKEN = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
 _HEX_COLOR = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
 _CLICK_LINE = re.compile(r"(?im)^\s*click\s+.*$")
 # `class A,B foo` is valid; `class A,B foo bar baz` (N names) is not — LLM leak.
+# Also catches space-separated nodes: `class A B C process`.
 _CLASS_ASSIGN_LINE = re.compile(
-    r"(?im)^([ \t]*)class(?!Def\b)[ \t]+([A-Za-z][\w,-]*)[ \t]+(.+?)\s*$"
+    r"(?im)^([ \t]*)class(?!Def\b)[ \t]+(.+?)\s*$"
+)
+# LLM writes style on `class` instead of `classDef`: `class start fill:#abc,...`
+_CLASS_AS_CLASSDEF = re.compile(
+    r"(?im)^([ \t]*)class(?!Def\b)[ \t]+([A-Za-z][\w-]*)[ \t]+(fill\s*:.*)$"
 )
 # Spaces inside edge labels: `B -- |Да| C` → `B -->|Да| C`.
 _EDGE_LABEL_SPACES = re.compile(r"([-=.~]{2,})\s+\|([^|]+)\|\s+")
@@ -92,33 +97,65 @@ def _rewrite_unsafe_colors(mermaid: str) -> str:
 
 
 def _repair_class_assign_lines(mermaid: str) -> str:
-    """Fix LLM ``class A,B,C start decision process`` → one class per node.
+    """Fix LLM class / classDef leaks.
 
-    Mermaid allows only one className per ``class`` statement. When node count
-    matches name count, zip 1:1; otherwise drop the line (``:::role`` may remain).
+    - ``class start fill:#…`` → ``classDef start fill:#…``
+    - ``class A,B,C start decision process`` → one class per node (zip)
+    - ``class A B C process`` (space-separated nodes, one class) → ``class A,B,C process``
     """
     out: list[str] = []
     for line in (mermaid or "").splitlines():
+        as_def = _CLASS_AS_CLASSDEF.match(line)
+        if as_def:
+            indent, name, style = as_def.group(1), as_def.group(2), as_def.group(3).strip()
+            out.append(f"{indent}classDef {name} {style}")
+            continue
         m = _CLASS_ASSIGN_LINE.match(line)
         if not m:
             out.append(line)
             continue
-        indent, nodes_raw, rest = m.group(1), m.group(2), m.group(3).strip()
-        names = rest.split()
-        nodes = [n.strip() for n in nodes_raw.split(",") if n.strip()]
-        if len(names) <= 1:
+        indent, rest = m.group(1), m.group(2).strip()
+        tokens = rest.split()
+        if len(tokens) < 2:
             out.append(line)
             continue
-        if len(names) == len(nodes) and all(
-            re.match(r"^[A-Za-z][\w-]*$", n) for n in names
+        # Comma-joined first token(s): `A,B,C start decision process`
+        if "," in tokens[0]:
+            nodes = [n.strip() for n in tokens[0].split(",") if n.strip()]
+            names = tokens[1:]
+            if len(names) <= 1:
+                # `class A,B,C process` — valid Mermaid (one class, many nodes)
+                out.append(line)
+                continue
+            if len(names) == len(nodes) and all(
+                re.match(r"^[A-Za-z][\w-]*$", n) for n in names
+            ):
+                for node, cls in zip(nodes, names):
+                    out.append(f"{indent}class {node} {cls}")
+                continue
+            log.warning(
+                "dropped invalid mermaid class line (%d nodes / %d names): %s",
+                len(nodes),
+                len(names),
+                line.strip()[:120],
+            )
+            continue
+        # Space-separated: `class A B C process` or `class A start`
+        if len(tokens) == 2 and re.match(r"^[A-Za-z][\w-]*$", tokens[0]):
+            out.append(line)  # valid: class Node className
+            continue
+        if len(tokens) >= 3 and all(
+            re.match(r"^[A-Za-z][\w-]*$", t) for t in tokens
         ):
-            for node, cls in zip(nodes, names):
-                out.append(f"{indent}class {node} {cls}")
+            # Last token = className, earlier = nodes (same class), OR zip if counts match roles.
+            # Prefer same-class join when last looks like a role and len>2.
+            nodes, cls = tokens[:-1], tokens[-1]
+            # Heuristic: if every middle token looks like a node id (short) and last is role —
+            # emit one class line with commas (Mermaid-valid).
+            out.append(f"{indent}class {','.join(nodes)} {cls}")
             continue
         log.warning(
-            "dropped invalid mermaid class line (%d nodes / %d names): %s",
-            len(nodes),
-            len(names),
+            "dropped invalid mermaid class line: %s",
             line.strip()[:120],
         )
     return "\n".join(out)

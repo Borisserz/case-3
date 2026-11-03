@@ -261,6 +261,20 @@ def scrub_emoji_from_headings(tex: str) -> str:
     return "".join(out)
 
 
+def unstar_headings(tex: str) -> str:
+    """``\\section*{…}`` / ``\\subsection*{…}`` → numbered (deck twin + report).
+
+    Win desk 083615: presentation TeX used 20 starred headings → no numbers in
+    print twin. Product wants numbered structure in PDF/DOCX.
+    """
+    if not tex or r"section*{" not in tex:
+        return tex
+    out = re.sub(r"\\section\*\{", r"\\section{", tex)
+    out = re.sub(r"\\subsection\*\{", r"\\subsection{", out)
+    out = re.sub(r"\\subsubsection\*\{", r"\\subsubsection{", out)
+    return out
+
+
 def harden_prose_lists(tex: str) -> str:
     """Turn consecutive ``- `` / ``• `` / ``* `` lines outside skip-envs into itemize.
 

@@ -9,7 +9,7 @@ But if the chart ceiling is **≥ 1** and Source **has usable numbers**, you **s
 1. Source has **explicit numbers** (≥2 comparable points, shares, time series, or one clear KPI).
 2. A chart helps the reader more than (or alongside) a table.
 3. Every plotted value is from Source (only simple % / differences allowed).
-4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains. **Forbidden:** trailing dump sections named «Визуализация данных» / «Иллюстрации» / «Графики» that only list charts/photos — scatter slots through the report body instead.
+4. Place `%CASE3_CHART:id%` **alone on its line** next to the prose it explains. **Forbidden:** trailing dump sections — «Визуализация данных» / «Иллюстрации» / «Графики» / «Приложение: … для визуализации» / any appendix that only lists charts/photos — scatter slots through the report body instead. Never wrap slots in `\begin{figure}` (pipeline wraps PNGs).
 5. `caption`: Russian, specific («Клиенты по годам», not «График 1»).
 6. Optional chat card meta (numbers **only from Source**): `insight` (1 short Russian sentence) and `highlights: [{label, value, pct?}]` for the top categories — never invent figures.
 

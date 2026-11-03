@@ -1,6 +1,9 @@
-"""Trailing \\section{Визуализация}/Иллюстрации dumps must be scattered into prose."""
+"""Trailing gallery dumps / EOF media piles must be scattered into prose."""
 
-from case3.tex_media_place import redistribute_gallery_slots
+from case3.tex_media_place import (
+    media_slots_pile_at_eof,
+    redistribute_gallery_slots,
+)
 
 
 def test_081536_signature_slots_leave_gallery() -> None:
@@ -72,3 +75,111 @@ def test_no_gallery_untouched() -> None:
         charts=[{"id": "cht_01", "caption": "X"}],
     )
     assert out == tex
+
+
+def test_082722_appendix_subsection_grafiki_with_figure_envs() -> None:
+    """Win desk 082722: appendix + \\subsection{Графики} wraps slots in figure envs."""
+    tex = r"""\documentclass{article}
+\begin{document}
+\section{Введение}
+Контекст цифровизации.
+
+\section{Секторальный анализ}
+\subsection{Промышленность и ЗПК}
+Заводы и ЗПК.
+
+\subsection{Финансовый сектор}
+Банки и ROI.
+
+\section{Приложение: Детализированные данные для визуализации}
+\subsection{Графики}
+\textbf{График 2: Распределение бюджета}
+\begin{figure}[H]
+\centering
+%CASE3_CHART:cht_03%
+\caption{Дефицит кадров ИИ-специалистов}
+\end{figure}
+\begin{figure}[H]
+\centering
+%CASE3_CHART:cht_07%
+\caption{ROI от внедрения ИИ в банках}
+\end{figure}
+\end{document}
+"""
+    charts = [
+        {"id": "cht_03", "caption": "Дефицит кадров ИИ-специалистов"},
+        {"id": "cht_07", "caption": "ROI от внедрения ИИ в банках"},
+    ]
+    out = redistribute_gallery_slots(tex, figures=[], charts=charts)
+    assert r"\subsection{Графики}" not in out
+    assert r"\section{Приложение" not in out
+    assert "%CASE3_CHART:cht_03%" in out
+    assert "%CASE3_CHART:cht_07%" in out
+    # figure wrappers from dump must not survive as empty shells
+    assert out.count(r"\begin{figure}") == 0
+    fin = out.split(r"\subsection{Финансовый", 1)[-1]
+    assert "%CASE3_CHART:cht_07%" in fin.split(r"\section{", 1)[0]
+
+
+def test_synonym_match_factory_to_industry() -> None:
+    tex = r"""\documentclass{article}
+\begin{document}
+\section{Обзор}
+Текст.
+
+\section{Отрасли}
+\subsection{Промышленность}
+Цифровые двойники на заводах.
+
+\subsection{Логистика}
+Цепочки поставок.
+
+\section{Иллюстрации}
+\subsection{Цех}
+%CASE3_FIG:fig_01%
+\end{document}
+"""
+    figures = [{"id": "fig_01", "caption": "Роботизированный заводской цех"}]
+    out = redistribute_gallery_slots(tex, figures=figures, charts=[])
+    ind = out.split(r"\subsection{Промышленность", 1)[-1]
+    assert "%CASE3_FIG:fig_01%" in ind.split(r"\subsection{", 1)[0]
+
+
+def test_eof_media_pile_force_redistribute() -> None:
+    """Slots piled in last 20% without a named gallery still get scattered."""
+    prose = (
+        "\\section{A}\n"
+        + ("Параграф про рынок и бюджет. " * 40)
+        + "\n\\section{B}\n"
+        + ("Текст про промышленность и заводы. " * 40)
+        + "\n"
+    )
+    pile = (
+        "%CASE3_CHART:cht_01%\n"
+        "%CASE3_CHART:cht_02%\n"
+        "%CASE3_FIG:fig_01%\n"
+        "%CASE3_FIG:fig_02%\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        + prose
+        + pile
+        + "\\end{document}\n"
+    )
+    assert media_slots_pile_at_eof(tex) is True
+    out = redistribute_gallery_slots(
+        tex,
+        figures=[
+            {"id": "fig_01", "caption": "Цех промышленности"},
+            {"id": "fig_02", "caption": "Склад логистики"},
+        ],
+        charts=[
+            {"id": "cht_01", "caption": "Рынок ИИ"},
+            {"id": "cht_02", "caption": "Бюджет"},
+        ],
+    )
+    body = out.split(r"\begin{document}", 1)[-1]
+    # not all four still glued at the very end
+    tail = body[-200:]
+    assert tail.count("%CASE3_") < 4
+    assert "%CASE3_CHART:cht_01%" in body

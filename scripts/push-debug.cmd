@@ -23,9 +23,14 @@ if exist runs\logs xcopy /E /I /Y /Q "runs\logs\*" "%DEST%\logs\" >nul
 if exist runs\work xcopy /E /I /Y /Q "runs\work\*" "%DEST%\work\" >nul
 if exist runs\uploads xcopy /E /I /Y /Q "runs\uploads\*" "%DEST%\uploads\" >nul
 
-REM Drop heavy binaries (comment says no PDF/DOCX; keep tex/logs/raw/png).
-del /s /q "%DEST%\*.pdf" 2>nul
-del /s /q "%DEST%\*.docx" 2>nul
+REM Drop heavy binaries by default (keep tex/logs/raw/png).
+REM KEEP_PDF=1 → leave PDF (and DOCX) for print-quality review.
+if /I "%KEEP_PDF%"=="1" (
+  echo       KEEP_PDF=1 — leaving PDF/DOCX in bundle
+) else (
+  del /s /q "%DEST%\*.pdf" 2>nul
+  del /s /q "%DEST%\*.docx" 2>nul
+)
 
 dir /s /b "%DEST%\*.json" "%DEST%\*.tex" "%DEST%\*.txt" "%DEST%\*.log" 2>nul | findstr /r "." >nul
 if errorlevel 1 (

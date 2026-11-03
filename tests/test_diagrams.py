@@ -59,6 +59,39 @@ def test_sanitize_drops_unmappable_multi_class_line() -> None:
     assert "A-->B" in out
 
 
+def test_sanitize_repairs_space_separated_class_nodes() -> None:
+    """LLM emits ``class A B C process`` (spaces, one class) — keep as class A,B,C process."""
+    raw = (
+        "flowchart TD\n"
+        "  A-->B-->C\n"
+        "  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22\n"
+        "  class A B C process\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "class A B C process" not in out
+    assert "class A,B,C process" in out or (
+        "class A process" in out and "class B process" in out and "class C process" in out
+    )
+
+
+def test_sanitize_rewrites_class_style_as_classdef() -> None:
+    """LLM writes ``class start fill:#…`` instead of classDef — rewrite."""
+    raw = (
+        "flowchart TD\n"
+        "  A[X]:::start --> B[Y]\n"
+        "  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n"
+        "  class A start\n"
+        "  class start fill:#d4ebe8,stroke:#004D47,color:#1a2e22\n"
+        "  class process fill:#eef6f5,stroke:#009988,color:#1a2e22\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "class start fill:" not in out
+    assert "class process fill:" not in out
+    assert "classDef start fill:" in out
+    assert "classDef process fill:" in out
+    assert "class A start" in out
+
+
 def test_sanitize_rewrites_purple_and_strips_click() -> None:
     raw = (
         "flowchart TD\n"

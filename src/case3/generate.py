@@ -814,7 +814,13 @@ def generate_document(
 
     cfg = LLMConfig.from_env()
     # 8 charts HTML ≈ burns 4k tokens alone — Win desk still had VISION_MAX_TOKENS=4096.
-    floor_tok = 12288 if max_charts >= 4 or max_images >= 4 else 8192
+    # ≥6 charts need headroom for full Chart.js HTML + TeX (16384).
+    if max_charts >= 6 or (max_charts >= 4 and max_images >= 4):
+        floor_tok = 16384
+    elif max_charts >= 4 or max_images >= 4:
+        floor_tok = 12288
+    else:
+        floor_tok = 8192
     if cfg.max_tokens < floor_tok:
         log.warning(
             "VISION_MAX_TOKENS=%d too low for charts=%d images=%d — bumping to %d",

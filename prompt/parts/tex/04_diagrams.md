@@ -74,6 +74,7 @@ The **model** assigns roles and colors via Mermaid `:::class` + `classDef` (or `
 Rules for colors:
 
 - Every flowchart node gets a `:::role` (or `style`) — do **not** leave all nodes the same default fill.
+- Styles go on **`classDef name fill:…`** — never `class name fill:…` (that is invalid). Assign nodes with `class A,B process` or `:::process`.
 - `color:#1a2e22` text on every classDef.
 - **No purple / violet / neon** fills (no `#7c3aed`, `#a855f7`, glow). Soft editorial only.
 - sequence / mindmap / timeline: color when Mermaid allows; flowchart is the showcase for roles.

@@ -870,11 +870,13 @@ def ensure_document_preamble(tex: str) -> str:
         fix_unclosed_heading_args,
         harden_prose_lists,
         scrub_emoji_from_headings,
+        unstar_headings,
     )
     from case3.tex_tables import harden_table_rules
 
     out = fix_markdown_bold_leaks(out)
     out = fix_unclosed_heading_args(out)
+    out = unstar_headings(out)
     out = scrub_emoji_from_headings(out)
     out = fix_unclosed_caption_args(out)
     out = fix_unclosed_float_envs(out)
