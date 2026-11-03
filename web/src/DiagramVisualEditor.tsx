@@ -680,21 +680,55 @@ function EditorInner({
             <div className="diagram-visual-toolbar" role="toolbar">
               <button
                 type="button"
-                className="btn ghost"
+                className="btn ghost icon"
                 onClick={undo}
                 disabled={!canUndo}
-                title="⌘Z"
+                title="Отменить · ⌘Z"
+                aria-label="Отменить"
               >
-                ↩
+                <svg viewBox="0 0 16 16" aria-hidden>
+                  <path
+                    d="M3.5 6.5H10a3.5 3.5 0 1 1 0 7H8.25"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M6 3.5 3.5 6.5 6 9.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
               <button
                 type="button"
-                className="btn ghost"
+                className="btn ghost icon"
                 onClick={redo}
                 disabled={!canRedo}
-                title="⌘⇧Z"
+                title="Повторить · ⌘⇧Z"
+                aria-label="Повторить"
               >
-                ↪
+                <svg viewBox="0 0 16 16" aria-hidden>
+                  <path
+                    d="M12.5 6.5H6a3.5 3.5 0 1 0 0 7h1.75"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M10 3.5 12.5 6.5 10 9.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
               <span className="diagram-visual-toolbar-sep" aria-hidden />
               <button
@@ -721,7 +755,7 @@ function EditorInner({
               </button>
               <button
                 type="button"
-                className="btn ghost"
+                className="btn danger"
                 onClick={deleteSelected}
                 disabled={!selectedNodeId && !selectedEdgeId}
               >
@@ -860,18 +894,29 @@ function EditorInner({
                     ))}
                   </select>
                 </label>
-                <div className="diagram-visual-swatches" aria-hidden>
+                <div
+                  className="diagram-visual-swatches"
+                  role="group"
+                  aria-label="Роль блока"
+                >
                   {KIND_OPTIONS.map((k) => (
                     <button
                       key={k.id}
                       type="button"
                       title={k.label}
+                      aria-pressed={
+                        (selectedNode.data as NodeData).kind === k.id
+                      }
                       className={`diagram-visual-swatch${
                         (selectedNode.data as NodeData).kind === k.id
                           ? " is-active"
                           : ""
                       }`}
-                      style={{ background: DEFAULT_COLORS[k.id].fill }}
+                      style={
+                        {
+                          ["--swatch" as string]: DEFAULT_COLORS[k.id].fill,
+                        } as CSSProperties
+                      }
                       onClick={() => {
                         mutate(() => {
                           setNodes((ns) =>
@@ -883,7 +928,9 @@ function EditorInner({
                           );
                         });
                       }}
-                    />
+                    >
+                      {k.label}
+                    </button>
                   ))}
                 </div>
               </>

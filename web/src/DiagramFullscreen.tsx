@@ -128,7 +128,7 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
             </button>
             <button
               type="button"
-              className="btn primary"
+              className="btn primary diagram-pane-png"
               disabled={busy}
               onClick={() => void onDownloadPng()}
             >

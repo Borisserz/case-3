@@ -242,7 +242,7 @@ export function DiagramPane({
           <div className="diagram-pane-actions">
             <button
               type="button"
-              className="btn primary"
+              className="btn primary diagram-pane-png"
               disabled={busy || !runId}
               onClick={() => void doRegenerate()}
             >

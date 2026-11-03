@@ -183,6 +183,100 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Shared Liber buttons — used by diagram pane/editor/sheets (Quiet Mono) */
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  min-height: 2.15rem;
+  padding: 0.42rem 0.95rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn.ghost {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--sheet) 92%, var(--paper));
+  color: var(--ink);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 3%, transparent);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--border));
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.btn.ghost:active:not(:disabled) {
+  background: var(--secondary);
+  box-shadow: none;
+}
+
+.btn.primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 650;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 10%, transparent) inset;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn.primary:active:not(:disabled) {
+  background: #000;
+}
+
+.btn.danger {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, #fff);
+  color: var(--danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, #fff);
+}
+
+.btn.icon {
+  width: 2.15rem;
+  min-width: 2.15rem;
+  height: 2.15rem;
+  min-height: 2.15rem;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.btn.icon svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
