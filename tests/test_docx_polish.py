@@ -185,6 +185,64 @@ def test_polish_caption_idempotent_keeps_existing_ris_prefix(tmp_path: Path) -> 
     assert text.count("Рис.") == 1
 
 
+def test_polish_table_caption_before_table(tmp_path: Path) -> None:
+    path = tmp_path / "tbl.docx"
+    doc = Document()
+    doc.add_paragraph("В таблице 1 приведены метрики за квартал.")
+    doc.add_paragraph("Ключевые показатели Q3")
+    table = doc.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Метрика"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "A"
+    table.rows[1].cells[1].text = "12"
+    doc.save(str(path))
+
+    polish_docx(path)
+    out = Document(str(path))
+    texts = [p.text.strip() for p in out.paragraphs]
+    assert "Таблица 1. Ключевые показатели Q3" in texts
+    assert texts[0] == "В таблице 1 приведены метрики за квартал."
+
+
+def test_polish_clamps_wide_drawing(tmp_path: Path) -> None:
+    from docx.oxml.ns import qn
+    from docx.shared import Inches
+
+    png = tmp_path / "px.png"
+    _tiny_png(png)
+    path = tmp_path / "wide.docx"
+    doc = Document()
+    doc.add_picture(str(png), width=Inches(8.0))
+    doc.add_paragraph("Подпись широкая")
+    doc.save(str(path))
+
+    polish_docx(path)
+    out = Document(str(path))
+    media = next(p for p in out.paragraphs if p._p.xpath('.//*[local-name()="drawing"]'))
+    cxs = []
+    for ext in media._p.xpath('.//*[local-name()="extent"]'):
+        cxs.append(int(ext.get("cx") or ext.get(qn("wp:cx") or "cx") or 0))
+    assert cxs, "expected wp:extent"
+    # A4 text ~6.5in; clamp ≤ 0.92 of that
+    assert max(cxs) <= 5_600_000
+    assert out.paragraphs[1].text.startswith("Рис. 1.")
+
+
+def test_polish_body_spacing_soft(tmp_path: Path) -> None:
+    path = tmp_path / "space.docx"
+    doc = Document()
+    doc.add_paragraph("Первый абзац.")
+    doc.add_paragraph("Второй абзац.")
+    doc.save(str(path))
+    polish_docx(path)
+    out = Document(str(path))
+    for p in out.paragraphs:
+        if not (p.text or "").strip():
+            continue
+        assert p.paragraph_format.space_after is not None
+        assert p.paragraph_format.space_after.pt >= 4
+
+
 def test_polish_docx_forces_black_headings(tmp_path: Path) -> None:
     from docx.oxml.ns import qn
     from docx.shared import RGBColor

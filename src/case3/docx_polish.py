@@ -178,7 +178,19 @@ _CAPTION_ALREADY = re.compile(
     r"^(?:Рис\.|Рисунок|Fig\.|Figure)\s*\d*",
     re.IGNORECASE,
 )
+_TABLE_CAPTION_ALREADY = re.compile(
+    r"^(?:Таблица|Table)\s*\d*",
+    re.IGNORECASE,
+)
+# Body lead-ins that sit above the real caption — do not promote to Таблица N.
+_TABLE_BODY_LEADIN = re.compile(
+    r"^(?:В\s+таблице|See\s+table|Table\s+\d+\s+shows)\b",
+    re.IGNORECASE,
+)
 _MAX_CAPTION_CHARS = 300
+# A4 text width ≈ 6.54in with 2.2cm margins; keep drawings ≤ 0.92 of that.
+_EMU_PER_INCH = 914400
+_MAX_DRAWING_CX = int(6.54 * 0.92 * _EMU_PER_INCH)  # ≈ 5.50e6
 
 
 def _para_has_media(para) -> bool:  # noqa: ANN001
@@ -263,8 +275,121 @@ def polish_media_captions(doc) -> int:  # noqa: ANN001
     return touched
 
 
+def _iter_body_blocks(doc):  # noqa: ANN001
+    """Yield ``('p', Paragraph)`` / ``('t', Table)`` in document order."""
+    from docx.oxml.ns import qn
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    for child in doc.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            yield "p", Paragraph(child, doc)
+        elif child.tag == qn("w:tbl"):
+            yield "t", Table(child, doc)
+
+
+def polish_table_captions(doc) -> int:  # noqa: ANN001
+    """Pandoc puts table title *before* the table — prefix ``Таблица N.``."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    blocks = list(_iter_body_blocks(doc))
+    table_n = 0
+    touched = 0
+    for i, (kind, obj) in enumerate(blocks):
+        if kind != "t":
+            continue
+        # Walk back to previous non-empty paragraph.
+        j = i - 1
+        while j >= 0:
+            k, prev = blocks[j]
+            if k == "t":
+                break
+            if (prev.text or "").strip():
+                break
+            j -= 1
+        else:
+            continue
+        if j < 0 or blocks[j][0] != "p":
+            continue
+        cap = blocks[j][1]
+        style_name = (cap.style.name if cap.style else "") or ""
+        if style_name.startswith("Heading") or _para_has_media(cap):
+            continue
+        raw = (cap.text or "").strip()
+        if not raw or len(raw) > _MAX_CAPTION_CHARS:
+            continue
+        if _TABLE_BODY_LEADIN.match(raw):
+            continue
+        if _CAPTION_ALREADY.match(raw):
+            # Figure caption accidentally adjacent — leave alone.
+            continue
+        table_n += 1
+        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if _TABLE_CAPTION_ALREADY.match(raw):
+            _style_caption_runs(cap)
+        else:
+            _rewrite_caption_text(cap, f"Таблица {table_n}. {raw}")
+            touched += 1
+    return touched
+
+
+def clamp_drawing_widths(doc, *, max_cx: int = _MAX_DRAWING_CX) -> int:  # noqa: ANN001
+    """Scale down oversized ``wp:extent`` / ``a:ext`` so media fits the text block."""
+    clamped = 0
+    for para in doc.paragraphs:
+        if not _para_has_media(para):
+            continue
+        for ext in para._p.xpath('.//*[local-name()="extent" or local-name()="ext"]'):
+            cx_raw = ext.get("cx")
+            cy_raw = ext.get("cy")
+            if cx_raw is None:
+                continue
+            try:
+                cx = int(cx_raw)
+                cy = int(cy_raw) if cy_raw is not None else 0
+            except ValueError:
+                continue
+            if cx <= max_cx or cx <= 0:
+                continue
+            scale = max_cx / float(cx)
+            new_cx = max_cx
+            new_cy = max(1, int(round(cy * scale))) if cy else cy
+            ext.set("cx", str(new_cx))
+            if cy_raw is not None:
+                ext.set("cy", str(new_cy))
+            clamped += 1
+    return clamped
+
+
+def polish_paragraph_rhythm(doc) -> None:  # noqa: ANN001
+    """Light body spacing so pandoc dumps don't look glued or sparse."""
+    from docx.shared import Pt
+
+    for para in doc.paragraphs:
+        style_name = (para.style.name if para.style else "") or ""
+        if style_name.startswith("Heading") or style_name == "Title":
+            continue
+        if _para_has_media(para):
+            pf = para.paragraph_format
+            pf.space_before = Pt(10)
+            pf.space_after = Pt(4)
+            continue
+        text = (para.text or "").strip()
+        pf = para.paragraph_format
+        if text.startswith(("Рис.", "Таблица ", "Figure ", "Table ")):
+            pf.space_before = Pt(2)
+            pf.space_after = Pt(10)
+            continue
+        if not text:
+            continue
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(8)
+        if pf.line_spacing is None:
+            pf.line_spacing = 1.15
+
+
 def polish_docx(path: Path | str) -> Path:
-    """Liber tables + centered media + ``Рис. N.`` captions."""
+    """Liber tables + centered media + ``Рис./Таблица N.`` + width clamp + rhythm."""
     try:
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -286,9 +411,18 @@ def polish_docx(path: Path | str) -> Path:
                     continue
                 for p in cell.paragraphs:
                     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    n_caps = polish_media_captions(doc)
+    n_fig = polish_media_captions(doc)
+    n_tbl = polish_table_captions(doc)
+    n_clamp = clamp_drawing_widths(doc)
+    polish_paragraph_rhythm(doc)
     doc.save(str(path))
-    log.info("polished DOCX tables + media captions (%d) → %s", n_caps, path)
+    log.info(
+        "polished DOCX (fig_caps=%d tbl_caps=%d clamps=%d) → %s",
+        n_fig,
+        n_tbl,
+        n_clamp,
+        path,
+    )
     return path
 
 
