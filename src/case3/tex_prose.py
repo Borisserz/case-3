@@ -107,6 +107,76 @@ def fix_unclosed_heading_args(tex: str) -> str:
     return "".join(out)
 
 
+# Unclosed \\caption{…} → runaway + \\Gin@iii / figure ended by \\end{document}.
+_CAPTION_OPEN = re.compile(r"\\caption\*?\{")
+_CAPTION_STOP = re.compile(
+    r"\n[ \t]*\\"
+    r"(end\{(?:figure|table|document)\}|label\{|begin\{|caption\b|"
+    r"includegraphics\b|section\b|subsection\b|chapter\b)"
+)
+
+
+def fix_unclosed_caption_args(tex: str) -> str:
+    """Close ``\\caption{…`` before float end / blank line / next structural cmd."""
+    if not tex or not _CAPTION_OPEN.search(tex):
+        return tex
+    out: list[str] = []
+    i = 0
+    while i < len(tex):
+        m = _CAPTION_OPEN.match(tex, i)
+        if not m:
+            out.append(tex[i])
+            i += 1
+            continue
+        out.append(m.group(0))
+        i = m.end()
+        depth = 1
+        while i < len(tex) and depth > 0:
+            ch = tex[i]
+            if ch == "{":
+                depth += 1
+                out.append(ch)
+                i += 1
+            elif ch == "}":
+                depth -= 1
+                out.append(ch)
+                i += 1
+            elif ch == "\n" and depth == 1:
+                if tex.startswith("\n\n", i) or _CAPTION_STOP.match(tex, i):
+                    out.append("}")
+                    depth = 0
+                    break
+                out.append(ch)
+                i += 1
+            else:
+                out.append(ch)
+                i += 1
+        if depth > 0:
+            out.append("}")
+    return "".join(out)
+
+
+_FLOAT_ENVS = ("figure", "table")
+
+
+def fix_unclosed_float_envs(tex: str) -> str:
+    """Insert missing ``\\end{figure|table}`` immediately before ``\\end{document}``."""
+    if not tex or r"\end{document}" not in tex:
+        return tex
+    end_doc = tex.rfind(r"\end{document}")
+    head = tex[:end_doc]
+    tail = tex[end_doc:]
+    closes: list[str] = []
+    for env in _FLOAT_ENVS:
+        opens = len(re.findall(rf"\\begin\{{{env}\}}", head))
+        ends = len(re.findall(rf"\\end\{{{env}\}}", head))
+        for _ in range(max(0, opens - ends)):
+            closes.append(f"\\end{{{env}}}")
+    if not closes:
+        return tex
+    return head.rstrip() + "\n" + "\n".join(closes) + "\n" + tail
+
+
 def fix_markdown_bold_leaks(tex: str) -> str:
     """Repair ``\\textbf{…**``, leftover ``**…**``, and unclosed ``\\textbf{``."""
     if not tex:

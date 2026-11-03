@@ -865,6 +865,8 @@ def ensure_document_preamble(tex: str) -> str:
     out = strip_invented_cites(out, allowed_keys=set())
     from case3.tex_prose import (
         fix_markdown_bold_leaks,
+        fix_unclosed_caption_args,
+        fix_unclosed_float_envs,
         fix_unclosed_heading_args,
         harden_prose_lists,
     )
@@ -872,6 +874,8 @@ def ensure_document_preamble(tex: str) -> str:
 
     out = fix_markdown_bold_leaks(out)
     out = fix_unclosed_heading_args(out)
+    out = fix_unclosed_caption_args(out)
+    out = fix_unclosed_float_envs(out)
     out = harden_prose_lists(out)
     return harden_table_rules(out)
 
