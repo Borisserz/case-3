@@ -25,4 +25,18 @@ describe("diagramLegend", () => {
     const ids = nodeIdsForRole(SAMPLE, "decision");
     assert.deepEqual([...ids], ["B"]);
   });
+
+  it("nodeIdsForRole works inside subgraphs (legend highlight)", () => {
+    const src = `flowchart TD
+  subgraph S [G]
+    A[Старт]:::start --> B{Ок?}:::decision
+  end
+  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22
+  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22
+`;
+    const ids = nodeIdsForRole(src, "decision");
+    assert.ok(ids.has("B"));
+    const starts = nodeIdsForRole(src, "start");
+    assert.ok(starts.has("A"));
+  });
 });

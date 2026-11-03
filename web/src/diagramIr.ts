@@ -51,11 +51,13 @@ const DEFAULT_COLORS: Record<DiaKind, RoleColor> = {
   data: { fill: "#d9e6f0", stroke: "#4a6f8c" },
 };
 
-const SHAPE = /(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\[\[[^\]]*\]\])/;
+const SHAPE = /(\[\[[^\]]*\]\]|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/;
 const CLASS_MARK = /:::[A-Za-z]\w*/;
 const CLASSDEF_RE =
   /^classDef\s+([A-Za-z]\w*)\s+.*fill:\s*(#[0-9a-fA-F]{3,8}).*stroke:\s*(#[0-9a-fA-F]{3,8})/i;
-const ARROW_RE = /-->|---|-\.->/g;
+/** Include ``<-->`` — LLM org charts often use bidirectional edges. */
+const ARROW_RE = /<-->|-->|---|-\.->/g;
+const BR_TAG = /<br\s*\/?>/gi;
 
 function parseShape(
   raw: string | undefined,
@@ -94,7 +96,8 @@ export function isSupportedFlowchartSubset(mermaid: string): boolean {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line || line.startsWith("%%")) continue;
-    if (/^(subgraph|end)\b/i.test(line)) return false;
+    // subgraph/end are flattened by parseMermaidFlowchart — OK for visual edit.
+    if (/^(subgraph|end)\b/i.test(line)) continue;
     if (/^(click|linkStyle|style)\b/i.test(line)) return false;
     const arrows = line.match(ARROW_RE);
     if (arrows && arrows.length >= 2) return false;
@@ -107,12 +110,22 @@ export function isSupportedFlowchartSubset(mermaid: string): boolean {
   }
 }
 
+function cleanLabel(label: string): string {
+  return (label || "")
+    .replace(BR_TAG, "\n")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .trim();
+}
+
 function splitEdgeLine(line: string): {
   left: string;
   midLabel?: string;
   right: string;
 } | null {
-  const labeled = line.match(/^(.+?)\s*(-->|---|-\.->)\s*\|([^|]*)\|\s*(.+)$/);
+  const labeled = line.match(
+    /^(.+?)\s*(<-->|-->|---|-\.->)\s*\|([^|]*)\|\s*(.+)$/,
+  );
   if (labeled) {
     return {
       left: labeled[1].trim(),
@@ -120,7 +133,7 @@ function splitEdgeLine(line: string): {
       right: labeled[4].trim(),
     };
   }
-  const plain = line.match(/^(.+?)\s*(-->|---|-\.->)\s*(.+)$/);
+  const plain = line.match(/^(.+?)\s*(<-->|-->|---|-\.->)\s*(.+)$/);
   if (!plain) return null;
   return { left: plain[1].trim(), right: plain[3].trim() };
 }
@@ -146,7 +159,7 @@ function parseEndpoint(chunk: string): {
   const shape = parseShape(shapeRaw);
   return {
     id,
-    label: shape.label,
+    label: cleanLabel(shape.label),
     kind: asKind(className, shape.kindHint),
   };
 }
@@ -200,8 +213,10 @@ export function parseMermaidFlowchart(
   };
 
   for (const line of lines) {
+    // Flatten: keep nodes/edges inside subgraphs; drop wrappers (visual editor
+    // has no group UI yet — Win desk 091443 org chart).
     if (/^(subgraph|end)\b/i.test(line)) {
-      throw new Error("subgraph пока не поддерживается в редакторе");
+      continue;
     }
     const arrows = line.match(ARROW_RE);
     if (arrows && arrows.length >= 2) {
@@ -214,9 +229,12 @@ export function parseMermaidFlowchart(
       direction = d === "LR" || d === "RL" ? "LR" : "TD";
       continue;
     }
-    const classLine = line.match(/^class\s+([A-Za-z][\w,]*)\s+(\w+)\s*$/i);
+    // `class A,B process` OR LLM leak `class A,B:::process`
+    const classLine = line.match(
+      /^class\s+([A-Za-z][\w,]*)(?:\s+(\w+)|:::([A-Za-z]\w*))\s*$/i,
+    );
     if (classLine) {
-      const kind = asKind(classLine[2]);
+      const kind = asKind(classLine[2] || classLine[3]);
       for (const id of classLine[1]
         .split(",")
         .map((s) => s.trim())
@@ -228,7 +246,7 @@ export function parseMermaidFlowchart(
       continue;
     }
 
-    if (/(-->|---|-\.->)/.test(line)) {
+    if (/(<-->|-->|---|-\.->)/.test(line)) {
       const parts = splitEdgeLine(line);
       if (!parts) continue;
       const s = parseEndpoint(parts.left);

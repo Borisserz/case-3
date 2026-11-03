@@ -47,7 +47,7 @@ export function parseDiagramLegend(mermaid: string): DiagramLegendItem[] {
   }));
 }
 
-/** Node ids that carry a Liber role (`:::role` / class). Empty if parse fails. */
+/** Node ids that carry a Liber role (`:::role` / class). Empty if none. */
 export function nodeIdsForRole(
   mermaid: string,
   role: string,
@@ -63,6 +63,30 @@ export function nodeIdsForRole(
       ir.nodes.filter((n) => n.kind === want).map((n) => n.id),
     );
   } catch {
-    return new Set();
+    // Regex fallback when IR parse fails (legacy chains / exotic syntax).
+    return nodeIdsForRoleLoose(mermaid || "", want);
   }
+}
+
+/** Scan ``:::role`` / ``class id role`` without full IR parse. */
+export function nodeIdsForRoleLoose(mermaid: string, role: string): Set<string> {
+  const want = (role || "").toLowerCase();
+  const out = new Set<string>();
+  if (!want) return out;
+  const text = mermaid || "";
+  for (const m of text.matchAll(
+    /\b([A-Za-z][\w]*)\s*(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\[\[[^\]]*\]\])?\s*:::([A-Za-z]\w*)/g,
+  )) {
+    if (m[2].toLowerCase() === want) out.add(m[1]);
+  }
+  for (const m of text.matchAll(
+    /^[ \t]*class\s+([A-Za-z][\w,]*)(?:\s+(\w+)|:::([A-Za-z]\w*))\s*$/gim,
+  )) {
+    const kind = (m[2] || m[3] || "").toLowerCase();
+    if (kind !== want) continue;
+    for (const id of m[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+      out.add(id);
+    }
+  }
+  return out;
 }

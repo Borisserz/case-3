@@ -84,7 +84,7 @@ describe("diagramIr", () => {
     assert.match(out, /fill:#f3e6c8/i);
   });
 
-  it("rejects chains and subgraphs for visual subset", () => {
+  it("rejects chains but flattens subgraphs for visual subset", () => {
     assert.equal(isSupportedFlowchartSubset(SAMPLE), true);
     assert.equal(
       isSupportedFlowchartSubset("flowchart TD\n  A --> B --> C\n"),
@@ -92,9 +92,31 @@ describe("diagramIr", () => {
     );
     assert.equal(
       isSupportedFlowchartSubset(
-        "flowchart TD\n  subgraph S\n  A-->B\n  end\n",
+        "flowchart TD\n  subgraph S\n  A[X]:::start --> B[Y]:::process\n  end\n",
       ),
-      false,
+      true,
     );
+  });
+
+  it("parses subgraph + br + bidirectional edges (desk 091443)", () => {
+    const src = `flowchart TD
+  subgraph L1 [Уровень 1]
+    P[Президент]:::start
+    NP[Программа<br/>«Цифра»]:::process
+  end
+  P -->|Утверждение| NP
+  C[Совет]:::decision
+  C <-->|Обмен| MinInf[Мин]:::decision
+  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22
+  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22
+  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22
+`;
+    assert.equal(isSupportedFlowchartSubset(src), true);
+    const ir = parseMermaidFlowchart(src, { id: "dia_01", title: "Org" });
+    const byId = Object.fromEntries(ir.nodes.map((n) => [n.id, n]));
+    assert.equal(byId.P.kind, "start");
+    assert.match(byId.NP.label, /Программа/);
+    assert.match(byId.NP.label, /Цифра/);
+    assert.ok(ir.edges.some((e) => e.source === "C" && e.target === "MinInf"));
   });
 });
