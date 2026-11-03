@@ -60,7 +60,7 @@ scripts\web.cmd
 |--|--|
 | `VISION_API_BASE_URL` | Qwen |
 | `CASE3_MAX_CHARTS` | потолок графиков (0 = off) |
-| `CASE3_MAX_DIAGRAMS` | потолок Mermaid-схем Liber UI (0–3, default 2; не в PDF) |
+| `CASE3_MAX_DIAGRAMS` | потолок Mermaid-схем Liber UI (0–5, default 5; не в PDF) |
 | `IMAGE_API_BASE_URL` | офисный Image API (`/generate`, `/edit`) |
 | `IMAGE_MAX_IMAGES` | потолок фото (0 = off) |
 | `CASE3_IMAGE` | `case-3:tex` |

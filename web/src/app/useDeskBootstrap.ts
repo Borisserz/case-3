@@ -8,6 +8,7 @@ type Deps = {
   setHealth: Dispatch<SetStateAction<Health | null>>;
   setMaxCharts: Dispatch<SetStateAction<number>>;
   setMaxDiagrams: Dispatch<SetStateAction<number>>;
+  setMaxDiagramsCap: Dispatch<SetStateAction<number>>;
   setMaxImages: Dispatch<SetStateAction<number>>;
   setForbidImages: Dispatch<SetStateAction<boolean>>;
   setDeckPacks: Dispatch<SetStateAction<DeckThemePackInfo[]>>;
@@ -17,6 +18,7 @@ export function useDeskBootstrap({
   setHealth,
   setMaxCharts,
   setMaxDiagrams,
+  setMaxDiagramsCap,
   setMaxImages,
   setForbidImages,
   setDeckPacks,
@@ -35,6 +37,8 @@ export function useDeskBootstrap({
         if (d && typeof d.max_charts === "number") setMaxCharts(d.max_charts);
         if (d && typeof d.max_diagrams === "number")
           setMaxDiagrams(d.max_diagrams);
+        if (d && typeof d.max_diagrams_cap === "number" && d.max_diagrams_cap > 0)
+          setMaxDiagramsCap(d.max_diagrams_cap);
         if (d && typeof d.max_images === "number") {
           setMaxImages(d.max_images);
           if (
@@ -64,6 +68,7 @@ export function useDeskBootstrap({
     setHealth,
     setMaxCharts,
     setMaxDiagrams,
+    setMaxDiagramsCap,
     setMaxImages,
     setForbidImages,
   ]);

@@ -34,6 +34,8 @@ type Props = {
   onMaxImages: (n: number) => void;
   maxDiagrams: number;
   onMaxDiagrams: (n: number) => void;
+  /** Hard ceiling from API ``defaults.max_diagrams_cap`` (CASE3_MAX_DIAGRAMS). */
+  maxDiagramsCap?: number;
   forbidCharts: boolean;
   onForbidCharts: (v: boolean) => void;
   forbidImages: boolean;
@@ -53,6 +55,7 @@ export function SettingsModal({
   onMaxImages,
   maxDiagrams,
   onMaxDiagrams,
+  maxDiagramsCap = 5,
   forbidCharts,
   onForbidCharts,
   forbidImages,
@@ -153,7 +156,7 @@ export function SettingsModal({
                   id="set-max-d"
                   type="number"
                   min={0}
-                  max={3}
+                  max={maxDiagramsCap}
                   value={maxDiagrams}
                   onChange={(e) => onMaxDiagrams(Number(e.target.value))}
                 />

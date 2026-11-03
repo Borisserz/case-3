@@ -46,6 +46,8 @@ export type Health = {
   defaults?: {
     max_charts?: number;
     max_diagrams?: number;
+    /** Settings input max for schemas (CASE3_MAX_DIAGRAMS hard ceiling). */
+    max_diagrams_cap?: number;
     max_images?: number;
   };
 };

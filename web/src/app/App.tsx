@@ -66,7 +66,8 @@ export default function App() {
   // Chart type/style/title: model + ChartEditSheet (not Settings).
   const chartPalette = "atelier";
   const [maxCharts, setMaxCharts] = useState(2);
-  const [maxDiagrams, setMaxDiagrams] = useState(2);
+  const [maxDiagrams, setMaxDiagrams] = useState(5);
+  const [maxDiagramsCap, setMaxDiagramsCap] = useState(5);
   const [maxImages, setMaxImages] = useState(2);
   const [forbidCharts, setForbidCharts] = useState(false);
   /** Photos on by default; health may raise budget / confirm Image API. */
@@ -185,6 +186,7 @@ export default function App() {
     setHealth,
     setMaxCharts,
     setMaxDiagrams,
+    setMaxDiagramsCap,
     setMaxImages,
     setForbidImages,
     setDeckPacks,
@@ -818,6 +820,7 @@ export default function App() {
         onMaxImages={setMaxImages}
         maxDiagrams={maxDiagrams}
         onMaxDiagrams={setMaxDiagrams}
+        maxDiagramsCap={maxDiagramsCap}
         forbidCharts={forbidCharts}
         onForbidCharts={setForbidCharts}
         forbidImages={forbidImages}

@@ -22,7 +22,7 @@ from fastapi.responses import (
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import palette_public
 from case3.charts import max_charts_from_env
-from case3.diagrams import max_diagrams_from_env
+from case3.diagrams import DIAGRAMS_HARD_MAX, max_diagrams_from_env
 from case3.envfile import load_dotenv
 from case3.generate import max_images_from_env, resolve_text_file
 from case3.desk_health import build_desk_probes, probe_soffice, probe_vision
@@ -171,6 +171,8 @@ def health() -> dict[str, Any]:
             "max_charts": max_charts_from_env(),
             "max_images": max_images_from_env(),
             "max_diagrams": max_diagrams_from_env(),
+            # Settings «Схем ≤» input max — CASE3_MAX_DIAGRAMS hard ceiling.
+            "max_diagrams_cap": DIAGRAMS_HARD_MAX,
         },
         "chart_types": sorted(CHART_TYPES),
         "chart_palettes": palette_public(),
@@ -493,7 +495,8 @@ async def api_run(
         max_images = 0
     max_charts = max(0, min(int(max_charts), 8))
     max_images = max(0, min(int(max_images), 8))
-    max_diagrams = max(0, min(int(max_diagrams), 3))
+    # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
+    max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
     # Composer «Схема»: Mermaid + short prose only — no charts/photos/PDF.
     if out_mode == "diagram":
         max_charts = 0

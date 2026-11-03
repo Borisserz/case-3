@@ -12,14 +12,19 @@ from typing import Any, Literal, overload
 log = logging.getLogger("case3.diagrams")
 
 
+# Product ceiling for Mermaid Liber UI schemas (API + Settings max).
+# Tuned via CASE3_MAX_DIAGRAMS (default 5); code never allows above this constant.
+DIAGRAMS_HARD_MAX = 5
+
+
 def max_diagrams_from_env() -> int:
-    """CASE3_MAX_DIAGRAMS; default 2; clamp 0–3."""
-    raw = (os.environ.get("CASE3_MAX_DIAGRAMS") or "2").strip()
+    """CASE3_MAX_DIAGRAMS — sole diagrams budget/ceiling; default 5; clamp 0–5."""
+    raw = (os.environ.get("CASE3_MAX_DIAGRAMS") or "5").strip()
     try:
         n = int(raw)
     except ValueError:
-        n = 2
-    return max(0, min(n, 3))
+        n = 5
+    return max(0, min(n, DIAGRAMS_HARD_MAX))
 
 
 DIAGRAM_TYPES = frozenset(
