@@ -78,7 +78,7 @@ scripts\web.cmd
 | Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
 | HTTP **409** уже идёт прогон | Дождись / убей python — на Win только 1 report за раз |
 | Коллега «404» | Не тот URL: Qwen≠`/generate`; или качаешь PDF пока `status=running` |
-| мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` если ctx позволяет; `max_charts≤2`, рестарт `api.cmd` |
+| мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` (≥12288 при 4–5 графиках); UI «Графиков ≤» + `CASE3_MAX_CHARTS`; рестарт `api.cmd` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |

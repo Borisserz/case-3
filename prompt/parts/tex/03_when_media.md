@@ -1,7 +1,8 @@
 # When to add charts / figures
 
-`{{MAX_CHARTS}}` / `{{MAX_IMAGES}}` are **ceilings**. Do **not** invent numbers to fill the budget.
-But if the ceiling is **≥ 1** and Source **has usable numbers**, you **should** add charts (often what the user wants). Prefer **variety of types** when adding 2+.
+`{{MAX_CHARTS}}` / `{{MAX_IMAGES}}` / `{{MAX_DIAGRAMS}}` are **ceilings**. Do **not** invent numbers to fill the budget.
+But if the chart ceiling is **≥ 1** and Source **has usable numbers**, you **should** add charts — **aim for up to {{MAX_CHARTS}}** (UI/env budget), not a soft 1–2. Prefer **variety of types** when adding 2+.
+**Token priority:** finish `charts` + `diagrams` in JSON before spending the rest of the budget on `figures`. Shorten prose / fewer photos rather than under-shooting the chart budget.
 
 ## Charts — add when **all** hold
 

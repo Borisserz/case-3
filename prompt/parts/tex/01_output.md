@@ -2,25 +2,17 @@
 
 Return **exactly two** fenced blocks, in this order:
 
-1. ` ```json ` … metadata (figures + charts with full `html` + `diagrams` Mermaid when budget ≥1) … ` ``` `  ← **FIRST** so charts/diagrams survive length limits
+1. ` ```json ` … metadata **in this key order**: `charts` (full Chart.js `html`) → `diagrams` (Mermaid) → `figures` (short photo prompts) … ` ``` `  ← **FIRST**; charts/diagrams before figures so heavy HTML survives length limits
 2. ` ```latex ` … **complete** XeLaTeX `\documentclass` … `\end{document}` … ` ``` `
 
 Never put only a fragment (`\section` without `\documentclass`). Never omit `\documentclass`.
 Always finish the closing ``` of **both** fences — do not stop mid-table.
-Prefer a compact body (short sections, ≤2 charts on long Sources) over a draft that gets truncated.
+Prefer a compact body (short sections) over a truncated draft. **Aim for up to {{MAX_CHARTS}} charts** when Source has numbers — shorten prose / fewer photos before dropping charts. Never soft-cap at 2 when the budget is higher.
 
-JSON schema:
+JSON schema (key order mandatory):
 
 ```json
 {
-  "figures": [
-    {
-      "id": "fig_01",
-      "caption": "Подпись на русском",
-      "prompt": "English photo prompt: sharp detailed photograph, natural light, no text overlays, no watermark",
-      "width": "0.85\\textwidth"
-    }
-  ],
   "charts": [
     {
       "id": "cht_01",
@@ -36,6 +28,14 @@ JSON schema:
       "title": "Процесс согласования",
       "type": "flowchart",
       "mermaid": "flowchart TD\n  A[Заявка]:::start --> B{ОК?}:::decision\n  B -->|да| C[Готово]:::ok\n  B -->|нет| A\n  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22\n  classDef ok fill:#cfe6d4,stroke:#3d7a4a,color:#1a2e22"
+    }
+  ],
+  "figures": [
+    {
+      "id": "fig_01",
+      "caption": "Подпись на русском",
+      "prompt": "English photo prompt: sharp detailed photograph, natural light, no text overlays, no watermark",
+      "width": "0.85\\textwidth"
     }
   ]
 }
