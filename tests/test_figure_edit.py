@@ -1,0 +1,219 @@
+"""Regenerate / img2img figure edit → PNG + docs (+ deck if present)."""
+
+from __future__ import annotations
+
+import base64
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from case3.figure_edit import FigureEditError, edit_figure_in_run
+from case3.image_api import ImageApiConfig
+
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+_PNG2 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mNk+M9Qz0AEYBxVSF+FAP5FDvcfRYLwAAAAAElFTkSuQmCC"
+)
+
+
+def _cfg() -> ImageApiConfig:
+    return ImageApiConfig(
+        base_url="http://127.0.0.1:9",
+        timeout_s=5,
+        max_images=2,
+        width=64,
+        height=64,
+        steps=4,
+        guidance=3.0,
+        seed=0,
+        allow_url_download=False,
+    )
+
+
+def _seed_run(root: Path, *, with_deck: bool = False) -> Path:
+    out = root / "runs" / "out" / "fig_edit_20260101T000000Z"
+    out.mkdir(parents=True)
+    figs = out / "figures"
+    figs.mkdir()
+    (figs / "fig_01.png").write_bytes(_PNG)
+    (figs / "usr_01.png").write_bytes(_PNG)
+    fj = {
+        "figures": [
+            {
+                "id": "fig_01",
+                "caption": "Старое",
+                "prompt": "old prompt",
+            },
+            {
+                "id": "usr_01",
+                "caption": "Моё фото",
+                "prompt": "user upload",
+                "source": "upload",
+            },
+        ],
+        "charts": [],
+    }
+    (out / "figures.json").write_text(json.dumps(fj), encoding="utf-8")
+    (out / "demo.tex").write_text(
+        r"\documentclass{article}\begin{document}"
+        r"\includegraphics{figures/fig_01.png}"
+        r"\caption{Старое}\label{fig:fig_01}"
+        r"\end{document}",
+        encoding="utf-8",
+    )
+    (out / "meta.json").write_text(
+        json.dumps({"status": "ok", "figures_planned": ["fig_01", "usr_01"]}),
+        encoding="utf-8",
+    )
+    if with_deck:
+        slides = out / "slides"
+        slides.mkdir()
+        (slides / "deck.json").write_text(
+            json.dumps(
+                {
+                    "slides": [
+                        {
+                            "id": "s1",
+                            "layout": "media_hero",
+                            "title": "Photo",
+                            "media_id": "fig_01",
+                        }
+                    ],
+                    "style": {"pack_id": "atelier"},
+                }
+            ),
+            encoding="utf-8",
+        )
+    return out
+
+
+def test_generate_rewrites_png_and_caption(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out = _seed_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_gen(cfg, prompt, dest, pack_id=None):
+        dest.write_bytes(_PNG2)
+
+    with (
+        patch("case3.figure_edit.generate_png", side_effect=fake_gen) as gen,
+        patch("case3.figure_edit.ensure_english_image_prompt", side_effect=lambda p: p),
+        patch(
+            "case3.figure_edit.rebuild_run_docs",
+            return_value={"pdf": out / "demo.pdf"},
+        ) as reb,
+        patch("case3.run_undo.capture_before_edit"),
+        patch("case3.run_undo.undo_meta", return_value={"can_undo": True}),
+        patch("case3.run_undo.clear_undo"),
+    ):
+        result = edit_figure_in_run(
+            out,
+            "fig_01",
+            mode="generate",
+            prompt="a blue ceramic cup on oak table",
+            caption="Чашка",
+            formats={"pdf"},
+            cfg=_cfg(),
+        )
+
+    gen.assert_called_once()
+    reb.assert_called_once()
+    assert (out / "figures" / "fig_01.png").read_bytes() == _PNG2
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert fj["figures"][0]["caption"] == "Чашка"
+    assert "cup" in fj["figures"][0]["prompt"]
+    tex = (out / "demo.tex").read_text(encoding="utf-8")
+    assert "Чашка" in tex
+    assert result["mode"] == "generate"
+
+
+def test_edit_mode_requires_existing_png_and_calls_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _seed_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_edit(cfg, prompt, src, dest, pack_id=None):
+        dest.write_bytes(_PNG2)
+
+    with (
+        patch("case3.figure_edit.edit_png", side_effect=fake_edit) as ed,
+        patch("case3.figure_edit.ensure_english_image_prompt", side_effect=lambda p: p),
+        patch(
+            "case3.figure_edit.rebuild_run_docs",
+            return_value={"pdf": out / "demo.pdf"},
+        ),
+        patch("case3.run_undo.capture_before_edit"),
+        patch("case3.run_undo.undo_meta", return_value={}),
+    ):
+        edit_figure_in_run(
+            out,
+            "usr_01",
+            mode="edit",
+            prompt="warmer daylight",
+            caption="Моё фото",
+            formats=set(),
+            cfg=_cfg(),
+        )
+
+    ed.assert_called_once()
+    assert (out / "figures" / "usr_01.png").read_bytes() == _PNG2
+
+
+def test_edit_without_png_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    out = _seed_run(tmp_path)
+    (out / "figures" / "fig_01.png").unlink()
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("case3.figure_edit.ensure_english_image_prompt", side_effect=lambda p: p),
+        patch("case3.run_undo.capture_before_edit"),
+        pytest.raises(FigureEditError, match="нет исходного PNG"),
+    ):
+        edit_figure_in_run(
+            out,
+            "fig_01",
+            mode="edit",
+            prompt="x",
+            cfg=_cfg(),
+        )
+
+
+def test_generate_refreshes_existing_deck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _seed_run(tmp_path, with_deck=True)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_gen(cfg, prompt, dest, pack_id=None):
+        dest.write_bytes(_PNG2)
+
+    rebuild = MagicMock(return_value={"status": "ok"})
+    with (
+        patch("case3.figure_edit.generate_png", side_effect=fake_gen),
+        patch("case3.figure_edit.ensure_english_image_prompt", side_effect=lambda p: p),
+        patch(
+            "case3.figure_edit.rebuild_run_docs",
+            return_value={"pdf": out / "demo.pdf"},
+        ),
+        patch("case3.run_undo.capture_before_edit"),
+        patch("case3.run_undo.undo_meta", return_value={}),
+        patch(
+            "case3.slides_job.rebuild_slides_from_deck",
+            rebuild,
+        ),
+    ):
+        edit_figure_in_run(
+            out,
+            "fig_01",
+            mode="generate",
+            prompt="fresh photo of a workshop bench",
+            caption="Верстак",
+            formats={"pdf"},
+            cfg=_cfg(),
+        )
+
+    rebuild.assert_called_once()
+    assert rebuild.call_args[0][0] == out.name

@@ -48,6 +48,24 @@ def test_ensure_slots() -> None:
     assert out.index("%CASE3_FIG:usr_01%") < out.index(r"\end{document}")
 
 
+def test_ensure_slots_after_first_section() -> None:
+    """Fallback must land near body prose, not only as appendix before \\end{document}."""
+    tex = (
+        r"\begin{document}"
+        r"\maketitle"
+        r"\section{Обзор}"
+        r"Текст про продукт."
+        r"\section{Вывод}"
+        r"Итог."
+        r"\end{document}"
+    )
+    out = ensure_user_slots_in_tex(tex, [{"id": "usr_01"}])
+    assert "%CASE3_FIG:usr_01%" in out
+    # Prefer first section body over trailing dump before \end{document}
+    assert out.index("%CASE3_FIG:usr_01%") < out.index(r"\section{Вывод}")
+    assert out.index(r"\section{Обзор}") < out.index("%CASE3_FIG:usr_01%")
+
+
 def test_reject_too_many(tmp_path: Path) -> None:
     with pytest.raises(UserPhotoError):
         save_user_photos(

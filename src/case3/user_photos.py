@@ -128,18 +128,34 @@ def merge_user_figures(
     return users + llm[:rest]
 
 
-def ensure_user_slots_in_tex(tex: str, user_figures: list[dict[str, Any]]) -> str:
-    """If LLM omitted %CASE3_FIG:usr_XX%, append slots before \\end{document}."""
-    if not user_figures:
-        return tex
-    missing = [
-        f for f in user_figures if f"%CASE3_FIG:{f['id']}%" not in tex and f"figures/{f['id']}.png" not in tex
-    ]
-    if not missing:
-        return tex
-    block = "\n".join(f"%CASE3_FIG:{f['id']}%" for f in missing) + "\n"
+def _insert_user_slot_block(tex: str, block: str) -> str:
+    """Prefer first section body; else after \\maketitle; else before \\end{document}."""
+    # After first \section{...} line — beside early prose, not an appendix dump.
+    sec = re.search(r"(\\section\*?\{[^}]*\}\s*)", tex)
+    if sec:
+        at = sec.end()
+        return tex[:at] + "\n" + block + "\n" + tex[at:]
+    mt = re.search(r"(\\maketitle\s*)", tex)
+    if mt:
+        at = mt.end()
+        return tex[:at] + "\n" + block + "\n" + tex[at:]
     marker = r"\end{document}"
     idx = tex.rfind(marker)
     if idx == -1:
         return tex.rstrip() + "\n\n" + block
     return tex[:idx] + "\n" + block + "\n" + tex[idx:]
+
+
+def ensure_user_slots_in_tex(tex: str, user_figures: list[dict[str, Any]]) -> str:
+    """If LLM omitted %CASE3_FIG:usr_XX%, inject slots near early body prose."""
+    if not user_figures:
+        return tex
+    missing = [
+        f
+        for f in user_figures
+        if f"%CASE3_FIG:{f['id']}%" not in tex and f"figures/{f['id']}.png" not in tex
+    ]
+    if not missing:
+        return tex
+    block = "\n".join(f"%CASE3_FIG:{f['id']}%" for f in missing) + "\n"
+    return _insert_user_slot_block(tex, block)
