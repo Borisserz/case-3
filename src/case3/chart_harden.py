@@ -59,7 +59,156 @@ def html_matches_type(html: str, want: str) -> bool:
         return bool(re.search(r"""type\s*:\s*['"]bar['"]""", h, flags=re.I))
     return True
 
+def _bracket_span(text: str, open_idx: int, open_ch: str, close_ch: str) -> tuple[int, int] | None:
+    """Return [start, end) of balanced open/close starting at open_idx."""
+    if open_idx < 0 or open_idx >= len(text) or text[open_idx] != open_ch:
+        return None
+    depth = 0
+    i = open_idx
+    in_str: str | None = None
+    escape = False
+    while i < len(text):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_str:
+                in_str = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            in_str = ch
+            i += 1
+            continue
+        if ch == open_ch:
+            depth += 1
+        elif ch == close_ch:
+            depth -= 1
+            if depth == 0:
+                return open_idx, i + 1
+        i += 1
+    return None
+
+
+def _numeric_data_arrays(html: str) -> list[list[float]]:
+    """Collect scalar ``data:[…]`` arrays (skip scatter ``{x,y}`` points)."""
+    arrays: list[list[float]] = []
+    for m in re.finditer(r"data\s*:\s*\[", html or "", flags=re.I):
+        span = _bracket_span(html, m.end() - 1, chr(91), chr(93))
+        if not span:
+            continue
+        raw = html[span[0] + 1 : span[1] - 1]
+        if re.search(r"\{\s*x\s*:", raw):
+            continue
+        nums = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", raw)]
+        if nums:
+            arrays.append(nums)
+    return arrays
+
+
+def _sum_series(arrays: list[list[float]]) -> list[float]:
+    if not arrays:
+        return []
+    if len(arrays) == 1:
+        return list(arrays[0])
+    n = max(len(a) for a in arrays)
+    out: list[float] = []
+    for i in range(n):
+        out.append(sum(a[i] if i < len(a) else 0.0 for a in arrays))
+    return out
+
+
+def _fmt_num(n: float) -> str:
+    if abs(n - round(n)) < 1e-9:
+        return str(int(round(n)))
+    return f"{n:.4g}"
+
+
+_DONUT_FALLBACK_COLORS = (
+    "#1A4A4B",
+    "#5A6E28",
+    "#8B5A2B",
+    "#3D5A80",
+    "#A63D2F",
+    "#6A7160",
+    "#2E4208",
+    "#7A9A28",
+)
+
+
+def _coerce_html_to_donut(html: str) -> str:
+    """Force a single-ring doughnut: collapse multi-series (no concentric «мишень»).
+
+    Grouped/stacked/line → one dataset with per-category sums (or the sole series).
+    Strips cartesian scales / indexAxis that confuse doughnut layout.
+    """
+    src = html or ""
+    out = re.sub(
+        r"""type\s*:\s*['"](?:bar|line|doughnut|pie|scatter|radar)['"]""",
+        "type:'doughnut'",
+        src,
+        count=1,
+        flags=re.I,
+    )
+    arrays = _numeric_data_arrays(out)
+    values = _sum_series(arrays)
+    if not values:
+        return out
+
+    # Prefer existing per-category colors from the first backgroundColor array.
+    colors: list[str] = []
+    bg_m = re.search(r"backgroundColor\s*:\s*\[", out, flags=re.I)
+    if bg_m:
+        span = _bracket_span(out, bg_m.end() - 1, chr(91), chr(93))
+        if span:
+            colors = re.findall(
+                r"""['"](#[0-9a-fA-F]{3,8}|rgba?\([^)'"]+\))['"]""",
+                out[span[0] : span[1]],
+                flags=re.I,
+            )
+    while len(colors) < len(values):
+        colors.append(_DONUT_FALLBACK_COLORS[len(colors) % len(_DONUT_FALLBACK_COLORS)])
+    colors = colors[: len(values)]
+
+    data_js = ",".join(_fmt_num(v) for v in values)
+    colors_js = ",".join(f"'{c}'" for c in colors)
+    single = (
+        "{label:'Доля',data:["
+        + data_js
+        + "],backgroundColor:["
+        + colors_js
+        + "],borderWidth:0}"
+    )
+
+    ds_m = re.search(r"datasets\s*:\s*\[", out, flags=re.I)
+    if ds_m:
+        span = _bracket_span(out, ds_m.end() - 1, chr(91), chr(93))
+        if span:
+            out = out[: span[0]] + "[" + single + "]" + out[span[1] :]
+
+    # Doughnut ignores cartesian axes — drop leftover bar/line chrome.
+    out = re.sub(r"indexAxis\s*:\s*['\"][^'\"]*['\"]\s*,?", "", out, flags=re.I)
+    out = re.sub(r"scales\s*:\s*\{", "scales:{display:false,", out, count=1, flags=re.I)
+    # Soften fill/tension left from line/area
+    out = re.sub(r"""fill\s*:\s*true\s*,?""", "", out, flags=re.I)
+    out = re.sub(r"""tension\s*:\s*[\d.]+\s*,?""", "", out, flags=re.I)
+    if "cutout" not in out.lower():
+        out = re.sub(
+            r"options\s*:\s*\{",
+            "options:{cutout:'58%',",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    return out
+
+
 def _rewrite_js_type(html: str, preferred: str) -> str:
+    if preferred == "donut":
+        return _coerce_html_to_donut(html or "")
+
     js = _JS_TYPE.get(preferred, preferred)
     out = re.sub(
         r"""type\s*:\s*['"](?:bar|line|doughnut|pie|scatter|radar)['"]""",
