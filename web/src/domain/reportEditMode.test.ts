@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   blockEditVisible,
   collapseSetForEditMode,
+  docsNeedRebuild,
   parseEditHistory,
   reportEditModeHint,
   reportEditToggleVisible,
@@ -36,9 +37,25 @@ describe("reportEditMode", () => {
     );
   });
 
-  it("hint describes click-to-edit + shortcuts", () => {
-    assert.match(reportEditModeHint(true), /Клик по тексту/i);
+  it("hint describes click-to-edit + deferred print", () => {
+    assert.match(reportEditModeHint(true), /Готово/i);
     assert.match(reportEditModeHint(false), /Чтение/);
+  });
+
+  it("docsNeedRebuild when stack or redo branch has work", () => {
+    assert.equal(docsNeedRebuild(null), false);
+    assert.equal(
+      docsNeedRebuild({ canUndo: false, canRedo: false, depth: 0 }),
+      false,
+    );
+    assert.equal(
+      docsNeedRebuild({ canUndo: true, canRedo: false, depth: 1 }),
+      true,
+    );
+    assert.equal(
+      docsNeedRebuild({ canUndo: false, canRedo: true, depth: 0 }),
+      true,
+    );
   });
 
   it("entering edit clears collapsed sections", () => {

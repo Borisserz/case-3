@@ -284,8 +284,8 @@ export function ChartEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Рисунок выше — черновик. «Сохранить в отчёт» пересоберёт PNG и PDF/DOCX
-          (PDF — истина печати).
+          Рисунок выше — черновик. Apply обновит Preview; PDF и DOCX — на
+          «Готово».
         </p>
         <div className="chart-edit-actions">
           <button
@@ -294,7 +294,7 @@ export function ChartEditSheet({
             disabled={busy}
             onClick={apply}
           >
-            {busy ? "Пересобираю…" : "Сохранить в отчёт"}
+            {busy ? "Обновляю…" : "В превью"}
           </button>
           <button
             type="button"

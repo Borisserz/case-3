@@ -2435,6 +2435,12 @@
 .inline-block-cancel:hover {
   color: var(--ink);
 }
+.inline-block-hint.is-solo {
+  margin: 0.2rem 0 0;
+  opacity: 0.55;
+  font-size: 0.7rem;
+}
+
 .inline-block-hint {
   font-size: 0.75rem;
   opacity: 0.55;

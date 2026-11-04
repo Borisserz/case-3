@@ -26,6 +26,11 @@ import type { ReportPreview } from "./domain/reportPreview";
 import { ReportView } from "./ReportView";
 import { IconPanelRight } from "./icons";
 import { reportDownloadLinks } from "./domain/reportDownloads";
+import {
+  docsNeedRebuild,
+  reportEditModeHint,
+  reportEditToggleVisible,
+} from "./domain/reportEditMode";
 import { modeSurfaces } from "./domain/liberModes";
 import { SourcePane } from "./SourcePane";
 import {
@@ -136,6 +141,11 @@ type Props = {
     h: import("./domain/reportEditMode").EditHistoryDesc,
   ) => void;
   onReportEditModeChange?: (on: boolean) => void;
+  /** Controlled report edit mode (rail chrome). */
+  reportEditMode?: boolean;
+  /** «Готово»: flush PDF/DOCX then leave edit. */
+  onFinishReportEdit?: () => Promise<void> | void;
+  finishReportEditBusy?: boolean;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (
     diagrams: DiagramInfo[],
@@ -178,6 +188,9 @@ export function ArtifactRail({
   onClearEditHistory,
   onEditHistory,
   onReportEditModeChange,
+  reportEditMode = false,
+  onFinishReportEdit,
+  finishReportEditBusy = false,
   makingPresentation = false,
   onDiagramsUpdated,
 }: Props) {
@@ -577,15 +590,74 @@ export function ArtifactRail({
             ))}
           </nav>
           <div className="artifact-rail-actions">
+            {isReport &&
+            tab === "preview" &&
+            reportEditToggleVisible({
+              onEditFigure,
+              onEditImage,
+              onEditTable,
+              onEditParagraph,
+              onEditHeading,
+              onEditList,
+            }) ? (
+              <div
+                className="artifact-rail-edit"
+                title={reportEditModeHint(reportEditMode)}
+              >
+                {reportEditMode ? (
+                  <>
+                    <button
+                      type="button"
+                      className="artifact-rail-edit-hist"
+                      aria-label="Отменить"
+                      title="Отменить (⌘Z)"
+                      disabled={!editHistory?.canUndo || finishReportEditBusy}
+                      onClick={() => void onHistoryUndo?.()}
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="artifact-rail-edit-hist"
+                      aria-label="Вернуть"
+                      title="Вернуть (⌘⇧Z)"
+                      disabled={!editHistory?.canRedo || finishReportEditBusy}
+                      onClick={() => void onHistoryRedo?.()}
+                    >
+                      →
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  className={`artifact-rail-edit-toggle${reportEditMode ? " is-on" : ""}`}
+                  aria-pressed={reportEditMode}
+                  disabled={finishReportEditBusy}
+                  onClick={() => {
+                    if (reportEditMode) void onFinishReportEdit?.();
+                    else onReportEditModeChange?.(true);
+                  }}
+                >
+                  {finishReportEditBusy
+                    ? "Собираю…"
+                    : reportEditMode
+                      ? "Готово"
+                      : "Редактировать"}
+                </button>
+              </div>
+            ) : null}
             {isReport
               ? reportDownloadLinks(report?.downloads, {
                   enabled: surfaces.showReportPdf,
+                  stale:
+                    reportEditMode && docsNeedRebuild(editHistory),
                 }).map((link) => (
                   <a
                     key={link.kind}
                     href={link.href}
                     download
-                    className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}`}
+                    title={link.title}
+                    className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}${link.stale ? " is-stale" : ""}`}
                   >
                     {link.label}
                   </a>
@@ -657,6 +729,8 @@ export function ArtifactRail({
                   downloadsPulse={downloadsPulse}
                   showPdf={false}
                   showDownloads={false}
+                  showEditChrome={false}
+                  editMode={reportEditMode}
                   onJumpToPdf={hasPdf ? jumpFigureToPdf : undefined}
                   onOpenPdf={hasPdf ? () => onTab("pdf") : undefined}
                   onEditFigure={onEditFigure}
@@ -671,6 +745,7 @@ export function ArtifactRail({
                   onHistoryRedo={onHistoryRedo}
                   onClearEditHistory={onClearEditHistory}
                   onEditModeChange={onReportEditModeChange}
+                  onRequestFinishEdit={onFinishReportEdit}
                 />
               ) : null}
 

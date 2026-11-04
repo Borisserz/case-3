@@ -227,6 +227,7 @@ export default function App() {
     undoEdit,
     redoEdit,
     clearEditHistory,
+    finishEditSession,
   } =
     useLiberEdits({
       setMsgs,
@@ -240,6 +241,7 @@ export default function App() {
       undoOffer,
       undoBusyRef,
     });
+  const [finishEditBusy, setFinishEditBusy] = useState(false);
 
 
   const stopGeneration = useStopGeneration({
@@ -780,7 +782,26 @@ export default function App() {
                     : undefined
                 }
                 onEditHistory={setEditHistory}
+                reportEditMode={reportEditMode}
+                finishReportEditBusy={finishEditBusy}
                 onReportEditModeChange={setReportEditMode}
+                onFinishReportEdit={
+                  railArtifact.kind === "report" && activeReport?.run_id
+                    ? async () => {
+                        setFinishEditBusy(true);
+                        try {
+                          const ok = await finishEditSession(
+                            railArtifact.msgId,
+                            activeReport.run_id,
+                            editHistory,
+                          );
+                          if (ok) setReportEditMode(false);
+                        } finally {
+                          setFinishEditBusy(false);
+                        }
+                      }
+                    : undefined
+                }
                 onEditList={
                   railArtifact.kind === "report" &&
                   activeReport &&

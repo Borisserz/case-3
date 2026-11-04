@@ -36,4 +36,14 @@ describe("reportDownloadLinks", () => {
       ["docx"],
     );
   });
+
+  it("marks links stale during deferred rebuild", () => {
+    const links = reportDownloadLinks(
+      { pdf: "/x.pdf", docx: "/x.docx" },
+      { stale: true },
+    );
+    assert.equal(links[0]?.stale, true);
+    assert.match(links[0]?.label || "", /устарел/i);
+    assert.match(links[0]?.title || "", /Готово/i);
+  });
 });

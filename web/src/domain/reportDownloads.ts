@@ -7,6 +7,9 @@ export type ReportDownloadLink = {
   href: string;
   /** Short UI label */
   label: string;
+  /** Edit session: print files lag Preview. */
+  stale?: boolean;
+  title?: string;
 };
 
 /**
@@ -15,16 +18,32 @@ export type ReportDownloadLink = {
  */
 export function reportDownloadLinks(
   downloads?: Record<string, string> | null,
-  opts?: { enabled?: boolean },
+  opts?: { enabled?: boolean; stale?: boolean },
 ): ReportDownloadLink[] {
   const enabled = opts?.enabled !== false;
   if (!enabled || !downloads) return [];
+  const stale = Boolean(opts?.stale);
+  const title = stale
+    ? "Устарели — нажмите Готово, чтобы обновить"
+    : undefined;
   const out: ReportDownloadLink[] = [];
   if (downloads.pdf) {
-    out.push({ kind: "pdf", href: downloads.pdf, label: "PDF" });
+    out.push({
+      kind: "pdf",
+      href: downloads.pdf,
+      label: stale ? "PDF · устарел" : "PDF",
+      stale,
+      title,
+    });
   }
   if (downloads.docx) {
-    out.push({ kind: "docx", href: downloads.docx, label: "DOCX" });
+    out.push({
+      kind: "docx",
+      href: downloads.docx,
+      label: stale ? "DOCX · устарел" : "DOCX",
+      stale,
+      title,
+    });
   }
   return out;
 }

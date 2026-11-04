@@ -193,6 +193,7 @@ export function ReportBody({
                 {headActive ? (
                   <div className="report-h-edit" id={headingId}>
                     <InlineBlockEditor
+                      hideActions
                       kind="heading"
                       initialText={b.text}
                       busy={isEditingHead}
@@ -274,6 +275,7 @@ export function ReportBody({
                 <div className="report-para-frame">
                   {paraActive ? (
                     <InlineBlockEditor
+                      hideActions
                       kind="paragraph"
                       initialText={b.text}
                       busy={isEditingPara}
@@ -371,6 +373,7 @@ export function ReportBody({
                   style={delayStyle}
                 >
                   <InlineBlockEditor
+                    hideActions
                     kind="list"
                     ordered={Boolean(b.ordered)}
                     initialItems={(b.items || []).map((it) => it.text)}

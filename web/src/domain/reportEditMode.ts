@@ -38,8 +38,16 @@ export function reportEditToggleVisible(opts: {
 /** Hint under the top toggle. */
 export function reportEditModeHint(editMode: boolean): string {
   return editMode
-    ? "Клик по тексту · ⌘Z / ⌘⇧Z"
+    ? "Клик · ⌘Z · PDF/DOCX на Готово"
     : "Чтение · правки PDF/DOCX из того же Source";
+}
+
+/** Session has Preview edits not yet flushed to print artifacts. */
+export function docsNeedRebuild(
+  history: EditHistoryDesc | null | undefined,
+): boolean {
+  if (!history) return false;
+  return history.depth > 0 || history.canRedo;
 }
 
 /** Entering edit expands every section (empty collapse set). */

@@ -337,7 +337,8 @@ export function TableEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Черновик выше обновляется сразу. ⌘↵ / Ctrl+Enter — сохранить в PDF.
+          Черновик выше. Apply → Preview; PDF/DOCX — на «Готово». ⌘↵ /
+          Ctrl+Enter.
         </p>
         <div className="chart-edit-actions">
           <button
@@ -346,7 +347,7 @@ export function TableEditSheet({
             disabled={busy}
             onClick={apply}
           >
-            {busy ? "Пересобираю…" : "Сохранить в отчёт"}
+            {busy ? "Обновляю…" : "В превью"}
           </button>
           <button
             type="button"

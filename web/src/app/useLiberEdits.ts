@@ -16,10 +16,15 @@ import type { TableEditRequest } from "../TableEditSheet";
 import { asDownloads } from "../domain/runHelpers";
 import type { Msg, RunResult } from "../domain/liberTypes";
 import {
+  docsNeedRebuild,
   parseEditHistory,
   type EditHistoryDesc,
 } from "../domain/reportEditMode";
 import { mapTableEditHttpError, postJsonEdit } from "./postJsonEdit";
+
+/** Preview-only edit session; PDF/DOCX flush on «Готово». */
+const EDIT_FORMATS = "none";
+const PREVIEW_EDIT_TOAST = "Превью обновлено · Готово обновит PDF/DOCX";
 
 export type EditBusy = { msgId: string; figureId: string } | null;
 export type EditError = { msgId: string; figureId: string; message: string } | null;
@@ -77,6 +82,7 @@ export function useLiberEdits({
       runId: string,
       data: EditPayloadData,
       toastText: string,
+      opts?: { pulseDownloads?: boolean },
     ) => {
       setMsgs((list) =>
         list.map((msg) => {
@@ -107,9 +113,11 @@ export function useLiberEdits({
         setUndoOffer(null);
       }
       setToast(toastText);
-      setDownloadsPulseMsgId(msgId);
       window.setTimeout(() => setToast(null), 4200);
-      window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      if (opts?.pulseDownloads) {
+        setDownloadsPulseMsgId(msgId);
+        window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
+      }
     },
     [
       setMsgs,
@@ -126,12 +134,15 @@ export function useLiberEdits({
     runId: string,
     path: "undo" | "redo",
     okToast: string,
+    opts?: { rebuild?: boolean },
   ) {
     if (undoBusyRef.current) return;
     undoBusyRef.current = true;
     try {
+      const q =
+        opts?.rebuild === false ? "?rebuild=0" : "";
       const res = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/${path}`,
+        `/api/runs/${encodeURIComponent(runId)}/${path}${q}`,
         { method: "POST" },
       );
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -157,6 +168,7 @@ export function useLiberEdits({
           undo: data.undo as UndoApi,
         },
         okToast,
+        { pulseDownloads: opts?.rebuild !== false },
       );
     } catch (err) {
       setToast(err instanceof Error ? err.message : String(err));
@@ -169,15 +181,21 @@ export function useLiberEdits({
   async function undoLastEdit() {
     if (!undoOffer) return;
     const { msgId, runId } = undoOffer;
-    await postHistory(msgId, runId, "undo", "Правка отменена");
+    await postHistory(msgId, runId, "undo", "Правка отменена", {
+      rebuild: true,
+    });
   }
 
   async function undoEdit(msgId: string, runId: string) {
-    await postHistory(msgId, runId, "undo", "Правка отменена");
+    await postHistory(msgId, runId, "undo", "Правка отменена", {
+      rebuild: false,
+    });
   }
 
   async function redoEdit(msgId: string, runId: string) {
-    await postHistory(msgId, runId, "redo", "Правка возвращена");
+    await postHistory(msgId, runId, "redo", "Правка возвращена", {
+      rebuild: false,
+    });
   }
 
   async function clearEditHistory(runId: string) {
@@ -191,6 +209,53 @@ export function useLiberEdits({
     }
     setEditHistory?.({ canUndo: false, canRedo: false, depth: 0 });
     setUndoOffer(null);
+  }
+
+  async function rebuildDocs(msgId: string, runId: string): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(runId)}/docs/rebuild`,
+        {},
+        "docs rebuild failed",
+      );
+      applyEditPayload(
+        msgId,
+        runId,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as UndoApi,
+        },
+        "PDF и DOCX обновлены",
+        { pulseDownloads: true },
+      );
+      return true;
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : String(err));
+      window.setTimeout(() => setToast(null), 3200);
+      return false;
+    } finally {
+      editLock.current = false;
+    }
+  }
+
+  async function finishEditSession(
+    msgId: string,
+    runId: string,
+    history: EditHistoryDesc | null | undefined,
+  ): Promise<boolean> {
+    if (docsNeedRebuild(history)) {
+      const ok = await rebuildDocs(msgId, runId);
+      if (!ok) return false;
+    }
+    await clearEditHistory(runId);
+    return true;
   }
 
   async function editFigure(
@@ -209,10 +274,10 @@ export function useLiberEdits({
           palette: req.palette,
           style: req.styleNotes,
           chart_type: req.chartType,
-          formats: "both",
+          formats: EDIT_FORMATS,
         },
       );
-      applyEditPayload(msgId, runId, data, "Отчёт обновлён");
+      applyEditPayload(msgId, runId, data, PREVIEW_EDIT_TOAST);
       return true;
     } catch (err) {
       setEditError({
@@ -243,7 +308,7 @@ export function useLiberEdits({
           mode: req.mode,
           prompt: req.prompt,
           caption: req.caption,
-          formats: "both",
+          formats: EDIT_FORMATS,
         },
         "image edit failed",
       );
@@ -251,7 +316,9 @@ export function useLiberEdits({
         msgId,
         runId,
         data,
-        req.mode === "edit" ? "Фото изменено" : "Фото сгенерировано заново",
+        req.mode === "edit"
+          ? "Фото изменено · Готово обновит PDF/DOCX"
+          : "Фото обновлено · Готово обновит PDF/DOCX",
       );
       return true;
     } catch (err) {
@@ -294,7 +361,7 @@ export function useLiberEdits({
           caption: req.caption,
           headers: req.headers,
           rows: req.rows,
-          formats: "both",
+          formats: EDIT_FORMATS,
         },
         "table edit failed",
       );
@@ -310,7 +377,7 @@ export function useLiberEdits({
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as { kind?: string; target?: string } | null,
         },
-        "Таблица обновлена",
+        PREVIEW_EDIT_TOAST,
       );
       return true;
     } catch (err) {
@@ -349,7 +416,7 @@ export function useLiberEdits({
     try {
       const data = await postJsonEdit(
         `/api/runs/${encodeURIComponent(rid)}/paragraphs/${req.paragraphIndex}/edit`,
-        { text: req.text, formats: "both" },
+        { text: req.text, formats: EDIT_FORMATS },
         "paragraph edit failed",
       );
       applyEditPayload(
@@ -364,7 +431,7 @@ export function useLiberEdits({
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as { kind?: string; target?: string } | null,
         },
-        "Абзац обновлён",
+        PREVIEW_EDIT_TOAST,
       );
       return true;
     } catch (err) {
@@ -403,7 +470,7 @@ export function useLiberEdits({
     try {
       const data = await postJsonEdit(
         `/api/runs/${encodeURIComponent(rid)}/headings/${req.headingIndex}/edit`,
-        { text: req.text, formats: "both" },
+        { text: req.text, formats: EDIT_FORMATS },
         "heading edit failed",
       );
       applyEditPayload(
@@ -418,7 +485,7 @@ export function useLiberEdits({
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as { kind?: string; target?: string } | null,
         },
-        "Заголовок обновлён",
+        PREVIEW_EDIT_TOAST,
       );
       return true;
     } catch (err) {
@@ -459,7 +526,7 @@ export function useLiberEdits({
         {
           items: req.items,
           ordered: req.ordered,
-          formats: "both",
+          formats: EDIT_FORMATS,
         },
         "list edit failed",
       );
@@ -475,7 +542,7 @@ export function useLiberEdits({
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as { kind?: string; target?: string } | null,
         },
-        "Список обновлён",
+        PREVIEW_EDIT_TOAST,
       );
       return true;
     } catch (err) {
@@ -502,5 +569,7 @@ export function useLiberEdits({
     undoEdit,
     redoEdit,
     clearEditHistory,
+    rebuildDocs,
+    finishEditSession,
   };
 }

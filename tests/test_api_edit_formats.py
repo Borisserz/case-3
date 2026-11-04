@@ -85,3 +85,49 @@ def test_paragraph_edit_accepts_formats_none(
     )
     assert r.status_code == 200, r.text
     assert r.json().get("status") == "ok"
+
+
+def test_docs_rebuild_calls_rebuild_run_docs(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = "edit_docs_rebuild_20260101T000000Z"
+    out = _seed_run(repo_root, run_id)
+    (out / "demo.pdf").write_bytes(b"%PDF-1.4")
+    called: dict[str, object] = {}
+
+    def _fake_rebuild(out_dir, *, formats=None):
+        called["out"] = out_dir
+        called["formats"] = formats
+        return {"pdf": out_dir / "demo.pdf"}
+
+    import case3.run_rebuild as rebuild_mod
+
+    monkeypatch.setattr(rebuild_mod, "rebuild_run_docs", _fake_rebuild)
+    r = client.post(f"/api/runs/{run_id}/docs/rebuild")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("status") == "ok"
+    assert body.get("run_id") == run_id
+    assert "preview" in body
+    assert "downloads" in body
+    assert called.get("formats") == {"pdf", "docx"}
+    assert Path(called["out"]).resolve() == out.resolve()
+
+
+def test_undo_accepts_rebuild_false(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = "edit_undo_norebuild_20260101T000000Z"
+    _seed_run(repo_root, run_id)
+    seen: dict[str, object] = {}
+
+    def _fake_undo(out_dir, *, rebuild=True):
+        seen["rebuild"] = rebuild
+        return {"kind": "paragraph", "target": "1"}
+
+    import case3.run_undo as undo_mod
+
+    monkeypatch.setattr(undo_mod, "apply_undo", _fake_undo)
+    r = client.post(f"/api/runs/{run_id}/undo?rebuild=0")
+    assert r.status_code == 200, r.text
+    assert seen.get("rebuild") is False

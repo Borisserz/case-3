@@ -557,27 +557,84 @@ def _history_response(
     }
 
 
+def _parse_rebuild_flag(raw: str | None) -> bool:
+    """Query ``rebuild``: default True; 0/false/no → False."""
+    if raw is None or raw.strip() == "":
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+@router.post("/api/runs/{run_id}/docs/rebuild")
+async def rebuild_run_documents(run_id: str) -> dict[str, Any]:
+    """Force PDF+DOCX from current TeX (edit-session «Готово»)."""
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import undo_meta
+
+    out_dir = resolve_run_dir(run_id)
+    try:
+        artifacts = await asyncio.to_thread(
+            partial(rebuild_run_docs, out_dir, formats={"pdf", "docx"})
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    v = int(time.time())
+    media: dict[str, Any] = {}
+    meta_path = out_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            media = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get(
+                "media_status"
+            ) or {}
+        except (OSError, json.JSONDecodeError):
+            media = {}
+    if not isinstance(media, dict):
+        media = {}
+    preview = build_preview_payload(run_id, out_dir, media)
+    return {
+        "run_id": run_id,
+        "status": "ok",
+        "artifacts": {k: str(p) for k, p in artifacts.items()},
+        "downloads": artifact_downloads(run_id, out_dir, v),
+        "preview": preview,
+        "undo": undo_meta(out_dir),
+        "warnings": [],
+    }
+
+
 @router.post("/api/runs/{run_id}/undo")
-async def undo_last_edit(run_id: str) -> dict[str, Any]:
+async def undo_last_edit(
+    run_id: str, rebuild: str | None = None
+) -> dict[str, Any]:
     """Pop one snapshot from the session undo stack (redo keeps forward)."""
     from case3.run_undo import UndoError, apply_undo
 
     out_dir = resolve_run_dir(run_id)
+    do_rebuild = _parse_rebuild_flag(rebuild)
     try:
-        result = await asyncio.to_thread(partial(apply_undo, out_dir, rebuild=True))
+        result = await asyncio.to_thread(
+            partial(apply_undo, out_dir, rebuild=do_rebuild)
+        )
     except UndoError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
     return _history_response(run_id, out_dir, result, action_key="undone")
 
 
 @router.post("/api/runs/{run_id}/redo")
-async def redo_last_edit(run_id: str) -> dict[str, Any]:
+async def redo_last_edit(
+    run_id: str, rebuild: str | None = None
+) -> dict[str, Any]:
     """Re-apply the last undone Liber edit from the redo branch."""
     from case3.run_undo import UndoError, apply_redo
 
     out_dir = resolve_run_dir(run_id)
+    do_rebuild = _parse_rebuild_flag(rebuild)
     try:
-        result = await asyncio.to_thread(partial(apply_redo, out_dir, rebuild=True))
+        result = await asyncio.to_thread(
+            partial(apply_redo, out_dir, rebuild=do_rebuild)
+        )
     except UndoError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
     return _history_response(run_id, out_dir, result, action_key="redone")

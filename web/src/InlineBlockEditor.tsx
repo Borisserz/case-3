@@ -8,6 +8,8 @@ type Common = {
   saveLabel?: string;
   onCancel?: () => void;
   autoFocus?: boolean;
+  /** Hide Save/Cancel row — blur / Enter / ⌘↵ still apply. */
+  hideActions?: boolean;
 };
 
 type ProseProps = Common & {
@@ -43,10 +45,12 @@ function ProseInline({
   onSave,
   onCancel,
   autoFocus = true,
+  hideActions = false,
 }: ProseProps) {
   const [text, setText] = useState(initialText);
   const headingRef = useRef<HTMLInputElement | null>(null);
   const paraRef = useRef<HTMLTextAreaElement | null>(null);
+  const skipBlurRef = useRef(false);
   useEffect(() => {
     setText(initialText);
   }, [initialText]);
@@ -55,7 +59,31 @@ function ProseInline({
     const el = kind === "heading" ? headingRef.current : paraRef.current;
     el?.focus({ preventScroll: true });
   }, [autoFocus, kind]);
+
   const dirty = text.trim() !== (initialText || "").trim();
+
+  const commit = () => {
+    const t = text.trim();
+    if (!t || !dirty || busy) return;
+    skipBlurRef.current = true;
+    onSave(t);
+  };
+
+  const discard = () => {
+    skipBlurRef.current = true;
+    setText(initialText);
+    onCancel?.();
+  };
+
+  const onBlurCommit = () => {
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    if (dirty && !busy && text.trim()) commit();
+    else if (!busy) onCancel?.();
+  };
+
   return (
     <div className={`inline-block-editor is-${kind}${busy ? " is-busy" : ""}`}>
       {kind === "heading" ? (
@@ -65,18 +93,17 @@ function ProseInline({
           value={text}
           disabled={busy}
           onChange={(e) => setText(e.target.value)}
+          onBlur={onBlurCommit}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
-              setText(initialText);
-              onCancel?.();
+              discard();
               return;
             }
             if (e.key === "Enter" && dirty && !busy) {
               e.preventDefault();
-              const t = text.trim();
-              if (t) onSave(t);
+              commit();
             }
           }}
         />
@@ -88,51 +115,56 @@ function ProseInline({
           value={text}
           disabled={busy}
           onChange={(e) => setText(e.target.value)}
+          onBlur={onBlurCommit}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
-              setText(initialText);
-              onCancel?.();
+              discard();
               return;
             }
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty && !busy) {
               e.preventDefault();
-              const t = text.trim();
-              if (t) onSave(t);
+              commit();
             }
           }}
         />
       )}
-      <div className="inline-block-actions">
-        <button
-          type="button"
-          className="inline-block-save"
-          disabled={busy || !dirty || !text.trim()}
-          onClick={() => {
-            const t = text.trim();
-            if (t) onSave(t);
-          }}
-        >
-          {busy ? "Сохраняю…" : saveLabel}
-        </button>
-        <button
-          type="button"
-          className="inline-block-cancel"
-          disabled={busy}
-          onClick={() => {
-            setText(initialText);
-            onCancel?.();
-          }}
-        >
-          Отмена
-        </button>
-        {kind === "paragraph" ? (
-          <span className="inline-block-hint">⌘↵ · Esc</span>
-        ) : (
-          <span className="inline-block-hint">Enter · Esc</span>
-        )}
-      </div>
+      {hideActions ? (
+        <p className="inline-block-hint is-solo">
+          {kind === "paragraph" ? "⌘↵ · Esc · blur" : "Enter · Esc · blur"}
+        </p>
+      ) : (
+        <div className="inline-block-actions">
+          <button
+            type="button"
+            className="inline-block-save"
+            disabled={busy || !dirty || !text.trim()}
+            onMouseDown={() => {
+              skipBlurRef.current = true;
+            }}
+            onClick={commit}
+          >
+            {busy ? "Сохраняю…" : saveLabel}
+          </button>
+          <button
+            type="button"
+            className="inline-block-cancel"
+            disabled={busy}
+            onMouseDown={() => {
+              skipBlurRef.current = true;
+            }}
+            onClick={discard}
+          >
+            Отмена
+          </button>
+          {kind === "paragraph" ? (
+            <span className="inline-block-hint">⌘↵ · Esc</span>
+          ) : (
+            <span className="inline-block-hint">Enter · Esc</span>
+          )}
+        </div>
+      )}
       {error ? <p className="err">{error}</p> : null}
     </div>
   );
@@ -147,10 +179,12 @@ function ListInline({
   onSave,
   onCancel,
   autoFocus = true,
+  hideActions = false,
 }: ListProps) {
   const seed = (initialItems || []).join("\n");
   const [text, setText] = useState(seed);
   const areaRef = useRef<HTMLTextAreaElement | null>(null);
+  const skipBlurRef = useRef(false);
   useEffect(() => {
     setText((initialItems || []).join("\n"));
   }, [initialItems]);
@@ -163,6 +197,28 @@ function ListInline({
     .map((s) => s.trim())
     .filter(Boolean);
   const dirty = text.replace(/\s+$/, "") !== seed.replace(/\s+$/, "");
+
+  const commit = () => {
+    if (!items.length || !dirty || busy) return;
+    skipBlurRef.current = true;
+    onSave(items);
+  };
+
+  const discard = () => {
+    skipBlurRef.current = true;
+    setText(seed);
+    onCancel?.();
+  };
+
+  const onBlurCommit = () => {
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    if (dirty && !busy && items.length) commit();
+    else if (!busy) onCancel?.();
+  };
+
   return (
     <div className={`inline-block-editor is-list${busy ? " is-busy" : ""}`}>
       <p className="inline-block-eyebrow">
@@ -176,44 +232,49 @@ function ListInline({
         value={text}
         disabled={busy}
         onChange={(e) => setText(e.target.value)}
+        onBlur={onBlurCommit}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
-            setText(seed);
-            onCancel?.();
+            discard();
             return;
           }
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && dirty && !busy) {
             e.preventDefault();
-            if (items.length) onSave(items);
+            commit();
           }
         }}
       />
-      <div className="inline-block-actions">
-        <button
-          type="button"
-          className="inline-block-save"
-          disabled={busy || !dirty || items.length < 1}
-          onClick={() => {
-            if (items.length) onSave(items);
-          }}
-        >
-          {busy ? "Сохраняю…" : saveLabel}
-        </button>
-        <button
-          type="button"
-          className="inline-block-cancel"
-          disabled={busy}
-          onClick={() => {
-            setText(seed);
-            onCancel?.();
-          }}
-        >
-          Отмена
-        </button>
-        <span className="inline-block-hint">⌘↵ · Esc</span>
-      </div>
+      {hideActions ? (
+        <p className="inline-block-hint is-solo">⌘↵ · Esc · blur</p>
+      ) : (
+        <div className="inline-block-actions">
+          <button
+            type="button"
+            className="inline-block-save"
+            disabled={busy || !dirty || items.length < 1}
+            onMouseDown={() => {
+              skipBlurRef.current = true;
+            }}
+            onClick={commit}
+          >
+            {busy ? "Сохраняю…" : saveLabel}
+          </button>
+          <button
+            type="button"
+            className="inline-block-cancel"
+            disabled={busy}
+            onMouseDown={() => {
+              skipBlurRef.current = true;
+            }}
+            onClick={discard}
+          >
+            Отмена
+          </button>
+          <span className="inline-block-hint">⌘↵ · Esc</span>
+        </div>
+      )}
       {error ? <p className="err">{error}</p> : null}
     </div>
   );

@@ -153,7 +153,7 @@ export function ImageEditModal({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Подпись и PNG обновятся в чате, PDF и DOCX после «Сохранить в отчёт».
+          Подпись и PNG — в Preview сразу; PDF и DOCX — на «Готово».
         </p>
         <div className="chart-edit-actions">
           <button
@@ -162,7 +162,7 @@ export function ImageEditModal({
             disabled={!canApply}
             onClick={apply}
           >
-            {busy ? "Пересобираю…" : "Сохранить в отчёт"}
+            {busy ? "Обновляю…" : "В превью"}
           </button>
           <button
             type="button"
