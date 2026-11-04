@@ -30,6 +30,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   DEFAULT_COLORS,
+  diagramStructureEqual,
   type DiaKind,
   type DiagramIR,
   parseMermaidFlowchart,
@@ -37,6 +38,34 @@ import {
 } from "./diagramIr";
 import { layoutPositions } from "./diagramLayout";
 import { useFocusTrap } from "./useFocusTrap";
+
+/** React Flow fires dimensions/select on mount — those must not mark dirty. */
+function isUserNodeChange(
+  chs: { type?: string; dragging?: boolean }[],
+): { dirty: boolean; pushHist: boolean } {
+  let dirty = false;
+  let pushHist = false;
+  for (const c of chs) {
+    if (c.type === "remove" || c.type === "add" || c.type === "replace") {
+      dirty = true;
+      pushHist = true;
+    } else if (c.type === "position") {
+      if (c.dragging === true) dirty = true;
+      if (c.dragging === false) {
+        dirty = true;
+        pushHist = true;
+      }
+    }
+    // ignore: dimensions, select, reset, …
+  }
+  return { dirty, pushHist };
+}
+
+function isUserEdgeChange(chs: { type?: string }[]): boolean {
+  return chs.some(
+    (c) => c.type === "remove" || c.type === "add" || c.type === "replace",
+  );
+}
 
 const KIND_OPTIONS: { id: DiaKind; label: string }[] = [
   { id: "start", label: "Старт" },
@@ -574,10 +603,22 @@ function EditorInner({
   const save = () => {
     const ir = flowToIr({ id: diagramId, title, direction }, nodes, edges);
     ir.colors = savedColors;
+    const titleOut = title.trim() || diagramId;
+    // No-op: keep original Mermaid so Liber/Mermaid layout stays as generated.
+    if (
+      seed.ir &&
+      diagramStructureEqual(ir, seed.ir) &&
+      titleOut === (initialTitle || "").trim()
+    ) {
+      setDirty(false);
+      clearDraft();
+      onSave(mermaid, titleOut);
+      return;
+    }
     const out = serializeMermaidFlowchart(ir);
     setDirty(false);
     clearDraft();
-    onSave(out, title.trim() || diagramId);
+    onSave(out, titleOut);
   };
 
   const discardDraft = () => {
@@ -808,19 +849,16 @@ function EditorInner({
                 edges={edges}
                 onNodesChange={(chs) => {
                   if (!applying.current) {
-                    const meaningful = chs.some(
-                      (c) =>
-                        c.type === "position" &&
-                        "dragging" in c &&
-                        c.dragging === false,
-                    );
-                    if (meaningful) pushHistory();
-                    setDirty(true);
+                    const { dirty: d, pushHist } = isUserNodeChange(chs);
+                    if (pushHist) pushHistory();
+                    if (d) setDirty(true);
                   }
                   onNodesChange(chs);
                 }}
                 onEdgesChange={(chs) => {
-                  if (!applying.current) setDirty(true);
+                  if (!applying.current && isUserEdgeChange(chs)) {
+                    setDirty(true);
+                  }
                   onEdgesChange(chs);
                 }}
                 onConnect={onConnect}

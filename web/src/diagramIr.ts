@@ -339,4 +339,30 @@ export function serializeMermaidFlowchart(
   return lines.join("\n") + "\n";
 }
 
+/** Structural equality for no-op save (ignore node order, edge ids, colors). */
+export function diagramStructureEqual(a: DiagramIR, b: DiagramIR): boolean {
+  if (a.direction !== b.direction) return false;
+  if (a.nodes.length !== b.nodes.length || a.edges.length !== b.edges.length) {
+    return false;
+  }
+  const nodesA = Object.fromEntries(
+    a.nodes.map((n) => [n.id, { label: n.label.trim(), kind: n.kind }]),
+  );
+  const nodesB = Object.fromEntries(
+    b.nodes.map((n) => [n.id, { label: n.label.trim(), kind: n.kind }]),
+  );
+  const ids = Object.keys(nodesA);
+  if (ids.length !== Object.keys(nodesB).length) return false;
+  for (const id of ids) {
+    const na = nodesA[id];
+    const nb = nodesB[id];
+    if (!nb || na.label !== nb.label || na.kind !== nb.kind) return false;
+  }
+  const edgeKey = (e: DiaEdge) =>
+    `${e.source}\0${e.target}\0${(e.label || "").trim()}`;
+  const ea = a.edges.map(edgeKey).sort();
+  const eb = b.edges.map(edgeKey).sort();
+  return ea.every((k, i) => k === eb[i]);
+}
+
 export { DEFAULT_COLORS };

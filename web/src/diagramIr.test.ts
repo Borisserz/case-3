@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canParseFlowchart,
+  diagramStructureEqual,
   isSupportedFlowchartSubset,
   parseMermaidFlowchart,
   serializeMermaidFlowchart,
@@ -96,6 +97,22 @@ describe("diagramIr", () => {
       ),
       true,
     );
+  });
+
+  it("diagramStructureEqual ignores order and colors", () => {
+    const a = parseMermaidFlowchart(SAMPLE, { id: "d", title: "T" });
+    const b = parseMermaidFlowchart(
+      serializeMermaidFlowchart(a),
+      { id: "d", title: "T" },
+    );
+    assert.equal(diagramStructureEqual(a, b), true);
+    const c = {
+      ...b,
+      nodes: b.nodes.map((n) =>
+        n.id === "A" ? { ...n, label: "Другое" } : n,
+      ),
+    };
+    assert.equal(diagramStructureEqual(a, c), false);
   });
 
   it("parses subgraph + br + bidirectional edges (desk 091443)", () => {
