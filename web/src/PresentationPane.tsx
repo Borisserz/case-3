@@ -81,8 +81,6 @@ type Props = {
   onEditingChange?: (on: boolean) => void;
   /** Hide in-pane Edit / history when rail owns chrome. */
   showEditChrome?: boolean;
-  /** Hide PPTX download in pane when rail shows downloads. */
-  showDownloadChrome?: boolean;
   /** Notify parent that twin/PPTX need flush on Готово. */
   onDocsDirtyChange?: (dirty: boolean) => void;
 };
@@ -94,7 +92,7 @@ export function PresentationPane({
   status,
   stage,
   error,
-  downloads,
+  downloads: _downloads,
   deckPdfMode: _deckPdfMode = null,
   making = false,
   onDeckUpdated,
@@ -114,7 +112,6 @@ export function PresentationPane({
   editing: editingProp,
   onEditingChange,
   showEditChrome = true,
-  showDownloadChrome = true,
   onDocsDirtyChange,
 }: Props) {
   const reduce = useReducedMotion();
