@@ -18,6 +18,7 @@ from case3.chart_harden import (
     _kpi_html_from_chart,
     _landscape_canvas_if_square,
     _rewrite_js_type,
+    chart_html_from_kpi,
     ensure_legend_and_tooltips,
     harden_chart_html,
     html_matches_type,
@@ -79,6 +80,11 @@ def apply_type_to_chart(chart: dict[str, Any], want: str) -> dict[str, Any]:
             log.info("forced kpi markup on %s (was type=%s)", c.get("id"), chart.get("type"))
         c["type"] = "kpi"
         return c
+    # Leaving KPI → synthesize Chart.js from the card value/label.
+    if _is_kpi_html(html):
+        html = chart_html_from_kpi(html, want)
+        c["html"] = html
+        log.info("built %s chart from kpi on %s", want, c.get("id"))
     # Leaving donut (or any leftover Mary wrap) → plain canvas+script first.
     left_donut = False
     if want != "donut" and html and re.search(r"donut-layout", html, flags=re.I):

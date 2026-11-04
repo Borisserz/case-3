@@ -138,13 +138,137 @@ _DONUT_FALLBACK_COLORS = (
 )
 
 
+def _scatter_points_xy(html: str) -> list[tuple[str, str]]:
+    """Extract ``{x,y}`` pairs as strings."""
+    return re.findall(
+        r"\{\s*x\s*:\s*(-?[\d.]+)\s*,\s*y\s*:\s*(-?[\d.]+)\s*\}",
+        html or "",
+        flags=re.I,
+    )
+
+
+def _scatter_to_scalar_series(html: str) -> str:
+    """Turn scatter ``data:[{x,y},…]`` into categorical labels + scalar data."""
+    src = html or ""
+    pts = _scatter_points_xy(src)
+    if not pts:
+        return src
+    labels = ",".join(f"'{x}'" for x, _y in pts)
+    values = ",".join(y for _x, y in pts)
+    colors = ",".join(
+        f"'{_DONUT_FALLBACK_COLORS[i % len(_DONUT_FALLBACK_COLORS)]}'"
+        for i in range(len(pts))
+    )
+    single = (
+        "{label:'Значение',data:["
+        + values
+        + "],backgroundColor:["
+        + colors
+        + "],borderColor:'#1A4A4B',borderWidth:2,pointRadius:0}"
+    )
+    out = src
+    ds_m = re.search(r"datasets\s*:\s*\[", out, flags=re.I)
+    if ds_m:
+        span = _bracket_span(out, ds_m.end() - 1, chr(91), chr(93))
+        if span:
+            out = out[: span[0]] + "[" + single + "]" + out[span[1] :]
+    # Ensure labels exist for bar/line/donut.
+    if re.search(r"labels\s*:\s*\[", out, flags=re.I):
+        out = re.sub(
+            r"labels\s*:\s*\[[^\]]*\]",
+            f"labels:[{labels}]",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    else:
+        out = re.sub(
+            r"data\s*:\s*\{",
+            f"data:{{labels:[{labels}],",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    return out
+
+
+def _parse_kpi_value_label(html: str) -> tuple[str, str]:
+    vm = re.search(
+        r"""class\s*=\s*['"]value['"]\s*>\s*([^<]+)\s*<""",
+        html or "",
+        flags=re.I,
+    )
+    lm = re.search(
+        r"""class\s*=\s*['"]label['"]\s*>\s*([^<]+)\s*<""",
+        html or "",
+        flags=re.I,
+    )
+    value = (vm.group(1) if vm else "0").strip()
+    label = (lm.group(1) if lm else "Показатель").strip() or "Показатель"
+    return value, label
+
+
+def chart_html_from_kpi(html: str, want: str) -> str:
+    """Build a minimal Chart.js fragment from a KPI card (leaving KPI type)."""
+    raw_val, label = _parse_kpi_value_label(html)
+    nums = re.findall(r"-?\d+(?:[.,]\d+)?", raw_val.replace(" ", ""))
+    num = (nums[0].replace(",", ".") if nums else "0")
+    safe_lab = label.replace("\\", "").replace("'", "")
+    color = _DONUT_FALLBACK_COLORS[0]
+    if want == "scatter":
+        body = (
+            f"datasets:[{{label:'{safe_lab}',data:[{{x:1,y:{num}}}],"
+            f"backgroundColor:'{color}',pointRadius:10,pointHoverRadius:14}}]"
+        )
+        opts = "scales:{x:{},y:{}},animation:false,responsive:false,maintainAspectRatio:false"
+        js_type = "scatter"
+    elif want == "donut":
+        # Two slices so the ring reads; keep metric as the larger slice so
+        # donut-center highlights the KPI, not «Прочее».
+        try:
+            v = abs(float(num))
+        except ValueError:
+            v = 0.0
+        rest = max(v * 0.45, 1.0)
+        body = (
+            f"labels:['{safe_lab}','Прочее'],datasets:[{{label:'Доля',"
+            f"data:[{_fmt_num(v)},{_fmt_num(rest)}],"
+            f"backgroundColor:['{color}','#D0D4C8'],borderWidth:0}}]"
+        )
+        opts = (
+            "cutout:'58%',plugins:{legend:{display:false}},"
+            "animation:false,responsive:false,maintainAspectRatio:false"
+        )
+        js_type = "doughnut"
+    else:
+        fill = ",fill:true" if want == "area" else ""
+        body = (
+            f"labels:['{safe_lab}'],datasets:[{{label:'{safe_lab}',data:[{num}],"
+            f"backgroundColor:['{color}'],borderColor:'{color}',borderWidth:2{fill}}}]"
+        )
+        opts = "scales:{x:{},y:{}},animation:false,responsive:false,maintainAspectRatio:false"
+        if want == "horizontal_bar":
+            opts = "indexAxis:'y'," + opts
+        if want == "stacked_bar":
+            opts = "scales:{x:{stacked:true},y:{stacked:true}}," + opts.replace(
+                "scales:{x:{},y:{}},", ""
+            )
+        js_type = "line" if want in {"line", "area"} else "bar"
+    return (
+        '<canvas id="c1" width="1100" height="560"></canvas>'
+        "<script>new Chart(document.getElementById('c1'),"
+        f"{{type:'{js_type}',data:{{{body}}},options:{{{opts}}}}});"
+        "window.__CASE3_CHART_READY=true;</script>"
+    )
+
+
 def _coerce_html_to_donut(html: str) -> str:
     """Force a single-ring doughnut: collapse multi-series (no concentric «мишень»).
 
     Grouped/stacked/line → one dataset with per-category sums (or the sole series).
     Strips cartesian scales / indexAxis that confuse doughnut layout.
     """
-    src = html or ""
+    src = _scatter_to_scalar_series(html or "")
     out = re.sub(
         r"""type\s*:\s*['"](?:bar|line|doughnut|pie|scatter|radar)['"]""",
         "type:'doughnut'",
@@ -225,11 +349,16 @@ def _rewrite_js_type(html: str, preferred: str) -> str:
     if preferred == "donut":
         return _coerce_html_to_donut(html or "")
 
+    src = html or ""
+    # Scatter points are not valid bar/line/area data — flatten first.
+    if preferred != "scatter" and _scatter_points_xy(src):
+        src = _scatter_to_scalar_series(src)
+
     js = _JS_TYPE.get(preferred, preferred)
     out = re.sub(
         r"""type\s*:\s*['"](?:bar|line|doughnut|pie|scatter|radar)['"]""",
         f"type:'{js}'",
-        html,
+        src,
         count=1,
         flags=re.I,
     )
@@ -241,7 +370,11 @@ def _rewrite_js_type(html: str, preferred: str) -> str:
                 out,
                 count=1,
             )
-    elif preferred == "area":
+    else:
+        # Leaving horizontal_bar (or leftover indexAxis) → vertical cartesian.
+        out = re.sub(r"indexAxis\s*:\s*['\"][^'\"]*['\"]\s*,?", "", out, flags=re.I)
+
+    if preferred == "area":
         if re.search(r"fill\s*:", out) is None:
             out = re.sub(
                 r"(datasets\s*:\s*\[\s*\{)",
@@ -262,9 +395,23 @@ def _rewrite_js_type(html: str, preferred: str) -> str:
                 out,
                 count=1,
             )
-    elif preferred == "scatter":
+    if preferred != "stacked_bar":
+        # Drop stacked flags when leaving stacked_bar → plain bar/line/…
+        out = re.sub(r"stacked\s*:\s*true\s*,?", "", out, flags=re.I)
+    if preferred == "scatter":
         out = _scalar_series_to_scatter_points(out)
         out = _ensure_scatter_point_size(out)
+    # Restore visible axes when leaving donut (display:false leftovers).
+    if preferred != "donut":
+        out = re.sub(
+            r"scales\s*:\s*\{\s*x\s*:\s*\{\s*display\s*:\s*false\s*\}\s*,\s*"
+            r"y\s*:\s*\{\s*display\s*:\s*false\s*\}\s*\}",
+            "scales:{x:{},y:{}}",
+            out,
+            count=1,
+            flags=re.I,
+        )
+        out = re.sub(r"cutout\s*:\s*['\"][^'\"]*['\"]\s*,?", "", out, flags=re.I)
     return out
 
 def _ensure_scatter_point_size(html: str) -> str:
