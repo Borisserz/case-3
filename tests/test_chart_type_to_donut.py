@@ -57,3 +57,24 @@ def test_line_to_donut_keeps_single_series_values() -> None:
     assert "doughnut" in html
     assert _dataset_count(html) == 1
     assert "12" in html  # last month value preserved
+
+
+_STACKED = (
+    '<canvas id="c1" width="1100" height="560"></canvas>'
+    "<script>new Chart(document.getElementById('c1'),"
+    "{type:'bar',data:{labels:['Сев','Юг','Вост'],datasets:["
+    "{label:'A',data:[30,20,25],backgroundColor:'#1A4A4B'},"
+    "{label:'B',data:[20,35,15],backgroundColor:'#5A6E28'},"
+    "{label:'C',data:[10,5,20],backgroundColor:'#8B5A2B'}"
+    "]},options:{animation:false,scales:{x:{stacked:true},y:{stacked:true}}}});"
+    "window.__CASE3_CHART_READY=true;</script>"
+)
+
+
+def test_stacked_to_donut_hides_cartesian_axes() -> None:
+    chart = {"id": "cht_03", "type": "stacked_bar", "html": _STACKED}
+    html = apply_type_to_chart(chart, "donut")["html"]
+    assert _dataset_count(html) == 1
+    assert "stacked" not in html.lower()
+    assert "x:{display:false}" in html.replace(" ", "")
+    assert "y:{display:false}" in html.replace(" ", "")

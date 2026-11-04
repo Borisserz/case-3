@@ -190,7 +190,23 @@ def _coerce_html_to_donut(html: str) -> str:
 
     # Doughnut ignores cartesian axes — drop leftover bar/line chrome.
     out = re.sub(r"indexAxis\s*:\s*['\"][^'\"]*['\"]\s*,?", "", out, flags=re.I)
-    out = re.sub(r"scales\s*:\s*\{", "scales:{display:false,", out, count=1, flags=re.I)
+    # Chart.js v4: top-level scales.display is ignored — kill x/y (and stacked).
+    if re.search(r"scales\s*:\s*\{", out, flags=re.I):
+        out = re.sub(
+            r"scales\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}",
+            "scales:{x:{display:false},y:{display:false}}",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    else:
+        out = re.sub(
+            r"options\s*:\s*\{",
+            "options:{scales:{x:{display:false},y:{display:false}},",
+            out,
+            count=1,
+            flags=re.I,
+        )
     # Soften fill/tension left from line/area
     out = re.sub(r"""fill\s*:\s*true\s*,?""", "", out, flags=re.I)
     out = re.sub(r"""tension\s*:\s*[\d.]+\s*,?""", "", out, flags=re.I)
