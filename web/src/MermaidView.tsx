@@ -7,6 +7,7 @@ import {
   mermaidNodeIdFromElement,
 } from "./mermaidSvgInteract";
 import { repairMermaidSource } from "./repairMermaidSource";
+import { softenMermaidSvg } from "./softenMermaidSvg";
 
 type Props = {
   source: string;
@@ -30,6 +31,15 @@ async function loadMermaid(): Promise<Mermaid> {
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
+      // Match Liber visual editor: soft curves, not sharp orthogonal edges.
+      flowchart: {
+        curve: "basis",
+        padding: 18,
+        nodeSpacing: 48,
+        rankSpacing: 52,
+        htmlLabels: true,
+        useMaxWidth: true,
+      },
       themeVariables: {
         primaryColor: "#dce8df",
         primaryTextColor: "#1a2e22",
@@ -39,6 +49,10 @@ async function loadMermaid(): Promise<Mermaid> {
         lineColor: "#5a7a64",
         fontFamily: "Georgia, 'Times New Roman', serif",
         fontSize: "15px",
+        nodeBorder: "#6b8f76",
+        mainBkg: "#eef3ef",
+        clusterBkg: "#f4f7f4",
+        edgeLabelBackground: "#f7faf7",
       },
     });
     mermaidReady = true;
@@ -91,6 +105,7 @@ export function MermaidView({
         const el = hostRef.current.querySelector("svg");
         svgRef.current = el;
         if (el) {
+          softenMermaidSvg(el);
           el.querySelectorAll("g.node").forEach((g) => {
             (g as SVGElement).style.cursor = dblRef.current
               ? "pointer"

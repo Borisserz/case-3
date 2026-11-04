@@ -968,6 +968,21 @@
   font-family: var(--font);
 }
 
+/* Soft preview ≈ visual editor: rounded boxes, gentle edges */
+.mermaid-view-svg svg g.node > rect {
+  filter: drop-shadow(0 2px 6px rgb(20 40 28 / 8%));
+}
+.mermaid-view-svg svg g.edgePaths path,
+.mermaid-view-svg svg .edgePath path,
+.mermaid-view-svg svg path.flowchart-link {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mermaid-view-svg svg .edgeLabel foreignObject,
+.mermaid-view-svg svg .edgeLabel span {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
 .mermaid-view-svg.is-loading {
   min-height: 0;
   overflow: hidden;

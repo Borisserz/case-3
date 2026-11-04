@@ -51,7 +51,8 @@ const DEFAULT_COLORS: Record<DiaKind, RoleColor> = {
   data: { fill: "#d9e6f0", stroke: "#4a6f8c" },
 };
 
-const SHAPE = /(\[\[[^\]]*\]\]|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/;
+/** Stadium ``([…])`` before plain ``(…)`` / ``[…]``. */
+const SHAPE = /(\[\[[^\]]*\]\]|\(\[[^\]]*\]\)|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/;
 const CLASS_MARK = /:::[A-Za-z]\w*/;
 const CLASSDEF_RE =
   /^classDef\s+([A-Za-z]\w*)\s+.*fill:\s*(#[0-9a-fA-F]{3,8}).*stroke:\s*(#[0-9a-fA-F]{3,8})/i;
@@ -65,6 +66,10 @@ function parseShape(
   if (!raw) return { label: "" };
   if (raw.startsWith("[[") && raw.endsWith("]]")) {
     return { label: raw.slice(2, -2), kindHint: "data" };
+  }
+  // Stadium ([label]) — pill / soft process (editor look).
+  if (raw.startsWith("([") && raw.endsWith("])")) {
+    return { label: raw.slice(2, -2), kindHint: "process" };
   }
   if (raw.startsWith("{") && raw.endsWith("}")) {
     return { label: raw.slice(1, -1), kindHint: "decision" };
@@ -148,7 +153,9 @@ function parseEndpoint(chunk: string): {
   const id = idM[1];
   let rest = chunk.trim().slice(id.length).trim();
   let shapeRaw = "";
-  const sm = rest.match(/^(\[\[[^\]]*\]\]|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/);
+  const sm = rest.match(
+    /^(\[\[[^\]]*\]\]|\(\[[^\]]*\]\)|\[[^\]]*\]|\([^)]*\)|\{[^}]*\})/,
+  );
   if (sm) {
     shapeRaw = sm[1];
     rest = rest.slice(sm[1].length).trim();
@@ -295,9 +302,13 @@ export function serializeMermaidFlowchart(
     used.add(n.kind);
     const text = (n.label || n.id).replace(/[\[\]{}|]/g, " ").trim() || n.id;
     if (n.kind === "decision") return `${n.id}{${text}}:::${n.kind}`;
-    if (n.kind === "ok") return `${n.id}(${text}):::${n.kind}`;
+    // Pill / rounded — closer to React Flow editor than sharp ``[…]``.
+    if (n.kind === "ok") return `${n.id}([${text}]):::${n.kind}`;
     if (n.kind === "data") return `${n.id}[[${text}]]:::${n.kind}`;
-    return `${n.id}[${text}]:::${n.kind}`;
+    if (n.kind === "start" || n.kind === "process" || n.kind === "warn") {
+      return `${n.id}(${text}):::${n.kind}`;
+    }
+    return `${n.id}(${text}):::${n.kind}`;
   };
 
   for (const n of ir.nodes) {

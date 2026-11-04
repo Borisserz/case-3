@@ -49,8 +49,10 @@ describe("diagramIr", () => {
     const ir = parseMermaidFlowchart(SAMPLE, { id: "dia_01", title: "R" });
     const out = serializeMermaidFlowchart(ir);
     assert.match(out, /^flowchart TD/m);
-    assert.match(out, /A\[Заявка\]:::start/);
+    // Soft shapes: rounded / stadium (not sharp [rect])
+    assert.match(out, /A\(Заявка\):::start/);
     assert.match(out, /B\{Проверка\}:::decision/);
+    assert.match(out, /C\(\[Готово\]\):::ok/);
     assert.match(out, /B -->|да\| C/);
     assert.match(out, /classDef start fill:/);
     const again = parseMermaidFlowchart(out, { id: "dia_01", title: "R" });
