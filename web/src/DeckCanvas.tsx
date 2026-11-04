@@ -179,7 +179,7 @@ function MediaSlot({
       >
         {body}
         <span className="deck-cv-media-hint" aria-hidden>
-          {mediaKind(mediaId) === "chart" ? "График" : "Фото"}
+          Изменить
         </span>
         {children}
       </button>

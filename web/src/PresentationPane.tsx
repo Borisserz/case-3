@@ -547,12 +547,16 @@ export function PresentationPane({
       };
 
   return (
-    <div className="presentation-pane is-ready">
+    <div
+      className={`presentation-pane is-ready${editing ? " is-editing" : ""}${
+        openMediaId ? " has-media-sheet" : ""
+      }`}
+    >
       <header className="presentation-chrome">
         <div className="presentation-chrome-left">
           <span className="presentation-chrome-kicker">
             {editing && view === "slide"
-              ? "Презентация · правки"
+              ? "Правки · twin + PPTX"
               : "Презентация · PPTX"}
           </span>
           <span className="presentation-chrome-title" title={slideTitle}>
@@ -588,7 +592,9 @@ export function PresentationPane({
             {live ? (
               <button
                 type="button"
-                className={`presentation-seg-btn${view === "slide" && editing ? " is-on" : ""}`}
+                className={`presentation-seg-btn presentation-seg-edit${
+                  view === "slide" && editing ? " is-on" : ""
+                }`}
                 onClick={() => {
                   if (editing) {
                     leaveEdit();
@@ -608,7 +614,7 @@ export function PresentationPane({
             <div className="presentation-history" role="group" aria-label="История">
               <button
                 type="button"
-                className="presentation-tool presentation-history-btn"
+                className="presentation-history-btn"
                 aria-label="Отменить"
                 title="Отменить (⌘Z)"
                 disabled={!editHistory?.canUndo || saving}
@@ -618,7 +624,7 @@ export function PresentationPane({
               </button>
               <button
                 type="button"
-                className="presentation-tool presentation-history-btn"
+                className="presentation-history-btn"
                 aria-label="Вернуть"
                 title="Вернуть (⌘⇧Z)"
                 disabled={!editHistory?.canRedo || saving}
@@ -652,6 +658,17 @@ export function PresentationPane({
           ) : null}
         </div>
       </header>
+
+      {editing && view === "slide" ? (
+        <div className="presentation-edit-bar" role="status">
+          <p className="presentation-edit-bar-hint">
+            Клик по тексту · графику · фото · ⌘Z / ⌘⇧Z
+          </p>
+          <span className="presentation-edit-bar-live" aria-hidden>
+            {saving ? "Сохраняю…" : openMediaId ? "Лист правки" : "Готово к правке"}
+          </span>
+        </div>
+      ) : null}
 
       {view === "grid" && slidePngs.length > 0 ? (
         <DeckGallery
