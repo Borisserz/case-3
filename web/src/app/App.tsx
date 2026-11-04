@@ -779,6 +779,7 @@ export default function App() {
                     ? () => clearEditHistory(activeReport.run_id)
                     : undefined
                 }
+                onEditHistory={setEditHistory}
                 onReportEditModeChange={setReportEditMode}
                 onEditList={
                   railArtifact.kind === "report" &&

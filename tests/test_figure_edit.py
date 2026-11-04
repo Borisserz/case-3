@@ -201,7 +201,7 @@ def test_generate_refreshes_existing_deck(
         patch("case3.run_undo.capture_before_edit"),
         patch("case3.run_undo.undo_meta", return_value={}),
         patch(
-            "case3.slides_job.rebuild_slides_from_deck",
+            "case3.deck_refresh.refresh_deck_from_ir",
             rebuild,
         ),
     ):
@@ -216,4 +216,4 @@ def test_generate_refreshes_existing_deck(
         )
 
     rebuild.assert_called_once()
-    assert rebuild.call_args[0][0] == out.name
+    assert rebuild.call_args[0][0] == out

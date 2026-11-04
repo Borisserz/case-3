@@ -371,6 +371,10 @@ def edit_chart_in_run(
     except RenderError as exc:
         raise ChartEditError(f"document rebuild failed: {exc}") from exc
 
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
+
     v = int(dest.stat().st_mtime)
     from case3.run_undo import undo_meta
 

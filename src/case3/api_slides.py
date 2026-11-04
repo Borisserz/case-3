@@ -374,9 +374,24 @@ def _load_deck_for_patch(run_id: str, out_dir: Path) -> tuple[dict[str, Any], Pa
 
 
 def _enqueue_deck_rebuild(
-    run_id: str, out_dir: Path, ir_path: Path, patched: dict[str, Any]
-) -> bool:
-    """Write IR + queue coalesce worker. Returns True if already queued."""
+    run_id: str,
+    out_dir: Path,
+    ir_path: Path,
+    patched: dict[str, Any],
+    *,
+    undo_kind: str = "slides",
+    undo_target: str = "*",
+) -> tuple[bool, dict[str, Any] | None]:
+    """Snapshot undo, write IR, spawn coalesce worker. Returns (queued, undo meta)."""
+    undo_desc: dict[str, Any] | None = None
+    try:
+        from case3.run_undo import capture_before_edit, undo_meta
+
+        capture_before_edit(out_dir, kind=undo_kind, target=undo_target)
+        undo_desc = undo_meta(out_dir)
+    except Exception as exc:  # noqa: BLE001 — edit still proceeds
+        log.warning("slides patch undo capture failed: %s", exc)
+
     try:
         ir_path.write_text(
             json.dumps(patched, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -397,7 +412,7 @@ def _enqueue_deck_rebuild(
             name=f"case3-slides-patch-{run_id}",
             daemon=True,
         ).start()
-    return already
+    return already, undo_desc
 
 
 @router.patch("/api/runs/{run_id}/slides/ir")
@@ -420,18 +435,28 @@ async def patch_slides_ir(
     except DeckIrError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
 
-    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "started",
-            "slides_status": "running",
-            "slides_stage": "patch",
-            "queued": already,
-            "deck": patched,
-        },
-        status_code=202,
+    already, undo_desc = _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        patched,
+        undo_kind="slides_text",
+        undo_target=",".join(
+            str(s.get("id") or "") for s in (body.slides or []) if isinstance(s, dict)
+        )
+        or "*",
     )
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "status": "started",
+        "slides_status": "running",
+        "slides_stage": "patch",
+        "queued": already,
+        "deck": patched,
+    }
+    if undo_desc:
+        payload["undo"] = undo_desc
+    return JSONResponse(payload, status_code=202)
 
 
 @router.post("/api/runs/{run_id}/slides/structure")
@@ -457,19 +482,26 @@ async def post_slides_structure(
     except DeckIrError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
 
-    already = _enqueue_deck_rebuild(run_id, out_dir, ir_path, patched)
-    return JSONResponse(
-        {
-            "run_id": run_id,
-            "status": "started",
-            "slides_status": "running",
-            "slides_stage": "patch",
-            "queued": already,
-            "op": body.op,
-            "deck": patched,
-        },
-        status_code=202,
+    already, undo_desc = _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        patched,
+        undo_kind="slides_structure",
+        undo_target=str(body.op or "*"),
     )
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "status": "started",
+        "slides_status": "running",
+        "slides_stage": "patch",
+        "queued": already,
+        "op": body.op,
+        "deck": patched,
+    }
+    if undo_desc:
+        payload["undo"] = undo_desc
+    return JSONResponse(payload, status_code=202)
 
 
 @router.get("/api/runs/{run_id}/slides/png/{name}")

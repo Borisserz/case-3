@@ -132,6 +132,9 @@ type Props = {
   onHistoryUndo?: () => void | Promise<void>;
   onHistoryRedo?: () => void | Promise<void>;
   onClearEditHistory?: () => void | Promise<void>;
+  onEditHistory?: (
+    h: import("./domain/reportEditMode").EditHistoryDesc,
+  ) => void;
   onReportEditModeChange?: (on: boolean) => void;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (
@@ -173,6 +176,7 @@ export function ArtifactRail({
   onHistoryUndo,
   onHistoryRedo,
   onClearEditHistory,
+  onEditHistory,
   onReportEditModeChange,
   makingPresentation = false,
   onDiagramsUpdated,
@@ -702,6 +706,19 @@ export function ArtifactRail({
                   deckPdfMode={report.deckPdfMode}
                   making={makingPresentation}
                   onDeckUpdated={report.onDeckUpdated}
+                  palettes={palettes}
+                  catalogTypes={catalogTypes}
+                  defaultPalette={defaultPalette}
+                  editingFigureId={editingFigureId}
+                  editError={editError}
+                  editErrorFigureId={editErrorFigureId}
+                  editHistory={editHistory}
+                  onEditFigure={onEditFigure}
+                  onEditImage={onEditImage}
+                  onHistoryUndo={onHistoryUndo}
+                  onHistoryRedo={onHistoryRedo}
+                  onClearEditHistory={onClearEditHistory}
+                  onEditHistory={onEditHistory}
                 />
               ) : null}
 

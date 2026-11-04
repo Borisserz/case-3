@@ -2,9 +2,22 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { DeckCanvas } from "./DeckCanvas";
+import {
+  ChartEditSheet,
+  type ChartEditRequest,
+  type PaletteInfo,
+} from "./ChartEditSheet";
+import { DeckCanvas, type DeckMediaKind } from "./DeckCanvas";
 import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+import {
+  parseEditHistory,
+  type EditHistoryDesc,
+} from "./domain/reportEditMode";
+import {
+  ImageEditModal,
+  type ImageEditRequest,
+} from "./ImageEditModal";
 import { PresentationFullscreen } from "./PresentationFullscreen";
 
 /** Survive tab switches: PresentationPane unmounts on Preview/PDF. */
@@ -46,6 +59,19 @@ type Props = {
   deckPdfMode?: string | null;
   making?: boolean;
   onDeckUpdated?: (deck: DeckIR, slidePngs: string[]) => void;
+  palettes?: PaletteInfo[];
+  catalogTypes?: string[];
+  defaultPalette?: string;
+  editingFigureId?: string | null;
+  editError?: string | null;
+  editErrorFigureId?: string | null;
+  editHistory?: EditHistoryDesc | null;
+  onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
+  onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onHistoryUndo?: () => void | Promise<void>;
+  onHistoryRedo?: () => void | Promise<void>;
+  onClearEditHistory?: () => void | Promise<void>;
+  onEditHistory?: (h: EditHistoryDesc) => void;
 };
 
 export function PresentationPane({
@@ -59,6 +85,19 @@ export function PresentationPane({
   deckPdfMode: _deckPdfMode = null,
   making = false,
   onDeckUpdated,
+  palettes = [],
+  catalogTypes = [],
+  defaultPalette = "atelier",
+  editingFigureId = null,
+  editError = null,
+  editErrorFigureId = null,
+  editHistory = null,
+  onEditFigure,
+  onEditImage,
+  onHistoryUndo,
+  onHistoryRedo,
+  onClearEditHistory,
+  onEditHistory,
 }: Props) {
   const reduce = useReducedMotion();
   const [idx, setIdx] = useState(0);
@@ -78,6 +117,11 @@ export function PresentationPane({
   const [saveFlash, setSaveFlash] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [openMediaId, setOpenMediaId] = useState<string | null>(null);
+  const [openMediaKind, setOpenMediaKind] = useState<DeckMediaKind | null>(
+    null,
+  );
+  const [mediaVersion, setMediaVersion] = useState(0);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -96,7 +140,40 @@ export function PresentationPane({
     setEditing(false);
     setView("grid");
     setSaveError(null);
+    setOpenMediaId(null);
+    setOpenMediaKind(null);
   }, [runId]);
+
+  const leaveEdit = useCallback(() => {
+    setEditing(false);
+    setOpenMediaId(null);
+    setOpenMediaKind(null);
+    void onClearEditHistory?.();
+  }, [onClearEditHistory]);
+
+  const refreshSlidesNow = useCallback(async () => {
+    const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+    const gBody = await g.json().catch(() => ({}));
+    if (!g.ok) return;
+    const pngs = Array.isArray(gBody.slide_pngs)
+      ? (gBody.slide_pngs as string[])
+      : [];
+    if (gBody.deck) setDeck(gBody.deck as DeckIR);
+    if (pngs.length || gBody.deck) {
+      onDeckUpdated?.(gBody.deck as DeckIR, pngs);
+    }
+    setMediaVersion(Date.now());
+  }, [onDeckUpdated, runId]);
+
+  const historyUndo = useCallback(async () => {
+    await onHistoryUndo?.();
+    await refreshSlidesNow();
+  }, [onHistoryUndo, refreshSlidesNow]);
+
+  const historyRedo = useCallback(async () => {
+    await onHistoryRedo?.();
+    await refreshSlidesNow();
+  }, [onHistoryRedo, refreshSlidesNow]);
 
   // Safety net: rail opened with pptx downloads but empty twin/deck (old status).
   useEffect(() => {
@@ -154,12 +231,18 @@ export function PresentationPane({
       if (e.key === "f" || e.key === "F") setFull(true);
       if (e.key === "e" || e.key === "E") {
         setView("slide");
-        setEditing((v) => !v);
+        if (editing) leaveEdit();
+        else setEditing(true);
+      }
+      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) void historyRedo();
+        else void historyUndo();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [full, go, editing]);
+  }, [full, go, editing, leaveEdit, historyUndo, historyRedo]);
 
   const waitPatchRebuild = useCallback(
     async (optimisticDeck?: DeckIR) => {
@@ -213,6 +296,13 @@ export function PresentationPane({
             typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
           );
         }
+        if (body.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              body.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
         await waitPatchRebuild(body.deck as DeckIR | undefined);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
@@ -220,7 +310,39 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [runId, waitPatchRebuild],
+    [onEditHistory, runId, waitPatchRebuild],
+  );
+
+  const onMediaClick = useCallback((id: string, kind: DeckMediaKind) => {
+    setOpenMediaId(id);
+    setOpenMediaKind(kind);
+  }, []);
+
+  const closeMediaSheet = useCallback(() => {
+    setOpenMediaId(null);
+    setOpenMediaKind(null);
+  }, []);
+
+  const submitChart = useCallback(
+    async (req: ChartEditRequest) => {
+      const ok = await onEditFigure?.(req);
+      if (ok) {
+        await refreshSlidesNow();
+        closeMediaSheet();
+      }
+    },
+    [closeMediaSheet, onEditFigure, refreshSlidesNow],
+  );
+
+  const submitImage = useCallback(
+    async (req: ImageEditRequest) => {
+      const ok = await onEditImage?.(req);
+      if (ok) {
+        await refreshSlidesNow();
+        closeMediaSheet();
+      }
+    },
+    [closeMediaSheet, onEditImage, refreshSlidesNow],
   );
 
   const structureOp = useCallback(
@@ -260,6 +382,13 @@ export function PresentationPane({
           const at = next.slides.findIndex((s) => s.id === payload.id);
           if (at >= 0) setIdx(Math.min(at + 1, next.slides.length - 1));
         }
+        if (body.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              body.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
         await waitPatchRebuild(next);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
@@ -267,7 +396,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [deck, runId, waitPatchRebuild],
+    [deck, onEditHistory, runId, waitPatchRebuild],
   );
 
   const onReorderIndices = useCallback(
@@ -438,7 +567,8 @@ export function PresentationPane({
                 className={`presentation-seg-btn${view === "grid" ? " is-on" : ""}`}
                 onClick={() => {
                   setView("grid");
-                  setEditing(false);
+                  if (editing) leaveEdit();
+                  else setEditing(false);
                 }}
               >
                 Preview
@@ -449,7 +579,8 @@ export function PresentationPane({
               className={`presentation-seg-btn${view === "slide" && !editing ? " is-on" : ""}`}
               onClick={() => {
                 setView("slide");
-                setEditing(false);
+                if (editing) leaveEdit();
+                else setEditing(false);
               }}
             >
               Slide
@@ -459,15 +590,44 @@ export function PresentationPane({
                 type="button"
                 className={`presentation-seg-btn${view === "slide" && editing ? " is-on" : ""}`}
                 onClick={() => {
-                  setView("slide");
-                  setEditing(true);
+                  if (editing) {
+                    leaveEdit();
+                    setView("slide");
+                  } else {
+                    setView("slide");
+                    setEditing(true);
+                  }
                 }}
                 title="E"
               >
-                Edit
+                {editing ? "Готово" : "Edit"}
               </button>
             ) : null}
           </div>
+          {editing ? (
+            <div className="presentation-history" role="group" aria-label="История">
+              <button
+                type="button"
+                className="presentation-tool presentation-history-btn"
+                aria-label="Отменить"
+                title="Отменить (⌘Z)"
+                disabled={!editHistory?.canUndo || saving}
+                onClick={() => void historyUndo()}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="presentation-tool presentation-history-btn"
+                aria-label="Вернуть"
+                title="Вернуть (⌘⇧Z)"
+                disabled={!editHistory?.canRedo || saving}
+                onClick={() => void historyRedo()}
+              >
+                →
+              </button>
+            </div>
+          ) : null}
           <button
             type="button"
             className="presentation-tool"
@@ -562,6 +722,11 @@ export function PresentationPane({
                     index={safeIdx}
                     editing={editing}
                     saving={saving}
+                    mediaVersion={mediaVersion}
+                    openMediaId={openMediaId}
+                    onMediaClick={
+                      onEditFigure || onEditImage ? onMediaClick : undefined
+                    }
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
                   />
@@ -604,6 +769,40 @@ export function PresentationPane({
                 </motion.div>
               ) : null}
             </AnimatePresence>
+            {editing && openMediaId && openMediaKind === "chart" && onEditFigure ? (
+              <div className="presentation-media-sheet">
+                <ChartEditSheet
+                  open
+                  trapFocus
+                  figureId={openMediaId}
+                  runId={runId}
+                  palettes={palettes}
+                  catalogTypes={catalogTypes}
+                  initialPalette={defaultPalette}
+                  busy={editingFigureId === openMediaId}
+                  error={
+                    editErrorFigureId === openMediaId ? editError : null
+                  }
+                  onCancel={closeMediaSheet}
+                  onSubmit={(req) => void submitChart(req)}
+                />
+              </div>
+            ) : null}
+            {editing && openMediaId && openMediaKind === "photo" && onEditImage ? (
+              <div className="presentation-media-sheet">
+                <ImageEditModal
+                  open
+                  trapFocus
+                  figureId={openMediaId}
+                  busy={editingFigureId === openMediaId}
+                  error={
+                    editErrorFigureId === openMediaId ? editError : null
+                  }
+                  onCancel={closeMediaSheet}
+                  onSubmit={(req) => void submitImage(req)}
+                />
+              </div>
+            ) : null}
             {live ? (
               <p className="presentation-font-honesty">
                 PPTX использует шрифты темы; twin в Liber может отличаться (как у

@@ -303,6 +303,14 @@ def _maybe_rebuild(out: Path, info: dict[str, Any], *, rebuild: bool) -> None:
             except RenderError as exc:
                 log.warning("undo restore ok but rebuild failed: %s", exc)
                 info["rebuild_error"] = str(exc)
+        try:
+            from case3.deck_refresh import refresh_deck_from_ir
+
+            if refresh_deck_from_ir(out):
+                info["deck_refreshed"] = True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("undo restore ok but deck refresh failed: %s", exc)
+            info["deck_refresh_error"] = str(exc)
     info["artifacts"] = {k: str(v) for k, v in artifacts.items()} if artifacts else {}
 
 

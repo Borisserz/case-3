@@ -9,9 +9,12 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { DeckEditToolbar } from "./DeckEditToolbar";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+
+export type DeckMediaKind = "chart" | "photo";
 
 type Props = {
   runId: string;
@@ -19,6 +22,10 @@ type Props = {
   index: number;
   editing: boolean;
   saving?: boolean;
+  /** Cache-bust for figures/ after regenerate. */
+  mediaVersion?: number;
+  openMediaId?: string | null;
+  onMediaClick?: (id: string, kind: DeckMediaKind) => void;
   onDeckChange: (deck: DeckIR) => void;
   onPatch: (slides: Partial<DeckSlide> & { id: string }[]) => Promise<void>;
 };
@@ -114,9 +121,76 @@ function Editable({
   );
 }
 
-function mediaUrl(runId: string, id: string | undefined): string | null {
+function mediaUrl(
+  runId: string,
+  id: string | undefined,
+  version?: number,
+): string | null {
   if (!id) return null;
-  return `/api/runs/${encodeURIComponent(runId)}/slides/media/${encodeURIComponent(id)}.png`;
+  const base = `/api/runs/${encodeURIComponent(runId)}/slides/media/${encodeURIComponent(id)}.png`;
+  return version ? `${base}?v=${version}` : base;
+}
+
+function mediaKind(id: string): DeckMediaKind {
+  return id.startsWith("cht_") ? "chart" : "photo";
+}
+
+function MediaSlot({
+  runId,
+  mediaId,
+  editing,
+  open,
+  version,
+  hero,
+  onMediaClick,
+  children,
+}: {
+  runId: string;
+  mediaId: string | undefined;
+  editing: boolean;
+  open?: boolean;
+  version?: number;
+  hero?: boolean;
+  onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  children?: ReactNode;
+}) {
+  const img = mediaUrl(runId, mediaId, version);
+  const clickable = Boolean(editing && mediaId && onMediaClick);
+  const className = `deck-cv-media${hero ? " deck-cv-media-hero" : ""}${
+    clickable ? " is-editable" : ""
+  }${open ? " is-open" : ""}`;
+  const body = img ? (
+    <img src={img} alt="" />
+  ) : (
+    <div className="deck-cv-empty">Media</div>
+  );
+  if (clickable && mediaId) {
+    return (
+      <button
+        type="button"
+        className={className}
+        aria-label={
+          mediaKind(mediaId) === "chart"
+            ? "Изменить график"
+            : "Изменить фото"
+        }
+        aria-pressed={open}
+        onClick={() => onMediaClick?.(mediaId, mediaKind(mediaId))}
+      >
+        {body}
+        <span className="deck-cv-media-hint" aria-hidden>
+          {mediaKind(mediaId) === "chart" ? "График" : "Фото"}
+        </span>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <div className={className}>
+      {body}
+      {children}
+    </div>
+  );
 }
 
 /** Julius title-panel KPIs from takeaway (mirrors parse_hero_metrics). */
@@ -161,6 +235,9 @@ function SlideBody({
   darkBleed,
   motifPanels,
   slideIndex,
+  mediaVersion,
+  openMediaId,
+  onMediaClick,
 }: {
   runId: string;
   slide: DeckSlide;
@@ -171,10 +248,13 @@ function SlideBody({
   darkBleed?: boolean;
   motifPanels?: string[];
   slideIndex?: number;
+  mediaVersion?: number;
+  openMediaId?: string | null;
+  onMediaClick?: (id: string, kind: DeckMediaKind) => void;
 }) {
   const layout = slide.layout;
   const mid = slide.chart_id || slide.media_id;
-  const img = mediaUrl(runId, mid);
+  const img = mediaUrl(runId, mid, mediaVersion);
   const panels = motifPanels || [];
   const si = slideIndex ?? 0;
 
@@ -622,8 +702,14 @@ function SlideBody({
               ) : null}
               <Bullets slide={slide} editing={editing} onField={onField} />
             </div>
-            <div className="deck-cv-media">
-              {img ? <img src={img} alt="" /> : <div className="deck-cv-empty">Media</div>}
+            <MediaSlot
+              runId={runId}
+              mediaId={mid}
+              editing={editing}
+              open={Boolean(mid && openMediaId === mid)}
+              version={mediaVersion}
+              onMediaClick={onMediaClick}
+            >
               {slide.caption ? (
                 <Editable
                   className="deck-cv-cap"
@@ -632,13 +718,19 @@ function SlideBody({
                   onCommit={(v) => onField({ caption: v })}
                 />
               ) : null}
-            </div>
+            </MediaSlot>
           </div>
         ) : (
           <>
-            <div className="deck-cv-media deck-cv-media-hero">
-              {img ? <img src={img} alt="" /> : <div className="deck-cv-empty">Media</div>}
-            </div>
+            <MediaSlot
+              runId={runId}
+              mediaId={mid}
+              editing={editing}
+              open={Boolean(mid && openMediaId === mid)}
+              version={mediaVersion}
+              hero
+              onMediaClick={onMediaClick}
+            />
             {slide.caption ? (
               <Editable
                 className="deck-cv-cap"
@@ -759,6 +851,9 @@ export function DeckCanvas({
   index,
   editing,
   saving = false,
+  mediaVersion = 0,
+  openMediaId = null,
+  onMediaClick,
   onDeckChange,
   onPatch,
 }: Props) {
@@ -887,6 +982,9 @@ export function DeckCanvas({
           darkBleed={darkBleed}
           motifPanels={deck.style?.motif?.panels}
           slideIndex={index}
+          mediaVersion={mediaVersion}
+          openMediaId={openMediaId}
+          onMediaClick={onMediaClick}
         />
         <div className="deck-cv-footer" aria-hidden>
           {brand}

@@ -193,7 +193,9 @@ def edit_figure_in_run(
         raise FigureEditError(f"document rebuild failed: {exc}") from exc
 
     # If a deck already exists, refresh PPTX/twin so edited photo lands in slides.
-    _refresh_deck_after_figure_edit(out_dir)
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
 
     v = int(dest.stat().st_mtime)
     from case3.run_undo import undo_meta
@@ -208,24 +210,3 @@ def edit_figure_in_run(
         "version": v,
         "undo": undo_meta(out_dir),
     }
-
-
-def _refresh_deck_after_figure_edit(out_dir: Path) -> None:
-    """Soft-rebuild slides from frozen deck IR when present (no LLM)."""
-    deck_path = out_dir / "slides" / "deck.json"
-    if not deck_path.is_file():
-        return
-    try:
-        deck = json.loads(deck_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("figure edit: cannot read deck.json: %s", exc)
-        return
-    if not isinstance(deck, dict):
-        return
-    try:
-        from case3.paths import repo_root
-        from case3.slides_job import rebuild_slides_from_deck
-
-        rebuild_slides_from_deck(out_dir.name, deck, root=repo_root())
-    except Exception as exc:  # noqa: BLE001 — soft-fail; report already updated
-        log.warning("figure edit: deck refresh skipped: %s", exc)
