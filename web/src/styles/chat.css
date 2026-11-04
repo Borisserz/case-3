@@ -2009,6 +2009,13 @@
   filter: brightness(1.08);
 }
 
+.deck-slides-film-dl.is-stale {
+  background: color-mix(in srgb, var(--muted) 35%, var(--sheet));
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--muted) 40%, transparent);
+  opacity: 0.85;
+}
+
 .deck-slides-film-body {
   display: flex;
   flex: 1;

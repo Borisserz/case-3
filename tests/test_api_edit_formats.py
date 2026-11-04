@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,45 @@ def test_undo_accepts_rebuild_false(
     r = client.post(f"/api/runs/{run_id}/undo?rebuild=0")
     assert r.status_code == 200, r.text
     assert seen.get("rebuild") is False
+
+
+def test_slides_ir_rebuild_false_skips_worker(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = "slides_ir_norebuild_20260101T000000Z"
+    out = repo_root / "runs" / "out" / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    slides = out / "slides"
+    slides.mkdir(parents=True, exist_ok=True)
+    deck = {
+        "slides": [
+            {"id": "s1", "title": "A", "layout": "title_body", "blocks": []},
+        ]
+    }
+    (slides / "deck.json").write_text(
+        json.dumps(deck), encoding="utf-8"
+    )
+    (out / "meta.json").write_text(
+        json.dumps({"status": "ok", "slides_status": "ok"}), encoding="utf-8"
+    )
+    started: list[bool] = []
+
+    def _fake_thread(*_a, **_k):
+        started.append(True)
+        class T:
+            def start(self):
+                return None
+        return T()
+
+    import case3.api_slides as slides_mod
+
+    monkeypatch.setattr(slides_mod.threading, "Thread", _fake_thread)
+    r = client.patch(
+        f"/api/runs/{run_id}/slides/ir?rebuild=0",
+        json={"slides": [{"id": "s1", "title": "B"}]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json().get("rebuilt") is False
+    assert started == []
+    saved = json.loads((slides / "deck.json").read_text(encoding="utf-8"))
+    assert saved["slides"][0]["title"] == "B"

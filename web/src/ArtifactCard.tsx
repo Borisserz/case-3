@@ -156,6 +156,9 @@ export function ArtifactCard({
   const visibleDiagrams = surfaces.showDiagram ? diagrams : [];
   const hasDeckFiles =
     slidesReady && Boolean(downloads?.pptx || downloads?.deck_pdf);
+  /** Twin film alone is enough to show a deck card (downloads may lag after edit). */
+  const hasDeckPreview =
+    slidesReady && (hasDeckFiles || slidePngs.length > 0);
   const pptxName = downloads?.pptx
     ? fileNameFromUrl(downloads.pptx, "deck.pptx")
     : "deck.pptx";
@@ -175,7 +178,7 @@ export function ArtifactCard({
     "is-julius",
     pulse ? "is-pulse" : "",
     updated ? "is-updated" : "",
-    hasDeckFiles || reportPdfHref || reportDocxHref ? "has-deck" : "",
+    hasDeckPreview || reportPdfHref || reportDocxHref ? "has-deck" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -197,33 +200,32 @@ export function ArtifactCard({
     );
   }
 
-  /* 1) Deck ready → large PPTX / deck PDF stack only */
-  if (hasDeckFiles) {
+  /* 1) Deck ready → large PPTX / deck PDF stack (or twin film if downloads lag) */
+  if (hasDeckPreview) {
+    const pptxHref = downloads?.pptx || downloads?.deck_pdf || "#";
     return (
       <div className={shellClass}>
         <div className="artifact-card-deck-stack" role="group" aria-label="Дека">
-          {downloads?.pptx ? (
-            <section className="artifact-card-block">
-              <p className="artifact-card-quiet-label">
-                Презентация · PPTX
-                {slidePngs.length > 0
-                  ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
-                  : ""}
-                {updated ? " · обновлено" : ""}
-              </p>
-              <DeckFileCard
-                kind="pptx"
-                href={downloads.pptx}
-                previewUrl={hero}
-                fileLabel={pptxName}
-                filmstrip={slidePngs}
-                deck={deck}
-                runId={runId}
-                onPrimary={onOpenPresentation}
-                primaryLabel="Просмотр"
-              />
-            </section>
-          ) : null}
+          <section className="artifact-card-block">
+            <p className="artifact-card-quiet-label">
+              Презентация · PPTX
+              {slidePngs.length > 0
+                ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
+                : ""}
+              {updated ? " · обновлено" : ""}
+            </p>
+            <DeckFileCard
+              kind="pptx"
+              href={pptxHref}
+              previewUrl={hero}
+              fileLabel={pptxName}
+              filmstrip={slidePngs}
+              deck={deck}
+              runId={runId}
+              onPrimary={onOpenPresentation}
+              primaryLabel="Просмотр"
+            />
+          </section>
           {showPdfGallery && (downloads?.deck_pdf || hero || deck) ? (
             <section className="artifact-card-block">
               <p className="artifact-card-quiet-label">

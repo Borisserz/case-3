@@ -1425,6 +1425,17 @@ button.deck-cv-media {
   animation: presentation-sheet-in 0.3s var(--ease-out, ease) both;
   scrollbar-width: thin;
 }
+/* Under filmstrip + «Все слайды / Дублировать / Удалить» — not over the slide. */
+.presentation-media-sheet.is-below-film {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 2;
+  max-height: min(42vh, 22rem);
+  margin: 0.55rem 0.75rem 0.85rem;
+  flex-shrink: 0;
+}
 @keyframes presentation-sheet-in {
   from {
     opacity: 0;
@@ -1463,8 +1474,9 @@ button.deck-cv-media {
   margin-top: 0.55rem;
 }
 .presentation-pane.has-media-sheet .presentation-filmstrip {
-  opacity: 0.55;
-  filter: saturate(0.85);
+  /* Sheet is below film — keep thumbs readable */
+  opacity: 1;
+  filter: none;
   transition: opacity 0.25s ease, filter 0.25s ease;
 }
 .presentation-pane.has-media-sheet .presentation-font-honesty {

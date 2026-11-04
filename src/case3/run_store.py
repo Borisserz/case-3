@@ -43,11 +43,40 @@ def formats_from_edit_body(raw: str | None) -> set[str]:
 
 
 def artifact_downloads(run_id: str, out_dir: Path, version: int) -> dict[str, str]:
+    """URLs for Liber downloads: report pdf/docx + deck pptx/deck_pdf.
+
+    Matches ``api._run_payload`` mapping so edit envelopes do not wipe PPTX.
+    """
     files: dict[str, str] = {}
+    out_dir = Path(out_dir)
     for art in sorted(out_dir.iterdir()):
-        if art.is_file() and art.suffix.lower() in {".pdf", ".docx"}:
-            key = art.suffix.lower().lstrip(".")
-            files[key] = f"/api/runs/{run_id}/files/{art.name}?v={version}"
+        if not art.is_file():
+            continue
+        suf = art.suffix.lower()
+        name = art.name
+        if suf == ".pdf" and not name.endswith("_deck.pdf"):
+            files["pdf"] = f"/api/runs/{run_id}/files/{name}?v={version}"
+        elif suf == ".docx":
+            files["docx"] = f"/api/runs/{run_id}/files/{name}?v={version}"
+        elif suf == ".pptx":
+            files["pptx"] = f"/api/runs/{run_id}/files/{name}?v={version}"
+
+    meta_path = out_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            meta = {}
+        slides_art = meta.get("slides_artifacts") if isinstance(meta, dict) else None
+        if isinstance(slides_art, dict):
+            pptx_name = slides_art.get("pptx")
+            deck_pdf_name = slides_art.get("deck_pdf")
+            if isinstance(pptx_name, str) and (out_dir / pptx_name).is_file():
+                files["pptx"] = f"/api/runs/{run_id}/files/{pptx_name}?v={version}"
+            if isinstance(deck_pdf_name, str) and (out_dir / deck_pdf_name).is_file():
+                files["deck_pdf"] = (
+                    f"/api/runs/{run_id}/files/{deck_pdf_name}?v={version}"
+                )
     return files
 
 

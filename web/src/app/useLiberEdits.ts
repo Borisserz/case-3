@@ -87,12 +87,17 @@ export function useLiberEdits({
       setMsgs((list) =>
         list.map((msg) => {
           if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+          const mergedDownloads = {
+            ...(msg.result.downloads || {}),
+            ...(data.downloads || {}),
+          };
           const next = {
             ...msg,
             result: {
               ...msg.result,
               preview: data.preview ?? msg.result.preview,
-              downloads: data.downloads ?? msg.result.downloads,
+              // Merge so report edit envelopes never wipe pptx / deck_pdf.
+              downloads: mergedDownloads,
               warnings:
                 Array.isArray(data.warnings) && data.warnings.length
                   ? data.warnings

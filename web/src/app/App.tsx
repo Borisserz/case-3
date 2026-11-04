@@ -627,7 +627,7 @@ export default function App() {
                         deck: activeReport.deck,
                         deckPdfMode: activeReport.deck_pdf_mode,
                         outputMode: activeReport.output_mode,
-                        onDeckUpdated: (deck, pngs) => {
+                        onDeckUpdated: (deck, pngs, extras) => {
                           if (!activeReportMsg || activeReportMsg.role !== "bot")
                             return;
                           const mid = activeReportMsg.id;
@@ -642,6 +642,10 @@ export default function App() {
                                   deck,
                                   slide_pngs: pngs,
                                   slides_status: "ok",
+                                  downloads: {
+                                    ...(msg.result.downloads || {}),
+                                    ...(extras?.downloads || {}),
+                                  },
                                 },
                               };
                             }),

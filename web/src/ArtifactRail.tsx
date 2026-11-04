@@ -25,6 +25,7 @@ import { PresentationPane } from "./PresentationPane";
 import type { ReportPreview } from "./domain/reportPreview";
 import { ReportView } from "./ReportView";
 import { IconPanelRight } from "./icons";
+import { deckDownloadLinks } from "./domain/deckDownloads";
 import { reportDownloadLinks } from "./domain/reportDownloads";
 import {
   docsNeedRebuild,
@@ -99,6 +100,7 @@ type ReportBundle = {
   onDeckUpdated?: (
     deck: import("./deckTypes").DeckIR,
     slidePngs: string[],
+    extras?: { downloads?: Record<string, string> },
   ) => void;
 };
 
@@ -646,7 +648,7 @@ export function ArtifactRail({
                 </button>
               </div>
             ) : null}
-            {isReport
+            {isReport && (tab === "preview" || tab === "pdf")
               ? reportDownloadLinks(report?.downloads, {
                   enabled: surfaces.showReportPdf,
                   stale:
@@ -658,6 +660,20 @@ export function ArtifactRail({
                     download
                     title={link.title}
                     className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}${link.stale ? " is-stale" : ""}`}
+                  >
+                    {link.label}
+                  </a>
+                ))
+              : null}
+            {isReport &&
+            (tab === "presentation" || tab === "slides")
+              ? deckDownloadLinks(report?.downloads).map((link) => (
+                  <a
+                    key={link.kind}
+                    href={link.href}
+                    download
+                    title={link.title}
+                    className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}`}
                   >
                     {link.label}
                   </a>

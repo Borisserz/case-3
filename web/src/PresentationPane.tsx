@@ -58,7 +58,11 @@ type Props = {
   downloads?: Record<string, string>;
   deckPdfMode?: string | null;
   making?: boolean;
-  onDeckUpdated?: (deck: DeckIR, slidePngs: string[]) => void;
+  onDeckUpdated?: (
+    deck: DeckIR,
+    slidePngs: string[],
+    extras?: { downloads?: Record<string, string> },
+  ) => void;
   palettes?: PaletteInfo[];
   catalogTypes?: string[];
   defaultPalette?: string;
@@ -72,6 +76,15 @@ type Props = {
   onHistoryRedo?: () => void | Promise<void>;
   onClearEditHistory?: () => void | Promise<void>;
   onEditHistory?: (h: EditHistoryDesc) => void;
+  /** Controlled edit mode when chrome lives in ArtifactRail. */
+  editing?: boolean;
+  onEditingChange?: (on: boolean) => void;
+  /** Hide in-pane Edit / history when rail owns chrome. */
+  showEditChrome?: boolean;
+  /** Hide PPTX download in pane when rail shows downloads. */
+  showDownloadChrome?: boolean;
+  /** Notify parent that twin/PPTX need flush on Готово. */
+  onDocsDirtyChange?: (dirty: boolean) => void;
 };
 
 export function PresentationPane({
@@ -98,6 +111,11 @@ export function PresentationPane({
   onHistoryRedo,
   onClearEditHistory,
   onEditHistory,
+  editing: editingProp,
+  onEditingChange,
+  showEditChrome = true,
+  showDownloadChrome = true,
+  onDocsDirtyChange,
 }: Props) {
   const reduce = useReducedMotion();
   const [idx, setIdx] = useState(0);
@@ -110,12 +128,22 @@ export function PresentationPane({
    * - Edit only via Edit segment or E key
    * - leaving Edit → Slide turns editing off
    */
-  const [editing, setEditing] = useState(false);
+  const [editingLocal, setEditingLocal] = useState(false);
+  const controlledEdit = editingProp !== undefined;
+  const editing = controlledEdit ? Boolean(editingProp) : editingLocal;
+  const setEditing = useCallback(
+    (on: boolean) => {
+      if (!controlledEdit) setEditingLocal(on);
+      onEditingChange?.(on);
+    },
+    [controlledEdit, onEditingChange],
+  );
   const [view, setView] = useState<"grid" | "slide">("grid");
   const [deck, setDeck] = useState<DeckIR | null>(deckProp);
   const [saving, setSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [docsDirty, setDocsDirty] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [openMediaId, setOpenMediaId] = useState<string | null>(null);
   const [openMediaKind, setOpenMediaKind] = useState<DeckMediaKind | null>(
@@ -140,16 +168,12 @@ export function PresentationPane({
     setEditing(false);
     setView("grid");
     setSaveError(null);
+    setDocsDirty(false);
+    onDocsDirtyChange?.(false);
     setOpenMediaId(null);
     setOpenMediaKind(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on run only
   }, [runId]);
-
-  const leaveEdit = useCallback(() => {
-    setEditing(false);
-    setOpenMediaId(null);
-    setOpenMediaKind(null);
-    void onClearEditHistory?.();
-  }, [onClearEditHistory]);
 
   const refreshSlidesNow = useCallback(async () => {
     const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
@@ -160,7 +184,11 @@ export function PresentationPane({
       : [];
     if (gBody.deck) setDeck(gBody.deck as DeckIR);
     if (pngs.length || gBody.deck) {
-      onDeckUpdated?.(gBody.deck as DeckIR, pngs);
+      const dl =
+        gBody.downloads && typeof gBody.downloads === "object"
+          ? (gBody.downloads as Record<string, string>)
+          : undefined;
+      onDeckUpdated?.(gBody.deck as DeckIR, pngs, { downloads: dl });
     }
     setMediaVersion(Date.now());
   }, [onDeckUpdated, runId]);
@@ -217,33 +245,6 @@ export function PresentationPane({
     [n],
   );
 
-  useEffect(() => {
-    if (full) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (editing && e.target instanceof HTMLElement && e.target.isContentEditable)
-        return;
-      if (e.key === "ArrowLeft") go(-1);
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        go(1);
-      }
-      // Space advances only in Present (fullscreen) — Julius-like.
-      if (e.key === "f" || e.key === "F") setFull(true);
-      if (e.key === "e" || e.key === "E") {
-        setView("slide");
-        if (editing) leaveEdit();
-        else setEditing(true);
-      }
-      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) void historyRedo();
-        else void historyUndo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [full, go, editing, leaveEdit, historyUndo, historyRedo]);
-
   const waitPatchRebuild = useCallback(
     async (optimisticDeck?: DeckIR) => {
       if (optimisticDeck) setDeck(optimisticDeck);
@@ -255,7 +256,12 @@ export function PresentationPane({
         if (gBody.slides_status === "ok") {
           const pngs = (gBody.slide_pngs as string[]) || [];
           if (gBody.deck) setDeck(gBody.deck as DeckIR);
-          onDeckUpdated?.(gBody.deck as DeckIR, pngs);
+          const dl =
+            gBody.downloads && typeof gBody.downloads === "object"
+              ? (gBody.downloads as Record<string, string>)
+              : undefined;
+          onDeckUpdated?.(gBody.deck as DeckIR, pngs, { downloads: dl });
+          setMediaVersion(Date.now());
           setSaveFlash(true);
           window.setTimeout(() => setSaveFlash(false), 1600);
           done = true;
@@ -277,13 +283,81 @@ export function PresentationPane({
     [onDeckUpdated, runId],
   );
 
+  const markDirty = useCallback(() => {
+    setDocsDirty(true);
+    onDocsDirtyChange?.(true);
+  }, [onDocsDirtyChange]);
+
+  const flushDeckRebuild = useCallback(async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const r = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/slides/rebuild`,
+        { method: "POST" },
+      );
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(
+          typeof body.detail === "string" ? body.detail : `rebuild ${r.status}`,
+        );
+      }
+      await waitPatchRebuild(body.deck as DeckIR | undefined);
+      setDocsDirty(false);
+      onDocsDirtyChange?.(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }, [onDocsDirtyChange, runId, waitPatchRebuild]);
+
+  const leaveEdit = useCallback(async () => {
+    try {
+      if (docsDirty) await flushDeckRebuild();
+      void onClearEditHistory?.();
+      setOpenMediaId(null);
+      setOpenMediaKind(null);
+      setEditing(false);
+    } catch {
+      /* stay in edit — error already shown */
+    }
+  }, [docsDirty, flushDeckRebuild, onClearEditHistory, setEditing]);
+
+  useEffect(() => {
+    if (full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (editing && e.target instanceof HTMLElement && e.target.isContentEditable)
+        return;
+      if (e.key === "ArrowLeft") go(-1);
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        go(1);
+      }
+      if (e.key === "f" || e.key === "F") setFull(true);
+      if (e.key === "e" || e.key === "E") {
+        setView("slide");
+        if (editing) void leaveEdit();
+        else setEditing(true);
+      }
+      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) void historyRedo();
+        else void historyUndo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full, go, editing, leaveEdit, historyUndo, historyRedo, setEditing]);
+
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
       setSaving(true);
       setSaveError(null);
       try {
         const r = await fetch(
-          `/api/runs/${encodeURIComponent(runId)}/slides/ir`,
+          `/api/runs/${encodeURIComponent(runId)}/slides/ir?rebuild=0`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -296,6 +370,7 @@ export function PresentationPane({
             typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
           );
         }
+        if (body.deck) setDeck(body.deck as DeckIR);
         if (body.undo) {
           onEditHistory?.(
             parseEditHistory(
@@ -303,14 +378,14 @@ export function PresentationPane({
             ),
           );
         }
-        await waitPatchRebuild(body.deck as DeckIR | undefined);
+        markDirty();
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
       } finally {
         setSaving(false);
       }
     },
-    [onEditHistory, runId, waitPatchRebuild],
+    [markDirty, onEditHistory, runId],
   );
 
   const onMediaClick = useCallback((id: string, kind: DeckMediaKind) => {
@@ -327,6 +402,7 @@ export function PresentationPane({
     async (req: ChartEditRequest) => {
       const ok = await onEditFigure?.(req);
       if (ok) {
+        // Chart path already soft-rebuilds twin+PPTX; refresh film cache-bust.
         await refreshSlidesNow();
         closeMediaSheet();
       }
@@ -556,7 +632,9 @@ export function PresentationPane({
         <div className="presentation-chrome-left">
           <span className="presentation-chrome-kicker">
             {editing && view === "slide"
-              ? "Правки · twin + PPTX"
+              ? docsDirty
+                ? "Правки · twin · PPTX на Готово"
+                : "Правки · twin"
               : "Презентация · PPTX"}
           </span>
           <span className="presentation-chrome-title" title={slideTitle}>
@@ -571,11 +649,11 @@ export function PresentationPane({
                 className={`presentation-seg-btn${view === "grid" ? " is-on" : ""}`}
                 onClick={() => {
                   setView("grid");
-                  if (editing) leaveEdit();
+                  if (editing) void leaveEdit();
                   else setEditing(false);
                 }}
               >
-                Preview
+                Сетка
               </button>
             ) : null}
             <button
@@ -583,21 +661,22 @@ export function PresentationPane({
               className={`presentation-seg-btn${view === "slide" && !editing ? " is-on" : ""}`}
               onClick={() => {
                 setView("slide");
-                if (editing) leaveEdit();
+                if (editing) void leaveEdit();
                 else setEditing(false);
               }}
             >
-              Slide
+              Слайд
             </button>
-            {live ? (
+            {live && showEditChrome ? (
               <button
                 type="button"
                 className={`presentation-seg-btn presentation-seg-edit${
                   view === "slide" && editing ? " is-on" : ""
                 }`}
+                disabled={saving}
                 onClick={() => {
                   if (editing) {
-                    leaveEdit();
+                    void leaveEdit();
                     setView("slide");
                   } else {
                     setView("slide");
@@ -606,11 +685,15 @@ export function PresentationPane({
                 }}
                 title="E"
               >
-                {editing ? "Готово" : "Edit"}
+                {saving && editing
+                  ? "Собираю…"
+                  : editing
+                    ? "Готово"
+                    : "Редактировать"}
               </button>
             ) : null}
           </div>
-          {editing ? (
+          {editing && showEditChrome ? (
             <div className="presentation-history" role="group" aria-label="История">
               <button
                 type="button"
@@ -638,9 +721,9 @@ export function PresentationPane({
             type="button"
             className="presentation-tool"
             onClick={() => setFull(true)}
-            title="F — fullscreen"
+            title="F — на весь экран"
           >
-            Present
+            Показ
           </button>
         </div>
         <div className="presentation-chrome-actions">
@@ -651,9 +734,24 @@ export function PresentationPane({
               {n}
             </span>
           ) : null}
-          {downloads?.pptx ? (
-            <a href={downloads.pptx} download className="deck-slides-film-dl">
-              Скачать
+          {showDownloadChrome && downloads?.pptx ? (
+            <a
+              href={downloads.pptx}
+              download
+              className={`deck-slides-film-dl${docsDirty ? " is-stale" : ""}`}
+              title={docsDirty ? "Устарел — нажмите Готово" : undefined}
+            >
+              {docsDirty ? "PPTX · устарел" : "PPTX"}
+            </a>
+          ) : null}
+          {showDownloadChrome && downloads?.deck_pdf ? (
+            <a
+              href={downloads.deck_pdf}
+              download
+              className={`deck-slides-film-dl${docsDirty ? " is-stale" : ""}`}
+              title={docsDirty ? "Устарел — нажмите Готово" : undefined}
+            >
+              {docsDirty ? "PDF · устарел" : "PDF"}
             </a>
           ) : null}
         </div>
@@ -662,10 +760,16 @@ export function PresentationPane({
       {editing && view === "slide" ? (
         <div className="presentation-edit-bar" role="status">
           <p className="presentation-edit-bar-hint">
-            Клик по тексту · графику · фото · ⌘Z / ⌘⇧Z
+            Текст в twin сразу · PPTX/PDF на «Готово» · ⌘Z
           </p>
           <span className="presentation-edit-bar-live" aria-hidden>
-            {saving ? "Сохраняю…" : openMediaId ? "Лист правки" : "Готово к правке"}
+            {saving
+              ? "Сохраняю…"
+              : openMediaId
+                ? "Лист правки"
+                : docsDirty
+                  ? "Есть правки"
+                  : "Готово к правке"}
           </span>
         </div>
       ) : null}
@@ -786,40 +890,6 @@ export function PresentationPane({
                 </motion.div>
               ) : null}
             </AnimatePresence>
-            {editing && openMediaId && openMediaKind === "chart" && onEditFigure ? (
-              <div className="presentation-media-sheet">
-                <ChartEditSheet
-                  open
-                  trapFocus
-                  figureId={openMediaId}
-                  runId={runId}
-                  palettes={palettes}
-                  catalogTypes={catalogTypes}
-                  initialPalette={defaultPalette}
-                  busy={editingFigureId === openMediaId}
-                  error={
-                    editErrorFigureId === openMediaId ? editError : null
-                  }
-                  onCancel={closeMediaSheet}
-                  onSubmit={(req) => void submitChart(req)}
-                />
-              </div>
-            ) : null}
-            {editing && openMediaId && openMediaKind === "photo" && onEditImage ? (
-              <div className="presentation-media-sheet">
-                <ImageEditModal
-                  open
-                  trapFocus
-                  figureId={openMediaId}
-                  busy={editingFigureId === openMediaId}
-                  error={
-                    editErrorFigureId === openMediaId ? editError : null
-                  }
-                  onCancel={closeMediaSheet}
-                  onSubmit={(req) => void submitImage(req)}
-                />
-              </div>
-            ) : null}
             {live ? (
               <p className="presentation-font-honesty">
                 PPTX использует шрифты темы; twin в Liber может отличаться (как у
@@ -878,7 +948,15 @@ export function PresentationPane({
                       setIdx(i);
                     }}
                   >
-                    <img src={url} alt="" draggable={false} />
+                    <img
+                      src={
+                        mediaVersion
+                          ? `${url}${url.includes("?") ? "&" : "?"}mv=${mediaVersion}`
+                          : url
+                      }
+                      alt=""
+                      draggable={false}
+                    />
                     <span>{String(i + 1).padStart(2, "0")}</span>
                   </button>
                 );
@@ -975,6 +1053,45 @@ export function PresentationPane({
               </button>
             </>
           ) : null}
+        </div>
+      ) : null}
+
+      {editing &&
+      view === "slide" &&
+      openMediaId &&
+      openMediaKind === "chart" &&
+      onEditFigure ? (
+        <div className="presentation-media-sheet is-below-film">
+          <ChartEditSheet
+            open
+            trapFocus
+            figureId={openMediaId}
+            runId={runId}
+            palettes={palettes}
+            catalogTypes={catalogTypes}
+            initialPalette={defaultPalette}
+            busy={editingFigureId === openMediaId}
+            error={editErrorFigureId === openMediaId ? editError : null}
+            onCancel={closeMediaSheet}
+            onSubmit={(req) => void submitChart(req)}
+          />
+        </div>
+      ) : null}
+      {editing &&
+      view === "slide" &&
+      openMediaId &&
+      openMediaKind === "photo" &&
+      onEditImage ? (
+        <div className="presentation-media-sheet is-below-film">
+          <ImageEditModal
+            open
+            trapFocus
+            figureId={openMediaId}
+            busy={editingFigureId === openMediaId}
+            error={editErrorFigureId === openMediaId ? editError : null}
+            onCancel={closeMediaSheet}
+            onSubmit={(req) => void submitImage(req)}
+          />
         </div>
       ) : null}
 

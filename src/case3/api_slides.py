@@ -259,7 +259,7 @@ def get_slides(run_id: str) -> dict[str, Any]:
         "slides_error": meta.get("slides_error"),
         "deck": deck,
         "slide_pngs": [
-            f"/api/runs/{run_id}/slides/png/{p.name}"
+            f"/api/runs/{run_id}/slides/png/{p.name}?v={int(p.stat().st_mtime)}"
             for p in sorted((out_dir / "slides").glob("slide_*.png"))
         ]
         if (out_dir / "slides").is_dir()
@@ -381,16 +381,30 @@ def _enqueue_deck_rebuild(
     *,
     undo_kind: str = "slides",
     undo_target: str = "*",
+    rebuild: bool = True,
+    capture_undo: bool = True,
 ) -> tuple[bool, dict[str, Any] | None]:
-    """Snapshot undo, write IR, spawn coalesce worker. Returns (queued, undo meta)."""
-    undo_desc: dict[str, Any] | None = None
-    try:
-        from case3.run_undo import capture_before_edit, undo_meta
+    """Snapshot undo, write IR, optionally spawn coalesce worker.
 
-        capture_before_edit(out_dir, kind=undo_kind, target=undo_target)
-        undo_desc = undo_meta(out_dir)
-    except Exception as exc:  # noqa: BLE001 — edit still proceeds
-        log.warning("slides patch undo capture failed: %s", exc)
+    ``rebuild=False`` → IR-only (edit session); twin/PPTX flush on Готово.
+    Returns (queued_or_skipped, undo meta).
+    """
+    undo_desc: dict[str, Any] | None = None
+    if capture_undo:
+        try:
+            from case3.run_undo import capture_before_edit, undo_meta
+
+            capture_before_edit(out_dir, kind=undo_kind, target=undo_target)
+            undo_desc = undo_meta(out_dir)
+        except Exception as exc:  # noqa: BLE001 — edit still proceeds
+            log.warning("slides patch undo capture failed: %s", exc)
+    else:
+        try:
+            from case3.run_undo import undo_meta
+
+            undo_desc = undo_meta(out_dir)
+        except Exception:  # noqa: BLE001
+            undo_desc = None
 
     try:
         ir_path.write_text(
@@ -398,6 +412,9 @@ def _enqueue_deck_rebuild(
         )
     except OSError as exc:
         raise HTTPException(500, detail="could not write deck.json") from exc
+
+    if not rebuild:
+        return False, undo_desc
 
     with _slides_patch_lock:
         _slides_patch_pending[run_id] = {"deck": patched}
@@ -415,17 +432,22 @@ def _enqueue_deck_rebuild(
     return already, undo_desc
 
 
+def _parse_rebuild_q(raw: str | None) -> bool:
+    if raw is None or str(raw).strip() == "":
+        return True
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
 @router.patch("/api/runs/{run_id}/slides/ir")
 async def patch_slides_ir(
     run_id: str,
     body: SlidesIrPatchBody,
+    rebuild: str | None = None,
 ) -> JSONResponse:
-    """Patch deck text fields and rebuild native PPTX + twin preview.
-
-    Concurrent PATCHes coalesce: latest IR wins, one rebuild worker per run (no 409).
-    """
+    """Patch deck text fields; rebuild twin+PPTX unless ``rebuild=0`` (session)."""
     out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
     base, ir_path = _load_deck_for_patch(run_id, out_dir)
+    do_rebuild = _parse_rebuild_q(rebuild)
 
     from case3.slides_ir import DeckIrError
     from case3.slides_patch import apply_deck_text_patch
@@ -445,6 +467,47 @@ async def patch_slides_ir(
             str(s.get("id") or "") for s in (body.slides or []) if isinstance(s, dict)
         )
         or "*",
+        rebuild=do_rebuild,
+    )
+    if not do_rebuild:
+        payload: dict[str, Any] = {
+            "run_id": run_id,
+            "status": "ok",
+            "slides_status": "ok",
+            "slides_stage": "ir",
+            "rebuilt": False,
+            "deck": patched,
+        }
+        if undo_desc:
+            payload["undo"] = undo_desc
+        return JSONResponse(payload, status_code=200)
+    payload = {
+        "run_id": run_id,
+        "status": "started",
+        "slides_status": "running",
+        "slides_stage": "patch",
+        "queued": already,
+        "deck": patched,
+    }
+    if undo_desc:
+        payload["undo"] = undo_desc
+    return JSONResponse(payload, status_code=202)
+
+
+@router.post("/api/runs/{run_id}/slides/rebuild")
+async def rebuild_slides_docs(run_id: str) -> JSONResponse:
+    """Flush twin + PPTX from current ``deck.json`` (edit-session «Готово»)."""
+    out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+    base, ir_path = _load_deck_for_patch(run_id, out_dir)
+    already, undo_desc = _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        base,
+        undo_kind="slides_flush",
+        undo_target="*",
+        rebuild=True,
+        capture_undo=False,
     )
     payload: dict[str, Any] = {
         "run_id": run_id,
@@ -452,7 +515,7 @@ async def patch_slides_ir(
         "slides_status": "running",
         "slides_stage": "patch",
         "queued": already,
-        "deck": patched,
+        "deck": base,
     }
     if undo_desc:
         payload["undo"] = undo_desc
