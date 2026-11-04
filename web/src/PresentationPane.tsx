@@ -631,11 +631,7 @@ export function PresentationPane({
       <header className="presentation-chrome">
         <div className="presentation-chrome-left">
           <span className="presentation-chrome-kicker">
-            {editing && view === "slide"
-              ? docsDirty
-                ? "Правки · twin · PPTX на Готово"
-                : "Правки · twin"
-              : "Презентация · PPTX"}
+            {editing && view === "slide" ? "Редактирование" : "Презентация"}
           </span>
           <span className="presentation-chrome-title" title={slideTitle}>
             {slideTitle}
@@ -723,7 +719,7 @@ export function PresentationPane({
             onClick={() => setFull(true)}
             title="F — на весь экран"
           >
-            Показ
+            Предпросмотр
           </button>
         </div>
         <div className="presentation-chrome-actions">
@@ -734,45 +730,8 @@ export function PresentationPane({
               {n}
             </span>
           ) : null}
-          {showDownloadChrome && downloads?.pptx ? (
-            <a
-              href={downloads.pptx}
-              download
-              className={`deck-slides-film-dl${docsDirty ? " is-stale" : ""}`}
-              title={docsDirty ? "Устарел — нажмите Готово" : undefined}
-            >
-              {docsDirty ? "PPTX · устарел" : "PPTX"}
-            </a>
-          ) : null}
-          {showDownloadChrome && downloads?.deck_pdf ? (
-            <a
-              href={downloads.deck_pdf}
-              download
-              className={`deck-slides-film-dl${docsDirty ? " is-stale" : ""}`}
-              title={docsDirty ? "Устарел — нажмите Готово" : undefined}
-            >
-              {docsDirty ? "PDF · устарел" : "PDF"}
-            </a>
-          ) : null}
         </div>
       </header>
-
-      {editing && view === "slide" ? (
-        <div className="presentation-edit-bar" role="status">
-          <p className="presentation-edit-bar-hint">
-            Текст в twin сразу · PPTX/PDF на «Готово» · ⌘Z
-          </p>
-          <span className="presentation-edit-bar-live" aria-hidden>
-            {saving
-              ? "Сохраняю…"
-              : openMediaId
-                ? "Лист правки"
-                : docsDirty
-                  ? "Есть правки"
-                  : "Готово к правке"}
-          </span>
-        </div>
-      ) : null}
 
       {view === "grid" && slidePngs.length > 0 ? (
         <DeckGallery
