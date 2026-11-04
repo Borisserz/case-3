@@ -421,6 +421,34 @@
   min-width: 0;
 }
 
+.report-edit-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.report-edit-history-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.report-edit-history-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.report-edit-history-btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--secondary) 55%, var(--sheet));
+}
+
 .report-edit-toggle {
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
@@ -2296,11 +2324,56 @@
 
 
 
-/* Full-open Preview edit — inline prose / heading / list */
+/* Document click-to-edit — idle prose looks like the report */
+.report.is-editing-mode .report-block.is-editable-idle {
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.report.is-editing-mode .report-block.is-editable-idle:hover,
+.report.is-editing-mode .is-click-edit:hover {
+  background: color-mix(in srgb, var(--secondary, #e8e4dc) 55%, transparent);
+  cursor: text;
+}
+.report.is-editing-mode .report-p.is-click-edit,
+.report.is-editing-mode .report-h.is-click-edit,
+.report.is-editing-mode .report-list.is-click-edit {
+  outline: none;
+}
+.report-fig-cap-row,
+.report-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.report-media-edit-btn {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  background: var(--sheet, #fff);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.report-block.is-editable-idle:hover .report-media-edit-btn,
+.report-media-edit-btn:focus-visible {
+  opacity: 1;
+}
+.report-media-edit-btn:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+/* Active inline prose / heading / list */
 .inline-block-editor {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.4rem;
   width: 100%;
 }
 .inline-block-eyebrow {
@@ -2313,37 +2386,54 @@
 .inline-block-input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--ink, #1c1917) 18%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--paper, #fff) 92%, #e8e4dc);
+  border: 1px solid color-mix(in srgb, var(--primary, #3d5a45) 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--sheet, #fff) 96%, var(--secondary, #e8e4dc));
   color: inherit;
   font: inherit;
-  padding: 0.55rem 0.7rem;
+  padding: 0.35rem 0.55rem;
   resize: vertical;
+  box-shadow: none;
 }
 .inline-block-input.is-heading {
   font-size: 1.15rem;
   font-weight: 650;
   resize: none;
 }
+.inline-block-input.is-paragraph {
+  min-height: 4.5rem;
+  line-height: 1.55;
+}
 .inline-block-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
 }
 .inline-block-save {
   border: 0;
-  border-radius: 999px;
-  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  padding: 0.3rem 0.75rem;
   background: var(--ink, #1c1917);
   color: var(--paper, #fff);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   cursor: pointer;
 }
 .inline-block-save:disabled {
   opacity: 0.45;
   cursor: default;
+}
+.inline-block-cancel {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0.3rem 0.4rem;
+}
+.inline-block-cancel:hover {
+  color: var(--ink);
 }
 .inline-block-hint {
   font-size: 0.75rem;

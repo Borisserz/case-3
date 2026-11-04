@@ -68,6 +68,12 @@ export type ReportBodyProps = {
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
+  /** Exactly one prose/list block open at a time (document click-to-edit). */
+  activeBlockId?: string | null;
+  onActiveBlockId?: (id: string | null) => void;
+  /** On-demand chart/table/image sheet id (`tab:N` / figure id). */
+  openMediaId?: string | null;
+  onOpenMediaId?: (id: string | null) => void;
 };
 
 export function ReportBody({
@@ -104,6 +110,10 @@ export function ReportBody({
   onEditParagraph,
   onEditHeading,
   onEditList,
+  activeBlockId = null,
+  onActiveBlockId,
+  openMediaId = null,
+  onOpenMediaId,
 }: ReportBodyProps) {
   let figN = 0;
   let tabN = 0;
@@ -155,6 +165,7 @@ export function ReportBody({
             const Tag = b.level >= 2 ? "h3" : "h2";
             const expanded = !collapsed.has(headingId);
             const isEditingHead = editingFigureId === headEditId;
+            const headActive = canEditHeading && activeBlockId === headEditId;
             const headError =
               isEditingHead || editErrorFigureId === headEditId
                 ? editError
@@ -162,7 +173,7 @@ export function ReportBody({
             return (
               <div
                 key={i}
-                className={`report-h-row report-block${canEditHeading ? " is-editing-open" : ""}${isEditingHead ? " is-editing" : ""}`}
+                className={`report-h-row report-block${headActive || isEditingHead ? " is-editing" : ""}${canEditHeading && !headActive ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 <button
@@ -179,22 +190,50 @@ export function ReportBody({
                     ▸
                   </span>
                 </button>
-                {canEditHeading ? (
+                {headActive ? (
                   <div className="report-h-edit" id={headingId}>
                     <InlineBlockEditor
                       kind="heading"
                       initialText={b.text}
                       busy={isEditingHead}
                       error={headError}
+                      onCancel={() => onActiveBlockId?.(null)}
                       onSave={(text) => {
-                        void onEditHeading?.({ headingIndex, text });
+                        void (async () => {
+                          const ok = await onEditHeading?.({
+                            headingIndex,
+                            text,
+                          });
+                          if (ok !== false) onActiveBlockId?.(null);
+                        })();
                       }}
                     />
                   </div>
                 ) : (
                   <Tag
                     id={headingId}
-                    className={`report-h report-h${b.level}`}
+                    className={`report-h report-h${b.level}${canEditHeading ? " is-click-edit" : ""}`}
+                    role={canEditHeading ? "button" : undefined}
+                    tabIndex={canEditHeading ? 0 : undefined}
+                    onClick={
+                      canEditHeading
+                        ? () => {
+                            onOpenMediaId?.(null);
+                            onActiveBlockId?.(headEditId);
+                          }
+                        : undefined
+                    }
+                    onKeyDown={
+                      canEditHeading
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onOpenMediaId?.(null);
+                              onActiveBlockId?.(headEditId);
+                            }
+                          }
+                        : undefined
+                    }
                   >
                     {b.text}
                   </Tag>
@@ -223,32 +262,86 @@ export function ReportBody({
             if (idMatch) paraN = Math.max(paraN, n);
             const paraId = `para:${n}`;
             const isEditingPara = editingFigureId === paraId;
+            const paraActive = canEditPara && activeBlockId === paraId;
             const sheetError =
               editErrorFigureId === paraId ? editError : null;
             return (
               <div
                 key={i}
-                className={`report-para-wrap report-block${canEditPara ? " is-tuning" : ""}${isEditingPara ? " is-editing" : ""}`}
+                className={`report-para-wrap report-block${paraActive || isEditingPara ? " is-editing" : ""}${canEditPara && !paraActive ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 <div className="report-para-frame">
-                  {canEditPara ? (
+                  {paraActive ? (
                     <InlineBlockEditor
                       kind="paragraph"
                       initialText={b.text}
                       busy={isEditingPara}
                       error={sheetError}
+                      onCancel={() => onActiveBlockId?.(null)}
                       onSave={(text) => {
-                        void onEditParagraph?.({ paragraphIndex: n, text });
+                        void (async () => {
+                          const ok = await onEditParagraph?.({
+                            paragraphIndex: n,
+                            text,
+                          });
+                          if (ok !== false) onActiveBlockId?.(null);
+                        })();
                       }}
                     />
                   ) : b.html ? (
                     <p
-                      className="report-p"
+                      className={`report-p${canEditPara ? " is-click-edit" : ""}`}
+                      role={canEditPara ? "button" : undefined}
+                      tabIndex={canEditPara ? 0 : undefined}
+                      onClick={
+                        canEditPara
+                          ? () => {
+                              onOpenMediaId?.(null);
+                              onActiveBlockId?.(paraId);
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        canEditPara
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onOpenMediaId?.(null);
+                                onActiveBlockId?.(paraId);
+                              }
+                            }
+                          : undefined
+                      }
                       dangerouslySetInnerHTML={{ __html: b.html }}
                     />
                   ) : (
-                    <p className="report-p">{b.text}</p>
+                    <p
+                      className={`report-p${canEditPara ? " is-click-edit" : ""}`}
+                      role={canEditPara ? "button" : undefined}
+                      tabIndex={canEditPara ? 0 : undefined}
+                      onClick={
+                        canEditPara
+                          ? () => {
+                              onOpenMediaId?.(null);
+                              onActiveBlockId?.(paraId);
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        canEditPara
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onOpenMediaId?.(null);
+                                onActiveBlockId?.(paraId);
+                              }
+                            }
+                          : undefined
+                      }
+                    >
+                      {b.text}
+                    </p>
                   )}
                   {isEditingPara && (
                     <div className="report-fig-busy" aria-live="polite">
@@ -266,14 +359,15 @@ export function ReportBody({
             if (idMatch) listN = Math.max(listN, n);
             const listId = `list:${n}`;
             const isEditingList = editingFigureId === listId;
+            const listActive = canEditList && activeBlockId === listId;
             const listError =
               editErrorFigureId === listId ? editError : null;
             const Tag = b.ordered ? "ol" : "ul";
-            if (canEditList) {
+            if (listActive) {
               return (
                 <div
                   key={i}
-                  className={`report-list-wrap report-block${isEditingList ? " is-editing" : ""}`}
+                  className={`report-list-wrap report-block is-editing`}
                   style={delayStyle}
                 >
                   <InlineBlockEditor
@@ -282,12 +376,16 @@ export function ReportBody({
                     initialItems={(b.items || []).map((it) => it.text)}
                     busy={isEditingList}
                     error={listError}
+                    onCancel={() => onActiveBlockId?.(null)}
                     onSave={(items) => {
-                      void onEditList?.({
-                        listIndex: n,
-                        items,
-                        ordered: Boolean(b.ordered),
-                      });
+                      void (async () => {
+                        const ok = await onEditList?.({
+                          listIndex: n,
+                          items,
+                          ordered: Boolean(b.ordered),
+                        });
+                        if (ok !== false) onActiveBlockId?.(null);
+                      })();
                     }}
                   />
                 </div>
@@ -296,8 +394,29 @@ export function ReportBody({
             return (
               <Tag
                 key={i}
-                className={`report-list report-block${b.ordered ? " is-ol" : ""}`}
+                className={`report-list report-block${b.ordered ? " is-ol" : ""}${canEditList ? " is-editable-idle is-click-edit" : ""}`}
                 style={delayStyle}
+                role={canEditList ? "button" : undefined}
+                tabIndex={canEditList ? 0 : undefined}
+                onClick={
+                  canEditList
+                    ? () => {
+                        onOpenMediaId?.(null);
+                        onActiveBlockId?.(listId);
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  canEditList
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onOpenMediaId?.(null);
+                          onActiveBlockId?.(listId);
+                        }
+                      }
+                    : undefined
+                }
               >
                 {(b.items || []).map((it, j) =>
                   it.html ? (
@@ -316,7 +435,7 @@ export function ReportBody({
             tabN += 1;
             const n = tabN;
             const tableId = `tab:${n}`;
-            const tableOpen = canEditTable;
+            const tableOpen = canEditTable && openMediaId === tableId;
             const isEditingTable = editingFigureId === tableId;
             const tableError =
               tableOpen && editErrorFigureId === tableId ? editError : null;
@@ -337,7 +456,7 @@ export function ReportBody({
             return (
               <figure
                 key={i}
-                className={`report-table-wrap report-block${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}`}
+                className={`report-table-wrap report-block${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}${canEditTable && !tableOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 <div className="report-table-toolbar">
@@ -349,6 +468,18 @@ export function ReportBody({
                       <span className="report-table-draft-tag"> черновик</span>
                     ) : null}
                   </figcaption>
+                  {canEditTable && !tableOpen ? (
+                    <button
+                      type="button"
+                      className="report-media-edit-btn"
+                      onClick={() => {
+                        onActiveBlockId?.(null);
+                        onOpenMediaId?.(tableId);
+                      }}
+                    >
+                      Править
+                    </button>
+                  ) : null}
                 </div>
                 <div className="report-table-scroll">
                   <table className="report-table">
@@ -407,6 +538,7 @@ export function ReportBody({
                         delete next[n];
                         return next;
                       });
+                      onOpenMediaId?.(null);
                     }}
                     onSubmit={(req) => {
                       void onEditTable(req);
@@ -426,8 +558,10 @@ export function ReportBody({
             const isChart = b.kind === "chart";
             const isPhoto = !isChart;
             const isEditing = editingFigureId === b.id;
-            const sheetOpen = isChart && canEditFigure;
-            const imageOpen = isPhoto && canEditImage;
+            const sheetOpen =
+              isChart && canEditFigure && openMediaId === b.id;
+            const imageOpen =
+              isPhoto && canEditImage && openMediaId === b.id;
             const sheetError =
               (sheetOpen || imageOpen) && editErrorFigureId === b.id
                 ? editError
@@ -564,38 +698,54 @@ export function ReportBody({
                   )}
                 </div>
 
-                <figcaption
-                  className={`report-caption report-fig-cap${onJumpToPdf ? " is-jump" : ""}`}
-                  title={
-                    b.chartType
-                      ? `Тип: ${b.chartType}${onJumpToPdf ? " · клик → PDF" : ""}`
-                      : onJumpToPdf
-                        ? "Клик → страница PDF"
-                        : undefined
-                  }
-                  onClick={
-                    onJumpToPdf && !isEditing
-                      ? (e) => {
-                          e.preventDefault();
-                          jumpPdf();
-                        }
-                      : undefined
-                  }
-                  role={onJumpToPdf ? "link" : undefined}
-                  tabIndex={onJumpToPdf ? 0 : undefined}
-                  onKeyDown={
-                    onJumpToPdf
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
+                <div className="report-fig-cap-row">
+                  <figcaption
+                    className={`report-caption report-fig-cap${onJumpToPdf ? " is-jump" : ""}`}
+                    title={
+                      b.chartType
+                        ? `Тип: ${b.chartType}${onJumpToPdf ? " · клик → PDF" : ""}`
+                        : onJumpToPdf
+                          ? "Клик → страница PDF"
+                          : undefined
+                    }
+                    onClick={
+                      onJumpToPdf && !isEditing
+                        ? (e) => {
                             e.preventDefault();
                             jumpPdf();
                           }
-                        }
-                      : undefined
-                  }
-                >
-                  {caption}
-                </figcaption>
+                        : undefined
+                    }
+                    role={onJumpToPdf ? "link" : undefined}
+                    tabIndex={onJumpToPdf ? 0 : undefined}
+                    onKeyDown={
+                      onJumpToPdf
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              jumpPdf();
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    {caption}
+                  </figcaption>
+                  {((isChart && canEditFigure) || (isPhoto && canEditImage)) &&
+                  !sheetOpen &&
+                  !imageOpen ? (
+                    <button
+                      type="button"
+                      className="report-media-edit-btn"
+                      onClick={() => {
+                        onActiveBlockId?.(null);
+                        onOpenMediaId?.(b.id);
+                      }}
+                    >
+                      Править
+                    </button>
+                  ) : null}
+                </div>
 
                 {sheetOpen && onEditFigure && (
                   <ChartEditSheet
@@ -634,6 +784,7 @@ export function ReportBody({
                         delete next[b.id];
                         return next;
                       });
+                      onOpenMediaId?.(null);
                     }}
                     onSubmit={(req) => {
                       void onEditFigure(req);
@@ -649,7 +800,7 @@ export function ReportBody({
                     previewUrl={b.url}
                     busy={isEditing}
                     error={sheetError}
-                    onCancel={() => {}}
+                    onCancel={() => onOpenMediaId?.(null)}
                     onSubmit={(req) => {
                       void onEditImage(req);
                     }}
@@ -660,7 +811,7 @@ export function ReportBody({
             return (
               <figure
                 key={i}
-                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}`}
+                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}${(canEditFigure || canEditImage) && !sheetOpen && !imageOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 {isChart ? (

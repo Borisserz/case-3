@@ -15,11 +15,23 @@ import type { ListEditRequest } from "../ListEditTypes";
 import type { TableEditRequest } from "../TableEditSheet";
 import { asDownloads } from "../domain/runHelpers";
 import type { Msg, RunResult } from "../domain/liberTypes";
+import {
+  parseEditHistory,
+  type EditHistoryDesc,
+} from "../domain/reportEditMode";
 import { mapTableEditHttpError, postJsonEdit } from "./postJsonEdit";
 
 export type EditBusy = { msgId: string; figureId: string } | null;
 export type EditError = { msgId: string; figureId: string; message: string } | null;
 export type UndoOffer = { msgId: string; runId: string } | null;
+
+type UndoApi = {
+  kind?: string | null;
+  target?: string | null;
+  can_undo?: boolean;
+  can_redo?: boolean;
+  depth?: number;
+} | null;
 
 type EditPayloadData = {
   preview?: RunResult["preview"];
@@ -27,7 +39,7 @@ type EditPayloadData = {
   warnings?: string[];
   media_status?: RunResult["media_status"];
   diagrams?: RunResult["diagrams"];
-  undo?: { kind?: string; target?: string } | null;
+  undo?: UndoApi;
 };
 
 type Args = {
@@ -38,6 +50,7 @@ type Args = {
   setUndoOffer: Dispatch<SetStateAction<UndoOffer>>;
   setToast: Dispatch<SetStateAction<string | null>>;
   setDownloadsPulseMsgId: Dispatch<SetStateAction<string | null>>;
+  setEditHistory?: Dispatch<SetStateAction<EditHistoryDesc>>;
   undoOffer: UndoOffer;
   undoBusyRef?: MutableRefObject<boolean>;
 };
@@ -50,6 +63,7 @@ export function useLiberEdits({
   setUndoOffer,
   setToast,
   setDownloadsPulseMsgId,
+  setEditHistory,
   undoOffer,
   undoBusyRef: undoBusyRefProp,
 }: Args) {
@@ -85,7 +99,9 @@ export function useLiberEdits({
           return next;
         }),
       );
-      if (data.undo && data.undo.kind) {
+      const history = parseEditHistory(data.undo);
+      setEditHistory?.(history);
+      if (history.canUndo) {
         setUndoOffer({ msgId, runId });
       } else {
         setUndoOffer(null);
@@ -101,16 +117,21 @@ export function useLiberEdits({
       setUndoOffer,
       setToast,
       setDownloadsPulseMsgId,
+      setEditHistory,
     ],
   );
 
-  async function undoLastEdit() {
-    if (!undoOffer || undoBusyRef.current) return;
+  async function postHistory(
+    msgId: string,
+    runId: string,
+    path: "undo" | "redo",
+    okToast: string,
+  ) {
+    if (undoBusyRef.current) return;
     undoBusyRef.current = true;
-    const { msgId, runId } = undoOffer;
     try {
       const res = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/undo`,
+        `/api/runs/${encodeURIComponent(runId)}/${path}`,
         { method: "POST" },
       );
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -120,17 +141,56 @@ export function useLiberEdits({
             ? data.detail
             : typeof data.error === "string"
               ? data.error
-              : res.statusText || "undo failed",
+              : res.statusText || `${path} failed`,
         );
       }
-      applyEditPayload(msgId, runId, { ...data, undo: null }, "Правка отменена");
-      setUndoOffer(null);
+      applyEditPayload(
+        msgId,
+        runId,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as UndoApi,
+        },
+        okToast,
+      );
     } catch (err) {
       setToast(err instanceof Error ? err.message : String(err));
       window.setTimeout(() => setToast(null), 3200);
     } finally {
       undoBusyRef.current = false;
     }
+  }
+
+  async function undoLastEdit() {
+    if (!undoOffer) return;
+    const { msgId, runId } = undoOffer;
+    await postHistory(msgId, runId, "undo", "Правка отменена");
+  }
+
+  async function undoEdit(msgId: string, runId: string) {
+    await postHistory(msgId, runId, "undo", "Правка отменена");
+  }
+
+  async function redoEdit(msgId: string, runId: string) {
+    await postHistory(msgId, runId, "redo", "Правка возвращена");
+  }
+
+  async function clearEditHistory(runId: string) {
+    try {
+      await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/edit-history/clear`,
+        { method: "POST" },
+      );
+    } catch {
+      /* ignore */
+    }
+    setEditHistory?.({ canUndo: false, canRedo: false, depth: 0 });
+    setUndoOffer(null);
   }
 
   async function editFigure(
@@ -439,5 +499,8 @@ export function useLiberEdits({
     editHeading,
     editList,
     undoLastEdit,
+    undoEdit,
+    redoEdit,
+    clearEditHistory,
   };
 }

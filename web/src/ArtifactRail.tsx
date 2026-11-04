@@ -128,6 +128,11 @@ type Props = {
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
+  editHistory?: import("./domain/reportEditMode").EditHistoryDesc | null;
+  onHistoryUndo?: () => void | Promise<void>;
+  onHistoryRedo?: () => void | Promise<void>;
+  onClearEditHistory?: () => void | Promise<void>;
+  onReportEditModeChange?: (on: boolean) => void;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (
     diagrams: DiagramInfo[],
@@ -164,6 +169,11 @@ export function ArtifactRail({
   onEditHeading,
   onEditList,
   onEditCancel,
+  editHistory = null,
+  onHistoryUndo,
+  onHistoryRedo,
+  onClearEditHistory,
+  onReportEditModeChange,
   makingPresentation = false,
   onDiagramsUpdated,
 }: Props) {
@@ -652,6 +662,11 @@ export function ArtifactRail({
                   onEditHeading={onEditHeading}
                   onEditList={onEditList}
                   onEditCancel={onEditCancel}
+                  editHistory={editHistory}
+                  onHistoryUndo={onHistoryUndo}
+                  onHistoryRedo={onHistoryRedo}
+                  onClearEditHistory={onClearEditHistory}
+                  onEditModeChange={onReportEditModeChange}
                 />
               ) : null}
 

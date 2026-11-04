@@ -28,6 +28,7 @@ import {
   collapseSetForEditMode,
   reportEditModeHint,
   reportEditToggleVisible,
+  type EditHistoryDesc,
 } from "./domain/reportEditMode";
 import {
   loadCollapsedIds,
@@ -78,6 +79,13 @@ type Props = {
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
+  /** Session undo/redo while edit mode is on. */
+  editHistory?: EditHistoryDesc | null;
+  onHistoryUndo?: () => void | Promise<void>;
+  onHistoryRedo?: () => void | Promise<void>;
+  onClearEditHistory?: () => void | Promise<void>;
+  /** Notify parent so toast undo can hide. */
+  onEditModeChange?: (on: boolean) => void;
 };
 
 export function ReportView({
@@ -103,6 +111,11 @@ export function ReportView({
   onEditHeading,
   onEditList,
   onEditCancel,
+  editHistory = null,
+  onHistoryUndo,
+  onHistoryRedo,
+  onClearEditHistory,
+  onEditModeChange,
 }: Props) {
   const blocks = preview.blocks || [];
   const [lightbox, setLightbox] = useState<{
@@ -117,6 +130,8 @@ export function ReportView({
     Record<string, string | null>
   >({});
   const [editMode, setEditMode] = useState(false);
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [openMediaId, setOpenMediaId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => loadCollapsedIds(runId || ""),
   );
@@ -139,15 +154,22 @@ export function ReportView({
   useEffect(() => {
     setCollapsed(loadCollapsedIds(runId || ""));
     setEditMode(false);
-  }, [runId]);
+    setActiveBlockId(null);
+    setOpenMediaId(null);
+    onEditModeChange?.(false);
+  }, [runId, onEditModeChange]);
 
   const leaveEditMode = useCallback(() => {
     setEditMode(false);
+    setActiveBlockId(null);
+    setOpenMediaId(null);
     setDraftById({});
     setSheetPreviewHtmlById({});
     setTableDraftByN({});
+    onEditModeChange?.(false);
+    void onClearEditHistory?.();
     onEditCancel?.();
-  }, [onEditCancel]);
+  }, [onEditCancel, onClearEditHistory, onEditModeChange]);
 
   const enterEditMode = useCallback(() => {
     const cleared = collapseSetForEditMode(true);
@@ -155,8 +177,37 @@ export function ReportView({
       setCollapsed(cleared);
       saveCollapsedIds(runId || "", cleared);
     }
+    setActiveBlockId(null);
+    setOpenMediaId(null);
     setEditMode(true);
-  }, [runId]);
+    onEditModeChange?.(true);
+  }, [runId, onEditModeChange]);
+
+  useEffect(() => {
+    if (!editMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const typing =
+        tag === "input" ||
+        tag === "textarea" ||
+        target?.isContentEditable;
+      if (typing) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "z" && !e.shiftKey) {
+        if (!editHistory?.canUndo) return;
+        e.preventDefault();
+        void onHistoryUndo?.();
+      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+        if (!editHistory?.canRedo) return;
+        e.preventDefault();
+        void onHistoryRedo?.();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editMode, editHistory, onHistoryUndo, onHistoryRedo]);
 
   const toggleSection = useCallback(
     (headingId: string) => {
@@ -196,17 +247,43 @@ export function ReportView({
           <p className="report-edit-bar-hint">
             {reportEditModeHint(editMode)}
           </p>
-          <button
-            type="button"
-            className={`report-edit-toggle${editMode ? " is-on" : ""}`}
-            aria-pressed={editMode}
-            onClick={() => {
-              if (editMode) leaveEditMode();
-              else enterEditMode();
-            }}
-          >
-            {editMode ? "Готово" : "Редактировать"}
-          </button>
+          <div className="report-edit-bar-actions">
+            {editMode ? (
+              <>
+                <button
+                  type="button"
+                  className="report-edit-history-btn"
+                  aria-label="Отменить"
+                  title="Отменить (⌘Z)"
+                  disabled={!editHistory?.canUndo}
+                  onClick={() => void onHistoryUndo?.()}
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="report-edit-history-btn"
+                  aria-label="Вернуть"
+                  title="Вернуть (⌘⇧Z)"
+                  disabled={!editHistory?.canRedo}
+                  onClick={() => void onHistoryRedo?.()}
+                >
+                  →
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className={`report-edit-toggle${editMode ? " is-on" : ""}`}
+              aria-pressed={editMode}
+              onClick={() => {
+                if (editMode) leaveEditMode();
+                else enterEditMode();
+              }}
+            >
+              {editMode ? "Готово" : "Редактировать"}
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -256,6 +333,10 @@ export function ReportView({
         onEditParagraph={onEditParagraph}
         onEditHeading={onEditHeading}
         onEditList={onEditList}
+        activeBlockId={activeBlockId}
+        onActiveBlockId={setActiveBlockId}
+        openMediaId={openMediaId}
+        onOpenMediaId={setOpenMediaId}
       />
 
       {showPdf && downloads?.pdf ? (

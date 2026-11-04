@@ -91,12 +91,18 @@ export default function App() {
     message: string;
   } | null>(null);
   const { toast, toastTone, setToast, showToast } = useLiberToast();
-  /** B21: one-shot undo after last Liber edit */
+  /** B21 / session stack: undo after Liber edit */
   const [undoOffer, setUndoOffer] = useState<{
     msgId: string;
     runId: string;
   } | null>(null);
   const undoBusyRef = useRef(false);
+  const [editHistory, setEditHistory] = useState({
+    canUndo: false,
+    canRedo: false,
+    depth: 0,
+  });
+  const [reportEditMode, setReportEditMode] = useState(false);
   const [downloadsPulseMsgId, setDownloadsPulseMsgId] = useState<string | null>(
     null,
   );
@@ -218,6 +224,9 @@ export default function App() {
     editHeading,
     editList,
     undoLastEdit,
+    undoEdit,
+    redoEdit,
+    clearEditHistory,
   } =
     useLiberEdits({
       setMsgs,
@@ -227,6 +236,7 @@ export default function App() {
       setUndoOffer,
       setToast,
       setDownloadsPulseMsgId,
+      setEditHistory,
       undoOffer,
       undoBusyRef,
     });
@@ -451,7 +461,7 @@ export default function App() {
       <LiberToastBar
         toast={toast}
         toastTone={toastTone}
-        undoOffer={undoOffer}
+        undoOffer={reportEditMode ? null : undoOffer}
         onUndo={() => void undoLastEdit()}
       />
 
@@ -751,6 +761,25 @@ export default function App() {
                         )
                     : undefined
                 }
+                editHistory={editHistory}
+                onHistoryUndo={
+                  railArtifact.kind === "report" && activeReport?.run_id
+                    ? () =>
+                        undoEdit(railArtifact.msgId, activeReport.run_id)
+                    : undefined
+                }
+                onHistoryRedo={
+                  railArtifact.kind === "report" && activeReport?.run_id
+                    ? () =>
+                        redoEdit(railArtifact.msgId, activeReport.run_id)
+                    : undefined
+                }
+                onClearEditHistory={
+                  activeReport?.run_id
+                    ? () => clearEditHistory(activeReport.run_id)
+                    : undefined
+                }
+                onReportEditModeChange={setReportEditMode}
                 onEditList={
                   railArtifact.kind === "report" &&
                   activeReport &&

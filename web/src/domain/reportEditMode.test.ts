@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   blockEditVisible,
   collapseSetForEditMode,
+  parseEditHistory,
   reportEditModeHint,
   reportEditToggleVisible,
+  toastUndoVisible,
 } from "./reportEditMode";
 
 describe("reportEditMode", () => {
@@ -34,8 +36,8 @@ describe("reportEditMode", () => {
     );
   });
 
-  it("hint describes full-open edit desk", () => {
-    assert.match(reportEditModeHint(true), /все блоки открыты/i);
+  it("hint describes click-to-edit + shortcuts", () => {
+    assert.match(reportEditModeHint(true), /Клик по тексту/i);
     assert.match(reportEditModeHint(false), /Чтение/);
   });
 
@@ -44,5 +46,47 @@ describe("reportEditMode", () => {
     assert.ok(cleared);
     assert.equal(cleared!.size, 0);
     assert.equal(collapseSetForEditMode(false), null);
+  });
+
+  it("parses undo stack descriptor", () => {
+    assert.deepEqual(parseEditHistory(null), {
+      canUndo: false,
+      canRedo: false,
+      depth: 0,
+    });
+    assert.deepEqual(
+      parseEditHistory({
+        kind: "paragraph",
+        target: "1",
+        can_undo: true,
+        can_redo: false,
+        depth: 2,
+      }),
+      {
+        canUndo: true,
+        canRedo: false,
+        depth: 2,
+        kind: "paragraph",
+        target: "1",
+      },
+    );
+    assert.equal(
+      parseEditHistory({ can_undo: false, can_redo: true, depth: 0 }).canRedo,
+      true,
+    );
+    // Legacy one-slot shape
+    assert.equal(parseEditHistory({ kind: "chart", target: "x" }).canUndo, true);
+  });
+
+  it("hides toast undo while report edit mode is on", () => {
+    assert.equal(
+      toastUndoVisible(true, { canUndo: true, canRedo: false, depth: 1 }),
+      false,
+    );
+    assert.equal(
+      toastUndoVisible(false, { canUndo: true, canRedo: false, depth: 1 }),
+      true,
+    );
+    assert.equal(toastUndoVisible(false, { canUndo: false, canRedo: true, depth: 0 }), false);
   });
 });
