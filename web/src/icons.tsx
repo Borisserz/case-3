@@ -43,11 +43,11 @@ export function IconStop(p: IconProps) {
   return (
     <svg {...base(p)}>
       <rect
-        x="7"
-        y="7"
-        width="10"
-        height="10"
-        rx="1.5"
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="4"
         fill="currentColor"
         stroke="none"
       />

@@ -513,18 +513,30 @@ button.send:disabled {
 }
 
 button.send.is-stop {
-  background: color-mix(in srgb, var(--ink) 88%, var(--primary));
-  color: var(--sheet);
-  box-shadow: none;
+  width: 2.55rem;
+  height: 2.55rem;
+  background: color-mix(in srgb, var(--danger, #a63d2f) 88%, var(--ink));
+  color: #fff;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 14%, transparent) inset,
+    0 4px 12px color-mix(in srgb, var(--danger, #a63d2f) 28%, transparent);
 }
 
 button.send.is-stop:hover:not(:disabled) {
-  background: var(--ink);
+  background: color-mix(in srgb, var(--danger, #a63d2f) 96%, #000);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 6px 16px color-mix(in srgb, var(--danger, #a63d2f) 34%, transparent);
 }
 
 button.send.is-stop.is-stopping {
   opacity: 0.72;
   cursor: wait;
+  box-shadow: none;
+}
+
+button.send.is-stop svg {
+  display: block;
 }
 
 @media (prefers-reduced-motion: reduce) {

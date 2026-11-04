@@ -161,8 +161,19 @@ def _donut_series_name(chart: dict[str, Any], current: str) -> str:
     return "Доля"
 
 
+def _polish_donut_names(chart: dict[str, Any], ir: dict[str, Any]) -> dict[str, Any]:
+    if ir.get("type") == "donut":
+        for s in ir["series"]:
+            s["name"] = _donut_series_name(chart, str(s.get("name") or ""))
+    return ir
+
+
 def attach_series_ir(chart: dict[str, Any]) -> dict[str, Any] | None:
-    """Persist native-eligible series on a chart dict; return IR or None."""
+    """Persist native-eligible series on a chart dict; return IR or None.
+
+    After a Liber type change, re-extract from HTML when stored IR type
+    mismatches chart.type (stale bar IR must not ship as native donut).
+    """
     if not isinstance(chart, dict):
         return None
     ctype = str(chart.get("type") or "").strip().lower()
@@ -170,23 +181,24 @@ def attach_series_ir(chart: dict[str, Any]) -> dict[str, Any] | None:
         chart.pop("series", None)
         return None
     existing = normalize_series_ir(chart.get("series"), default_type=ctype or "bar")
-    if existing:
-        if existing["type"] == "donut":
-            for s in existing["series"]:
-                s["name"] = _donut_series_name(chart, str(s.get("name") or ""))
-        chart["series"] = existing
+    type_ok = bool(existing) and existing.get("type") == ctype
+    if existing and type_ok:
+        chart["series"] = _polish_donut_names(chart, existing)
         return existing
     ir = extract_chart_series(
         str(chart.get("html") or ""),
         chart_type=ctype or None,
     )
     if not ir:
+        # Coerce path left HTML unparseable — keep values, force chart type.
+        if existing and ctype in NATIVE_CHART_TYPES:
+            existing = dict(existing)
+            existing["type"] = ctype
+            chart["series"] = _polish_donut_names(chart, existing)
+            return existing
         chart.pop("series", None)
         return None
-    if ir["type"] == "donut":
-        for s in ir["series"]:
-            s["name"] = _donut_series_name(chart, str(s.get("name") or ""))
-    chart["series"] = ir
+    chart["series"] = _polish_donut_names(chart, ir)
     return ir
 
 
@@ -208,19 +220,28 @@ def series_from_figures_json(
             continue
         if str(ch.get("id") or "") != chart_id:
             continue
+        ctype = str(ch.get("type") or "bar").strip().lower() or "bar"
+        if ctype in ("kpi", "scatter"):
+            return None
         stored = normalize_series_ir(
             ch.get("series"),
-            default_type=str(ch.get("type") or "bar"),
+            default_type=ctype,
         )
-        if stored:
+        if stored and stored.get("type") == ctype:
             return stored
         ir = extract_chart_series(
             str(ch.get("html") or ""),
-            chart_type=str(ch.get("type") or ""),
+            chart_type=ctype,
         )
         if ir:
             ch["series"] = ir
-        return ir
+            return ir
+        if stored and ctype in NATIVE_CHART_TYPES:
+            stored = dict(stored)
+            stored["type"] = ctype
+            ch["series"] = stored
+            return stored
+        return None
     return None
 
 

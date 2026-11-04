@@ -256,7 +256,7 @@ export function ChatComposer({
                 aria-label={stopping ? "Останавливаю" : "Остановить"}
                 title={stopping ? "Останавливаю…" : "Остановить"}
               >
-                <IconStop size={14} />
+                <IconStop size={20} />
               </button>
             ) : (
               <button

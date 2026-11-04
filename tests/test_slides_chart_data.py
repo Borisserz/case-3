@@ -55,7 +55,7 @@ def test_attach_series_ir_persists_on_chart() -> None:
 
 def test_series_from_figures_prefers_stored() -> None:
     stored = {
-        "type": "line",
+        "type": "bar",
         "categories": ["A", "B"],
         "series": [{"name": "X", "values": [1.0, 2.0]}],
     }
@@ -164,3 +164,81 @@ def test_attach_donut_renames_anonymous_series() -> None:
     ir = attach_series_ir(chart)
     assert ir is not None
     assert ir["series"][0]["name"] == "Бюджет"
+
+
+def test_attach_series_ir_refreshes_type_after_coerce() -> None:
+    """Type edit must update Series IR so native DOCX/PPTX match Liber."""
+    from case3.chart_coerce import apply_type_to_chart
+
+    grouped_html = """
+    <script>new Chart(c,{type:'bar',data:{labels:['Q1','Q2'],
+    datasets:[
+      {label:'A',data:[10,20]},
+      {label:'B',data:[5,15]}
+    ]},options:{}});</script>
+    """
+    chart = {
+        "id": "cht_01",
+        "type": "grouped_bar",
+        "html": grouped_html,
+        "caption": "Выручка",
+    }
+    assert attach_series_ir(chart) is not None
+    assert chart["series"]["type"] == "grouped_bar"
+    assert len(chart["series"]["series"]) == 2
+
+    chart = apply_type_to_chart(chart, "donut")
+    ir = attach_series_ir(chart)
+    assert ir is not None
+    assert ir["type"] == "donut"
+    assert chart["series"]["type"] == "donut"
+    # Coerced donut collapses multi-series — IR must match HTML, not stale bar IR.
+    assert len(ir["series"]) == 1
+
+
+def test_series_from_figures_ignores_stale_type() -> None:
+    fj = {
+        "charts": [
+            {
+                "id": "cht_01",
+                "type": "line",
+                "html": LINE_HTML,
+                "series": {
+                    "type": "bar",
+                    "categories": ["Q3 2025", "Q3 2026"],
+                    "series": [{"name": "Выручка", "values": [4.1, 4.8]}],
+                },
+            }
+        ]
+    }
+    ir = series_from_figures_json(fj, "cht_01")
+    assert ir is not None
+    assert ir["type"] == "line"
+
+
+def test_attach_kpi_and_scatter_drop_series() -> None:
+    chart = {
+        "id": "cht_01",
+        "type": "kpi",
+        "html": '<div class="kpi"><div class="value">42</div></div>',
+        "series": {
+            "type": "bar",
+            "categories": ["A"],
+            "series": [{"name": "S", "values": [1.0]}],
+        },
+    }
+    assert attach_series_ir(chart) is None
+    assert "series" not in chart
+
+    chart = {
+        "id": "cht_02",
+        "type": "scatter",
+        "html": "<script>new Chart(c,{type:'scatter',data:{datasets:[{data:[{x:1,y:2}]}]}});</script>",
+        "series": {
+            "type": "bar",
+            "categories": ["A"],
+            "series": [{"name": "S", "values": [1.0]}],
+        },
+    }
+    assert attach_series_ir(chart) is None
+    assert "series" not in chart
