@@ -17,7 +17,8 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
    - Prefer **`scorecard`** (with `delta` when Source has change) over plain `kpi_row` when comparing periods
 5. Prefer variety: charts → `chart_*`; photos/`fig_*`/`usr_*` → `media_*`; Mermaid `dia_*` → prefer **`media_hero`** (full-bleed readable scheme; avoid tiny `media_split` for diagrams). Mermaid: **`flowchart LR`** for wide chains, **`flowchart TD`** for short vertical processes (TD fills height better on 16:9). Tables in Source → **`table_hero`** (header row + ≥1 data row; cells only from Source). If the user message includes images, they are the real files for those ids. A logo goes on `title` or one `media_hero`. A product screenshot goes on `media_split` with only labels you can actually see — do not invent button names, menus, or a wordmark.
 6. Liber look: calm editorial. No purple, neon, emoji.
-7. Limits: title ≤80; subtitle ≤120; kicker ≤40; bullet ≤90; ≤5 bullets; KPI label ≤40; KPI value ≤24; takeaway ≤120; term ≤40; definition ≤160.
+7. Limits: title ≤80; subtitle ≤120; kicker ≤40; bullet ≤140; ≤5 bullets; KPI label ≤40; KPI value ≤24; takeaway ≤120; term ≤56; definition ≤280; card title ≤72; card body ≤240.
+   A bullet, a card `body`, and a callout `definition` are a full sentence from Source (about 12–25 words), not a two-word label. Do not invent words to fill the box.
 8. Optional **`kicker`** on any slide (short uppercase section label). Optional **`chapter`** (1–9 int) on `section` and key content slides. Optional **`takeaway`** one-liner under the title.
 9. **Takeaway titles (Julius live):** On content slides (`scorecard`, charts, tables, `card_row`), the **`title` itself states the insight** — not a bland label. Example good: «Выручка +12% YoY; gap к плану закрываем в Q4». Bad: «Ключевые показатели». Put supporting detail in `takeaway` / body / KPIs. Title still ≤80 chars; numbers only from Source.
 10. Palette / pack: `{{PALETTE}}`. Language: match Source (usually `ru`).
@@ -139,9 +140,9 @@ Decks that all look like `title → section → scorecard → chart → scorecar
 | `chart_hero` / `chart_split` | Charts from **Available charts** (`chart_id`) |
 | `media_hero` / `media_split` | Photo or diagram from **figures / diagrams** (`media_id`) |
 | `table_hero` | Source table → `rows` (first row = header) |
-| `callout` | Named insight: `term` + `definition` (+ optional body) |
-| `card_row` | 3 narrative cards: `cards[{kicker,title,body}]` + optional gold gate `caption` |
-| `bullets` | 3–5 sharp points |
+| `callout` | Named insight: `term` + a full-sentence `definition` (+ optional body) |
+| `card_row` | 3 cards: `cards[{kicker,title,body}]`. `body` is one or two Source sentences, not a label. Optional gold gate `caption` |
+| `bullets` | 3–5 full clauses from Source |
 | `closing` | Takeaway / next steps |
 
 # Available charts

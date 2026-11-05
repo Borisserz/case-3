@@ -571,7 +571,7 @@ def run_slides_job(
                     "at most 2 consecutive scorecard/kpi_row; "
                     "Use available media ids; "
                     f"ONLY these number tokens (or Source): {allowed_preview}; "
-                    "bullets ≤90 chars; title first, closing last. "
+                    "bullets ≤140 chars, a full sentence not a label; title first, closing last. "
                     "Do not invent averages or deltas."
                 )
                 raw_text = client.complete(

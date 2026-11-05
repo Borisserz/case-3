@@ -665,9 +665,9 @@ def _layout_card_row(
                 Emu(int(left) + int(Inches(0.22))),
                 y_t + Inches(0.75),
                 Emu(int(card_w) - int(Inches(0.4))),
-                Inches(1.4),
+                Inches(2.15),
                 body,
-                size_pt=14,
+                size_pt=15,
                 color=colors["muted"],
             )
         left = Emu(int(left) + int(card_w) + int(gap))

@@ -112,7 +112,7 @@ def test_section_scorecard_callout_table() -> None:
 def test_long_delta_and_bullet_are_clipped() -> None:
     """Qwen 4B overruns the box. The deck must still parse."""
     long_delta = "план против факта за год"
-    long_bullet = "А" * 120
+    long_bullet = "А" * 180
     ir = parse_deck_ir(
         {
             "version": 1,
@@ -142,7 +142,7 @@ def test_long_delta_and_bullet_are_clipped() -> None:
     assert len(delta) <= 16
     assert delta.endswith("…")
     bullet = ir["slides"][2]["bullets"][2]
-    assert len(bullet) <= 96
+    assert len(bullet) <= 140
     assert bullet.endswith("…")
     assert len(ir["slides"][2]["bullets"]) == 5
 
