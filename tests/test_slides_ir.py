@@ -109,6 +109,72 @@ def test_section_scorecard_callout_table() -> None:
     assert ir["slides"][0].get("takeaway")
 
 
+def test_long_delta_and_bullet_are_clipped() -> None:
+    """Qwen 4B overruns the box. The deck must still parse."""
+    long_delta = "план против факта за год"
+    long_bullet = "А" * 120
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "scorecard",
+                    "title": "Цифры",
+                    "kpis": [
+                        {"label": "Выручка", "value": "120 млн", "delta": long_delta},
+                    ],
+                },
+                {
+                    "id": "s03",
+                    "layout": "bullets",
+                    "title": "Факты",
+                    "bullets": ["Доля 35%", "NPS 42", long_bullet, "x", "y", "z"],
+                },
+                {"id": "s04", "layout": "closing", "title": "Далее", "bullets": ["План"]},
+            ],
+        },
+        source=SOURCE,
+    )
+    delta = ir["slides"][1]["kpis"][0]["delta"]
+    assert len(delta) <= 16
+    assert delta.endswith("…")
+    bullet = ir["slides"][2]["bullets"][2]
+    assert len(bullet) <= 96
+    assert bullet.endswith("…")
+    assert len(ir["slides"][2]["bullets"]) == 5
+
+
+def test_ragged_table_rows_are_padded() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "table_hero",
+                    "title": "Сводка",
+                    "rows": [
+                        ["Метрика", "2024", "План"],
+                        ["Выручка", "120 млн"],
+                        ["Доля", "35%", "лишнее", "ещё"],
+                    ],
+                },
+                {"id": "s03", "layout": "closing", "title": "Далее", "bullets": ["План"]},
+            ],
+        },
+        source=SOURCE,
+    )
+    rows = ir["slides"][1]["rows"]
+    assert [len(r) for r in rows] == [3, 3, 3]
+    assert rows[1][2] == "—"
+    assert rows[2][2] == "лишнее"
+
+
 def test_accepts_arc_title_bullets_closing() -> None:
     ir = parse_deck_ir(
         {

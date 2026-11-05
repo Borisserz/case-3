@@ -489,9 +489,12 @@ def _clip_str(val: Any, *, field: str, max_len: int, required: bool = False) -> 
     if not isinstance(val, str):
         raise DeckIrError(f"{field} must be string")
     s = _norm_ws(val)
-    if len(s) > max_len:
-        raise DeckIrError(f"{field} longer than {max_len} chars")
-    return s
+    if len(s) <= max_len:
+        return s
+    # A 4B model overruns the box. Cut the string; do not fail the deck.
+    if max_len <= 1:
+        return s[:max_len]
+    return s[: max_len - 1].rstrip() + "…"
 
 
 def _parse_bullets(raw: Any, *, required: bool) -> list[str]:
@@ -500,7 +503,7 @@ def _parse_bullets(raw: Any, *, required: bool) -> list[str]:
             raise DeckIrError("bullets list required")
         return []
     if len(raw) > _MAX_BULLETS:
-        raise DeckIrError(f"at most {_MAX_BULLETS} bullets")
+        raw = raw[:_MAX_BULLETS]
     out: list[str] = []
     for i, b in enumerate(raw):
         out.append(
@@ -514,7 +517,7 @@ def _parse_cards(raw: Any) -> list[dict[str, str]]:
     if not isinstance(raw, list) or not raw:
         raise DeckIrError("card_row requires non-empty cards")
     if len(raw) > _MAX_CARDS:
-        raise DeckIrError(f"at most {_MAX_CARDS} cards")
+        raw = raw[:_MAX_CARDS]
     out: list[dict[str, str]] = []
     for i, item in enumerate(raw):
         if not isinstance(item, dict):
@@ -546,7 +549,7 @@ def _parse_kpis(raw: Any, *, allow_delta: bool = False) -> list[dict[str, str]]:
     if not isinstance(raw, list) or not raw:
         raise DeckIrError("kpi_row/scorecard requires non-empty kpis")
     if len(raw) > _MAX_KPI:
-        raise DeckIrError(f"at most {_MAX_KPI} kpis")
+        raw = raw[:_MAX_KPI]
     out: list[dict[str, str]] = []
     for i, item in enumerate(raw):
         if not isinstance(item, dict):
@@ -586,22 +589,23 @@ def _parse_table_rows(raw: Any) -> list[list[str]]:
     if not isinstance(raw, list) or len(raw) < 2:
         raise DeckIrError("table_hero requires rows (header + ≥1 data)")
     if len(raw) > _MAX_TABLE_ROWS:
-        raise DeckIrError(f"at most {_MAX_TABLE_ROWS} table rows")
+        raw = raw[:_MAX_TABLE_ROWS]
     out: list[list[str]] = []
     width = 0
     for i, row in enumerate(raw):
         if not isinstance(row, list) or not row:
             raise DeckIrError(f"rows[{i}] must be non-empty list")
-        if len(row) > _MAX_TABLE_COLS:
-            raise DeckIrError(f"at most {_MAX_TABLE_COLS} columns")
+        trimmed = row[:_MAX_TABLE_COLS]
         cells = [
             _clip_str(c, field=f"rows[{i}][{j}]", max_len=_MAX_CELL, required=True)
-            for j, c in enumerate(row)
+            for j, c in enumerate(trimmed)
         ]
         if i == 0:
             width = len(cells)
-        elif len(cells) != width:
-            raise DeckIrError("table rows must share the same column count")
+        elif len(cells) < width:
+            cells = cells + ["—"] * (width - len(cells))
+        elif len(cells) > width:
+            cells = cells[:width]
         out.append(cells)
     return out
 
