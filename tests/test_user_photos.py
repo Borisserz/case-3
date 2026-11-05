@@ -66,11 +66,16 @@ def test_ensure_slots_after_first_section() -> None:
     assert out.index(r"\section{Обзор}") < out.index("%CASE3_FIG:usr_01%")
 
 
+def test_five_user_photos_are_kept(tmp_path: Path) -> None:
+    figs = save_user_photos(tmp_path, [(f"p{i}.png", _PNG) for i in range(5)])
+    assert [f["id"] for f in figs] == [f"usr_{i:02d}" for i in range(1, 6)]
+
+
 def test_reject_too_many(tmp_path: Path) -> None:
-    with pytest.raises(UserPhotoError):
+    with pytest.raises(UserPhotoError, match="5"):
         save_user_photos(
             tmp_path,
-            [("a.png", _PNG), ("b.png", _PNG), ("c.png", _PNG)],
+            [("a.png", _PNG)] * 6,
         )
 
 

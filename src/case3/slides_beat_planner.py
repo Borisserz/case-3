@@ -418,7 +418,7 @@ def _reserve_media_beats(
     if n_charts > 0 and not any(b in ("chart_hero", "chart_split") for b in out):
         need.append("chart_hero")
     have_media = sum(1 for b in out if b in ("media_hero", "media_split"))
-    for i in range(max(0, min(n_figs, 2) - have_media)):
+    for i in range(max(0, min(n_figs, 5) - have_media)):
         need.append("media_hero" if i % 2 == 0 else "media_split")
     fillers = {"card_row", "callout", "bullets", "table_hero", "section", "scorecard"}
     for layout in need:

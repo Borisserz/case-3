@@ -244,8 +244,8 @@ def deck_vision_images(
     png_by_id: dict[str, Path],
     figure_ids: list[str],
     *,
-    limit: int = 2,
-    max_edge: int = 896,
+    limit: int = 5,
+    max_edge: int = 768,
 ) -> list[tuple[str, str]]:
     """JPEG data-URLs for Qwen-VL. Logos and UI shots, not chart PNGs.
 

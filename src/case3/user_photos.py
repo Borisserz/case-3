@@ -11,7 +11,7 @@ from typing import Any
 log = logging.getLogger("case3.user_photos")
 
 _MAX_BYTES = 4 * 1024 * 1024
-_MAX_COUNT = 2
+_MAX_COUNT = 5
 _NAME_OK = re.compile(r"^[a-zA-Z0-9._ -]{1,120}$")
 
 

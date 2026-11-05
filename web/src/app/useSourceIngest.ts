@@ -104,9 +104,9 @@ export function useSourceIngest({
           continue;
         }
         if (/^image\//.test(f.type) || /\.(png|jpe?g)$/i.test(f.name)) {
-          setAttachPhotos((prev) => [...prev, f].slice(0, 2));
+          setAttachPhotos((prev) => [...prev, f].slice(0, 5));
           setForbidImages(false);
-          setMaxImages((n) => Math.max(n, 2));
+          setMaxImages((n) => Math.max(n, 5));
         }
       }
     },
