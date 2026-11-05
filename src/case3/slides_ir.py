@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import Any
 
 from case3.chart_style import normalize_palette_id
@@ -22,6 +23,10 @@ SLIDE_LAYOUTS = frozenset(
         "callout",
         "table_hero",
         "card_row",
+        "stat_hero",
+        "timeline",
+        "compare",
+        "quote",
     }
 )
 
@@ -155,6 +160,33 @@ def _number_in_source(num: str, source_norm: str) -> bool:
     return False
 
 
+_SCALE_WORD = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(тысяч\w*|тыс\.?|млн\.?|млрд\.?)",
+    re.IGNORECASE,
+)
+
+
+def _scaled_magnitudes(text: str) -> set[str]:
+    """``86 тысяч`` → ``86000``. Bare ``86000`` does not unlock ``86``."""
+    out: set[str] = set()
+    for match in _SCALE_WORD.finditer(_compact_spaced_thousands(text or "")):
+        raw = match.group(1).replace(",", ".")
+        unit = match.group(2).lower()
+        if unit.startswith("тыс"):
+            mult = 1000
+        elif unit.startswith("млн"):
+            mult = 1_000_000
+        else:
+            mult = 1_000_000_000
+        try:
+            val = Decimal(raw) * Decimal(mult)
+        except Exception:
+            continue
+        if val == val.to_integral_value():
+            out.add(str(int(val)))
+    return out
+
+
 def _number_is_allowed(
     num: str, *, source_norm: str, allowed: frozenset[str]
 ) -> bool:
@@ -162,6 +194,9 @@ def _number_is_allowed(
         return True
     for v in _number_variants(num):
         if v in allowed or _number_in_source(v, source_norm):
+            return True
+        plain = v.replace(",", ".")
+        if plain in _scaled_magnitudes(source_norm):
             return True
     return False
 
@@ -399,6 +434,12 @@ def scrub_invented_numbers(
             _demote_to_bullets(s2, "Показатели")
         if layout == "card_row" and len(s2.get("cards") or []) < 2:
             _demote_to_bullets(s2, "Наблюдения")
+        if layout == "stat_hero" and len(s2.get("kpis") or []) < 1:
+            _demote_to_bullets(s2, "Показатель")
+        if layout in ("timeline", "compare") and len(s2.get("cards") or []) < 2:
+            _demote_to_bullets(s2, "Шаги")
+        if layout == "quote" and not str(s2.get("definition") or "").strip():
+            _demote_to_bullets(s2, "Цитата")
         if layout == "callout":
             title = str(s2.get("title") or "Смысл").strip() or "Смысл"
             if not str(s2.get("term") or "").strip():
@@ -512,12 +553,12 @@ def _parse_bullets(raw: Any, *, required: bool) -> list[str]:
     return out
 
 
-def _parse_cards(raw: Any) -> list[dict[str, str]]:
-    """Julius VESPER-style 3-up narrative cards."""
+def _parse_cards(raw: Any, *, limit: int = _MAX_CARDS) -> list[dict[str, str]]:
+    """Narrative cards. ``card_row`` keeps 3; timeline and compare pass their own cap."""
     if not isinstance(raw, list) or not raw:
-        raise DeckIrError("card_row requires non-empty cards")
-    if len(raw) > _MAX_CARDS:
-        raw = raw[:_MAX_CARDS]
+        raise DeckIrError("cards required")
+    if len(raw) > limit:
+        raw = raw[:limit]
     out: list[dict[str, str]] = []
     for i, item in enumerate(raw):
         if not isinstance(item, dict):
@@ -691,6 +732,20 @@ def _parse_slide(
         body = _clip_str(raw.get("body"), field="body", max_len=220)
         if body:
             out["body"] = body
+    elif layout == "quote":
+        definition = _clip_str(
+            raw.get("definition"),
+            field="definition",
+            max_len=_MAX_DEFINITION,
+            required=True,
+        )
+        out["definition"] = definition
+        term = _clip_str(raw.get("term"), field="term", max_len=_MAX_TERM)
+        if term:
+            out["term"] = term
+        body = _clip_str(raw.get("body"), field="body", max_len=220)
+        if body:
+            out["body"] = body
     elif layout == "table_hero":
         out["rows"] = _parse_table_rows(raw.get("rows"))
         cap = _clip_str(raw.get("caption"), field="caption", max_len=_MAX_CAPTION)
@@ -737,6 +792,30 @@ def _parse_slide(
             if not body and not bullets:
                 out["layout"] = "media_hero"
                 layout = "media_hero"
+    elif layout == "stat_hero":
+        raw_kpis = raw.get("kpis")
+        if not raw_kpis and (raw.get("value") or raw.get("label")):
+            raw_kpis = [
+                {
+                    "value": raw.get("value"),
+                    "label": raw.get("label") or raw.get("title"),
+                    "delta": raw.get("delta"),
+                    "hint": raw.get("hint"),
+                }
+            ]
+        kpis = _parse_kpis(raw_kpis, allow_delta=True)
+        out["kpis"] = kpis[:1]
+        out["bullets"] = _parse_bullets(raw.get("bullets"), required=True)
+    elif layout == "timeline":
+        cards = _parse_cards(raw.get("cards"), limit=6)
+        if len(cards) < 2:
+            raise DeckIrError("timeline requires at least 2 steps")
+        out["cards"] = cards
+    elif layout == "compare":
+        cards = _parse_cards(raw.get("cards"), limit=2)
+        if len(cards) < 2:
+            raise DeckIrError("compare requires 2 cards")
+        out["cards"] = cards
     elif layout == "kpi_row":
         out["kpis"] = _parse_kpis(raw.get("kpis"), allow_delta=False)
     elif layout in ("bullets", "closing"):
@@ -833,6 +912,215 @@ def _assert_deck_arc(slides: list[dict[str, Any]]) -> None:
     _assert_layout_variety(slides)
 
 
+_WORD4 = re.compile(r"[0-9A-Za-zА-Яа-яЁё]{4,}")
+
+
+def _word_keys(text: str) -> set[str]:
+    return {w.casefold() for w in _WORD4.findall(text or "")}
+
+
+def _slide_blob(slide: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in (
+        "title",
+        "subtitle",
+        "takeaway",
+        "body",
+        "definition",
+        "term",
+        "kicker",
+        "caption",
+    ):
+        val = slide.get(key)
+        if isinstance(val, str) and val.strip():
+            parts.append(val)
+    for bullet in slide.get("bullets") or []:
+        if isinstance(bullet, str):
+            parts.append(bullet)
+    for card in slide.get("cards") or []:
+        if isinstance(card, dict):
+            parts.extend(
+                str(card.get(k) or "") for k in ("title", "body", "kicker")
+            )
+    for kpi in slide.get("kpis") or []:
+        if isinstance(kpi, dict):
+            parts.extend(
+                str(kpi.get(k) or "") for k in ("value", "label", "hint", "delta")
+            )
+    return " ".join(p for p in parts if p)
+
+
+def _source_question(source: str) -> str:
+    match = re.search(r"((?:вопрос\s+)?[^.?]{0,70}или нет)", source or "", re.I)
+    if not match:
+        match = re.search(r"([^.]{8,80}\?)", source or "")
+    if not match:
+        return ""
+    text = match.group(1).strip()
+    text = re.sub(r"^.*?вопрос\s+", "", text, flags=re.I)
+    text = re.sub(r"\s+или нет\s*$", "", text, flags=re.I).strip(" ,.;:—-")
+    if len(text) < 8:
+        return ""
+    text = text[0].upper() + text[1:]
+    if not text.endswith("?"):
+        text += "?"
+    return text[:_MAX_DEFINITION]
+
+
+def _negation_pair(left: str, right: str) -> bool:
+    a_neg = left.casefold().strip().startswith("не ")
+    b_neg = right.casefold().strip().startswith("не ")
+    if a_neg == b_neg:
+        return False
+    ka = {w[:4] for w in _word_keys(left)}
+    kb = {w[:4] for w in _word_keys(right)}
+    return len(ka & kb) >= 2
+
+
+def _demote_fake_compare(slide: dict[str, Any], source: str) -> None:
+    if slide.get("layout") != "compare":
+        return
+    cards = [c for c in (slide.get("cards") or []) if isinstance(c, dict)]
+    if len(cards) < 2:
+        return
+    titles = [str(c.get("title") or "") for c in cards]
+    bodies = [_norm_ws(str(c.get("body") or "")).casefold() for c in cards]
+    same_body = bool(bodies[0] and bodies[0] == bodies[1])
+    if not _negation_pair(titles[0], titles[1]) and not same_body:
+        return
+    question = _source_question(source)
+    if not question:
+        question = str(slide.get("title") or titles[0] or "Вопрос").strip()
+        if question and not question.endswith("?"):
+            question += "?"
+    slide["layout"] = "callout"
+    slide["title"] = "Вопрос"
+    slide["term"] = "Вопрос"
+    slide["definition"] = question[:_MAX_DEFINITION]
+    slide.pop("cards", None)
+    slide.pop("subtitle", None)
+    slide.pop("kicker", None)
+
+
+def _shorten_scorecard(slide: dict[str, Any]) -> None:
+    if slide.get("layout") != "scorecard":
+        return
+    kpi_nums: set[str] = set()
+    for kpi in slide.get("kpis") or []:
+        if isinstance(kpi, dict):
+            kpi_nums.update(_numbers_in_text(str(kpi.get("value") or "")))
+    if len(set(_numbers_in_text(str(slide.get("title") or ""))) & kpi_nums) >= 2:
+        kicker = str(slide.get("kicker") or "").strip()
+        if kicker.isupper():
+            kicker = kicker.capitalize()
+        slide["title"] = kicker if kicker and not _numbers_in_text(kicker) else "Сводка"
+    if len(set(_numbers_in_text(str(slide.get("subtitle") or ""))) & kpi_nums) >= 2:
+        slide.pop("subtitle", None)
+    if len(set(_numbers_in_text(str(slide.get("takeaway") or ""))) & kpi_nums) >= 2:
+        slide.pop("takeaway", None)
+    if str(slide.get("kicker") or "").casefold() == str(slide.get("title") or "").casefold():
+        slide.pop("kicker", None)
+
+
+_FILLER = re.compile(r"без добавлен|факты без", re.IGNORECASE)
+
+
+def _slide_payload(slide: dict[str, Any]) -> str:
+    """Facts on the slide, without the title, so a retitled copy still matches."""
+    parts: list[str] = []
+    for key in ("subtitle", "body", "definition", "takeaway"):
+        val = slide.get(key)
+        if isinstance(val, str) and val.strip():
+            parts.append(val)
+    for bullet in slide.get("bullets") or []:
+        if isinstance(bullet, str):
+            parts.append(bullet)
+    for card in slide.get("cards") or []:
+        if isinstance(card, dict):
+            parts.append(str(card.get("title") or ""))
+            parts.append(str(card.get("body") or ""))
+    for kpi in slide.get("kpis") or []:
+        if isinstance(kpi, dict):
+            parts.append(str(kpi.get("value") or ""))
+            parts.append(str(kpi.get("label") or ""))
+    for row in slide.get("rows") or []:
+        if isinstance(row, list):
+            parts.append(" ".join(str(cell) for cell in row))
+    return _norm_ws(" ".join(parts)).casefold()
+
+
+def _fit_deck_content(
+    slides: list[dict[str, Any]], source_norm: str
+) -> list[dict[str, Any]]:
+    """One fact per slide, no invented second side, the ask stands alone."""
+    if len(slides) < 3:
+        return slides
+    for slide in slides:
+        _demote_fake_compare(slide, source_norm)
+        _shorten_scorecard(slide)
+
+    kept: list[dict[str, Any]] = [slides[0]]
+    seen_payloads: set[str] = set()
+    first_payload = _slide_payload(slides[0])
+    if first_payload:
+        seen_payloads.add(first_payload)
+    for slide in slides[1:-1]:
+        blob = _slide_blob(slide)
+        if (
+            slide.get("layout") == "section"
+            and not _numbers_in_text(blob)
+            and _FILLER.search(blob)
+        ):
+            continue
+        payload = _slide_payload(slide)
+        if payload and payload in seen_payloads:
+            continue
+        if payload:
+            seen_payloads.add(payload)
+        kept.append(slide)
+    kept.append(slides[-1])
+
+    closing = kept[-1]
+    bullets = [b for b in (closing.get("bullets") or []) if isinstance(b, str)]
+    if bullets:
+        earlier = re.sub(
+            r"[^\w\s%+-]",
+            "",
+            " ".join(_slide_blob(s) for s in kept[:-1]).casefold(),
+        )
+        fresh = []
+        for bullet in bullets:
+            flat = re.sub(r"[^\w\s%+-]", "", _norm_ws(bullet).casefold())
+            if flat and flat in earlier:
+                continue
+            fresh.append(bullet)
+        if fresh and len(fresh) < len(bullets):
+            closing["bullets"] = fresh
+
+    question = _source_question(source_norm)
+    if question:
+        q_words = _word_keys(question)
+        already = any(q_words <= _word_keys(_slide_blob(s)) for s in kept)
+        if not already and q_words:
+            ask_id = "s_ask"
+            used = {str(s.get("id") or "") for s in kept}
+            n = 2
+            while ask_id in used:
+                ask_id = f"s_ask{n}"
+                n += 1
+            kept.insert(
+                -1,
+                {
+                    "id": ask_id,
+                    "layout": "callout",
+                    "title": "Вопрос",
+                    "term": "Вопрос",
+                    "definition": question,
+                },
+            )
+    return kept
+
+
 def parse_deck_ir(
     data: dict[str, Any] | Any,
     *,
@@ -896,6 +1184,7 @@ def parse_deck_ir(
         )
         for s in slides_raw
     ]
+    slides = _fit_deck_content(slides, source_norm)
     _assert_deck_arc(slides)
 
     return {

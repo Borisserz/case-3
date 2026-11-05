@@ -91,7 +91,10 @@ def test_format_beat_overlay_lists_skeleton() -> None:
         diagram_ids=[],
     )
     text = format_beat_overlay(plan)
-    assert "Beat plan" in text or "BEAT PLAN" in text.upper() or "beat" in text.lower()
+    assert "BEAT PLAN" in text
+    assert "you choose" in text.lower()
+    assert "mandatory skeleton" not in text.lower()
+    assert "stat_hero" in text and "timeline" in text and "compare" in text
     assert "title" in text
     assert "closing" in text
 

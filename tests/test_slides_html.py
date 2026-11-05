@@ -347,7 +347,7 @@ def test_scorecard_callout_table() -> None:
         },
         palette="atelier",
     )
-    assert "callout-box" in callout
+    assert "callout-stage" in callout
     assert "NPS" in callout
 
     table = render_slide_html(
@@ -361,3 +361,52 @@ def test_scorecard_callout_table() -> None:
     )
     assert "deck-table" in table
     assert "<th>A</th>" in table
+
+
+def test_plain_title_is_an_accent_field_and_split_stays() -> None:
+    from case3.deck_theme import resolve_deck_theme
+
+    voltage = resolve_deck_theme("voltage").as_dict()
+    loud = render_slide_html(
+        {
+            "id": "s01",
+            "layout": "title",
+            "kicker": "Планёрка",
+            "title": "Что крутить дальше",
+            "subtitle": "86 тысяч за неделю",
+        },
+        palette="voltage",
+        style=voltage,
+    )
+    assert 'class="slide-inner title-stage title-stage--field"' in loud
+    assert "title-field__rail" in loud
+    board = resolve_deck_theme("board").as_dict()
+    split = render_slide_html(
+        {"id": "s01", "layout": "title", "title": "Совет", "takeaway": "120 млн — выручка"},
+        palette="board",
+        style=board,
+    )
+    assert 'class="slide-inner title-stage title-stage--split"' in split
+    assert 'class="slide-inner title-stage title-stage--field"' not in split
+
+
+def test_compare_columns_are_two_color_fields() -> None:
+    from case3.deck_theme import resolve_deck_theme
+
+    html = render_slide_html(
+        {
+            "id": "s04",
+            "layout": "compare",
+            "title": "Поиск против баннеров",
+            "cards": [
+                {"title": "Поиск", "body": "Поиск хороший."},
+                {"title": "Баннеры", "body": "Баннеры плохие, отдача 1,4."},
+            ],
+        },
+        palette="signal",
+        style=resolve_deck_theme("signal").as_dict(),
+    )
+    assert 'class="compare compare--fields"' in html
+    assert html.count('class="compare__col') == 2
+    assert ">01<" in html and ">02<" in html
+

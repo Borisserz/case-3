@@ -1,9 +1,10 @@
 # Structure — Board Update (Northstar)
 
-**Signature:** callout ask early · scorecard · bridge `table_hero` · decisions.  
-Navy + teal. Numbers ⊆ Source.
+Hint only. Use a block when Source has that shape. Numbers ⊆ Source.
 
-1. `title` — thesis + 2–3 hero KPIs
+**Often fits a board brief:** early ask `callout`, `scorecard` of actual vs plan, bridge `table_hero`.
+
+1. `title` — thesis. Takeaway is 2–3 lines `VALUE — label` so the right panel fills (split title).
 2. `callout` — **board ask** (do this early)
 3. `scorecard` — actual vs plan
 4. `chart_hero` — trajectory

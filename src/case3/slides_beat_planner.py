@@ -76,8 +76,8 @@ _MODE_ARCS: dict[str, list[str]] = {
     "investor": [
         "title",
         "section",
+        "stat_hero",
         "chart_hero",
-        "scorecard",
         "table_hero",
         "callout",
         "card_row",
@@ -96,7 +96,7 @@ _MODE_ARCS: dict[str, list[str]] = {
     "campaign": [
         "title",
         "scorecard",
-        "chart_hero",
+        "compare",
         "table_hero",
         "card_row",
         "bullets",
@@ -104,11 +104,11 @@ _MODE_ARCS: dict[str, list[str]] = {
     ],
     "workshop": [
         "title",
-        "card_row",
-        "table_hero",
+        "timeline",
         "card_row",
         "card_row",
         "section",
+        "table_hero",
         "bullets",
         "closing",
     ],
@@ -334,7 +334,7 @@ def _trim_beats(
     # Grow if too short
     fillers = ["callout", "card_row", "table_hero", "section", "bullets"]
     fi = 0
-    while len(out) < max(6, min(target, 10)):
+    while len(out) < max(6, min(target, 15)):
         insert_at = max(1, len(out) - 1)
         out.insert(insert_at, fillers[fi % len(fillers)])
         fi += 1
@@ -511,39 +511,51 @@ def plan_beats(
 
 
 def format_beat_overlay(plan: BeatPlan) -> str:
-    """Markdown block injected into system_slides as STRUCTURE_OVERLAY stand-in."""
-    skeleton = " → ".join(plan.beats)
+    """Layout menu for the model. Pack is color. The model picks blocks that fit Source."""
+    hint = " → ".join(plan.beats)
     lines = [
-        "# BEAT PLAN (mandatory skeleton — fill copy from Source only)",
+        "# BEAT PLAN (length + menu — you choose the layouts)",
         "",
-        f"**Mode:** `{plan.mode}` · **target slides:** {plan.target_slides} · "
-        f"**visual pack hint:** `{plan.pack_hint}`",
-        f"**Why:** {plan.rationale}",
+        f"**Target length:** {plan.target_slides} slides. "
+        "Shorter is correct when Source has fewer distinct facts. "
+        "Do not invent facts to hit the number.",
+        f"**Visual pack:** `{plan.pack_hint}` — colors, type, and chrome only. "
+        "The pack does not decide which layout to use.",
+        f"**Situation hint:** `{plan.mode}`. A hint, not a script. "
+        f"Why it came up: {plan.rationale}",
         "",
-        f"**Layout skeleton (follow order; may drop a beat only if Source lacks facts):**",
-        f"`{skeleton}`",
+        "Open with `title`. Close with `closing`. Between them, pick a layout only when "
+        "Source has that shape:",
+        "",
+        "| Layout | Use when Source has | Skip when |",
+        "|--------|---------------------|-----------|",
+        "| `stat_hero` | one number that should dominate, plus 2–4 sentences | several equal KPIs |",
+        "| `scorecard` | 3–4 comparable KPIs, each with delta or a hint sentence | a single hero number |",
+        "| `compare` | exactly two opposing calls (scale/pause, win/miss, love/friction) | three or more peers |",
+        "| `timeline` | ordered steps or timeboxes | an unordered list |",
+        "| `table_hero` | a real grid; status cell may be `Масштаб` / `Пауза` / `Держать` | a sentence |",
+        "| `chart_hero` / `chart_split` | a real chart id | no chart |",
+        "| `card_row` | three parallel items, each a full sentence | two items (`compare`) or one (`callout`) |",
+        "| `callout` | one named claim (term + definition) | a voice line from a person |",
+        "| `quote` | a sentence someone actually said, plus who said it | a claim with no speaker |",
+        "| `section` | a real chapter break | you would be inserting one every other slide |",
+        "| `media_*` | a real photo or diagram id | no media |",
+        "| `bullets` | 3–5 clauses that are not a table, cards, or a comparison | a richer layout fits |",
+        "",
+        "If several shapes are present, this order is a reasonable default. "
+        "Reorder or drop any beat that Source cannot fill:",
+        f"`{hint}`",
         "",
         "Rules:",
-        "1. Emit one slide per beat above (same `layout` values). Do not invent extra scorecards.",
-        "2. Titles = insights (Julius). Chart slides need insight `caption`. Closing: "
-        "`VALUE — label` takeaway when Source has a headline number + 3 bullets.",
-        "3. Numbers ⊆ Source / chart captions only. Prefer ≥5 distinct layouts when ≥8 slides.",
-        "4. If a beat needs media you lack, replace that one beat with `callout` or `table_hero` "
-        "— keep variety.",
-        "5. Walk Source in order: one claim per slide. Repeated layouts are chapters of the "
-        "same template, not copies of the same sentence. If Source cannot fill a beat without "
-        "inventing numbers, drop that beat (keep title and closing).",
-        "6. Every `media_hero` / `media_split` beat must use a real `fig_*` or `usr_*` id. "
-        "Do not leave attached photos unused.",
+        "1. Do not emit a layout because the hint or the pack names it.",
+        "2. One claim per slide. A repeated layout is a new claim, not the same sentence again.",
+        "3. Titles state the insight. Chart slides need an insight `caption`. "
+        "Closing: `VALUE — label` only when Source has that number, plus 3 bullets.",
+        "4. Numbers ⊆ Source / chart captions. ≥5 distinct layouts when ≥8 slides. "
+        "At most 2 scorecards in a row.",
+        "5. Every photo or diagram id you were given should appear if it belongs on a slide. "
+        "Do not invent ids.",
     ]
-    if plan.mode == "survey":
-        lines.append(
-            "6. Survey: `%` kickers on `card_row` (`68%`) so meters render; ≤1 chart."
-        )
-    if plan.mode == "performance":
-        lines.append("6. Performance: put `chart_hero` before the first scorecard.")
-    if plan.mode == "board_update":
-        lines.append("6. Board: early `callout` ASK; table bridges over chart spam.")
     return "\n".join(lines)
 
 

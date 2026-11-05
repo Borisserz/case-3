@@ -1,11 +1,7 @@
-# Theme overlay — ink (Relay investor / ice-blue dark)
+# Theme overlay — ink (Relay)
 
-Narrative tone: growth-stage investor update. Near-black sheet + electric blue foil. Sparse, confident, SaaS boardroom.
+Colors and chrome only. Layouts come from the BEAT PLAN menu, not from this file.
 
-- Prefer **10–12** slides; after `title` put **one-sentence quarter** as `section` **or** early `scorecard` (alternate).
-- Titles are insight lines («Revenue is compounding — not spiking»), not labels.
-- Mix `scorecard` + `chart_hero` + `card_row` + ≥1 `callout` (the ask); avoid scorecard→scorecard→scorecard.
-- `card_row` for Q+1 priorities (3 bets) and risks (threat / response / trigger).
-- Tables for conversion / CAC period-over-period.
-- Closing: definitions & sample-data caveats from Source only — no invented metrics.
-- Language: match Source; kickers like `RELAY / INVESTOR UPDATE / Q3`.
+- Near-black sheet, electric blue accent, sparse type.
+- Titles are insight lines. One `stat_hero` is appropriate when Source has a single number worth the whole slide; skip it when the numbers are peers.
+- Closing carries caveats that are actually in Source.

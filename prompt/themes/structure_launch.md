@@ -1,7 +1,6 @@
 # Structure — Product Launch (Dark Botanical / Vesper)
 
-**Signature:** bleed photo title · story callout · `media_hero` · soft foil.  
-Not an ops weekly. Numbers ⊆ Source.
+Hint only. Put a photo on the title only when a real figure id exists. Skip an empty media slide. Numbers ⊆ Source.
 
 1. `title` + `media_id` hero when figure exists
 2. `section` — chapter / tension

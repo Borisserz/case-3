@@ -1,7 +1,6 @@
 # Structure — Performance (Bold Signal DNA)
 
-**Signature:** chart-led · table-heavy · dark charcoal + orange.  
-Numbers ⊆ Source.
+Hint only. Lead with a chart when a chart id exists. Otherwise open on the scorecard or the table. Numbers ⊆ Source.
 
 1. `title` — Spend. Return. Next move.
 2. `chart_hero` — spend vs return (**before** scorecard)

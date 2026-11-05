@@ -30,6 +30,7 @@
   "brand_mark": "NORTHSTAR · BOARD",
   "motif": {
     "atmosphere": "light",
+    "split": 0.55,
     "foil_cards": true,
     "card_fill": "#F4F8FA",
     "panels": ["#EDF4F6", "#E2EBF1", "#D8E4EC", "#EEF3F6"]

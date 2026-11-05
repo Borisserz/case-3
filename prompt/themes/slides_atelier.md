@@ -1,9 +1,6 @@
-# Theme overlay — atelier (Liber house)
+# Theme overlay — atelier
 
-Visual/tone: olive paper, brass foil, calm editorial. Same card density as botanical — soft panels, not sparse white.
+Colors and chrome only. Layouts come from the BEAT PLAN menu, not from this file.
 
-- Prefer **10–12** slides when Source is rich.
-- Insight titles; `scorecard` / `card_row` with brass foil; ≥1 chart + ≥1 table when Source supports.
-- Campaign / ops decks: winners vs pauses as `table_hero`; next bets as `card_row` + caption gate.
-- Alternate opening: trend `chart_hero` before scorecard when a series exists — editorial, not dashboard-only.
-- Closing: clear ask, not a summary dump.
+- Olive paper, brass foil, editorial serif titles.
+- `compare` is two columns. Use it when Source has a pair (scale vs pause). A status table uses the words `Масштаб`, `Пауза`, `Держать` only when Source supports that call.

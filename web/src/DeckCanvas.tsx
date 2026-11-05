@@ -39,6 +39,19 @@ function panelForSlide(style: DeckIR["style"] | undefined, slideIndex: number): 
   return c.panel || c.paper || "#f0ede4";
 }
 
+function luma(hex: string): number {
+  const h = (hex || "").replace("#", "");
+  if (h.length !== 6) return 0;
+  const ch = (c: number) => {
+    const x = c / 255;
+    return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  };
+  const r = ch(parseInt(h.slice(0, 2), 16));
+  const g = ch(parseInt(h.slice(2, 4), 16));
+  const b = ch(parseInt(h.slice(4, 6), 16));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function cssVars(style?: DeckIR["style"], slideIndex = 0): CSSProperties {
   const c = style?.colors || {};
   const f = style?.fonts || {};
@@ -46,6 +59,24 @@ function cssVars(style?: DeckIR["style"], slideIndex = 0): CSSProperties {
     f.title || f.display || '"Fraunces", "Iowan Old Style", Georgia, serif';
   const bodyFont =
     f.body || f.fallback_pptx || '"Source Sans 3", "Segoe UI", system-ui, sans-serif';
+  const accent = c.accent || "#4F6B14";
+  const sheet = c.sheet || c.background || "#fffcf7";
+  const paper = c.paper || sheet;
+  const ink = c.ink || "#14161a";
+  const options = [sheet, paper, ink];
+  const dark = options.reduce((a, b) => (luma(a) < luma(b) ? a : b));
+  const light = options.reduce((a, b) => (luma(a) > luma(b) ? a : b));
+  const inkFor = (bg: string) => {
+    let choice = luma(bg) >= 0.22 ? dark : light;
+    if (Math.abs(luma(choice) - luma(bg)) < 0.12) choice = choice === dark ? light : dark;
+    return choice;
+  };
+  let fieldB = options.reduce((a, b) =>
+    Math.abs(luma(a) - luma(accent)) > Math.abs(luma(b) - luma(accent)) ? a : b,
+  );
+  if (fieldB.toUpperCase() === accent.toUpperCase()) {
+    fieldB = luma(accent) >= 0.22 ? dark : light;
+  }
   return {
     ["--deck-primary" as string]: c.primary || "#2E4208",
     ["--deck-accent" as string]: c.accent || "#4F6B14",
@@ -57,6 +88,11 @@ function cssVars(style?: DeckIR["style"], slideIndex = 0): CSSProperties {
     ["--deck-rule" as string]: c.rule || "#e6e2d8",
     ["--deck-foil" as string]: c.foil || "#b8a36a",
     ["--deck-panel" as string]: panelForSlide(style, slideIndex),
+    ["--deck-on-accent" as string]: inkFor(accent),
+    ["--deck-field-b" as string]: fieldB,
+    ["--deck-on-field-b" as string]: inkFor(fieldB),
+    ["--deck-rail" as string]: c.primary || accent,
+    ["--deck-on-rail" as string]: inkFor(c.primary || accent),
     ["--deck-font-title" as string]: titleFont,
     ["--deck-font-body" as string]: bodyFont,
   };
@@ -263,7 +299,7 @@ function SlideBody({
   const si = slideIndex ?? 0;
 
   if (layout === "title") {
-    if (darkBleed) {
+    if (darkBleed && img) {
       return (
         <div className="deck-cv-inner deck-cv-title deck-cv-title--bleed">
           {img ? (
@@ -376,6 +412,47 @@ function SlideBody({
         </div>
       );
     }
+    if (!splitTitle) {
+      return (
+        <div className="deck-cv-inner deck-cv-title deck-cv-title--field">
+          <div className="deck-cv-title-copy">
+            <div className="deck-cv-brand">{brand}</div>
+            {slide.kicker ? (
+              <Editable
+                className="deck-cv-kicker"
+                value={slide.kicker}
+                editing={editing}
+                onCommit={(v) => onField({ kicker: v })}
+              />
+            ) : null}
+            <Editable
+              className="deck-cv-h1"
+              value={slide.title || ""}
+              editing={editing}
+              multiline
+              onCommit={(v) => onField({ title: v })}
+            />
+            {slide.takeaway ? (
+              <Editable
+                className="deck-cv-takeaway"
+                value={slide.takeaway}
+                editing={editing}
+                onCommit={(v) => onField({ takeaway: v })}
+              />
+            ) : null}
+            {slide.subtitle ? (
+              <Editable
+                className="deck-cv-sub"
+                value={slide.subtitle}
+                editing={editing}
+                onCommit={(v) => onField({ subtitle: v })}
+              />
+            ) : null}
+          </div>
+          <div className="deck-cv-title-rail" aria-hidden />
+        </div>
+      );
+    }
     return (
       <div className="deck-cv-inner deck-cv-title">
         <div className="deck-cv-brand">{brand}</div>
@@ -446,22 +523,25 @@ function SlideBody({
     );
   }
 
-  if (layout === "callout") {
+  if (layout === "quote") {
     return (
       <div className="deck-cv-inner">
         <div className="deck-cv-brand">{brand}</div>
         <Head slide={slide} editing={editing} onField={onField} />
-        <aside
-          className="deck-cv-callout"
-          style={
-            panels.length
-              ? {
-                  background: panels[si % panels.length],
-                  borderColor: "transparent",
-                }
-              : undefined
-          }
-        >
+        <blockquote className="deck-cv-quote">
+          <p className="deck-cv-quote-text">{slide.definition || ""}</p>
+          {slide.term ? <p className="deck-cv-quote-who">{slide.term}</p> : null}
+          {slide.body ? <p className="deck-cv-quote-note">{slide.body}</p> : null}
+        </blockquote>
+      </div>
+    );
+  }
+
+  if (layout === "callout") {
+    return (
+      <div className="deck-cv-inner deck-cv-title deck-cv-title--field">
+        <div className="deck-cv-title-copy">
+        <div className="deck-cv-brand">{brand}</div>
           <Editable
             className="deck-cv-callout-term"
             value={slide.term || ""}
@@ -484,7 +564,8 @@ function SlideBody({
               onCommit={(v) => onField({ body: v })}
             />
           ) : null}
-        </aside>
+        </div>
+        <div className="deck-cv-title-rail" aria-hidden />
       </div>
     );
   }
@@ -648,23 +729,12 @@ function SlideBody({
                   onField({ kpis: next });
                 }}
               />
-              {k.delta ? (
-                <Editable
-                  className="deck-cv-kpi-delta"
-                  value={k.delta}
-                  editing={editing}
-                  onCommit={(v) => {
-                    const next = kpis.map((x) => ({ ...x }));
-                    next[i] = { ...next[i], delta: v };
-                    onField({ kpis: next });
-                  }}
-                />
-              ) : null}
               {k.hint ? (
                 <Editable
                   className="deck-cv-kpi-hint"
                   value={k.hint}
                   editing={editing}
+                  multiline
                   onCommit={(v) => {
                     const next = kpis.map((x) => ({ ...x }));
                     next[i] = { ...next[i], hint: v };
@@ -672,9 +742,81 @@ function SlideBody({
                   }}
                 />
               ) : null}
+              {k.delta ? (
+                <div className="deck-cv-kpi-foot">
+                  <Editable
+                    className="deck-cv-kpi-delta"
+                    value={k.delta}
+                    editing={editing}
+                    onCommit={(v) => {
+                      const next = kpis.map((x) => ({ ...x }));
+                      next[i] = { ...next[i], delta: v };
+                      onField({ kpis: next });
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
             );
           })}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === "stat_hero") {
+    const kpi = (slide.kpis || [])[0];
+    return (
+      <div className="deck-cv-inner deck-cv-stat deck-cv-stat--field">
+        <div className="deck-cv-brand">{brand}</div>
+        <Head slide={slide} editing={editing} onField={onField} />
+        <div className="deck-cv-stat-grid">
+          <div className="deck-cv-stat-fig">
+            <div className="deck-cv-stat-val">{kpi?.value || ""}</div>
+            <div className="deck-cv-stat-lab">{kpi?.label || ""}</div>
+            {kpi?.delta ? <div className="deck-cv-stat-delta">{kpi.delta}</div> : null}
+            {kpi?.hint ? <div className="deck-cv-stat-hint">{kpi.hint}</div> : null}
+          </div>
+          <Bullets slide={slide} editing={editing} onField={onField} />
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === "timeline") {
+    const cards = slide.cards || [];
+    return (
+      <div className="deck-cv-inner">
+        <div className="deck-cv-brand">{brand}</div>
+        <Head slide={slide} editing={editing} onField={onField} />
+        <ol className="deck-cv-timeline">
+          {cards.map((c, i) => (
+            <li key={i}>
+              <span className="deck-cv-time">{c.kicker || ""}</span>
+              <span className="deck-cv-time-title">{c.title || ""}</span>
+              {c.body ? <span className="deck-cv-time-body">{c.body}</span> : null}
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
+  if (layout === "compare") {
+    const cards = (slide.cards || []).slice(0, 2);
+    return (
+      <div className="deck-cv-inner deck-cv-compare-stage">
+        <div className="deck-cv-brand">{brand}</div>
+        <Head slide={slide} editing={editing} onField={onField} />
+        <div className="deck-cv-compare deck-cv-compare--fields">
+          {cards.map((c, i) => (
+            <article key={i} className={i === 0 ? "is-a" : "is-b"}>
+              {c.kicker ? <p className="deck-cv-compare-k">{c.kicker}</p> : null}
+              <p className="deck-cv-compare-t">{c.title || ""}</p>
+              {c.body ? <p className="deck-cv-compare-b">{c.body}</p> : null}
+              <p className="deck-cv-compare-i">{String(i + 1).padStart(2, "0")}</p>
+            </article>
+          ))}
         </div>
       </div>
     );

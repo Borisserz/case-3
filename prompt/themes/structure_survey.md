@@ -1,7 +1,6 @@
 # Structure — Survey / Product Feedback (Creative Voltage DNA)
 
-**Signature:** method/voice `callout` · `%` `card_row` meters · **≤1 chart**.  
-Electric lime foil. Facts ⊆ Source.
+Hint only. A method `callout` and `%` meters fit when Source has shares. One chart only if a chart id exists. Facts ⊆ Source.
 
 1. `title` — three-beat thesis
 2. `callout` — method / n / caveats

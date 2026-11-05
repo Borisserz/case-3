@@ -20,7 +20,7 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     structureId: "board_update",
     packId: "board",
     title: "Northstar — совет",
-    blurb: "Ask callout → scorecard → bridge tables → decisions",
+    blurb: "Split-титул с цифрами → scorecard → таблицы моста",
     arc: "Callout → scorecard → tables → board ask",
     starterPrompt:
       "Собери board update в духе Northstar: thesis + hero KPI, scorecard actual vs plan, ARR trajectory и bridge, GTM constraint, NRR/cash, Q+1 plan с owners и явный board ask. Цифры только из Source или брифа.",
@@ -60,7 +60,7 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     structureId: "investor",
     packId: "ink",
     title: "Relay Ink — инвесторы",
-    blurb: "Section thesis → one scorecard → ask callout",
+    blurb: "Одна большая цифра → график → ask → риски",
     arc: "Sparse ink · chart · ask · risks",
     starterPrompt:
       "Собери investor update в духе Relay Ink: one-sentence quarter, compounding ARR, engines, quality, GTM/CAC, cash/runway, Q+1 bets и risks. Числа строго из Source/брифа.",
@@ -80,7 +80,7 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     structureId: "campaign",
     packId: "atelier",
     title: "Atelier — кампания",
-    blurb: "Week scorecard → winners table → bullets → Friday",
+    blurb: "Масштаб против паузы → статусы в таблице → пятница",
     arc: "Short ops · table + bullets",
     starterPrompt:
       "Собери weekly campaign status в духе Atelier: KPI недели, creative scale/pause table, channel chart, next-week bets, flat-total realloc и Friday review. Метрики только из Source/брифа.",
@@ -90,7 +90,7 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     structureId: "workshop",
     packId: "studio",
     title: "Studio — воркшоп",
-    blurb: "Goals scorecard → agenda table → exercise cards",
+    blurb: "Таймлайн повестки → упражнения → владельцы",
     arc: "Agenda · exercises · owners table",
     starterPrompt:
       "Собери facilitation deck в духе Workshop Studio: goals, timeboxed agenda, framing + force-rank exercises, outputs/norms и follow-ups с owners. Детали только из Source/брифа.",

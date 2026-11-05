@@ -8,7 +8,7 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
 
 1. **Facts and numbers — only from Source** (or captions/HTML of available charts). Never invent KPIs. Prefer Source wording; do not invent decimals that are not in Source/charts.
 2. **Slide count = BEAT PLAN target** (user wish, usually 6–24; default band 10–12). Hard max **24**, hard min **6** when Source can support it. Short Source → shorter deck. Never invent facts to hit the target — drop beats instead.
-3. **Layouts only:** `title` | `section` | `kpi_row` | `scorecard` | `card_row` | `chart_hero` | `chart_split` | `media_hero` | `media_split` | `table_hero` | `callout` | `bullets` | `closing`.
+3. **Layouts only:** `title` | `section` | `kpi_row` | `scorecard` | `card_row` | `chart_hero` | `chart_split` | `media_hero` | `media_split` | `table_hero` | `callout` | `quote` | `bullets` | `closing` | `stat_hero` | `timeline` | `compare`.
 4. **Arc (mandatory):**
    - First slide = `title`
    - Last slide = `closing`
@@ -42,20 +42,11 @@ Decks that all look like `title → section → scorecard → chart → scorecar
 4. Prefer **≥1** of each when Source supports: chart layout, `table_hero` or `card_row`, and `callout` or `section`.
 5. Do **not** invent facts to force variety — if Source is thin, shorter deck with honest layouts beats fake KPIs.
 6. Title `takeaway`: split packs → 2–3 lines `VALUE — label`; dark packs → one sharp Source-bound line (numbers only from Source).
-7. **Follow the BEAT PLAN / structure signature** in `{{STRUCTURE_OVERLAY}}` — when a skeleton is present, emit those layouts in order (do not collapse to scorecard spam).
+7. **You choose the layouts.** `{{STRUCTURE_OVERLAY}}` is a menu and a length target. A named situation or color pack does not force a block. Emit `stat_hero`, `timeline`, `compare`, `quote`, `scorecard`, or a chart only when Source has that shape. Drop the beat instead of inventing the shape. Scorecard `hint` is a full sentence in the card body, not a two-word label.
 
-# Pack / structure signatures (own the mix)
+# Fit, not theme ownership
 
-| Structure | Signature blocks (prefer) | Avoid cloning |
-|-----------|---------------------------|---------------|
-| `board_update` | `callout` ask early · `table_hero` bridges · few charts | chart-led performance |
-| `performance` | `chart_hero`/`chart_split` first · many `table_hero` | workshop exercises |
-| `qbr` | **2× `section`** chapters · pastel `scorecard` · decision `card_row` | dark ink sparse |
-| `survey` | `callout` method/voice · `%` `card_row` meters · **≤1 chart** | board tables |
-| `investor` | `section` thesis · **one** `scorecard` · ask `callout` | scorecard spam |
-| `launch` | bleed `title` · story `callout` · `media_hero` · soft foil | ops weekly |
-| `campaign` | short ops · `scorecard`+`table`+`bullets` · Friday close | investor narrative |
-| `workshop` | `table_hero` agenda · exercise `card_row` · ice studio | dark signal |
+The color pack changes chrome. It does not assign a story. Use the menu in the overlay. A workshop can contain a chart when Source has a series. An investor deck can contain a timeline when Source has ordered steps. Skip the pretty block when the fact is not there.
 
 {{THEME_OVERLAY}}
 
@@ -141,9 +132,14 @@ Decks that all look like `title → section → scorecard → chart → scorecar
 | `media_hero` / `media_split` | Photo or diagram from **figures / diagrams** (`media_id`) |
 | `table_hero` | Source table → `rows` (first row = header) |
 | `callout` | Named insight: `term` + a full-sentence `definition` (+ optional body) |
+| `quote` | A sentence from Source in `definition`. `term` is who said it. `body` is the context, one sentence. |
 | `card_row` | 3 cards: `cards[{kicker,title,body}]`. `body` is one or two Source sentences, not a label. Optional gold gate `caption` |
+| `stat_hero` | **One** KPI (`value`, `label`, optional `delta`/`hint`) plus 2–4 full-sentence `bullets`. Investor / one defendable number. |
+| `timeline` | 3–6 steps: `cards[{kicker: time, title, body}]`. Workshop agenda. `body` is one sentence. |
+| `compare` | Exactly 2 cards. Left vs right (scale/pause, wins/misses). `body` is 1–2 sentences. |
 | `bullets` | 3–5 full clauses from Source |
 | `closing` | Takeaway / next steps |
+| `table_hero` status | Last column may be exactly `Масштаб`, `Пауза`, or `Держать` when Source supports that call. |
 
 # Available charts
 

@@ -1,7 +1,6 @@
 # Structure — Marketing QBR (Split Pastel / Relay)
 
-**Signature:** **two `section` chapters** · pastel scorecards · decision cards.  
-Cream panels. Numbers ⊆ Source.
+Hint only. Chapters and a pastel scorecard often fit a QBR. Skip a chart when there is no series. Numbers ⊆ Source.
 
 1. `title` — Q thesis + 2 hero KPIs on pastel panel
 2. `section` — chapter 01 thesis

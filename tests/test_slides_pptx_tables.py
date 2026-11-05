@@ -6,7 +6,7 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.util import Inches
 
-from case3.slides_pptx_tables import add_native_table
+from case3.slides_pptx_tables import add_native_table, table_block_inches
 
 
 def test_dark_table_body_fill_is_not_white() -> None:
@@ -38,3 +38,8 @@ def test_dark_table_body_fill_is_not_white() -> None:
     fill = cell.fill
     # solid fill → fore_color must match body_fill, not white
     assert fill.fore_color.rgb == body_fill
+
+
+def test_short_table_is_shorter_than_a_long_one() -> None:
+    assert table_block_inches(4) < table_block_inches(12)
+    assert table_block_inches(12) <= 4.7

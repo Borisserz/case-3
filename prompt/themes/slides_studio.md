@@ -1,10 +1,7 @@
-# Theme overlay — studio (workshop facilitation)
+# Theme overlay — studio
 
-Narrative tone: calm facilitation deck. Ice paper + indigo accent. Clear agenda, owned outputs.
+Colors and chrome only. Layouts come from the BEAT PLAN menu, not from this file.
 
-- Prefer **8–12** slides; first `title` (hero KPIs in takeaway when known), then goals via `scorecard` **or** `section` — alternate.
-- Exercises = distinct `card_row` kickers; agenda = `table_hero`; mid-gate = `callout`. Avoid bullets-only workshops.
-- Agenda as `table_hero` or numbered `bullets` (time · activity · owner).
-- Exercises as `card_row` (3 max); outputs + parking lot explicit.
-- Closing: follow-ups with owners and dates from Source only.
-- Soft pastel panels ok; no dark hero bleed.
+- Ice paper, indigo accent, no dark photo bleed.
+- `timeline` is for ordered timeboxes that are in Source (`kicker` = the time, `body` = one sentence). An unordered list stays `card_row` or `bullets`.
+- Do not invent durations.

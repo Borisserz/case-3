@@ -1,12 +1,7 @@
-# Theme overlay — voltage (Creative Voltage / product feedback)
+# Theme overlay — voltage
 
-Narrative tone: research readout with electric energy. Near-black sheet + lime foil `#E8FF35` + cobalt `#2438EB`.
+Colors and chrome only. Layouts come from the BEAT PLAN menu, not from this file.
 
-- Prefer **10–12** slides; punchy takeaway titles («Good momentum. Less friction.»).
-- Open with thesis, then **method `callout` or headline `scorecard`** (alternate). Love/friction as `card_row` with **% kickers** from Source.
-- Always include ≥1 `callout` quote or definition when Source has voice-of-customer text.
-- Early `scorecard` with n / CSAT / NPS; method slide with sample caveats.
-- Loves / frictions as `card_row` or ranked `table_hero`.
-- Quotes → `callout` (term = theme id, definition = quote).
-- Closing: NOW / NEXT / LATER bets with measurable gates.
-- Never invent % — only Source / brief.
+- Near-black sheet, lime foil for numbers.
+- On `card_row`, a share from Source goes in `kicker` as `68%` so the meter renders. The name of the region goes in `title`.
+- A quote from Source is a `callout` (`term` = theme, `definition` = the sentence). Do not invent a percent.

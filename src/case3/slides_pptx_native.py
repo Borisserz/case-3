@@ -23,8 +23,12 @@ from case3.slides_pptx_layouts import (
     _layout_closing,
     _layout_kpi,
     _layout_media,
+    _layout_compare,
+    _layout_quote,
     _layout_section,
+    _layout_stat_hero,
     _layout_table,
+    _layout_timeline,
     _layout_title,
 )
 
@@ -118,6 +122,14 @@ def build_native_pptx(
             _layout_card_row(
                 slide, s, colors, style=style, slide_index=si
             )
+        elif layout == "stat_hero":
+            _layout_stat_hero(slide, s, colors, style=style)
+        elif layout == "timeline":
+            _layout_timeline(slide, s, colors, style=style)
+        elif layout == "compare":
+            _layout_compare(slide, s, colors, style=style)
+        elif layout == "quote":
+            _layout_quote(slide, s, colors, style=style)
         elif layout in ("kpi_row", "scorecard"):
             _layout_kpi(
                 slide, s, colors, style=style, slide_index=si

@@ -14,6 +14,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches
 
+from case3.color_util import accent_fields
 from case3.slides_html import _pct_from_kicker, parse_hero_metrics
 from case3.slides_pptx_draw import (
     _MARGIN_X,
@@ -39,6 +40,51 @@ from case3.slides_pptx_draw import (
     _wants_top_bar,
 )
 
+def _paint_title_field(slide, s: dict[str, Any], style: dict[str, Any] | None) -> None:
+    """Full-bleed accent title with a primary-color rail."""
+    raw = style.get("colors") if isinstance(style, dict) else {}
+    colors = raw if isinstance(raw, dict) else {}
+    fields = accent_fields(colors)
+    on = _hex_rgb(fields["on_accent"])
+    bg = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H
+    )
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _hex_rgb(str(colors.get("accent") or "#4F6B14"))
+    bg.line.fill.background()
+    rail_w = Inches(2.9)
+    rail = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, _SLIDE_W - rail_w, Inches(0), rail_w, _SLIDE_H
+    )
+    rail.fill.solid()
+    rail.fill.fore_color.rgb = _hex_rgb(fields["rail"])
+    rail.line.fill.background()
+    mark = str((style or {}).get("brand_mark") or "").strip()
+    y = Inches(1.85)
+    if mark:
+        _add_textbox(
+            slide, Inches(0.95), Inches(1.35), Inches(8.4), Inches(0.32),
+            mark.upper(), size_pt=12, bold=True, color=on,
+        )
+    kicker = str(s.get("kicker") or "").strip()
+    if kicker:
+        _add_textbox(
+            slide, Inches(0.95), y, Inches(8.4), Inches(0.32),
+            kicker.upper(), size_pt=14, bold=True, color=on,
+        )
+        y = Inches(2.3)
+    _add_textbox(
+        slide, Inches(0.95), y, Inches(8.6), Inches(2.4),
+        str(s.get("title") or ""), size_pt=54, bold=True, color=on,
+    )
+    sub = str(s.get("subtitle") or s.get("takeaway") or "").strip()
+    if sub:
+        _add_textbox(
+            slide, Inches(0.95), Inches(5.15), Inches(8.4), Inches(1.3),
+            sub, size_pt=20, color=on,
+        )
+
+
 def _layout_title(
     slide,
     s: dict[str, Any],
@@ -60,8 +106,8 @@ def _layout_title(
         used_photo = True
     if not used_photo:
         _apply_pack_bg(slide, colors, style)
-    # Dark botanical title: left column copy over full-bleed / forest (Julius VESPER).
-    if dark and (used_photo or hero_bleed):
+    # Dark botanical title: left column copy over a real full-bleed photo.
+    if dark and used_photo:
         if used_photo:
             # Twin of HTML title-bleed__veil — left forest wash for ivory type.
             veil = slide.shapes.add_shape(
@@ -147,6 +193,9 @@ def _layout_title(
             )
         return
     split = _split_ratio(style)
+    if split is None:
+        _paint_title_field(slide, s, style)
+        return
     left_w = Inches(11.5)
     takeaway = str(s.get("takeaway") or "").strip()
     if split is not None:
@@ -325,74 +374,64 @@ def _layout_callout(
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
 ) -> None:
-    _apply_pack_bg(slide, colors, style)
-    if _wants_top_bar(style):
-        _top_bar(slide, colors, style)
-    _brand(slide, colors)
-    y_in = _kicker_title(
-        slide,
-        colors,
-        kicker=str(s.get("kicker") or ""),
-        title=str(s.get("title") or ""),
-        takeaway=str(s.get("takeaway") or ""),
-        chapter=s.get("chapter") if isinstance(s.get("chapter"), int) else None,
+    raw = style.get("colors") if isinstance(style, dict) else {}
+    cmap = raw if isinstance(raw, dict) else {}
+    fields = accent_fields(cmap)
+    on = _hex_rgb(fields["on_accent"])
+    bg = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H
     )
-    box_top = Inches(max(y_in + 0.15, 2.0))
-    box = slide.shapes.add_shape(
-        MSO_SHAPE.ROUNDED_RECTANGLE,
-        _MARGIN_X,
-        box_top,
-        Inches(11.9),
-        Inches(3.4),
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _hex_rgb(str(cmap.get("accent") or "#4F6B14"))
+    bg.line.fill.background()
+    rail_w = Inches(2.9)
+    rail = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, _SLIDE_W - rail_w, Inches(0), rail_w, _SLIDE_H
     )
-    box.fill.solid()
-    motif = _motif_dict(style)
-    use_pastel = bool(motif.get("panels"))
-    if use_pastel:
-        box.fill.fore_color.rgb = _panel_rgb(
-            colors, style, slide_index=slide_index
+    rail.fill.solid()
+    rail.fill.fore_color.rgb = _hex_rgb(fields["rail"])
+    rail.line.fill.background()
+    mark = str((style or {}).get("brand_mark") or "").strip()
+    if mark:
+        _add_textbox(
+            slide, Inches(0.95), Inches(1.45), Inches(8.4), Inches(0.32),
+            mark.upper(), size_pt=12, bold=True, color=on,
         )
-        if _foil_cards(style):
-            box.line.color.rgb = colors.get("foil", colors["accent"])
-        else:
-            box.line.fill.background()
-    else:
-        box.fill.fore_color.rgb = colors["paper"]
-        box.line.color.rgb = colors["accent"]
     term = str(s.get("term") or "")
     definition = str(s.get("definition") or "")
     body = str(s.get("body") or "").strip()
     _add_textbox(
         slide,
-        Inches(1.05),
-        box_top + Inches(0.35),
-        Inches(11),
+        Inches(0.95),
+        Inches(2.05),
+        Inches(8.6),
         Inches(0.35),
         term.upper(),
-        size_pt=12,
+        size_pt=14,
         bold=True,
-        color=colors["accent"],
+        color=on,
     )
     _add_textbox(
         slide,
-        Inches(1.05),
-        box_top + Inches(0.85),
-        Inches(11),
-        Inches(1.5),
+        Inches(0.95),
+        Inches(2.55),
+        Inches(8.6),
+        Inches(2.4),
         definition,
-        size_pt=20,
-        color=colors["ink"],
+        size_pt=32,
+        bold=True,
+        color=on,
     )
     if body:
         _add_textbox(
             slide,
-            Inches(1.05),
-            box_top + Inches(2.45),
-            Inches(11),
-            Inches(0.7),
+            Inches(0.95),
+            Inches(5.2),
+            Inches(8.6),
+            Inches(1.2),
             body,
-            size_pt=14,
-            color=colors["ink2"],
+            size_pt=18,
+            color=on,
         )
 
 
@@ -403,7 +442,7 @@ def _layout_table(
     *,
     style: dict[str, Any] | None,
 ) -> None:
-    from case3.slides_pptx_tables import add_native_table
+    from case3.slides_pptx_tables import add_native_table, table_block_inches
 
     _apply_pack_bg(slide, colors, style)
     if _wants_top_bar(style):
@@ -434,26 +473,31 @@ def _layout_table(
             grid = _hex_rgb(str(table_style["grid"]))
         if table_style.get("body_fill"):
             body_fill = _hex_rgb(str(table_style["body_fill"]))
+    row_list = rows if isinstance(rows, list) else []
+    top = Inches(max(y_in, 1.7))
+    height = Inches(table_block_inches(len(row_list) if row_list else 2))
+    body_rows = max(0, len(row_list) - 1)
     add_native_table(
         slide,
-        rows if isinstance(rows, list) else [],
+        row_list,
         left=_MARGIN_X,
-        top=Inches(max(y_in, 1.7)),
+        top=top,
         width=Inches(11.9),
-        height=Inches(4.6),
+        height=height,
         header_fill=header_fill,
         header_ink=header_ink,
         body_ink=colors["ink"],
         body_fill=body_fill,
         grid=grid,
         font_name=_PPTX_FONT,
+        font_pt=18 if body_rows <= 5 else 14,
     )
     cap = str(s.get("caption") or "").strip()
     if cap:
         _add_textbox(
             slide,
             _MARGIN_X,
-            Inches(6.5),
+            top + height + Inches(0.12),
             Inches(11.9),
             Inches(0.4),
             cap,
@@ -717,7 +761,7 @@ def _layout_kpi(
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
     # Pin cards under the title (HTML twin) — avoid floating mid-slide void.
-    card_h = Inches(3.35)
+    card_h = Inches(2.15)
     top = Inches(max(y_in + 0.18, 2.05))
     for i, k in enumerate(kpis):
         shape = slide.shapes.add_shape(
@@ -756,20 +800,39 @@ def _layout_kpi(
         r1 = p1.add_run()
         r1.text = str(k.get("label") or "")
         _set_run(r1, size_pt=14, bold=True, color=colors["ink2"])
-        delta = str(k.get("delta") or "").strip()
-        if delta:
-            p_d = tf.add_paragraph()
-            r_d = p_d.add_run()
-            r_d.text = delta
-            _set_run(r_d, size_pt=13, bold=True, color=colors["accent"])
         hint = str(k.get("hint") or "").strip()
         if hint:
-            p2 = tf.add_paragraph()
-            r2 = p2.add_run()
-            r2.text = hint
-            _set_run(r2, size_pt=11, color=colors["muted"])
+            p_h = tf.add_paragraph()
+            r_h = p_h.add_run()
+            r_h.text = hint
+            _set_run(r_h, size_pt=13, color=colors["ink2"])
         tf.margin_left = Inches(0.28)
         tf.margin_top = Inches(0.38)
+        delta = str(k.get("delta") or "").strip()
+        if delta:
+            foot_top = Emu(int(top) + int(card_h) - int(Inches(0.95)))
+            rule = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE,
+                Emu(int(left) + int(Inches(0.22))),
+                foot_top,
+                Emu(int(card_w) - int(Inches(0.44))),
+                Inches(0.015),
+            )
+            rule.fill.solid()
+            rule.fill.fore_color.rgb = colors["rule"]
+            rule.line.fill.background()
+            foot_text = delta
+            _add_textbox(
+                slide,
+                Emu(int(left) + int(Inches(0.22))),
+                Emu(int(foot_top) + int(Inches(0.08))),
+                Emu(int(card_w) - int(Inches(0.44))),
+                Inches(0.78),
+                foot_text,
+                size_pt=12,
+                bold=bool(delta),
+                color=colors["accent"],
+            )
         left = Emu(int(left) + int(card_w) + int(gap))
 
 
@@ -917,5 +980,292 @@ def _layout_media(
                 bold=True,
                 color=colors["ink"],
             )
+
+
+def _layout_stat_hero(
+    slide,
+    s: dict[str, Any],
+    colors: dict[str, RGBColor],
+    *,
+    style: dict[str, Any] | None = None,
+) -> None:
+    """One number on the accent, Source notes on the rail."""
+    raw = style.get("colors") if isinstance(style, dict) else {}
+    cmap = raw if isinstance(raw, dict) else {}
+    fields = accent_fields(cmap)
+    on = _hex_rgb(fields["on_accent"])
+    on_rail = _hex_rgb(fields["on_rail"])
+    bg = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H
+    )
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = _hex_rgb(str(cmap.get("accent") or "#4F6B14"))
+    bg.line.fill.background()
+    rail_w = Inches(5.4)
+    rail = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, _SLIDE_W - rail_w, Inches(0), rail_w, _SLIDE_H
+    )
+    rail.fill.solid()
+    rail.fill.fore_color.rgb = _hex_rgb(fields["rail"])
+    rail.line.fill.background()
+    kpi = next((k for k in (s.get("kpis") or []) if isinstance(k, dict)), {})
+    mark = str((style or {}).get("brand_mark") or "").strip()
+    if mark:
+        _add_textbox(
+            slide, Inches(0.85), Inches(1.7), Inches(6.4), Inches(0.32),
+            mark.upper(), size_pt=12, bold=True, color=on,
+        )
+    _add_textbox(
+        slide, Inches(0.8), Inches(2.15), Inches(6.6), Inches(1.8),
+        str(kpi.get("value") or ""), size_pt=72, bold=True, color=on,
+    )
+    _add_textbox(
+        slide, Inches(0.85), Inches(4.15), Inches(6.2), Inches(0.45),
+        str(kpi.get("label") or ""), size_pt=20, bold=True, color=on,
+    )
+    foot = " · ".join(
+        p for p in (str(kpi.get("delta") or "").strip(), str(kpi.get("hint") or "").strip()) if p
+    )
+    if foot:
+        _add_textbox(
+            slide, Inches(0.85), Inches(4.7), Inches(6.2), Inches(0.6),
+            foot, size_pt=16, color=on,
+        )
+    bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()]
+    _add_bullets(
+        slide, _SLIDE_W - rail_w + Inches(0.4), Inches(2.3),
+        rail_w - Inches(0.7), Inches(3.4),
+        bullets, size_pt=18, color=on_rail,
+    )
+
+
+def _layout_timeline(
+    slide,
+    s: dict[str, Any],
+    colors: dict[str, RGBColor],
+    *,
+    style: dict[str, Any] | None = None,
+) -> None:
+    """Vertical agenda: time, title, one sentence."""
+    _apply_pack_bg(slide, colors, style)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
+    _brand(slide, colors)
+    y_in = _kicker_title(
+        slide,
+        colors,
+        kicker=str(s.get("kicker") or ""),
+        title=str(s.get("title") or ""),
+        takeaway=str(s.get("takeaway") or ""),
+        chapter=s.get("chapter") if isinstance(s.get("chapter"), int) else None,
+    )
+    cards = [c for c in (s.get("cards") or []) if isinstance(c, dict)][:6]
+    top = Inches(max(y_in + 0.35, 2.15))
+    n = max(1, len(cards))
+    gap = Inches(0.22)
+    usable = Inches(11.9)
+    col_w = Emu(int((usable - gap * (n - 1)) / n))
+    left = _MARGIN_X
+    for c in cards:
+        bar = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, left, top, col_w, Inches(0.045)
+        )
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = colors["accent"]
+        bar.line.fill.background()
+        dot = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL, left, Emu(int(top) - int(Inches(0.06))), Inches(0.16), Inches(0.16)
+        )
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = colors["accent"]
+        dot.line.fill.background()
+        _add_textbox(
+            slide,
+            left,
+            top + Inches(0.28),
+            col_w,
+            Inches(0.32),
+            str(c.get("kicker") or "").upper(),
+            size_pt=12,
+            bold=True,
+            color=colors["accent"],
+        )
+        _add_textbox(
+            slide,
+            left,
+            top + Inches(0.62),
+            Emu(int(col_w) - int(Inches(0.12))),
+            Inches(0.7),
+            str(c.get("title") or ""),
+            size_pt=18,
+            bold=True,
+            color=colors["ink"],
+        )
+        body = str(c.get("body") or "").strip()
+        if body:
+            _add_textbox(
+                slide,
+                left,
+                top + Inches(1.4),
+                Emu(int(col_w) - int(Inches(0.12))),
+                Inches(1.6),
+                body,
+                size_pt=13,
+                color=colors["muted"],
+            )
+        left = Emu(int(left) + int(col_w) + int(gap))
+
+
+def _layout_compare(
+    slide,
+    s: dict[str, Any],
+    colors: dict[str, RGBColor],
+    *,
+    style: dict[str, Any] | None = None,
+) -> None:
+    """Two columns: scale vs pause, wins vs misses, loves vs friction."""
+    _apply_pack_bg(slide, colors, style)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
+    _brand(slide, colors)
+    y_in = _kicker_title(
+        slide,
+        colors,
+        kicker=str(s.get("kicker") or ""),
+        title=str(s.get("title") or ""),
+        takeaway=str(s.get("takeaway") or ""),
+        chapter=s.get("chapter") if isinstance(s.get("chapter"), int) else None,
+    )
+    cards = [c for c in (s.get("cards") or []) if isinstance(c, dict)][:2]
+    raw = style.get("colors") if isinstance(style, dict) else {}
+    fields = accent_fields(raw if isinstance(raw, dict) else {})
+    top = Inches(max(y_in + 0.12, 1.85))
+    height = _SLIDE_H - top
+    gap = Inches(0)
+    card_w = Inches(_SLIDE_W.inches / 2)
+    left = Inches(0)
+    for i, c in enumerate(cards):
+        shape = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, left, top, card_w, height
+        )
+        shape.fill.solid()
+        if i == 0:
+            shape.fill.fore_color.rgb = _hex_rgb(str((raw or {}).get("accent") or "#4F6B14"))
+            ink = _hex_rgb(fields["on_accent"])
+        else:
+            shape.fill.fore_color.rgb = _hex_rgb(fields["field_b"])
+            ink = _hex_rgb(fields["on_field_b"])
+        shape.line.fill.background()
+        _add_textbox(
+            slide,
+            Emu(int(left) + int(Inches(0.55))),
+            top + Inches(0.4),
+            Inches(5.5),
+            Inches(0.32),
+            str(c.get("kicker") or "").upper(),
+            size_pt=13,
+            bold=True,
+            color=ink,
+        )
+        _add_textbox(
+            slide,
+            Emu(int(left) + int(Inches(0.55))),
+            top + Inches(0.85),
+            Inches(5.5),
+            Inches(1.4),
+            str(c.get("title") or ""),
+            size_pt=36,
+            bold=True,
+            color=ink,
+        )
+        body = str(c.get("body") or "").strip()
+        if body:
+            _add_textbox(
+                slide,
+                Emu(int(left) + int(Inches(0.55))),
+                top + Inches(2.35),
+                Inches(5.5),
+                Inches(1.4),
+                body,
+                size_pt=18,
+                color=ink,
+            )
+        _add_textbox(
+            slide,
+            Emu(int(left) + int(Inches(0.5))),
+            top + height - Inches(1.35),
+            Inches(3),
+            Inches(1.1),
+            f"{i + 1:02d}",
+            size_pt=60,
+            bold=True,
+            color=ink,
+        )
+        left = Emu(int(left) + int(card_w) + int(gap))
+
+
+def _layout_quote(
+    slide,
+    s: dict[str, Any],
+    colors: dict[str, RGBColor],
+    *,
+    style: dict[str, Any] | None = None,
+) -> None:
+    """Pull quote: the sentence is the slide, attribution sits under it."""
+    _apply_pack_bg(slide, colors, style)
+    if _wants_top_bar(style):
+        _top_bar(slide, colors, style)
+    _brand(slide, colors)
+    y_in = _kicker_title(
+        slide,
+        colors,
+        kicker=str(s.get("kicker") or ""),
+        title=str(s.get("title") or ""),
+        takeaway="",
+        chapter=s.get("chapter") if isinstance(s.get("chapter"), int) else None,
+    )
+    top = Inches(max(y_in + 0.2, 2.15))
+    bar = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, _MARGIN_X, top, Inches(0.06), Inches(3.2)
+    )
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = colors["accent"]
+    bar.line.fill.background()
+    _add_textbox(
+        slide,
+        Inches(1.05),
+        top,
+        Inches(11),
+        Inches(2.2),
+        str(s.get("definition") or ""),
+        size_pt=28,
+        bold=True,
+        color=colors["ink"],
+    )
+    term = str(s.get("term") or "").strip()
+    if term:
+        _add_textbox(
+            slide,
+            Inches(1.05),
+            Inches(4.6),
+            Inches(10),
+            Inches(0.35),
+            term.upper(),
+            size_pt=13,
+            bold=True,
+            color=colors["accent"],
+        )
+    note = str(s.get("body") or "").strip()
+    if note:
+        _add_textbox(
+            slide,
+            Inches(1.05),
+            Inches(5.05),
+            Inches(10),
+            Inches(0.7),
+            note,
+            size_pt=15,
+            color=colors["muted"],
+        )
 
 

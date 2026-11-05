@@ -155,27 +155,75 @@ def _repair_json_text(blob: str) -> str:
     return s
 
 
+def _balanced_objects(text: str) -> list[str]:
+    """Every top-level `{…}` span, respecting strings."""
+    spans: list[str] = []
+    n = len(text)
+    i = 0
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for j in range(i, n):
+            ch = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append(text[i : j + 1])
+                    i = j + 1
+                    break
+        else:
+            break
+    return spans
+
+
+def _load_object(blob: str) -> dict[str, Any] | None:
+    for candidate in (blob, _repair_json_text(blob)):
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def _extract_json_object(raw: str) -> dict[str, Any]:
     text = (raw or "").strip()
     m = _JSON_FENCE.search(text)
     if m:
         text = m.group(1).strip()
-    # Find outermost {…}
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
-        raise DeckIrError("LLM response has no JSON object")
-    blob = text[start : end + 1]
-    try:
-        data = json.loads(blob)
-    except json.JSONDecodeError:
-        try:
-            data = json.loads(_repair_json_text(blob))
-        except json.JSONDecodeError as exc:
-            raise DeckIrError(f"invalid JSON from LLM: {exc}") from exc
-    if not isinstance(data, dict):
-        raise DeckIrError("deck IR root must be object")
-    return data
+    decks: list[dict[str, Any]] = []
+    other: dict[str, Any] | None = None
+    for blob in _balanced_objects(text):
+        data = _load_object(blob)
+        if data is None:
+            continue
+        slides = data.get("slides")
+        if isinstance(slides, list) and slides:
+            decks.append(data)
+        elif other is None:
+            other = data
+    if decks:
+        return max(decks, key=lambda d: len(d["slides"]))
+    if other is not None:
+        return other
+    raise DeckIrError("LLM response has no JSON object")
 
 
 def _read_meta(out_dir: Path) -> dict[str, Any]:
@@ -480,7 +528,8 @@ def run_slides_job(
             allowed_preview = ", ".join(sorted(allowed_numbers)[:60]) or "(none from charts)"
             user = (
                 "Build the executive deck JSON now. "
-                "Follow the BEAT PLAN / STRUCTURE overlay skeleton (layouts in order). "
+                "Choose layouts from the BEAT PLAN menu by what Source can fill. "
+                "Do not follow a theme script. "
                 f"Target {beat_plan.target_slides} slides. "
                 "If Source lacks distinct facts, emit fewer (still title … closing) — "
                 "do not invent numbers or repeat the same claim. "
@@ -566,7 +615,7 @@ def run_slides_job(
                 retry_user = (
                     f"Previous JSON was rejected: {first_err}. "
                     "Fix and return ONLY a valid deck JSON object (no markdown). "
-                    "Follow the BEAT PLAN skeleton layouts; "
+                    "Choose layouts that Source can fill; do not copy a theme script; "
                     "≥5 distinct layouts when ≥8 slides; "
                     "at most 2 consecutive scorecard/kpi_row; "
                     "Use available media ids; "

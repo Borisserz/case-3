@@ -4,16 +4,20 @@
   "blurb": "Week KPI → winners table → bets → Friday review",
   "default_pack": "atelier",
   "tone": "light",
-  "slides": [8, 10],
+  "slides": [12, 15],
   "arc": [
     "title",
     "scorecard",
+    "compare",
     "table_hero",
     "chart_hero",
     "card_row",
     "bullets",
     "callout",
+    "table_hero",
+    "card_row",
+    "section",
     "closing"
   ],
-  "signature": "ops short · table + bullets · olive paper"
+  "signature": "compare scale/pause · status table · olive paper"
 }

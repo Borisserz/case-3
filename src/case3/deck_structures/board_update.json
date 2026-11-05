@@ -4,7 +4,7 @@
   "blurb": "Ask → scorecard → bridge tables → decisions",
   "default_pack": "board",
   "tone": "light",
-  "slides": [10, 12],
+  "slides": [12, 15],
   "arc": [
     "title",
     "callout",

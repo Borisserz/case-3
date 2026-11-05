@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from case3.chart_style import _PALETTES, normalize_palette_id
+from case3.color_util import accent_fields
 
 _SLIDE_W = 1920
 _SLIDE_H = 1080
@@ -125,6 +126,26 @@ def _motif_panels(style: dict[str, Any] | None) -> list[str]:
     return [str(p) for p in raw if str(p).strip()]
 
 
+_STATUS_KIND = {
+    "масштаб": "is-scale",
+    "scale": "is-scale",
+    "пауза": "is-pause",
+    "pause": "is-pause",
+    "держать": "is-hold",
+    "hold": "is-hold",
+}
+
+
+def _cell_html(text: str, *, header: bool) -> str:
+    tag = "th" if header else "td"
+    raw = str(text or "")
+    kind = None if header else _STATUS_KIND.get(raw.strip().casefold())
+    inner = (
+        f'<span class="status-chip {kind}">{_esc(raw)}</span>' if kind else _esc(raw)
+    )
+    return f"<{tag}>{inner}</{tag}>"
+
+
 def _pct_from_kicker(kicker: str) -> int | None:
     """Parse leading ``68%`` / ``104% NA`` kickers for narr-card meters."""
     m = re.match(r"^(\d{1,3})\s*%", (kicker or "").strip())
@@ -234,7 +255,7 @@ def _body_for_slide(
         main_takeaway = "" if split else takeaway_html
         pack = _esc(str((style or {}).get("pack_id") or ""))
         # Dark Botanical: full-bleed media behind left copy (Julius VESPER).
-        if dark and hero_bleed:
+        if dark and hero_bleed and media_png_href:
             bg = ""
             if media_png_href:
                 bg = (
@@ -255,7 +276,20 @@ def _body_for_slide(
                 f"{bullets_html}"
                 f"</div></div>"
             )
-        stage_cls = "slide-inner title-stage title-stage--split" if split else "slide-inner title-stage"
+        if not split:
+            return (
+                f'<div class="slide-inner title-stage title-stage--field" data-pack="{pack}">'
+                f'<div class="title-field__copy">'
+                f"{brand}"
+                f"{kicker_html}"
+                f"<h1>{title}</h1>"
+                f"{main_takeaway}"
+                f"{sub_html}"
+                f"</div>"
+                f'<aside class="title-field__rail" aria-hidden="true"></aside>'
+                f"</div>"
+            )
+        stage_cls = "slide-inner title-stage title-stage--split"
         return (
             f'<div class="{stage_cls}" data-pack="{pack}">'
             f'<div class="title-main">'
@@ -271,7 +305,7 @@ def _body_for_slide(
 
     if layout == "section":
         # Twin of PPTX _layout_section: title left, accent chapter panel right.
-        sub = str(slide.get("subtitle") or "").strip()
+        sub = str(slide.get("subtitle") or slide.get("takeaway") or "").strip()
         sub_html = f'<p class="section-splash__sub">{_esc(sub)}</p>' if sub else ""
         chapter = slide.get("chapter")
         ch = f"{int(chapter):02d}" if isinstance(chapter, int) else "—"
@@ -369,11 +403,15 @@ def _body_for_slide(
                     f' style="background:{_esc(hx)};border-color:transparent;'
                     f'border-left-color:{_esc(hx)}"'
                 )
+            foot = f'<div class="kpi-foot">{delta_html}</div>' if delta_html else ""
             cards.append(
                 f'<div class="kpi-card"{pastel}>'
+                f'<div class="kpi-main">'
                 f"<div class=\"value\">{_esc(str(k.get('value') or ''))}</div>"
                 f"<div class=\"label\">{_esc(str(k.get('label') or ''))}</div>"
-                f"{delta_html}{hint_html}"
+                f"{hint_html}"
+                f"</div>"
+                f"{foot}"
                 "</div>"
             )
         cols = max(1, min(4, len(cards) or 1))
@@ -392,19 +430,16 @@ def _body_for_slide(
         definition = _esc(str(slide.get("definition") or ""))
         body = str(slide.get("body") or "").strip()
         body_html = f'<p class="callout__body">{_esc(body)}</p>' if body else ""
-        pastel = ""
-        if panels:
-            hx = panels[slide_index % len(panels)]
-            pastel = f' style="background:{_esc(hx)};border-color:transparent"'
         return (
-            f'<div class="slide-inner">'
+            f'<div class="slide-inner callout-stage">'
+            f'<div class="callout-stage__copy">'
             f"{brand}"
-            f"{_section_head(slide)}"
-            f'<aside class="callout-box"{pastel}>'
             f'<p class="callout__term">{term}</p>'
             f'<p class="callout__def">{definition}</p>'
             f"{body_html}"
-            f"</aside></div>"
+            f"</div>"
+            f'<aside class="title-field__rail" aria-hidden="true"></aside>'
+            f"</div>"
         )
 
     if layout == "card_row":
@@ -468,17 +503,21 @@ def _body_for_slide(
         for i, row in enumerate(rows):
             if not isinstance(row, list):
                 continue
-            tag = "th" if i == 0 else "td"
-            cells = "".join(f"<{tag}>{_esc(str(c))}</{tag}>" for c in row)
+            cells = "".join(
+                _cell_html(str(c), header=(i == 0)) for c in row
+            )
             trs.append(f"<tr>{cells}</tr>")
         cap = str(slide.get("caption") or "").strip()
         cap_html = f'<p class="caption">{_esc(cap)}</p>' if cap else ""
+        data_n = max(0, len(trs) - 1)
+        roomy = " is-roomy" if 0 < data_n <= 6 else ""
         return (
             f'<div class="slide-inner">'
             f"{brand}"
             f"{_section_head(slide, compact=True)}"
-            f'<table class="deck-table"><tbody>{"".join(trs)}</tbody></table>'
-            f"{cap_html}</div>"
+            f'<div class="table-stage">'
+            f'<table class="deck-table{roomy}"><tbody>{"".join(trs)}</tbody></table>'
+            f"{cap_html}</div></div>"
         )
 
     if layout == "chart_hero":
@@ -585,6 +624,89 @@ def _body_for_slide(
             f"</aside></div></div>"
         )
 
+    if layout == "quote":
+        definition = _esc(str(slide.get("definition") or ""))
+        term = str(slide.get("term") or "").strip()
+        body = str(slide.get("body") or "").strip()
+        term_html = f'<p class="pull-quote__who">{_esc(term)}</p>' if term else ""
+        body_html = f'<p class="pull-quote__note">{_esc(body)}</p>' if body else ""
+        return (
+            f'<div class="slide-inner">'
+            f"{brand}"
+            f"{_section_head(slide)}"
+            f'<blockquote class="pull-quote">'
+            f'<p class="pull-quote__text">{definition}</p>'
+            f"{term_html}{body_html}"
+            f"</blockquote></div>"
+        )
+
+    if layout == "stat_hero":
+        kpi = next(
+            (k for k in (slide.get("kpis") or []) if isinstance(k, dict)),
+            {},
+        )
+        delta = str(kpi.get("delta") or "").strip()
+        hint = str(kpi.get("hint") or "").strip()
+        delta_html = f'<p class="stat-hero__delta">{_esc(delta)}</p>' if delta else ""
+        hint_html = f'<p class="stat-hero__hint">{_esc(hint)}</p>' if hint else ""
+        return (
+            f'<div class="slide-inner stat-hero stat-hero--field">'
+            f'<div class="stat-hero__figure">'
+            f"{brand}"
+            f'<p class="stat-hero__value">{_esc(str(kpi.get("value") or ""))}</p>'
+            f'<p class="stat-hero__label">{_esc(str(kpi.get("label") or ""))}</p>'
+            f"{delta_html}{hint_html}"
+            f"</div>"
+            f'<div class="stat-hero__notes">{_bullets_html(slide.get("bullets") or [])}</div>'
+            f"</div>"
+        )
+
+    if layout == "timeline":
+        steps = []
+        for c in slide.get("cards") or []:
+            if not isinstance(c, dict):
+                continue
+            kicker = str(c.get("kicker") or "").strip()
+            body = str(c.get("body") or "").strip()
+            kick = f'<p class="timeline__time">{_esc(kicker)}</p>' if kicker else ""
+            body_html = f'<p class="timeline__body">{_esc(body)}</p>' if body else ""
+            steps.append(
+                f'<li class="timeline__step">{kick}'
+                f'<p class="timeline__title">{_esc(str(c.get("title") or ""))}</p>'
+                f"{body_html}</li>"
+            )
+        return (
+            f'<div class="slide-inner">'
+            f"{brand}"
+            f"{_section_head(slide)}"
+            f'<ol class="timeline">{"".join(steps)}</ol>'
+            f"</div>"
+        )
+
+    if layout == "compare":
+        cols = []
+        for i, c in enumerate(slide.get("cards") or []):
+            if not isinstance(c, dict):
+                continue
+            kicker = str(c.get("kicker") or "").strip()
+            body = str(c.get("body") or "").strip()
+            kick = f'<p class="compare__kicker">{_esc(kicker)}</p>' if kicker else ""
+            body_html = f'<p class="compare__body">{_esc(body)}</p>' if body else ""
+            side = "is-a" if i == 0 else "is-b"
+            cols.append(
+                f'<article class="compare__col {side}">{kick}'
+                f'<p class="compare__title">{_esc(str(c.get("title") or ""))}</p>'
+                f"{body_html}"
+                f'<p class="compare__index">{i + 1:02d}</p></article>'
+            )
+        return (
+            f'<div class="slide-inner compare-stage">'
+            f"{brand}"
+            f"{_section_head(slide)}"
+            f'<div class="compare compare--fields">{"".join(cols)}</div>'
+            f"</div>"
+        )
+
     raise ValueError(f"unsupported layout: {layout!r}")
 
 
@@ -665,6 +787,7 @@ def render_slide_html(
     pack = ""
     if isinstance(style, dict) and style.get("pack_id"):
         pack = str(style.get("pack_id") or "").strip()
+    fields = accent_fields(cmap)
     return (
         _frame_template()
         .replace("{{LANG}}", _esc(language or "ru"))
@@ -678,6 +801,11 @@ def render_slide_html(
         .replace("{{RULE}}", cmap["rule"])
         .replace("{{FOIL}}", cmap["foil"])
         .replace("{{PANEL}}", panel)
+        .replace("{{ON_ACCENT}}", fields["on_accent"])
+        .replace("{{FIELD_B}}", fields["field_b"])
+        .replace("{{ON_FIELD_B}}", fields["on_field_b"])
+        .replace("{{RAIL}}", fields["rail"])
+        .replace("{{ON_RAIL}}", fields["on_rail"])
         .replace("{{LAYOUT}}", _esc(layout))
         .replace("{{PACK}}", _esc(pack))
         .replace("{{BRAND_MARK}}", footer)

@@ -1,12 +1,8 @@
 # Theme overlay — board (Northstar look)
 
-Visual/tone: cool boardroom blues, dense chapters, scorecards first. Match botanical craft density (panels + teal foil cards), not a flat white sheet.
+Colors and chrome only. Layouts come from the BEAT PLAN menu, not from this file.
 
-- Prefer **10–12** slides when Source supports it.
-- Numbered kickers (`01 / …`) + `chapter` when using board_update structure.
-- Title takeaway: 2–3 `VALUE — label` lines. Vary beat 2 (scorecard / callout / chart). Cap consecutive scorecards at 2.
-- Use insight **titles** (not bland labels); `takeaway` under title.
-- Open with `title` then `scorecard` / `kpi_row` with teal foil cards; include ≥1 `chart_hero` and ≥1 `table_hero` when Source has series/rows.
-- Use **`card_row`** for 3 owned priorities + gold/teal `caption` gate (e.g. BOARD ASK…).
-- Closing: 3–4 decision / next-step bullets, not a summary dump.
-- Full arc: see STRUCTURE overlay `board_update` when selected.
+- Cool boardroom blues, teal accent, light sheet.
+- Title is split: `takeaway` is 2–3 lines `VALUE — label` so the right panel fills. If Source has no such pair, leave takeaway as one line and the panel stays quiet.
+- Scorecard and cards use a teal edge. Put `delta` and a hint sentence on each KPI when Source has them.
+- Kickers may be `01 / …`. Closing is a decision, not a restatement of the title.
