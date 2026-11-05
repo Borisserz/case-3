@@ -218,16 +218,29 @@ def build_body(
     max_tokens: int = 16384,
     base_url: str | None = None,
     stream: bool = False,
+    images: list[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     thinking: dict[str, Any] = (
         {"enable_thinking": False}
         if reasoning == "off"
         else {"enable_thinking": True, "resolved_reasoning_effort": reasoning}
     )
+    user_content: str | list[dict[str, Any]] = user_text
+    if images:
+        parts: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
+        for media_id, data_url in images:
+            mid = str(media_id or "").strip()
+            url = str(data_url or "").strip()
+            if not mid or not url:
+                continue
+            parts.append({"type": "text", "text": f"Image id {mid}."})
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        if len(parts) > 1:
+            user_content = parts
     body: dict[str, Any] = {
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": user_content},
         ],
         "temperature": temperature,
         "max_tokens": max(16, int(max_tokens)),
@@ -279,6 +292,7 @@ class LLMClient:
         user_text: str,
         reasoning: str | None = None,
         cancel_check: Callable[[], None] | None = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> str:
         r = reasoning or self.config.reasoning
         if r not in _REASONING:
@@ -291,6 +305,7 @@ class LLMClient:
             reasoning=r,
             max_tokens=self.config.max_tokens,
             base_url=self.config.base_url,
+            images=images,
         )
         headers = self._headers()
         max_tokens = int(body.get("max_tokens") or self.config.max_tokens)

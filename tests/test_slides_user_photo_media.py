@@ -31,6 +31,23 @@ def test_collect_run_media_includes_usr(tmp_path: Path) -> None:
     assert png_by_id["usr_01"].is_file()
 
 
+def test_deck_vision_sends_user_photo_not_chart(tmp_path: Path) -> None:
+    from PIL import Image
+
+    from case3.slides_job import deck_vision_images
+
+    figs = tmp_path / "figures"
+    figs.mkdir()
+    Image.new("RGB", (1200, 400), (20, 40, 30)).save(figs / "usr_01.png")
+    Image.new("RGB", (40, 40), (1, 2, 3)).save(figs / "cht_01.png")
+    png_by_id = {"usr_01": figs / "usr_01.png", "cht_01": figs / "cht_01.png"}
+    images = deck_vision_images(png_by_id, ["cht_01", "usr_01", "usr_02"])
+    assert [mid for mid, _ in images] == ["usr_01"]
+    url = images[0][1]
+    assert url.startswith("data:image/jpeg;base64,")
+    assert len(url) < 200_000
+
+
 def _deck() -> dict:
     return {
         "version": 1,

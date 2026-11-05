@@ -38,4 +38,25 @@ def test_openrouter_off_minimax_keeps_low_exclude() -> None:
         base_url="https://openrouter.ai/api",
     )
     assert body["reasoning"] == {"effort": "low", "exclude": True}
-    assert "chat_template_kwargs" not in body
+
+
+def test_images_become_qwen_vision_parts() -> None:
+    body = build_body(
+        system="s",
+        user_text="build the deck",
+        reasoning="off",
+        base_url="http://192.168.1.10:8080",
+        images=[("usr_01", "data:image/jpeg;base64,aaaa")],
+    )
+    content = body["messages"][1]["content"]
+    assert isinstance(content, list)
+    assert content[0]["text"] == "build the deck"
+    assert content[1]["text"] == "Image id usr_01."
+    assert content[2]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    # Local Qwen still gets the thinking switch alongside vision parts.
+    assert body["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_no_images_keeps_plain_string_content() -> None:
+    body = build_body(system="s", user_text="u", reasoning="off", images=[])
+    assert body["messages"][1]["content"] == "u"

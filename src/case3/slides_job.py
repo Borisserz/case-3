@@ -240,6 +240,51 @@ def _load_source_and_intent(out_dir: Path, meta: dict[str, Any]) -> tuple[str, s
     return source, intent
 
 
+def deck_vision_images(
+    png_by_id: dict[str, Path],
+    figure_ids: list[str],
+    *,
+    limit: int = 2,
+    max_edge: int = 896,
+) -> list[tuple[str, str]]:
+    """JPEG data-URLs for Qwen-VL. Logos and UI shots, not chart PNGs.
+
+    Resized so a Windows GGUF context still fits the deck JSON request.
+    """
+    ids = [
+        fid
+        for fid in figure_ids
+        if fid.startswith(("usr_", "fig_")) and fid in png_by_id
+    ][: max(0, limit)]
+    out: list[tuple[str, str]] = []
+    for fid in ids:
+        url = _jpeg_data_url(png_by_id[fid], max_edge=max_edge)
+        if url:
+            out.append((fid, url))
+    return out
+
+
+def _jpeg_data_url(path: Path, *, max_edge: int) -> str | None:
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("slides vision skipped: pillow missing")
+        return None
+    try:
+        im = Image.open(path)
+        im = im.convert("RGB")
+        im.thumbnail((max_edge, max_edge))
+        buf = __import__("io").BytesIO()
+        im.save(buf, format="JPEG", quality=80, optimize=True)
+    except (OSError, ValueError) as exc:
+        log.warning("slides vision skip %s: %s", path.name, exc)
+        return None
+    import base64
+
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
+
+
 def _stem_from_out(out_dir: Path, meta: dict[str, Any]) -> str:
     for art in sorted(out_dir.glob("*.pdf")):
         name = art.name
@@ -380,8 +425,12 @@ def run_slides_job(
                 "Numbers only from Source or this allowed token list "
                 f"(chart captions/HTML): {allowed_preview}. "
                 "Do not invent decimals. "
-                "Return only the JSON object."
+                "If images are attached, look at them: logo wordmark and UI labels "
+                "only if they are visible. Return only the JSON object."
             )
+            vision = deck_vision_images(png_by_id, figure_ids)
+            if vision:
+                log.info("slides vision images=%s", [mid for mid, _ in vision])
             client = llm or LLMClient(LLMConfig.from_env())
 
             def _parse_or_scrub(raw_ir: dict[str, Any]) -> dict[str, Any]:
@@ -429,6 +478,7 @@ def run_slides_job(
                 user_text=user,
                 reasoning="off",
                 cancel_check=_cancel,
+                images=vision,
             )
             try:
                 raw_ir = _extract_json_object(raw_text)
@@ -458,6 +508,7 @@ def run_slides_job(
                     user_text=retry_user,
                     reasoning="off",
                     cancel_check=_cancel,
+                    images=vision,
                 )
                 raw_ir = _extract_json_object(raw_text)
                 deck = _parse_or_scrub(raw_ir)
