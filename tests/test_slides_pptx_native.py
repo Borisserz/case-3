@@ -326,3 +326,25 @@ def test_media_photo_not_squashed_in_pptx(tmp_path: Path) -> None:
     pic = pics[0]
     ratio = float(pic.width) / float(pic.height)
     assert 0.82 <= ratio <= 1.22, f"expected ~square photo, got ratio {ratio:.2f}"
+
+
+def test_missing_chart_png_does_not_crash(tmp_path: Path) -> None:
+    """cht_* with no series and no PNG still writes the PPTX (title only)."""
+    deck = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Итоги"},
+            {
+                "id": "s02",
+                "layout": "chart_hero",
+                "title": "График",
+                "chart_id": "cht_01",
+            },
+            {"id": "s03", "layout": "media_hero", "title": "Схема", "media_id": "dia_01"},
+            {"id": "s04", "layout": "closing", "title": "Дальше", "bullets": ["ok"]},
+        ],
+    }
+    out = build_native_pptx(deck, tmp_path / "thin.pptx", media_by_id={})
+    prs = Presentation(str(out))
+    assert len(prs.slides) == 4

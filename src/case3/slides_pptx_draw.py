@@ -460,6 +460,8 @@ def _picture_fit(
     box_h,
 ) -> None:
     """Place image inside box preserving aspect ratio (contain, centered)."""
+    if path is None:
+        return
     p = Path(path)
     if not p.is_file():
         return
