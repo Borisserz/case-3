@@ -1,6 +1,6 @@
 /** Thumbnail chips for photos attached to the Liber composer. */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 
 export function ComposerPhotoChips({
   files,
@@ -11,15 +11,14 @@ export function ComposerPhotoChips({
   busy: boolean;
   onRemove: (index: number) => void;
 }) {
-  const urls = useMemo(
-    () => files.map((f) => URL.createObjectURL(f)),
-    [files],
-  );
+  const [urls, setUrls] = useState<string[]>([]);
   useEffect(() => {
+    const next = files.map((f) => URL.createObjectURL(f));
+    setUrls(next);
     return () => {
-      for (const u of urls) URL.revokeObjectURL(u);
+      for (const u of next) URL.revokeObjectURL(u);
     };
-  }, [urls]);
+  }, [files]);
   return (
     <div className="composer-photos" aria-label="Прикреплённые фото">
       {files.map((p, i) => (
