@@ -15,7 +15,7 @@ _MAX_COUNT = 5
 _NAME_OK = re.compile(r"^[a-zA-Z0-9._ -]{1,120}$")
 _NUMBERED = re.compile(r"^((?:\d+[.)]\s*)+)(.+)$")
 _PHOTO_HINT = re.compile(
-    r"фото|фотк|лог|скрин|интерфейс|экран|logo|screen",
+    r"фото|фотк|лог|скрин|интерфейс|экран|схем|диаграм|logo|screen",
     re.IGNORECASE,
 )
 _FILE_PREFIX = re.compile(r"^(?:файл|file)\s+", re.IGNORECASE)

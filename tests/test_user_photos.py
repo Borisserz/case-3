@@ -99,6 +99,14 @@ def test_captions_from_numbered_photo_list() -> None:
     ]
 
 
+def test_captions_include_schema_lines() -> None:
+    intent = "1. схема поступления\n2. логотип платформы"
+    assert captions_from_intent(intent, 2) == [
+        "схема поступления",
+        "логотип платформы",
+    ]
+
+
 def test_captions_ignore_numbered_source_without_photo_words() -> None:
     intent = "1. Выручка выросла\n2. Брак 3.4%\n3. План на квартал"
     assert captions_from_intent(intent, 3) == []

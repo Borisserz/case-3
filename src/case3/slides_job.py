@@ -29,12 +29,18 @@ from case3.slides_beat_planner import (
 from case3.slides_chart_data import (
     attach_series_ir_to_charts,
     ensure_deck_charts,
+    ensure_deck_diagrams,
     ensure_deck_photos,
     series_from_figures_json,
     series_map_from_figures,
 )
 from case3.slides_lo import write_deck_pdf
 from case3.slides_pptx_native import build_native_pptx
+from case3.schema_redraw import (
+    redraw_attached_schemas,
+    schema_source_ids,
+    select_schema_photos,
+)
 from case3.slides_ir import DeckIrError, parse_deck_ir, scrub_invented_numbers
 from case3.slides_media import (
     collect_run_media,
@@ -324,6 +330,51 @@ def run_slides_job(
             png_by_id,
             diagram_specs,
         ) = collect_run_media(out_dir, meta)
+        fj_schema = load_figures_json(out_dir)
+        schema_figs = (
+            fj_schema.get("figures") if isinstance(fj_schema, dict) else None
+        ) or []
+        if select_schema_photos(schema_figs, intent):
+            try:
+                schema_client = llm or LLMClient(LLMConfig.from_env())
+                fresh = redraw_attached_schemas(
+                    figures=schema_figs,
+                    intent=intent,
+                    png_by_id=png_by_id,
+                    existing_ids=list(diagram_ids),
+                    client=schema_client,
+                    vision_images=deck_vision_images,
+                )
+            except (LLMError, LLMConfigError, OSError, RuntimeError, ValueError) as exc:
+                log.warning("schema redraw skipped: %s", exc)
+                fresh = []
+            if fresh and isinstance(fj_schema, dict):
+                have = [
+                    d
+                    for d in (fj_schema.get("diagrams") or [])
+                    if isinstance(d, dict)
+                ]
+                fj_schema["diagrams"] = have + fresh
+                (out_dir / "figures.json").write_text(
+                    json.dumps(fj_schema, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                meta["slides_schema_redrawn"] = [d["id"] for d in fresh]
+                meta["diagrams_planned"] = [
+                    str(d.get("id") or "")
+                    for d in fj_schema["diagrams"]
+                    if isinstance(d, dict) and d.get("id")
+                ]
+                _write_meta(out_dir, meta, logs_dir)
+                (
+                    chart_ids,
+                    figure_ids,
+                    diagram_ids,
+                    png_by_id,
+                    diagram_specs,
+                ) = collect_run_media(out_dir, meta)
+                hidden = schema_source_ids(fresh)
+                figure_ids = [fid for fid in figure_ids if fid not in hidden]
         palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
         if palette == "auto":
             palette = "atelier"
@@ -531,13 +582,28 @@ def run_slides_job(
         if injected:
             meta["slides_chart_injected"] = injected
             log.info("slides: injected chart_hero for %s", injected)
+        hidden_sources = schema_source_ids(
+            fj_early.get("diagrams") if isinstance(fj_early, dict) else []
+        )
         photos = [
             fig
             for fig in (fj_early.get("figures") or [])
             if isinstance(fig, dict)
             and str(fig.get("id") or "") in png_by_id
+            and str(fig.get("id") or "") not in hidden_sources
         ]
         photo_ids = ensure_deck_photos(deck, photos)
+        dia_ids = ensure_deck_diagrams(
+            deck,
+            [
+                d
+                for d in ((fj_early.get("diagrams") if isinstance(fj_early, dict) else None) or [])
+                if isinstance(d, dict)
+            ],
+        )
+        if dia_ids:
+            meta["slides_diagram_injected"] = dia_ids
+            log.info("slides: placed diagrams %s", dia_ids)
         if photo_ids:
             meta["slides_photo_injected"] = photo_ids
             log.info("slides: placed photos %s", photo_ids)
@@ -839,13 +905,20 @@ def rebuild_slides_from_deck(
             if isinstance(ch, dict) and ch.get("id")
         }
         ensure_deck_charts(deck, {}, titles=chart_titles)
+        hidden_sources = schema_source_ids(fj_rebuild.get("diagrams") or [])
         photo_ids = ensure_deck_photos(
             deck,
             [
                 fig
                 for fig in (fj_rebuild.get("figures") or [])
-                if isinstance(fig, dict) and str(fig.get("id") or "") in png_by_id
+                if isinstance(fig, dict)
+                and str(fig.get("id") or "") in png_by_id
+                and str(fig.get("id") or "") not in hidden_sources
             ],
+        )
+        ensure_deck_diagrams(
+            deck,
+            [d for d in (fj_rebuild.get("diagrams") or []) if isinstance(d, dict)],
         )
         if photo_ids:
             meta["slides_photo_injected"] = photo_ids

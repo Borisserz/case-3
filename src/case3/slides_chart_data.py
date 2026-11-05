@@ -538,3 +538,41 @@ def ensure_deck_photos(
 
     deck["slides"] = slides
     return injected
+
+
+def ensure_deck_diagrams(
+    deck: dict[str, Any],
+    diagrams: list[dict[str, Any]],
+    *,
+    max_slides: int = 24,
+) -> list[str]:
+    """Place each unused dia_* on a media_hero before the closing slide."""
+    if not isinstance(deck, dict):
+        return []
+    slides = [s for s in (deck.get("slides") or []) if isinstance(s, dict)]
+    if not slides:
+        return []
+    used_media = _used_media_ids(deck)
+    used_ids = {str(s.get("id") or "") for s in slides}
+    injected: list[str] = []
+    for dia in diagrams:
+        if not isinstance(dia, dict):
+            continue
+        did = str(dia.get("id") or "").strip()
+        if not did.startswith("dia_") or did in used_media:
+            continue
+        title = str(dia.get("title") or did).strip() or did
+        slide = _photo_slide(
+            used_ids, did, title, layout="media_hero", kicker="СХЕМА"
+        )
+        slide["media_id"] = did
+        close = next(
+            (i for i, s in enumerate(slides) if str(s.get("layout") or "") == "closing"),
+            len(slides),
+        )
+        if _place_photo(slides, slide, close, max_slides=max_slides):
+            used_media.add(did)
+            used_ids.add(str(slide["id"]))
+            injected.append(did)
+    deck["slides"] = slides
+    return injected
