@@ -932,6 +932,7 @@ export function PresentationPane({
                         ?.mermaid ||
                       null
                     }
+                    diagramPalette={defaultPalette}
                   />
                 ) : currentPng ? (
                   <img
@@ -1219,6 +1220,7 @@ export function PresentationPane({
             diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
               ?.mermaid || null
           }
+          diagramPalette={defaultPalette}
         />
       ) : null}
     </div>

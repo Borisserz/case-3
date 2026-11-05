@@ -22,6 +22,7 @@ _MODE_PACK: dict[str, str] = {
     "launch": "botanical",
     "campaign": "atelier",
     "workshop": "studio",
+    "hire": "board",
     "general": "atelier",
 }
 
@@ -112,6 +113,16 @@ _MODE_ARCS: dict[str, list[str]] = {
         "bullets",
         "closing",
     ],
+    "hire": [
+        "title",
+        "callout",
+        "compare",
+        "bullets",
+        "scorecard",
+        "quote",
+        "section",
+        "closing",
+    ],
     "general": [
         "title",
         "scorecard",
@@ -177,8 +188,6 @@ def _score_modes(
             (
                 "board",
                 "совет",
-                "hiring",
-                "найм",
                 "ask:",
                 "approve",
                 "утверд",
@@ -188,6 +197,19 @@ def _score_modes(
                 "arr ",
             ),
             2.0,
+        ),
+        (
+            "hire",
+            (
+                "hiring",
+                "найм",
+                "нанять",
+                "hire",
+                "headcount",
+                "оффер",
+                "вакан",
+            ),
+            3.0,
         ),
         (
             "performance",

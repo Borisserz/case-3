@@ -855,8 +855,7 @@ def _parse_slide(
             sub = _clip_str(raw.get("subtitle"), field="subtitle", max_len=_MAX_SUBTITLE)
             if sub:
                 out["subtitle"] = sub
-            if not bullets and not out.get("media_id"):
-                raise DeckIrError("closing requires bullets or media_id")
+            # A title-only close is the decision. Bullets and a photo are optional.
 
     for blob in _collect_text_blobs(out):
         _assert_numbers_allowed(blob, source_norm=source_norm, allowed=allowed)
@@ -967,6 +966,21 @@ def _source_question(source: str) -> str:
     return text[:_MAX_DEFINITION]
 
 
+def _yes_no_labels(left: str, right: str) -> bool:
+    """«Нанять» / «Не нанимать» is one question, not two columns."""
+    a = left.casefold().strip()
+    b = right.casefold().strip()
+    if a.startswith("не "):
+        a, b = b, a[3:].strip()
+    elif b.startswith("не "):
+        b = b[3:].strip()
+    else:
+        return False
+    if len(a) < 3 or len(b) < 3:
+        return False
+    return a[:3] == b[:3]
+
+
 def _negation_pair(left: str, right: str) -> bool:
     a_neg = left.casefold().strip().startswith("не ")
     b_neg = right.casefold().strip().startswith("не ")
@@ -984,9 +998,13 @@ def _demote_fake_compare(slide: dict[str, Any], source: str) -> None:
     if len(cards) < 2:
         return
     titles = [str(c.get("title") or "") for c in cards]
+    kickers = [str(c.get("kicker") or "") for c in cards]
     bodies = [_norm_ws(str(c.get("body") or "")).casefold() for c in cards]
     same_body = bool(bodies[0] and bodies[0] == bodies[1])
-    if not _negation_pair(titles[0], titles[1]) and not same_body:
+    yes_no = _yes_no_labels(kickers[0], kickers[1]) or _yes_no_labels(
+        titles[0], titles[1]
+    )
+    if not _negation_pair(titles[0], titles[1]) and not same_body and not yes_no:
         return
     question = _source_question(source)
     if not question:
@@ -1219,6 +1237,20 @@ def parse_deck_ir(
     if len(slides_raw) < 3:
         raise DeckIrError("at least 3 slides (title … closing)")
 
+    prepared: list[Any] = []
+    for raw_slide in slides_raw:
+        if not isinstance(raw_slide, dict):
+            continue
+        title = str(raw_slide.get("title") or "").strip()
+        if not title:
+            kick = str(raw_slide.get("kicker") or "").strip()
+            if not kick:
+                continue
+            raw_slide = {**raw_slide, "title": kick}
+        prepared.append(raw_slide)
+    if len(prepared) < 3:
+        raise DeckIrError("at least 3 slides (title … closing)")
+
     seen: set[str] = set()
     slides = [
         _parse_slide(
@@ -1228,7 +1260,7 @@ def parse_deck_ir(
             seen_ids=seen,
             allowed_media_ids=media_allow,
         )
-        for s in slides_raw
+        for s in prepared
     ]
     slides = _fit_deck_content(slides, source_norm)
     _assert_deck_arc(slides)

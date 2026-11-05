@@ -33,6 +33,31 @@ def _base_slides(**extra: object) -> list[dict]:
     return slides
 
 
+def test_blank_title_is_dropped_and_closing_may_be_title_only() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {"id": "s02", "layout": "bullets", "title": "", "bullets": ["пусто"]},
+                {
+                    "id": "s03",
+                    "layout": "bullets",
+                    "kicker": "Факты",
+                    "bullets": ["Выручка 120 млн"],
+                },
+                {"id": "s04", "layout": "closing", "title": "Берём двоих"},
+            ],
+        },
+        source=SOURCE,
+    )
+    assert [s["id"] for s in ir["slides"]] == ["s01", "s03", "s04"]
+    assert ir["slides"][1]["title"] == "Факты"
+    assert ir["slides"][2]["layout"] == "closing"
+    assert "bullets" not in ir["slides"][2]
+
+
 def test_layouts_whitelist() -> None:
     assert "kpi_row" in SLIDE_LAYOUTS
     assert "chart_split" in SLIDE_LAYOUTS

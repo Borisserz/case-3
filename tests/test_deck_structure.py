@@ -15,6 +15,8 @@ def test_list_structures_has_julius_arcs() -> None:
     assert "investor" in ids
     assert "qbr" in ids
     assert "launch" in ids
+    assert "hire" in ids
+    assert normalize_structure_id("hire") == "hire"
 
 
 def test_normalize_aliases() -> None:

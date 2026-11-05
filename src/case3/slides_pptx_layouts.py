@@ -497,6 +497,46 @@ def _layout_table(
         )
 
 
+def _rect(slide, left, top, width, height, fill: RGBColor):
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill
+    shape.line.fill.background()
+    return shape
+
+
+def _paint_bands(slide, bullets: list[str], *, left, top, width, colors: dict[str, RGBColor]) -> None:
+    """One paper band per line: number on the accent, phrase beside it."""
+    band_h = Inches(0.78)
+    gap = Inches(0.12)
+    y = top
+    for i, item in enumerate(bullets[:6]):
+        _rect(slide, left, y, width, band_h, colors["paper"])
+        _rect(slide, left, y, Inches(0.08), band_h, colors["accent"])
+        _add_textbox(
+            slide,
+            left + Inches(0.22),
+            y + Inches(0.18),
+            Inches(0.7),
+            Inches(0.42),
+            f"{i + 1:02d}",
+            size_pt=16,
+            bold=True,
+            color=colors["accent"],
+        )
+        _add_textbox(
+            slide,
+            left + Inches(1.05),
+            y + Inches(0.16),
+            width - Inches(1.25),
+            Inches(0.5),
+            item,
+            size_pt=18,
+            color=colors["ink"],
+        )
+        y = y + band_h + gap
+
+
 def _layout_bullets(
     slide,
     s: dict[str, Any],
@@ -518,15 +558,13 @@ def _layout_bullets(
         chapter=s.get("chapter") if isinstance(s.get("chapter"), int) else None,
     )
     bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()]
-    _add_bullets(
+    _paint_bands(
         slide,
-        _MARGIN_X,
-        Inches(y_in),
-        Inches(11.5),
-        Inches(5.2),
         bullets,
-        size_pt=20 if closing else 18,
-        color=colors["ink2"],
+        left=_MARGIN_X,
+        top=Inches(max(y_in, 1.7)),
+        width=Inches(11.6),
+        colors=colors,
     )
 
 
@@ -537,68 +575,43 @@ def _layout_closing(
     *,
     style: dict[str, Any] | None = None,
 ) -> None:
-    """Closing with optional Julius hero number from takeaway + bullets."""
+    """Two plaques: the number on the accent, the decision on paper."""
     _apply_pack_bg(slide, colors, style)
-    if _wants_top_bar(style):
-        _top_bar(slide, colors, style)
-    _brand(slide, colors)
     takeaway = str(s.get("takeaway") or "").strip()
     metrics = parse_hero_metrics(takeaway)
     hero_value = ""
-    hero_label = ""
     if metrics:
-        hero_value, hero_label = metrics[0]
+        hero_value = metrics[0][0]
     elif takeaway and len(takeaway) <= 24 and "\n" not in takeaway:
         hero_value = takeaway
-    head = dict(s)
-    if hero_value:
-        head = {**s, "takeaway": ""}
-    y_in = _kicker_title(
-        slide,
-        colors,
-        kicker=str(head.get("kicker") or ""),
-        title=str(head.get("title") or ""),
-        takeaway=str(head.get("takeaway") or ""),
-        chapter=head.get("chapter") if isinstance(head.get("chapter"), int) else None,
-    )
-    y = Inches(max(y_in + 0.1, 1.85))
-    foil = colors.get("foil", colors["accent"])
-    if hero_value:
+    title = str(s.get("title") or "").strip()
+    bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()]
+    decision = " ".join(bullets) or title
+    left_text = hero_value or title
+    raw = style.get("colors") if isinstance(style, dict) else {}
+    cmap = raw if isinstance(raw, dict) else {}
+    on = _hex_rgb(accent_fields(cmap)["on_accent"]) if cmap.get("accent") else RGBColor(0xF4, 0xF0, 0xE6)
+    half = Inches(6.4)
+    _rect(slide, Inches(0), Inches(0), half, _SLIDE_H, colors["accent"])
+    _rect(slide, half, Inches(0), _SLIDE_W - half, _SLIDE_H, colors["paper"])
+    mark = str((style or {}).get("brand_mark") or "").strip()
+    if mark:
         _add_textbox(
-            slide,
-            _MARGIN_X,
-            y,
-            Inches(11.5),
-            Inches(1.15),
-            hero_value,
-            size_pt=54,
-            bold=True,
-            color=foil if _is_dark_pack(style) else colors["ink"],
+            slide, Inches(0.55), Inches(0.4), Inches(5.2), Inches(0.32),
+            mark, size_pt=11, bold=True, color=on,
         )
-        y = y + Inches(1.05)
-        if hero_label:
-            _add_textbox(
-                slide,
-                _MARGIN_X,
-                y,
-                Inches(11.5),
-                Inches(0.45),
-                hero_label,
-                size_pt=16,
-                color=colors["muted"],
-            )
-            y = y + Inches(0.55)
-    bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()][:3]
-    if bullets:
-        _add_bullets(
-            slide,
-            _MARGIN_X,
-            y,
-            Inches(11.5),
-            Inches(3.8),
-            bullets,
-            size_pt=18,
-            color=colors["ink2"],
+    _add_textbox(
+        slide, Inches(0.55), Inches(2.6), Inches(5.3), Inches(1.8),
+        left_text, size_pt=40, bold=True, color=on, title=True,
+    )
+    _add_textbox(
+        slide, half + Inches(0.45), Inches(2.7), Inches(5.6), Inches(2.2),
+        decision, size_pt=28, color=colors["ink"], title=True,
+    )
+    if hero_value and title and title != decision:
+        _add_textbox(
+            slide, half + Inches(0.45), Inches(2.15), Inches(5.6), Inches(0.4),
+            title, size_pt=14, bold=True, color=colors["muted"],
         )
 
 
@@ -855,15 +868,13 @@ def _layout_media(
             )
             top = top + Inches(1.3)
         if bullets:
-            _add_bullets(
+            _paint_bands(
                 slide,
-                _MARGIN_X,
-                top,
-                Inches(5.4),
-                Inches(3.5),
                 bullets,
-                size_pt=16,
-                color=colors["ink2"],
+                left=_MARGIN_X,
+                top=top,
+                width=Inches(5.2),
+                colors=colors,
             )
         mid = str(s.get("media_id") or s.get("chart_id") or "")
         is_dia = mid.startswith("dia_")
@@ -894,30 +905,43 @@ def _layout_media(
                 pic_w,
                 pic_h,
             )
-        if cap:
+        if cap and not bullets:
             _add_textbox(
                 slide,
-                pic_left,
-                Inches(6.45),
-                pic_w,
-                Inches(0.55),
+                _MARGIN_X,
+                Inches(6.2),
+                Inches(5.2),
+                Inches(0.7),
                 cap,
-                size_pt=14,
-                bold=True,
+                size_pt=16,
                 color=colors["ink"],
             )
     else:
-        y_in = _kicker_title(
-            slide,
-            colors,
-            kicker=kicker,
-            title=title,
-            takeaway=takeaway,
-            chapter=chapter,
-        )
         mid = str(s.get("media_id") or s.get("chart_id") or "")
         is_dia = mid.startswith("dia_")
         is_cht = mid.startswith("cht_")
+        rail_w = Inches(4.5)
+        _rect(slide, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H, colors["paper"])
+        phrase = cap or title
+        mark = str((style or {}).get("brand_mark") or "").strip()
+        if mark:
+            _add_textbox(
+                slide, Inches(0.5), Inches(4.35), Inches(3.5), Inches(0.3),
+                mark, size_pt=11, bold=True, color=colors["muted"],
+            )
+        _add_textbox(
+            slide, Inches(0.5), Inches(4.75), Inches(3.6), Inches(1.4),
+            phrase, size_pt=22, color=colors["ink"], title=True,
+        )
+        if is_dia:
+            _add_textbox(
+                slide, Inches(0.5), Inches(6.25), Inches(3.6), Inches(0.7),
+                "Старт    Решение    Успех    Риск",
+                size_pt=12,
+                color=colors["muted"],
+            )
+        pic_left = rail_w + Inches(0.15)
+        pic_w = _SLIDE_W - rail_w - Inches(0.35)
         placed = False
         if is_cht and chart_series:
             from case3.slides_pptx_charts import add_native_chart
@@ -925,32 +949,20 @@ def _layout_media(
             placed = add_native_chart(
                 slide,
                 chart_series,
-                left=_MARGIN_X,
-                top=Inches(max(y_in, 1.45)),
-                width=Inches(11.9),
-                height=Inches(5.45) if is_dia else Inches(4.8),
+                left=pic_left,
+                top=Inches(0.85),
+                width=pic_w,
+                height=Inches(5.5),
                 series_colors=series_colors,
             )
         if not placed:
             _picture_fit(
                 slide,
                 media_path,  # type: ignore[arg-type]
-                _MARGIN_X,
-                Inches(max(y_in, 1.45)),
-                Inches(11.9),
-                Inches(5.45) if is_dia else Inches(4.4),
-            )
-        if cap:
-            _add_textbox(
-                slide,
-                _MARGIN_X,
-                Inches(6.35),
-                Inches(11.9),
-                Inches(0.55),
-                cap,
-                size_pt=15,
-                bold=True,
-                color=colors["ink"],
+                pic_left,
+                Inches(0.7),
+                pic_w,
+                Inches(5.8),
             )
 
 

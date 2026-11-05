@@ -99,10 +99,10 @@ def diagrams_from_schema_reply(
     return [d for d in out if d.get("mermaid")]
 
 
-def schema_source_ids(diagrams: list[dict[str, Any]]) -> set[str]:
+def schema_source_ids(diagrams: list[dict[str, Any]] | None) -> set[str]:
     return {
         str(d.get("source_photo") or "")
-        for d in diagrams
+        for d in (diagrams or [])
         if isinstance(d, dict) and d.get("source_photo")
     }
 

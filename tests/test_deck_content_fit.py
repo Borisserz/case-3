@@ -117,6 +117,38 @@ def test_empty_section_and_echo_slide_drop() -> None:
     assert ids[0] == "s01" and ids[-1] == "s05"
 
 
+def test_hire_kickers_are_one_question() -> None:
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "Совет"},
+                {
+                    "id": "s02",
+                    "layout": "compare",
+                    "title": "Нанять vs Не нанимать: ключевые ставки",
+                    "cards": [
+                        {
+                            "title": "Два продавца в штат",
+                            "kicker": "НАНЯТЬ",
+                            "body": "Касса 20,4 на 24 месяца.",
+                        },
+                        {
+                            "title": "Статус команды",
+                            "kicker": "НЕ НАНИМАТЬ",
+                            "body": "План выручки 19.",
+                        },
+                    ],
+                },
+                {"id": "s03", "layout": "closing", "title": "Дальше", "bullets": ["Решение"]},
+            ]
+        ),
+        source="нанять двух продавцов или нет. касса 20,4 на 24 месяца. план выручки 19.",
+    )
+    mid = deck["slides"][1]
+    assert mid["layout"] == "callout"
+    assert "cards" not in mid
+
+
 def test_negated_compare_becomes_one_question() -> None:
     deck = parse_deck_ir(
         _wrap(

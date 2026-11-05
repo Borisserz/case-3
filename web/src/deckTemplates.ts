@@ -13,7 +13,7 @@ export type DeckTemplateCard = {
   starterPrompt: string;
 };
 
-/** Eight unique DNA pairs — each pack + structure is distinct. */
+/** Narrative starters — each card is an arc, not only a recolor. */
 export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
   {
     id: "board-update",
@@ -94,6 +94,16 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     arc: "Agenda · exercises · owners table",
     starterPrompt:
       "Собери facilitation deck в духе Workshop Studio: goals, timeboxed agenda, framing + force-rank exercises, outputs/norms и follow-ups с owners. Детали только из Source/брифа.",
+  },
+  {
+    id: "hire",
+    structureId: "hire",
+    packId: "board",
+    title: "Найм",
+    blurb: "Вопрос совета → две стороны → одно решение",
+    arc: "Callout → compare → scorecard → ask",
+    starterPrompt:
+      "Собери разбор найма: сначала вопрос совета одной фразой, потом только те стороны, которые есть в Source, цифры как в источнике, и в конце одно решение. Ничего не добавляй.",
   },
 ];
 

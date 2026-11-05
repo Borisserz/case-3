@@ -68,6 +68,20 @@ def test_plan_beats_without_request_stays_in_default_band() -> None:
     assert 6 <= len(plan.beats) <= 12
 
 
+def test_hire_words_pick_the_hire_arc() -> None:
+    plan = plan_beats(
+        source="Нанять двух продавцов или нет. Оффер готов.",
+        intent="",
+        chart_ids=[],
+        figure_ids=[],
+        diagram_ids=[],
+    )
+    assert plan.mode == "hire"
+    assert plan.pack_hint == "board"
+    assert plan.beats[0] == "title"
+    assert plan.beats[-1] == "closing"
+
+
 def test_plan_beats_respects_explicit_structure() -> None:
     plan = plan_beats(
         source="Anything",

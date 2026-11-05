@@ -449,10 +449,11 @@ export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
   launch: 9,
   campaign: 8,
   workshop: 11,
+  hire: 6,
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261105-soft";
+const PREVIEW_CACHE_BUST = "20261105-open";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {

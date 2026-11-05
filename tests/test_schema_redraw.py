@@ -38,6 +38,10 @@ def test_logos_stay_photos_even_if_intent_mentions_schemas() -> None:
     assert select_schema_photos(figs, intent) == []
 
 
+def test_schema_source_ids_accepts_missing_list() -> None:
+    assert schema_source_ids(None) == set()
+
+
 def test_reply_becomes_dia_and_hides_source_photo() -> None:
     raw = """{"diagrams":[{"id":"dia_99","type":"flowchart","title":"Черновик","mermaid":"flowchart TD\\n  A[Заявка] --> B[Бюджет]"}]}"""
     photos = [{"id": "usr_02", "caption": "схема поступления"}]

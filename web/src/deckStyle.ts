@@ -145,6 +145,28 @@ export function applyPackToStyle(
   };
 }
 
+/** Diagram legend strokes. Keep in sync with diagram_style._ROLE_MAP. */
+const DIAGRAM_LEGEND_STROKES: Record<
+  string,
+  { start: string; decision: string; ok: string; warn: string }
+> = {
+  atelier: { start: "#1F6F66", decision: "#C47A3A", ok: "#2F7D4A", warn: "#C45A48" },
+  editorial: { start: "#4E79A7", decision: "#F28E2B", ok: "#59A14F", warn: "#E15759" },
+  ocean: { start: "#0072B2", decision: "#E69F00", ok: "#009E73", warn: "#D55E00" },
+  sunset: { start: "#9A4A58", decision: "#A89830", ok: "#228833", warn: "#EE6677" },
+  mono: { start: "#1A1F28", decision: "#8B7355", ok: "#2F4A38", warn: "#6B4038" },
+};
+
+export function diagramLegendStrokes(palette: string | undefined): {
+  start: string;
+  decision: string;
+  ok: string;
+  warn: string;
+} {
+  const key = (palette || "atelier").trim().toLowerCase();
+  return DIAGRAM_LEGEND_STROKES[key] || DIAGRAM_LEGEND_STROKES.atelier;
+}
+
 /** Body for POST /api/runs/{id}/slides */
 export function deckStyleToApiPayload(style: DeckStyle): {
   theme_pack: string;

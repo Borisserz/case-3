@@ -316,11 +316,11 @@ def render_mermaid_png(
                     r.setAttribute('fill', 'transparent');
                     r.style.fill = 'transparent';
                   });
-                  svg.querySelectorAll('g.node rect').forEach((r) => {
-                    const w = parseFloat(r.getAttribute('width') || '0');
-                    const h = parseFloat(r.getAttribute('height') || '0');
-                    if (w > 8 && h > 8) {
-                      const rx = Math.min(14, Math.max(8, Math.min(w, h) * 0.22));
+                  svg.querySelectorAll('rect').forEach((r) => {
+                    let w = 0, h = 0;
+                    try { w = r.getBBox().width; h = r.getBBox().height; } catch (e) {}
+                    if (w > 18 && h > 14 && w < box.width * 0.8 && h < box.height * 0.8) {
+                      const rx = Math.min(14, Math.max(6, Math.min(w, h) * 0.18));
                       r.setAttribute('rx', String(rx));
                       r.setAttribute('ry', String(rx));
                     }

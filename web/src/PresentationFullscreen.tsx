@@ -21,6 +21,7 @@ type Props = {
   deck?: DeckIR | null;
   runId?: string;
   diagramMermaid?: string | null;
+  diagramPalette?: string;
 };
 
 const IDLE_MS = 2200;
@@ -33,6 +34,7 @@ export function PresentationFullscreen({
   deck = null,
   runId = "",
   diagramMermaid = null,
+  diagramPalette,
 }: Props) {
   const reduce = useReducedMotion();
   const live = Boolean(deck?.slides?.length);
@@ -174,6 +176,7 @@ export function PresentationFullscreen({
                   onDeckChange={() => undefined}
                   onPatch={async () => undefined}
                   diagramMermaid={diagramMermaid}
+                  diagramPalette={diagramPalette}
                 />
               ) : src ? (
                 <img src={src} alt="" className="presentation-fullscreen-img" />

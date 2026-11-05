@@ -1017,10 +1017,6 @@
   border-radius: 99px;
   display: inline-block;
 }
-.deck-cv-dia-legend .is-start { background: #1F6F66; }
-.deck-cv-dia-legend .is-decision { background: #C47A3A; }
-.deck-cv-dia-legend .is-ok { background: #2F7D4A; }
-.deck-cv-dia-legend .is-warn { background: #C45A48; }
 .deck-cv-photo-bleed { inset: 0; padding: 0; }
 .deck-cv-photo-bleed .deck-cv-media { position: absolute; inset: 0; }
 .deck-cv-photo-plaque {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from case3.slides_job import _extract_json_object
+from case3.slides_job import _extract_json_object, _retry_user
 
 
 def test_extract_picks_the_deck_buried_in_prose() -> None:
@@ -22,3 +22,10 @@ def test_extract_picks_the_deck_buried_in_prose() -> None:
     )
     data = _extract_json_object(raw)
     assert [s["id"] for s in data["slides"]] == ["s01", "s02"]
+
+
+def test_retry_keeps_the_source() -> None:
+    text = _retry_user("Source: нанять двух продавцов", "no JSON", "86")
+    assert "нанять двух продавцов" in text
+    assert "no JSON" in text
+    assert "slides" in text

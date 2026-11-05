@@ -14,6 +14,7 @@ import {
 import { DeckEditToolbar } from "./DeckEditToolbar";
 import { LiveChart } from "./LiveChart";
 import { MermaidView } from "./MermaidView";
+import { diagramLegendStrokes } from "./deckStyle";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 
 export type DeckMediaKind = "chart" | "photo" | "diagram";
@@ -34,6 +35,8 @@ type Props = {
   previewHtml?: string | null;
   /** Mermaid source for dia_* so the slide shows the same scheme as the editor. */
   diagramMermaid?: string | null;
+  /** Report palette for the four diagram legend dots. */
+  diagramPalette?: string;
 };
 
 function panelForSlide(style: DeckIR["style"] | undefined, slideIndex: number): string {
@@ -299,6 +302,7 @@ function SlideBody({
   onMediaClick,
   previewHtml,
   diagramMermaid,
+  diagramPalette,
 }: {
   runId: string;
   slide: DeckSlide;
@@ -313,6 +317,7 @@ function SlideBody({
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
   previewHtml?: string | null;
   diagramMermaid?: string | null;
+  diagramPalette?: string;
 }) {
   const layout = slide.layout;
   const mid = slide.chart_id || slide.media_id;
@@ -848,10 +853,10 @@ function SlideBody({
           <div className="deck-cv-chart-line">{line}</div>
           {isDiagram ? (
             <ul className="deck-cv-dia-legend">
-              <li><i className="is-start" />Старт</li>
-              <li><i className="is-decision" />Решение</li>
-              <li><i className="is-ok" />Успех</li>
-              <li><i className="is-warn" />Риск</li>
+              <li><i style={{ background: diagramLegendStrokes(diagramPalette).start }} />Старт</li>
+              <li><i style={{ background: diagramLegendStrokes(diagramPalette).decision }} />Решение</li>
+              <li><i style={{ background: diagramLegendStrokes(diagramPalette).ok }} />Успех</li>
+              <li><i style={{ background: diagramLegendStrokes(diagramPalette).warn }} />Риск</li>
             </ul>
           ) : null}
         </aside>
@@ -1080,6 +1085,7 @@ export function DeckCanvas({
   onPatch,
   previewHtml = null,
   diagramMermaid = null,
+  diagramPalette,
 }: Props) {
   const slides = deck.slides || [];
   const slide = slides[Math.min(Math.max(0, index), Math.max(0, slides.length - 1))];
@@ -1210,6 +1216,7 @@ export function DeckCanvas({
           onMediaClick={onMediaClick}
           previewHtml={previewHtml}
           diagramMermaid={diagramMermaid}
+          diagramPalette={diagramPalette}
         />
         <div className="deck-cv-footer" aria-hidden>
           {brand}

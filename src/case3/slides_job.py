@@ -203,6 +203,23 @@ def _load_object(blob: str) -> dict[str, Any] | None:
     return None
 
 
+def _retry_user(user: str, error: str, allowed_preview: str) -> str:
+    """Second ask keeps the Source. A retry that only quotes the error drops the deck."""
+    return (
+        f"{user}\n\n"
+        f"Previous answer was rejected: {error}. "
+        "Return ONLY one JSON object with a non-empty slides array. "
+        "No prose and no markdown fence. "
+        "Choose layouts that Source can fill; do not copy a theme script; "
+        "≥5 distinct layouts when ≥8 slides; "
+        "at most 2 consecutive scorecard/kpi_row; "
+        "Use available media ids; "
+        f"ONLY these number tokens (or Source): {allowed_preview}; "
+        "bullets ≤140 chars, a full sentence not a label; title first, closing last. "
+        "Do not invent averages or deltas."
+    )
+
+
 def _extract_json_object(raw: str) -> dict[str, Any]:
     text = (raw or "").strip()
     m = _JSON_FENCE.search(text)
@@ -612,17 +629,7 @@ def run_slides_job(
                     stage="llm_retry",
                     logs_dir=logs_dir,
                 )
-                retry_user = (
-                    f"Previous JSON was rejected: {first_err}. "
-                    "Fix and return ONLY a valid deck JSON object (no markdown). "
-                    "Choose layouts that Source can fill; do not copy a theme script; "
-                    "≥5 distinct layouts when ≥8 slides; "
-                    "at most 2 consecutive scorecard/kpi_row; "
-                    "Use available media ids; "
-                    f"ONLY these number tokens (or Source): {allowed_preview}; "
-                    "bullets ≤140 chars, a full sentence not a label; title first, closing last. "
-                    "Do not invent averages or deltas."
-                )
+                retry_user = _retry_user(user, str(first_err), allowed_preview)
                 raw_text = client.complete(
                     system=system,
                     user_text=retry_user,
