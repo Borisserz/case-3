@@ -300,7 +300,9 @@ export function serializeMermaidFlowchart(
 
   const shape = (n: DiaNode): string => {
     used.add(n.kind);
-    const text = (n.label || n.id).replace(/[\[\]{}|]/g, " ").trim() || n.id;
+    const text =
+      (n.label || n.id).replace(/[\[\]{}|]/g, " ").replace(/\s+/g, " ").trim() ||
+      n.id;
     if (n.kind === "decision") return `${n.id}{${text}}:::${n.kind}`;
     // Pill / rounded — closer to React Flow editor than sharp ``[…]``.
     if (n.kind === "ok") return `${n.id}([${text}]):::${n.kind}`;

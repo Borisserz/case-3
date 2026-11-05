@@ -18,6 +18,8 @@ import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
+import { DiagramVisualEditor } from "./DiagramVisualEditor";
+import type { DiagramResult } from "./domain/liberTypes";
 import { PresentationFullscreen } from "./PresentationFullscreen";
 
 /** Survive tab switches: PresentationPane unmounts on Preview/PDF. */
@@ -72,6 +74,8 @@ type Props = {
   editHistory?: EditHistoryDesc | null;
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  /** Mermaid specs for dia_* slides. Save writes figures.json, then rebuilds the deck. */
+  diagrams?: DiagramResult[];
   onHistoryUndo?: () => void | Promise<void>;
   onHistoryRedo?: () => void | Promise<void>;
   onClearEditHistory?: () => void | Promise<void>;
@@ -105,6 +109,7 @@ export function PresentationPane({
   editHistory = null,
   onEditFigure,
   onEditImage,
+  diagrams: diagramsProp,
   onHistoryUndo,
   onHistoryRedo,
   onClearEditHistory,
@@ -146,6 +151,8 @@ export function PresentationPane({
   const [openMediaKind, setOpenMediaKind] = useState<DeckMediaKind | null>(
     null,
   );
+  const [diagrams, setDiagrams] = useState<DiagramResult[]>(diagramsProp ?? []);
+  const [diagramError, setDiagramError] = useState<string | null>(null);
   const [mediaVersion, setMediaVersion] = useState(0);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
@@ -171,6 +178,10 @@ export function PresentationPane({
     setOpenMediaKind(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on run only
   }, [runId]);
+
+  useEffect(() => {
+    setDiagrams(diagramsProp ?? []);
+  }, [diagramsProp]);
 
   const refreshSlidesNow = useCallback(async () => {
     const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
@@ -416,6 +427,76 @@ export function PresentationPane({
       }
     },
     [closeMediaSheet, onEditImage, refreshSlidesNow],
+  );
+
+  const openDiagram = diagrams.find((d) => d.id === openMediaId) || null;
+
+  useEffect(() => {
+    if (openMediaKind !== "diagram" || !openMediaId || openDiagram) return;
+    let cancelled = false;
+    void fetch(`/api/runs/${encodeURIComponent(runId)}/status`)
+      .then((r) => r.json())
+      .then((body: { diagrams?: DiagramResult[] }) => {
+        if (cancelled || !Array.isArray(body.diagrams)) return;
+        setDiagrams(body.diagrams);
+      })
+      .catch(() => {
+        if (!cancelled) setDiagramError("Не удалось открыть схему");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openDiagram, openMediaId, openMediaKind, runId]);
+
+  const saveDiagram = useCallback(
+    async (mermaid: string, title: string) => {
+      if (!openMediaId) return;
+      setSaving(true);
+      setDiagramError(null);
+      setSaveError(null);
+      try {
+        const res = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/diagrams/${encodeURIComponent(openMediaId)}/edit`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mermaid, title }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data.detail === "string" ? data.detail : `edit ${res.status}`,
+          );
+        }
+        if (data.diagram && typeof data.diagram === "object") {
+          const saved = data.diagram as DiagramResult;
+          setDiagrams((prev) => {
+            const rest = prev.filter((d) => d.id !== saved.id);
+            return [...rest, saved];
+          });
+        }
+        const reb = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/slides/rebuild`,
+          { method: "POST" },
+        );
+        if (!reb.ok) {
+          const body = await reb.json().catch(() => ({}));
+          throw new Error(
+            typeof body.detail === "string"
+              ? body.detail
+              : `rebuild ${reb.status}`,
+          );
+        }
+        await waitPatchRebuild();
+        closeMediaSheet();
+      } catch (err) {
+        setDiagramError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [closeMediaSheet, openMediaId, runId, waitPatchRebuild],
   );
 
   const structureOp = useCallback(
@@ -1032,6 +1113,22 @@ export function PresentationPane({
             onSubmit={(req) => void submitChart(req)}
           />
         </div>
+      ) : null}
+      {editing &&
+      view === "slide" &&
+      openMediaId &&
+      openMediaKind === "diagram" &&
+      openDiagram ? (
+        <DiagramVisualEditor
+          open
+          diagramId={openDiagram.id}
+          title={openDiagram.title}
+          mermaid={openDiagram.mermaid}
+          busy={saving}
+          error={diagramError}
+          onCancel={closeMediaSheet}
+          onSave={(mermaid, title) => void saveDiagram(mermaid, title)}
+        />
       ) : null}
       {editing &&
       view === "slide" &&

@@ -69,6 +69,39 @@ def test_edit_diagram_saves_sanitized_mermaid(tmp_path: Path) -> None:
     assert fj["diagrams"][0]["mermaid"].startswith("flowchart")
 
 
+def test_edit_diagram_updates_the_slide_title(tmp_path: Path) -> None:
+    out = _seed_run(tmp_path)
+    slides = out / "slides"
+    slides.mkdir()
+    (slides / "deck.json").write_text(
+        json.dumps(
+            {
+                "slides": [
+                    {"id": "s01", "layout": "title", "title": "Итоги"},
+                    {
+                        "id": "s02",
+                        "layout": "media_hero",
+                        "title": "Черновик",
+                        "media_id": "dia_01",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    edit_diagram_in_run(
+        out,
+        "dia_01",
+        mermaid="flowchart TD\n  A[Заявка] --> B[Бюджет]",
+        title="Поступление",
+    )
+    deck = json.loads((slides / "deck.json").read_text(encoding="utf-8"))
+    assert deck["slides"][1]["title"] == "Поступление"
+    assert deck["slides"][1]["caption"] == "Поступление"
+    assert deck["slides"][0]["title"] == "Итоги"
+
+
 def test_edit_diagram_rejects_unknown_id(tmp_path: Path) -> None:
     out = _seed_run(tmp_path)
     with pytest.raises(DiagramEditError, match="not found"):

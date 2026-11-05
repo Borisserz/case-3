@@ -791,6 +791,7 @@ export function ArtifactRail({
                   editHistory={editHistory}
                   onEditFigure={onEditFigure}
                   onEditImage={onEditImage}
+                  diagrams={diagrams}
                   onHistoryUndo={onHistoryUndo}
                   onHistoryRedo={onHistoryRedo}
                   onClearEditHistory={onClearEditHistory}

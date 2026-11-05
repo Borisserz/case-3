@@ -60,6 +60,37 @@ def _load_meta(out_dir: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _sync_diagram_slide(out_dir: Path, diagram_id: str, title: str) -> None:
+    """Copy the saved diagram title onto the deck slide that shows it."""
+    label = (title or "").strip()
+    if not label:
+        return
+    path = out_dir / "slides" / "deck.json"
+    if not path.is_file():
+        return
+    try:
+        deck = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    slides = deck.get("slides") if isinstance(deck, dict) else None
+    if not isinstance(slides, list):
+        return
+    changed = False
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        if str(slide.get("media_id") or "") != diagram_id:
+            continue
+        slide["title"] = label[:80]
+        slide["caption"] = label[:120]
+        changed = True
+    if changed:
+        path.write_text(
+            json.dumps(deck, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 def edit_diagram_in_run(
     out_dir: Path,
     diagram_id: str,
@@ -110,6 +141,7 @@ def edit_diagram_in_run(
     diagrams[idx] = parsed[0]
     fj["diagrams"] = diagrams
     _save_fj(out_dir, fj)
+    _sync_diagram_slide(out_dir, did, str(parsed[0].get("title") or ""))
     from case3.run_undo import undo_meta
 
     out = dict(parsed[0])

@@ -14,7 +14,7 @@ import {
 import { DeckEditToolbar } from "./DeckEditToolbar";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 
-export type DeckMediaKind = "chart" | "photo";
+export type DeckMediaKind = "chart" | "photo" | "diagram";
 
 type Props = {
   runId: string;
@@ -132,7 +132,15 @@ function mediaUrl(
 }
 
 function mediaKind(id: string): DeckMediaKind {
-  return id.startsWith("cht_") ? "chart" : "photo";
+  if (id.startsWith("cht_")) return "chart";
+  if (id.startsWith("dia_")) return "diagram";
+  return "photo";
+}
+
+function mediaLabel(kind: DeckMediaKind): string {
+  if (kind === "chart") return "Изменить график";
+  if (kind === "diagram") return "Изменить схему";
+  return "Изменить фото";
 }
 
 function MediaSlot({
@@ -169,11 +177,7 @@ function MediaSlot({
       <button
         type="button"
         className={className}
-        aria-label={
-          mediaKind(mediaId) === "chart"
-            ? "Изменить график"
-            : "Изменить фото"
-        }
+        aria-label={mediaLabel(mediaKind(mediaId))}
         aria-pressed={open}
         onClick={() => onMediaClick?.(mediaId, mediaKind(mediaId))}
       >

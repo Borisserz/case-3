@@ -104,10 +104,10 @@ function LiberNode({ data, selected }: NodeProps) {
     color: "#1a2e22",
     borderRadius: isDecision ? 4 : d.kind === "ok" ? 999 : 10,
     padding: isDecision ? "18px 14px" : "10px 14px",
-    minWidth: 110,
-    maxWidth: 200,
+    minWidth: 140,
+    maxWidth: 280,
     textAlign: "center",
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: "Georgia, 'Times New Roman', serif",
     lineHeight: 1.25,
     boxShadow: selected
@@ -892,8 +892,8 @@ function EditorInner({
                 <h4>Блок</h4>
                 <label className="diagram-edit-field">
                   <span>Текст</span>
-                  <input
-                    type="text"
+                  <textarea
+                    rows={3}
                     value={String((selectedNode.data as NodeData).label || "")}
                     onChange={(e) => {
                       const v = e.target.value;
