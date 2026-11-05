@@ -21,6 +21,8 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 **Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. **В PDF/DOCX схем нет** (только графики/фото); print-truth = PDF.
 
+**Презентация:** слайдов 6–24 (настройка «Слайдов в презе»). До 5 своих PNG/JPEG. В тексте: `1. логотип …`, `2. схема …`, `3. интерфейс …`. Логотип и скрин встают как фото. Схема перерисовывается в Mermaid и стоит на слайде. Длинный текст сжимается в карту; из листинга на слайд берётся одна строка кода. Правка схемы: `E` → клик по схеме → «Сохранить». Подробно: `docs/knowledge/deck.md`.
+
 **Preview edit:** графики / фото / **таблицы** («Изменить» → sheet → Сохранить в отчёт = TeX + PDF/DOCX). Таблицы: `POST /api/runs/{id}/tables/{n}/edit`.
 
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
@@ -36,7 +38,7 @@ scripts\setup.cmd
 ```
 
 Правь `.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
-(фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`)  
+(сгенерированные фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, перезапуск `api.cmd`.
 
 **Сайт — два окна cmd:**

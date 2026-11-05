@@ -18,9 +18,9 @@ Modes (`domain/liberModes`): **report** | **diagram** | **presentation** → `ou
 2. Poll `GET /api/runs/{id}/status` → thinking phrases (`domain/pipelinePhrases`).
 3. While latex/docx: SSE `api/summaryStream` → bot bubble text.
 4. Done → in-chat card; rail tabs via `modeSurfaces`.
-5. Presentation: `POST …/slides` + poll (rail not auto-opened).
+5. Presentation: `POST …/slides` + poll (rail not auto-opened). Wish 6–24 via `target_slides`. Up to 5 photos. A «схема» photo is redrawn as `dia_*` before the deck LLM. Source longer than 8000 characters is briefed (`slides_source_text`).
 
-Edits: `POST …/charts|figures|tables|diagrams/…/edit`. Cancel: `POST …/cancel`.
+Edits: `POST …/charts|figures|tables|diagrams/…/edit`. A diagram on a slide uses the same visual editor, then `POST …/slides/rebuild`. Cancel: `POST …/cancel`. Contract: `docs/knowledge/deck.md`.
 
 ## Where code lives (Week 1)
 
