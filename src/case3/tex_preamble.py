@@ -867,8 +867,10 @@ def ensure_document_preamble(tex: str) -> str:
         fix_markdown_bold_leaks,
         fix_unclosed_caption_args,
         fix_unclosed_float_envs,
+        brace_schema_item_labels,
         fix_unclosed_heading_args,
         harden_prose_lists,
+        normalize_includegraphics_aspect,
         scrub_emoji_from_headings,
         unstar_headings,
     )
@@ -881,6 +883,8 @@ def ensure_document_preamble(tex: str) -> str:
     out = fix_unclosed_caption_args(out)
     out = fix_unclosed_float_envs(out)
     out = harden_prose_lists(out)
+    out = brace_schema_item_labels(out)
+    out = normalize_includegraphics_aspect(out)
     return harden_table_rules(out)
 
 

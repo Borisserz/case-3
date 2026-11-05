@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from case3.tex_preamble import ensure_document_preamble
-from case3.tex_prose import harden_prose_lists
+from case3.tex_prose import (
+    brace_schema_item_labels,
+    harden_prose_lists,
+    normalize_includegraphics_aspect,
+)
 
 
 def test_dash_bullets_become_itemize() -> None:
@@ -45,6 +49,50 @@ def test_skips_inside_itemize_and_tabular() -> None:
     assert "- не трогать" in out
     assert r"\item снаружи да" in out
     assert out.count(r"\begin{itemize}") == 2  # original + new
+
+
+def test_schema_item_brackets_stay_in_the_line() -> None:
+    """Win desk 090626: ``\\item [Узел] $\\rightarrow$`` is a diagram node.
+
+    LaTeX treats ``[…]`` as the item label and paints it in the margin,
+    so the first node is clipped off the page.
+    """
+    src = (
+        r"\begin{itemize}" + "\n"
+        r" \item [Датчики станков] $\rightarrow$ [Поток данных 5G]" + "\n"
+        r" \item [Дроны] + [Спутники] $\rightarrow$ [Сервер обработки]" + "\n"
+        r" \item \textbf{Да:} [Создание двойника] $\rightarrow$ [Прогноз]" + "\n"
+        r" \item обычный пункт" + "\n"
+        r"\end{itemize}" + "\n"
+    )
+    out = brace_schema_item_labels(src)
+    assert r"\item {[Датчики станков]}" in out
+    assert r"\item {[Дроны]}" in out
+    assert r"$\rightarrow$ [Поток данных 5G]" in out
+    assert r"\item \textbf{Да:}" in out
+    assert r"\item обычный пункт" in out
+    assert brace_schema_item_labels(out) == out
+
+
+def test_ensure_preamble_braces_schema_nodes() -> None:
+    tex = (
+        r"\documentclass{article}" + "\n"
+        r"\begin{document}" + "\n"
+        r"\item [Датчики станков] $\rightarrow$ [Кластер]" + "\n"
+        r"\end{document}" + "\n"
+    )
+    out = ensure_document_preamble(tex)
+    assert r"\item {[Датчики станков]}" in out
+
+
+def test_strip_includegraphics_height_keeps_width() -> None:
+    raw = (
+        r"\includegraphics[width=0.85\textwidth,height=0.4\textheight]"
+        r"{figures/fig_01.png}"
+    )
+    out = normalize_includegraphics_aspect(raw)
+    assert "height=" not in out
+    assert r"width=0.85\textwidth" in out
 
 
 def test_ensure_preamble_runs_prose_harden() -> None:

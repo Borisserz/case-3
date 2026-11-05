@@ -275,6 +275,65 @@ def unstar_headings(tex: str) -> str:
     return out
 
 
+# ``\item [Узел] $\rightarrow$ …`` — brackets are a diagram node, not a list label.
+# LaTeX paints ``\item[...]`` in the margin; the first node is clipped off the page
+# (Win desk source_20261103T090626Z).
+_SCHEMA_ITEM = re.compile(
+    r"^([ \t]*\\item)[ \t]*\[([^\]\n]*)\]([ \t]*\S.*)$"
+)
+_SCHEMA_FLOW = re.compile(
+    r"\\(?:rightarrow|leftarrow|downarrow|uparrow)|(?:^|[^\]])\[[^\]\n]+\]"
+)
+
+_INCLUDEGRAPHICS = re.compile(
+    r"\\includegraphics(\[(?P<opts>[^\]]*)\])?\{(?P<path>[^}]+)\}"
+)
+
+
+def normalize_includegraphics_aspect(tex: str) -> str:
+    """Drop ``height=…`` from ``\\includegraphics`` so width-only keeps aspect (PDF)."""
+    if not tex or r"\includegraphics" not in tex:
+        return tex
+
+    def repl(m: re.Match[str]) -> str:
+        opts = m.group("opts") or ""
+        path = m.group("path")
+        if not opts or "height" not in opts:
+            return m.group(0)
+        parts = [
+            p.strip()
+            for p in opts.split(",")
+            if p.strip() and not p.strip().startswith("height=")
+        ]
+        if not parts:
+            return rf"\includegraphics{{{path}}}"
+        return rf"\includegraphics[{','.join(parts)}]{{{path}}}"
+
+    return _INCLUDEGRAPHICS.sub(repl, tex)
+
+
+def brace_schema_item_labels(tex: str) -> str:
+    """Keep ``\\item [node] → …`` nodes in the line, not in the margin label."""
+    if not tex or r"\item" not in tex:
+        return tex
+    out: list[str] = []
+    for line in tex.splitlines(keepends=True):
+        nl = ""
+        body = line
+        if body.endswith("\n"):
+            nl = "\n"
+            body = body[:-1]
+            if body.endswith("\r"):
+                nl = "\r\n"
+                body = body[:-1]
+        m = _SCHEMA_ITEM.match(body)
+        if m and _SCHEMA_FLOW.search(m.group(3)):
+            out.append(f"{m.group(1)} {{[{m.group(2)}]}}{m.group(3)}{nl}")
+        else:
+            out.append(line)
+    return "".join(out)
+
+
 def harden_prose_lists(tex: str) -> str:
     """Turn consecutive ``- `` / ``• `` / ``* `` lines outside skip-envs into itemize.
 

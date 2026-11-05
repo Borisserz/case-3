@@ -43,6 +43,7 @@
    - If Source/Intent has 3+ bullets, steps, or parallel items → use `\begin{itemize}…\end{itemize}` or `\begin{enumerate}…\end{enumerate}` (not a comma-wall paragraph).
    - Key metrics / proper nouns once: `\textbf{…}`; English terms: `\emph{…}` (or `\textit{…}`).
    - Prefer short paragraphs (2–4 sentences) between lists; avoid one unbroken prose block for list-like Source.
+   - A text schema (`[узел] → [узел]`) is ordinary item text. Never `\item [узел]` — those brackets are the list label and the node is clipped off the page. Write `\item {[узел]} $\rightarrow$ {[узел]}`.
 5. Tables with `booktabs` when Intent/Source need them; if Intent says no tables — prose only.
    Use `\toprule` / `\midrule` / `\bottomrule` — **never** stack `\hline\hline`.
    **Fit A4 text width:** for 3+ columns or long cell text prefer

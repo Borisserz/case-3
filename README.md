@@ -82,7 +82,7 @@ scripts\web.cmd
 | Dry-run | графиков не будет — снять галку, нужен Vision |
 | нет Vision | `.env` или UI → Dry-run |
 | порт занят | закрой старые `api.cmd` / `web.cmd` |
-| отдать логи | `scripts\push-debug.cmd` → ветка `debug/upload-STAMP` (без PDF/DOCX; `set KEEP_PDF=1` чтобы оставить) |
+| отдать логи | `scripts\push-debug.cmd` → ветка `debug/upload-STAMP` (slim: tex/logs/json/raw, без PNG/slides; `KEEP_MEDIA=1` / `KEEP_PDF=1` по необходимости) |
 
 ## Папки
 
