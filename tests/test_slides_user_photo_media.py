@@ -81,7 +81,28 @@ def test_photo_lands_after_the_slide_that_shares_its_caption() -> None:
     assert photo["media_id"] == "usr_02"
     assert "смена 2" in photo["title"].casefold()
     assert deck["slides"][-1]["layout"] == "closing"
-    assert deck["slides"][-2]["media_id"] == "usr_01"
+    assert ids.index("s_photo_usr_01") < ids.index("s03")
+
+
+def test_logo_sits_right_after_title() -> None:
+    deck = _deck()
+    placed = ensure_deck_photos(
+        deck,
+        [
+            {"id": "usr_01", "caption": "логотип платформы"},
+            {"id": "usr_02", "caption": "логотип организации"},
+            {"id": "usr_03", "caption": "фотки интерфейс"},
+        ],
+    )
+    assert placed[0] == "usr_01"
+    assert deck["slides"][1]["media_id"] == "usr_01"
+    assert deck["slides"][1]["layout"] == "media_hero"
+    assert deck["slides"][1]["kicker"] == "ЛОГОТИП"
+    assert deck["slides"][2]["media_id"] == "usr_02"
+    assert deck["slides"][-1]["layout"] == "closing"
+    ui = next(s for s in deck["slides"] if s.get("media_id") == "usr_03")
+    assert ui["layout"] == "media_split"
+    assert deck["slides"][-2].get("media_id") != "usr_03"
 
 
 def test_photo_already_on_a_slide_is_not_duplicated() -> None:

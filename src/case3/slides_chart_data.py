@@ -374,8 +374,18 @@ def _used_media_ids(deck: dict[str, Any]) -> set[str]:
     return used
 
 
-def _insert_after_match(slides: list[dict[str, Any]], caption: str) -> int:
-    """Index after the slide whose copy shares the most words with the caption."""
+_LOGO = re.compile(r"лог|logo", re.IGNORECASE)
+
+
+def _is_logo(caption: str) -> bool:
+    return bool(_LOGO.search(caption or ""))
+
+
+def _insert_after_match(slides: list[dict[str, Any]], caption: str) -> tuple[int, int]:
+    """Index after the slide whose copy shares the most words with the caption.
+
+    Returns ``(index, score)``. Score 0 means nothing in the deck matches.
+    """
     want = _tokens(caption)
     best_i: int | None = None
     best = 0
@@ -391,11 +401,20 @@ def _insert_after_match(slides: list[dict[str, Any]], caption: str) -> int:
             best = score
             best_i = i
     if best_i is not None:
-        return best_i + 1
+        return best_i + 1, best
     for i, s in enumerate(slides):
         if str(s.get("layout") or "") == "closing":
-            return i
-    return len(slides)
+            return i, 0
+    return len(slides), 0
+
+
+def _content_slots(slides: list[dict[str, Any]]) -> list[int]:
+    return [
+        i
+        for i, s in enumerate(slides)
+        if str(s.get("layout") or "")
+        not in ("title", "closing", "media_hero", "media_split")
+    ]
 
 
 def _fresh_photo_id(used: set[str], fid: str) -> str:
@@ -408,16 +427,52 @@ def _fresh_photo_id(used: set[str], fid: str) -> str:
     return f"{base}_{n}"
 
 
+def _photo_slide(
+    used_ids: set[str],
+    fid: str,
+    caption: str,
+    *,
+    layout: str,
+    kicker: str,
+) -> dict[str, Any]:
+    return {
+        "id": _fresh_photo_id(used_ids, fid),
+        "layout": layout,
+        "kicker": kicker,
+        "title": _clip_label(caption),
+        "media_id": fid,
+        "caption": _clip_label(caption, 120),
+    }
+
+
+def _place_photo(
+    slides: list[dict[str, Any]],
+    slide: dict[str, Any],
+    at: int,
+    *,
+    max_slides: int,
+) -> bool:
+    if len(slides) >= max_slides:
+        for i in range(len(slides) - 2, 0, -1):
+            if str(slides[i].get("layout") or "") in _FILLER_LAYOUTS:
+                slides[i] = slide
+                return True
+        return False
+    slides.insert(max(0, min(at, len(slides))), slide)
+    return True
+
+
 def ensure_deck_photos(
     deck: dict[str, Any],
     photos: list[dict[str, Any]],
     *,
     max_slides: int = 24,
 ) -> list[str]:
-    """Put each unused usr_/fig_ on a media_split next to the matching slide.
+    """Place unused usr_/fig_ photos.
 
-    The model often skips attached photos. Caption overlap decides the slot
-    so the picture sits with the claim it illustrates.
+    A caption with «лого» becomes a ``media_hero`` right after the title.
+    Other captions sit after the slide that shares their words. If nothing
+    matches, they spread through the body instead of stacking before the close.
     """
     if not isinstance(deck, dict):
         return []
@@ -426,7 +481,7 @@ def ensure_deck_photos(
         return []
     used_media = _used_media_ids(deck)
     used_ids = {str(s.get("id") or "") for s in slides}
-    injected: list[str] = []
+    pending: list[tuple[str, str]] = []
     for photo in photos:
         if not isinstance(photo, dict):
             continue
@@ -434,29 +489,52 @@ def ensure_deck_photos(
         if not fid.startswith(("usr_", "fig_")) or fid in used_media:
             continue
         caption = str(photo.get("caption") or "").strip() or fid
-        title = _clip_label(caption)
-        slide = {
-            "id": _fresh_photo_id(used_ids, fid),
-            "layout": "media_split",
-            "kicker": "КАДР",
-            "title": title,
-            "media_id": fid,
-            "caption": _clip_label(caption, 120),
-        }
-        if len(slides) >= max_slides:
-            replaced = False
-            for i in range(len(slides) - 2, 0, -1):
-                if str(slides[i].get("layout") or "") in _FILLER_LAYOUTS:
-                    slides[i] = slide
-                    replaced = True
-                    break
-            if not replaced:
-                continue
-        else:
-            at = _insert_after_match(slides, caption)
-            slides.insert(at, slide)
+        pending.append((fid, caption))
+
+    injected: list[str] = []
+
+    def _keep(fid: str, slide: dict[str, Any]) -> None:
         used_media.add(fid)
-        used_ids.add(slide["id"])
+        used_ids.add(str(slide["id"]))
         injected.append(fid)
+
+    logo_at = 1
+    rest: list[tuple[str, str]] = []
+    for fid, caption in pending:
+        if not _is_logo(caption):
+            rest.append((fid, caption))
+            continue
+        slide = _photo_slide(
+            used_ids, fid, caption, layout="media_hero", kicker="ЛОГОТИП"
+        )
+        if _place_photo(slides, slide, logo_at, max_slides=max_slides):
+            _keep(fid, slide)
+            logo_at += 1
+
+    unmatched: list[tuple[str, dict[str, Any]]] = []
+    for fid, caption in rest:
+        slide = _photo_slide(
+            used_ids, fid, caption, layout="media_split", kicker="КАДР"
+        )
+        at, score = _insert_after_match(slides, caption)
+        if score > 0 and _place_photo(slides, slide, at, max_slides=max_slides):
+            _keep(fid, slide)
+        elif score == 0:
+            unmatched.append((fid, slide))
+
+    slots = _content_slots(slides)
+    n = len(unmatched)
+    targets: list[tuple[int, str, dict[str, Any]]] = []
+    for i, (fid, slide) in enumerate(unmatched):
+        if slots:
+            idx = min(len(slots) - 1, int(i * len(slots) / n))
+            at = slots[idx] + 1
+        else:
+            at = len(slides)
+        targets.append((at, fid, slide))
+    for at, fid, slide in sorted(targets, key=lambda row: -row[0]):
+        if _place_photo(slides, slide, at, max_slides=max_slides):
+            _keep(fid, slide)
+
     deck["slides"] = slides
     return injected

@@ -13,6 +13,68 @@ log = logging.getLogger("case3.user_photos")
 _MAX_BYTES = 4 * 1024 * 1024
 _MAX_COUNT = 5
 _NAME_OK = re.compile(r"^[a-zA-Z0-9._ -]{1,120}$")
+_NUMBERED = re.compile(r"^((?:\d+[.)]\s*)+)(.+)$")
+_PHOTO_HINT = re.compile(
+    r"фото|фотк|лог|скрин|интерфейс|экран|logo|screen",
+    re.IGNORECASE,
+)
+_FILE_PREFIX = re.compile(r"^(?:файл|file)\s+", re.IGNORECASE)
+
+
+def clip_photo_files(files: list[Any], *, limit: int = _MAX_COUNT) -> list[Any]:
+    """Keep the upload cap in one place. The API used to slice at 2."""
+    return list(files)[: max(0, int(limit))]
+
+
+def captions_from_intent(intent: str, count: int) -> list[str]:
+    """Turn a numbered photo list in the user message into captions.
+
+    ``3. 4. 5. фотки интерфейс`` becomes three identical captions.
+    A numbered Source with no photo words is left alone.
+    """
+    n = max(0, int(count))
+    if n <= 0:
+        return []
+    block: list[str] = []
+    started = False
+    for raw in (intent or "").splitlines()[:40]:
+        line = raw.strip()
+        if not line:
+            if started:
+                break
+            continue
+        m = _NUMBERED.match(line)
+        if not m:
+            if started:
+                break
+            continue
+        started = True
+        text = _FILE_PREFIX.sub("", m.group(2).strip())
+        slots = max(1, len(re.findall(r"\d+", m.group(1))))
+        for _ in range(slots):
+            block.append(text)
+            if len(block) >= n:
+                break
+        if len(block) >= n:
+            break
+    if not block or not _PHOTO_HINT.search(" ".join(block)):
+        return []
+    return block[:n]
+
+
+def split_image_budget(images_budget: int, n_user: int, *, mode: str) -> tuple[int, int]:
+    """Return ``(llm_max_images, merge_max_images)``.
+
+    A presentation that already has uploads must not spend the leftover
+    budget on generated ``fig_*`` — those frames stole the screenshot slots.
+    """
+    n = max(0, int(n_user))
+    budget = max(0, int(images_budget))
+    if n:
+        budget = min(8, max(budget, n))
+    if (mode or "").strip().lower() == "presentation" and n:
+        return 0, n
+    return max(0, budget - n), budget
 
 
 class UserPhotoError(ValueError):

@@ -32,7 +32,12 @@ from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image
 from case3.run_cancel import mark_cancel_requested
-from case3.user_photos import UserPhotoError, save_user_photos
+from case3.user_photos import (
+    UserPhotoError,
+    captions_from_intent,
+    clip_photo_files,
+    save_user_photos,
+)
 from case3.intent_compose import build_intent_from_ui
 from case3 import run_store
 from case3.run_store import (
@@ -525,9 +530,12 @@ async def api_run(
         photo_files = [photos]
     cap_list = [c.strip() for c in (photo_captions or "").split("\n") if c.strip()]
     user_figures: list[dict[str, Any]] = []
+    photo_files = clip_photo_files(photo_files)
+    if not cap_list and photo_files:
+        cap_list = captions_from_intent(intent or "", len(photo_files))
     if photo_files:
         blobs: list[tuple[str, bytes]] = []
-        for uf in photo_files[:2]:
+        for uf in photo_files:
             raw = await uf.read()
             blobs.append((uf.filename or "photo.png", raw))
         try:

@@ -27,6 +27,7 @@ from case3.user_photos import (
     ensure_user_slots_in_tex,
     materialize_user_figures,
     merge_user_figures,
+    split_image_budget,
 )
 log = logging.getLogger("case3.pipeline")
 
@@ -923,10 +924,10 @@ def run_pipeline(
     if mode not in {"report", "diagram", "presentation", "auto"}:
         mode = "auto"
     user_figs = list(user_figures or [])
-    # Uploads always need figure budget even if UI had «без фото» half-checked
-    if user_figs:
-        images_budget = max(images_budget, len(user_figs))
-        images_budget = min(images_budget, 8)
+    # Presentation + uploads: do not leave budget for invented fig_*.
+    llm_image_budget, images_budget = split_image_budget(
+        images_budget, len(user_figs), mode=mode
+    )
 
     # Heartbeat BEFORE FileHandler / load_timings: on Win those can stall (AV lock)
     # and Liber sat forever on status=running stage=queued («Читаю Source»).
@@ -978,8 +979,6 @@ def run_pipeline(
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
-        # Reserve slots for uploads so the LLM plans fewer generated photos.
-        llm_image_budget = max(0, images_budget - len(user_figs))
         _, figures, charts, diagrams = generate_document(
             text_path,
             out_tex=tex_path,
