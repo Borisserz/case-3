@@ -11,6 +11,7 @@ from case3.color_util import hex_to_rgb
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -455,12 +456,44 @@ def _picture_fit(
     path: Path,
     left,
     top,
-    width,
-    height,
+    box_w,
+    box_h,
 ) -> None:
-    if not path or not Path(path).is_file():
+    """Place image inside box preserving aspect ratio (contain, centered)."""
+    p = Path(path)
+    if not p.is_file():
         return
-    slide.shapes.add_picture(str(path), left, top, width=width, height=height)
+    try:
+        with Image.open(p) as im:
+            iw, ih = im.size
+    except Exception:
+        slide.shapes.add_picture(str(p), left, top, width=box_w)
+        return
+    if iw <= 0 or ih <= 0:
+        slide.shapes.add_picture(str(p), left, top, width=box_w)
+        return
+
+    bw = _as_inches(box_w)
+    bh = _as_inches(box_h)
+    l0 = _as_inches(left)
+    t0 = _as_inches(top)
+    img_r = iw / ih
+    box_r = bw / bh if bh > 0 else img_r
+    if img_r >= box_r:
+        pic_w = bw
+        pic_h = bw / img_r
+    else:
+        pic_h = bh
+        pic_w = pic_h * img_r
+    off_x = l0 + max(0.0, (bw - pic_w) / 2.0)
+    off_y = t0 + max(0.0, (bh - pic_h) / 2.0)
+    # Only width — python-pptx keeps aspect ratio (both w+h = stretch/squash).
+    slide.shapes.add_picture(
+        str(p),
+        Inches(off_x),
+        Inches(off_y),
+        width=Inches(pic_w),
+    )
 
 
 def _split_ratio(style: dict[str, Any] | None) -> float | None:

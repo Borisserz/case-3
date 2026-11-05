@@ -518,3 +518,81 @@ def test_bare_slide_index_chrome_1_to_12_allowed() -> None:
             },
             source=SOURCE,
         )
+
+
+def test_bare_index_13_to_24_is_chrome_25_is_not() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги", "kicker": "18"},
+                {
+                    "id": "s02",
+                    "layout": "section",
+                    "title": "Глава",
+                    "subtitle": "Блок 24",
+                },
+                {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+            ],
+        },
+        source=SOURCE,
+    )
+    assert ir["slides"][0]["kicker"] == "18"
+    with pytest.raises(DeckIrError, match="25"):
+        parse_deck_ir(
+            {
+                "version": 1,
+                "palette": "atelier",
+                "slides": [
+                    {"id": "s01", "layout": "title", "title": "Итоги"},
+                    {
+                        "id": "s02",
+                        "layout": "bullets",
+                        "title": "X",
+                        "bullets": ["Шаг 25"],
+                    },
+                    {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+                ],
+            },
+            source=SOURCE,
+        )
+
+
+def test_parse_accepts_sixteen_slide_deck() -> None:
+    layouts = ["section", "callout", "bullets"]
+    slides: list[dict] = [
+        {"id": "s01", "layout": "title", "title": "Итоги", "subtitle": "2024"}
+    ]
+    for i in range(14):
+        layout = layouts[i % len(layouts)]
+        sid = f"s{i + 2:02d}"
+        if layout == "section":
+            slides.append({"id": sid, "layout": "section", "title": f"Часть {i + 1}"})
+        elif layout == "callout":
+            slides.append(
+                {
+                    "id": sid,
+                    "layout": "callout",
+                    "title": "Тезис",
+                    "term": "Факт",
+                    "definition": "Выручка 120 млн",
+                }
+            )
+        else:
+            slides.append(
+                {
+                    "id": sid,
+                    "layout": "bullets",
+                    "title": "Детали",
+                    "bullets": ["Доля 35%"],
+                }
+            )
+    slides.append(
+        {"id": "s16", "layout": "closing", "title": "Далее", "bullets": ["План"]}
+    )
+    assert len(slides) == 16
+    ir = parse_deck_ir(
+        {"version": 1, "palette": "atelier", "slides": slides}, source=SOURCE
+    )
+    assert len(ir["slides"]) == 16

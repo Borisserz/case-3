@@ -125,6 +125,29 @@ _MODE_ARCS: dict[str, list[str]] = {
 }
 
 
+SLIDE_TARGET_MIN = 6
+SLIDE_TARGET_MAX = 24
+
+_NARRATIVE_FILLERS = (
+    "callout",
+    "card_row",
+    "table_hero",
+    "section",
+    "bullets",
+)
+
+
+def clamp_slide_target(raw: int | None) -> int | None:
+    """User wish for deck length. ``None`` keeps the automatic 6–12 band."""
+    if raw is None:
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(SLIDE_TARGET_MIN, min(SLIDE_TARGET_MAX, n))
+
+
 @dataclass(frozen=True)
 class BeatPlan:
     mode: str
@@ -321,6 +344,97 @@ def _trim_beats(
     return out
 
 
+def _expand_signature(
+    beats: list[str],
+    target: int,
+    *,
+    dna: Sequence[str],
+) -> list[str]:
+    """Repeat the template's narrative layouts until ``target``.
+
+    Charts and photos stay as the base arc placed them — extra slots are
+    sections, tables, cards, callouts, and bullets so a long Source has
+    room without fake media.
+    """
+    out = list(beats)
+    fillers = [
+        b
+        for b in dna
+        if b
+        not in (
+            "title",
+            "closing",
+            "chart_hero",
+            "chart_split",
+            "media_hero",
+            "media_split",
+        )
+    ]
+    if not fillers:
+        fillers = list(_NARRATIVE_FILLERS)
+    fi = 0
+    spins = 0
+    cap = max(SLIDE_TARGET_MIN, min(int(target), SLIDE_TARGET_MAX))
+    while len(out) < cap and spins < cap * 4:
+        layout = fillers[fi % len(fillers)]
+        fi += 1
+        spins += 1
+        prev = out[-2] if len(out) >= 2 else ""
+        prev2 = out[-3] if len(out) >= 3 else ""
+        content_n = max(0, len(out) - 1)
+        if cap >= 16 and content_n % 6 == 0 and prev != "section":
+            layout = "section"
+        if layout == prev == prev2:
+            continue
+        if layout == "bullets" and prev == "bullets" and prev2 == "bullets":
+            continue
+        if (
+            layout in ("scorecard", "kpi_row")
+            and prev in ("scorecard", "kpi_row")
+            and prev2 in ("scorecard", "kpi_row")
+        ):
+            continue
+        out.insert(-1, layout)
+    if out[0] != "title":
+        out.insert(0, "title")
+    if out[-1] != "closing":
+        out.append("closing")
+    return out[:SLIDE_TARGET_MAX]
+
+
+def _reserve_media_beats(
+    beats: list[str],
+    *,
+    n_charts: int,
+    n_figs: int,
+) -> list[str]:
+    """Keep chart and photo slots inside the target length.
+
+    Swaps filler layouts so ``ensure_deck_charts`` does not append a spare
+    slide, and so attached ``usr_*`` photos have a ``media_*`` beat to fill.
+    """
+    out = list(beats)
+    need: list[str] = []
+    if n_charts > 0 and not any(b in ("chart_hero", "chart_split") for b in out):
+        need.append("chart_hero")
+    have_media = sum(1 for b in out if b in ("media_hero", "media_split"))
+    for i in range(max(0, min(n_figs, 2) - have_media)):
+        need.append("media_hero" if i % 2 == 0 else "media_split")
+    fillers = {"card_row", "callout", "bullets", "table_hero", "section", "scorecard"}
+    for layout in need:
+        idx = next(
+            (
+                i
+                for i in range(len(out) - 2, 0, -1)
+                if out[i] in fillers
+            ),
+            None,
+        )
+        if idx is not None:
+            out[idx] = layout
+    return out
+
+
 def plan_beats(
     *,
     source: str,
@@ -329,6 +443,7 @@ def plan_beats(
     figure_ids: Sequence[str] | None = None,
     diagram_ids: Sequence[str] | None = None,
     structure_id: str | None = None,
+    target_slides: int | None = None,
 ) -> BeatPlan:
     """Build a layout skeleton from structure template or Source+media signals."""
     charts = [str(x) for x in (chart_ids or []) if str(x).strip()]
@@ -348,44 +463,50 @@ def plan_beats(
         except (TypeError, ValueError, IndexError):
             lo, hi = 8, 12
         target = max(lo, min(hi, 10 if len(charts) + len(figs) >= 1 else 8))
-        beats = _trim_beats(
-            arc, n_charts=len(charts), n_figs=len(figs), n_dias=len(dias), target=target
+        rationale = f"structure template {sid}"
+        from_structure = True
+        mode = sid
+    else:
+        text = _blob(source, intent)
+        scores = _score_modes(
+            text, n_charts=len(charts), n_figs=len(figs), n_dias=len(dias)
         )
-        return BeatPlan(
-            mode=sid,
-            pack_hint=pack,
-            target_slides=len(beats),
-            beats=tuple(beats),
-            rationale=f"structure template {sid}",
-            from_structure=True,
+        mode = max(scores, key=lambda m: scores[m])
+        arc = list(_MODE_ARCS[mode])
+        pack = _MODE_PACK[mode]
+        # Richer media → longer deck
+        richness = len(charts) + len(figs) + len(dias) + (1 if len(text) > 600 else 0)
+        target = 10 if richness >= 2 else (8 if richness >= 1 or len(text) > 400 else 7)
+        target = max(6, min(12, target))
+        top = sorted(scores.items(), key=lambda kv: -kv[1])[:3]
+        rationale = (
+            f"inferred mode={mode} from Source/media; "
+            f"scores=" + ", ".join(f"{m}:{s:.1f}" for m, s in top)
         )
+        from_structure = False
 
-    text = _blob(source, intent)
-    scores = _score_modes(
-        text, n_charts=len(charts), n_figs=len(figs), n_dias=len(dias)
-    )
-    mode = max(scores, key=lambda m: scores[m])
-    arc = list(_MODE_ARCS[mode])
-    pack = _MODE_PACK[mode]
-    # Richer media → longer deck
-    richness = len(charts) + len(figs) + len(dias) + (1 if len(text) > 600 else 0)
-    target = 10 if richness >= 2 else (8 if richness >= 1 or len(text) > 400 else 7)
-    target = max(6, min(12, target))
+    asked = clamp_slide_target(target_slides)
+    if asked is not None:
+        target = asked
+        rationale = (
+            f"{rationale}; user target {asked} slides "
+            "(drop beats if Source lacks distinct facts)"
+        )
     beats = _trim_beats(
         arc, n_charts=len(charts), n_figs=len(figs), n_dias=len(dias), target=target
     )
-    top = sorted(scores.items(), key=lambda kv: -kv[1])[:3]
-    rationale = (
-        f"inferred mode={mode} from Source/media; "
-        f"scores=" + ", ".join(f"{m}:{s:.1f}" for m, s in top)
+    if asked is not None and len(beats) < asked:
+        beats = _expand_signature(beats, asked, dna=arc)
+    beats = _reserve_media_beats(
+        beats, n_charts=len(charts), n_figs=len(figs) + len(dias)
     )
     return BeatPlan(
-        mode=mode,
+        mode=mode if not from_structure else sid,
         pack_hint=pack,
         target_slides=len(beats),
         beats=tuple(beats),
         rationale=rationale,
-        from_structure=False,
+        from_structure=from_structure,
     )
 
 
@@ -409,15 +530,20 @@ def format_beat_overlay(plan: BeatPlan) -> str:
         "3. Numbers ⊆ Source / chart captions only. Prefer ≥5 distinct layouts when ≥8 slides.",
         "4. If a beat needs media you lack, replace that one beat with `callout` or `table_hero` "
         "— keep variety.",
+        "5. Walk Source in order: one claim per slide. Repeated layouts are chapters of the "
+        "same template, not copies of the same sentence. If Source cannot fill a beat without "
+        "inventing numbers, drop that beat (keep title and closing).",
+        "6. Every `media_hero` / `media_split` beat must use a real `fig_*` or `usr_*` id. "
+        "Do not leave attached photos unused.",
     ]
     if plan.mode == "survey":
         lines.append(
-            "5. Survey: `%` kickers on `card_row` (`68%`) so meters render; ≤1 chart."
+            "6. Survey: `%` kickers on `card_row` (`68%`) so meters render; ≤1 chart."
         )
     if plan.mode == "performance":
-        lines.append("5. Performance: put `chart_hero` before the first scorecard.")
+        lines.append("6. Performance: put `chart_hero` before the first scorecard.")
     if plan.mode == "board_update":
-        lines.append("5. Board: early `callout` ASK; table bridges over chart spam.")
+        lines.append("6. Board: early `callout` ASK; table bridges over chart spam.")
     return "\n".join(lines)
 
 

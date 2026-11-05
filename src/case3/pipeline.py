@@ -296,6 +296,7 @@ _DESK_SLIDES_KEYS = (
     "slides_theme_pack",
     "slides_structure_id",
     "slides_style",
+    "slides_target",
 )
 
 

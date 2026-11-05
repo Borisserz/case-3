@@ -290,3 +290,39 @@ def test_native_botanical_card_row_and_texture(tmp_path: Path) -> None:
     # Fern texture as OOXML slide background
     xml = prs.slides[0]._element.xml
     assert "p:bg" in xml or "a:blip" in xml
+
+
+def test_media_photo_not_squashed_in_pptx(tmp_path: Path) -> None:
+    """Square Flux photos must not fill a wide box with both width+height."""
+    sq = tmp_path / "fig_01.png"
+    Image.new("RGB", (1024, 1024), (90, 120, 60)).save(sq, format="PNG")
+    deck = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "atelier",
+        "language": "ru",
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "title",
+                "title": "Cover",
+            },
+            {
+                "id": "s02",
+                "layout": "media_split",
+                "title": "Кадр",
+                "media_id": "fig_01",
+                "body": "Описание",
+            },
+        ],
+    }
+    out = build_native_pptx(
+        deck, tmp_path / "photo.pptx", media_by_id={"fig_01": sq}
+    )
+    prs = Presentation(str(out))
+    split = prs.slides[1]
+    pics = [s for s in split.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pics) == 1
+    pic = pics[0]
+    ratio = float(pic.width) / float(pic.height)
+    assert 0.82 <= ratio <= 1.22, f"expected ~square photo, got ratio {ratio:.2f}"

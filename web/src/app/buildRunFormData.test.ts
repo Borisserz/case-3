@@ -25,6 +25,28 @@ describe("buildRunFormData", () => {
     assert.equal(fd.get("dry_run"), "true");
     assert.equal(fd.get("source_text"), "hello");
     assert.equal(fd.get("output_mode"), "report");
+    assert.equal(fd.get("target_slides"), "12");
+  });
+
+  it("clamps a presentation slide wish into 6–24", () => {
+    const fd = buildRunFormData({
+      file: null,
+      draftSnap: null,
+      chatTrim: "deck",
+      intentText: "deck",
+      photosSnapshot: [],
+      forbidCharts: false,
+      forbidImages: false,
+      maxCharts: 2,
+      maxImages: 2,
+      maxDiagrams: 0,
+      dryRun: false,
+      workMode: "presentation",
+      deckStyle: DEFAULT_DECK_STYLE,
+      targetSlides: 40,
+    });
+    assert.equal(fd.get("target_slides"), "24");
+    assert.equal(fd.get("formats"), "none");
   });
 
   it("zeros charts/images for diagram mode", () => {

@@ -53,7 +53,11 @@ def _layout_title(
     hero_bleed = bool(isinstance(motif, dict) and motif.get("hero_bleed"))
     used_photo = False
     if dark and hero_bleed and media_path:
-        used_photo = _set_slide_bg_picture(slide, Path(media_path))
+        # Match HTML title-bleed (right 78%%), contain — not OOXML bg stretch.
+        bleed_left = Inches(_SLIDE_W.inches * 0.22)
+        bleed_w = Inches(_SLIDE_W.inches * 0.78)
+        _picture_fit(slide, Path(media_path), bleed_left, Inches(0), bleed_w, _SLIDE_H)
+        used_photo = True
     if not used_photo:
         _apply_pack_bg(slide, colors, style)
     # Dark botanical title: left column copy over full-bleed / forest (Julius VESPER).

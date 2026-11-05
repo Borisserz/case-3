@@ -27,6 +27,8 @@ export type BuildRunFormDataArgs = {
   dryRun: boolean;
   workMode: LiberWorkMode;
   deckStyle: DeckStyle;
+  /** Wish for deck length (6–24). Model may emit fewer if Source is thin. */
+  targetSlides?: number;
 };
 
 export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
@@ -44,6 +46,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     dryRun,
     workMode,
     deckStyle,
+    targetSlides,
   } = args;
   const outMode = modeToOutputMode(workMode);
 
@@ -91,6 +94,8 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     fd.append("deck_structure_id", deckPayload.structure_id);
   }
   fd.append("deck_style_json", JSON.stringify(deckPayload.style_settings || {}));
+  const slidesWish = Math.max(6, Math.min(24, Math.round(targetSlides || 12)));
+  fd.append("target_slides", String(slidesWish));
   fd.append(
     "formats",
     outMode === "diagram" || outMode === "presentation" ? "none" : "both",

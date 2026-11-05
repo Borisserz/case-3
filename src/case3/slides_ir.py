@@ -30,7 +30,7 @@ _CHART_ID_OK = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 _MEDIA_ID_OK = re.compile(r"^(cht|fig|usr|dia)_[a-z0-9_]{1,28}$")
 _NUMBER_RUN = re.compile(r"\d+(?:[.,]\d+)?")
 
-_MAX_SLIDES = 12
+_MAX_SLIDES = 24
 _MIN_SLIDES_SOFT = 8  # prompt prefers 10–12; hard min stays 3
 _MAX_TITLE = 80
 _MAX_SUBTITLE = 120
@@ -125,13 +125,13 @@ def _is_section_index_chrome(num: str) -> bool:
     """Allow slide/section chrome indices — not Source facts.
 
     - Zero-padded kickers ``01``…``099``
-    - Bare ``1``…``12`` (deck chapter / card count chrome; LLM often emits these)
+    - Bare ``1``…``24`` (deck chapter / card count chrome; LLM often emits these)
     Multi-digit facts like ``5000`` still require Source / chart allow-list.
     """
     n = num or ""
     if re.fullmatch(r"0\d{1,2}", n):
         return True
-    return bool(re.fullmatch(r"[1-9]|1[0-2]", n))
+    return bool(re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n))
 
 
 def _number_in_source(num: str, source_norm: str) -> bool:

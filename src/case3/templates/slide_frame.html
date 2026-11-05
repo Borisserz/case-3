@@ -707,10 +707,12 @@
       object-position: center;
     }
     .media-frame--photo img {
+      max-width: 100%;
       max-height: 680px;
-      object-fit: cover;
-      width: 100%;
-      aspect-ratio: 16 / 9;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      object-position: center;
     }
     .media-caption {
       margin: 0;

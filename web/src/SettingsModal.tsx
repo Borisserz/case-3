@@ -36,6 +36,8 @@ type Props = {
   onMaxDiagrams: (n: number) => void;
   /** Hard ceiling from API ``defaults.max_diagrams_cap`` (CASE3_MAX_DIAGRAMS). */
   maxDiagramsCap?: number;
+  targetSlides: number;
+  onTargetSlides: (n: number) => void;
   forbidCharts: boolean;
   onForbidCharts: (v: boolean) => void;
   forbidImages: boolean;
@@ -56,6 +58,8 @@ export function SettingsModal({
   maxDiagrams,
   onMaxDiagrams,
   maxDiagramsCap = 5,
+  targetSlides,
+  onTargetSlides,
   forbidCharts,
   onForbidCharts,
   forbidImages,
@@ -162,6 +166,24 @@ export function SettingsModal({
                 />
               </div>
             </div>
+            <div className="row settings-limits-row">
+              <div>
+                <label className="field" htmlFor="set-slides">
+                  Слайдов в презе
+                </label>
+                <input
+                  id="set-slides"
+                  type="number"
+                  min={6}
+                  max={24}
+                  value={targetSlides}
+                  onChange={(e) => onTargetSlides(Number(e.target.value))}
+                />
+              </div>
+            </div>
+            <p className="hint">
+              Желаемая длина 6–24. Если в тексте мало фактов, преза будет короче — цифры не выдумываются. Шаблон повторяет свои раскладки, чтобы длинный документ поместился.
+            </p>
             <label className="check">
               <input
                 type="checkbox"

@@ -69,6 +69,15 @@ export default function App() {
   const [maxDiagrams, setMaxDiagrams] = useState(5);
   const [maxDiagramsCap, setMaxDiagramsCap] = useState(5);
   const [maxImages, setMaxImages] = useState(2);
+  const [targetSlides, setTargetSlides] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem("liber.slidesTarget.v1"));
+      if (Number.isFinite(n) && n >= 6 && n <= 24) return Math.round(n);
+    } catch {
+      /* ignore */
+    }
+    return 12;
+  });
   const [forbidCharts, setForbidCharts] = useState(false);
   /** Photos on by default; health may raise budget / confirm Image API. */
   const [forbidImages, setForbidImages] = useState(false);
@@ -319,6 +328,7 @@ export default function App() {
       maxCharts,
       maxImages,
       maxDiagrams,
+      targetSlides,
       dryRun,
       workMode,
       deckStyle,
@@ -876,6 +886,16 @@ export default function App() {
         maxDiagrams={maxDiagrams}
         onMaxDiagrams={setMaxDiagrams}
         maxDiagramsCap={maxDiagramsCap}
+        targetSlides={targetSlides}
+        onTargetSlides={(n) => {
+          const next = Math.max(6, Math.min(24, Math.round(Number(n)) || 12));
+          setTargetSlides(next);
+          try {
+            localStorage.setItem("liber.slidesTarget.v1", String(next));
+          } catch {
+            /* ignore */
+          }
+        }}
         forbidCharts={forbidCharts}
         onForbidCharts={setForbidCharts}
         forbidImages={forbidImages}

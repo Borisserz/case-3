@@ -29,6 +29,7 @@ from case3.slides_beat_planner import (
 from case3.slides_chart_data import (
     attach_series_ir_to_charts,
     ensure_deck_charts,
+    ensure_deck_photos,
     series_from_figures_json,
     series_map_from_figures,
 )
@@ -303,6 +304,11 @@ def run_slides_job(
             or ""
         ).strip() or None
         # Freeform: infer beat plan (+ pack hint). Structured: plan from template arc.
+        raw_target = meta.get("slides_target")
+        try:
+            slide_target = int(raw_target) if raw_target is not None else None
+        except (TypeError, ValueError):
+            slide_target = None
         beat_plan = plan_beats(
             source=source,
             intent=intent,
@@ -310,6 +316,7 @@ def run_slides_job(
             figure_ids=figure_ids,
             diagram_ids=diagram_ids,
             structure_id=structure_id,
+            target_slides=slide_target,
         )
         # Pack is "explicit" when UI chose a non-default pack, custom hex, or flag.
         chosen = normalize_pack_id(theme_pack_raw)
@@ -365,7 +372,10 @@ def run_slides_job(
             user = (
                 "Build the executive deck JSON now. "
                 "Follow the BEAT PLAN / STRUCTURE overlay skeleton (layouts in order). "
-                "Prefer 10–12 slides when Source is rich; keep ≥5 distinct layouts when ≥8 slides. "
+                f"Target {beat_plan.target_slides} slides. "
+                "If Source lacks distinct facts, emit fewer (still title … closing) — "
+                "do not invent numbers or repeat the same claim. "
+                "Keep ≥5 distinct layouts when ≥8 slides. "
                 "Use available chart/figure/diagram ids only. "
                 "Numbers only from Source or this allowed token list "
                 f"(chart captions/HTML): {allowed_preview}. "
@@ -461,10 +471,25 @@ def run_slides_job(
         attach_series_ir_to_charts(fj_early.get("charts") if isinstance(fj_early, dict) else None)
         series_all = series_map_from_figures(fj_early if isinstance(fj_early, dict) else {})
         series_all = {k: v for k, v in series_all.items() if k in png_by_id}
-        injected = ensure_deck_charts(deck, series_all)
+        chart_titles = {
+            str(ch.get("id") or ""): str(ch.get("caption") or ch.get("title") or "").strip()
+            for ch in (fj_early.get("charts") or [])
+            if isinstance(ch, dict) and ch.get("id")
+        }
+        injected = ensure_deck_charts(deck, series_all, titles=chart_titles)
         if injected:
             meta["slides_chart_injected"] = injected
             log.info("slides: injected chart_hero for %s", injected)
+        photos = [
+            fig
+            for fig in (fj_early.get("figures") or [])
+            if isinstance(fig, dict)
+            and str(fig.get("id") or "") in png_by_id
+        ]
+        photo_ids = ensure_deck_photos(deck, photos)
+        if photo_ids:
+            meta["slides_photo_injected"] = photo_ids
+            log.info("slides: placed photos %s", photo_ids)
             fj_path = out_dir / "figures.json"
             if fj_path.is_file() and isinstance(fj_early, dict):
                 fj_path.write_text(
@@ -755,6 +780,24 @@ def rebuild_slides_from_deck(
         png_by_id,
         diagram_specs,
     ) = collect_run_media(out_dir, meta)
+    fj_rebuild = load_figures_json(out_dir)
+    if isinstance(fj_rebuild, dict):
+        chart_titles = {
+            str(ch.get("id") or ""): str(ch.get("caption") or ch.get("title") or "").strip()
+            for ch in (fj_rebuild.get("charts") or [])
+            if isinstance(ch, dict) and ch.get("id")
+        }
+        ensure_deck_charts(deck, {}, titles=chart_titles)
+        photo_ids = ensure_deck_photos(
+            deck,
+            [
+                fig
+                for fig in (fj_rebuild.get("figures") or [])
+                if isinstance(fig, dict) and str(fig.get("id") or "") in png_by_id
+            ],
+        )
+        if photo_ids:
+            meta["slides_photo_injected"] = photo_ids
     palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
     if palette == "auto":
         palette = "atelier"

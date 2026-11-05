@@ -38,6 +38,36 @@ def test_plan_beats_survey_percentages() -> None:
     assert "callout" in plan.beats
 
 
+def test_plan_beats_expands_template_to_requested_count() -> None:
+    plan = plan_beats(
+        source="Длинный бриф " * 40,
+        intent="Нужна подробная преза",
+        chart_ids=["cht_01"],
+        figure_ids=["usr_01"],
+        diagram_ids=[],
+        structure_id="workshop",
+        target_slides=20,
+    )
+    assert plan.from_structure is True
+    assert len(plan.beats) == 20
+    assert plan.beats[0] == "title"
+    assert plan.beats[-1] == "closing"
+    assert "section" in plan.beats
+    assert "media_hero" in plan.beats or "media_split" in plan.beats
+    assert plan.beats.count("chart_hero") + plan.beats.count("chart_split") == 1
+
+
+def test_plan_beats_without_request_stays_in_default_band() -> None:
+    plan = plan_beats(
+        source="Короткий факт. Выручка 10.",
+        intent="",
+        chart_ids=[],
+        figure_ids=[],
+        diagram_ids=[],
+    )
+    assert 6 <= len(plan.beats) <= 12
+
+
 def test_plan_beats_respects_explicit_structure() -> None:
     plan = plan_beats(
         source="Anything",

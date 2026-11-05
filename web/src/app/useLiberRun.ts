@@ -64,6 +64,7 @@ export type LiberSendDeps = {
     maxCharts: number;
     maxImages: number;
     maxDiagrams: number;
+    targetSlides: number;
     dryRun: boolean;
     workMode: LiberWorkMode;
     deckStyle: DeckStyle;
@@ -118,6 +119,7 @@ export function useLiberRun(deps: LiberSendDeps) {
       maxCharts,
       maxImages,
       maxDiagrams,
+      targetSlides,
       dryRun,
       workMode,
       deckStyle,
@@ -194,7 +196,7 @@ async () => {
     outMode === "diagram"
       ? "схема"
       : outMode === "presentation"
-        ? `презентация · ${deckStyle.themePack}`
+        ? `презентация · ${deckStyle.themePack} · ${targetSlides} сл.`
         : outMode === "report"
           ? "отчёт"
           : null,
@@ -284,6 +286,7 @@ async () => {
     maxCharts,
     maxImages,
     maxDiagrams,
+    targetSlides,
     dryRun,
     workMode,
     deckStyle,
@@ -952,6 +955,7 @@ async () => {
       maxCharts,
       maxImages,
       maxDiagrams,
+      targetSlides,
       dryRun,
       setMsgs,
       setBusy,

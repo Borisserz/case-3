@@ -467,6 +467,7 @@ async def api_run(
     deck_pack: str = Form(""),
     deck_structure_id: str = Form(""),
     deck_style_json: str = Form(""),
+    target_slides: int | None = Form(None),
     photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
 ) -> JSONResponse:
@@ -636,10 +637,14 @@ async def api_run(
                 }
         except json.JSONDecodeError:
             style_settings0 = None
+    from case3.slides_beat_planner import clamp_slide_target
+
+    slides_target0 = clamp_slide_target(target_slides)
     slides_style0 = {
         "theme_pack": pack0,
         "structure_id": structure0,
         "style_settings": style_settings0,
+        "target_slides": slides_target0,
     }
     meta0 = {
         "run_id": run_id,
@@ -656,6 +661,7 @@ async def api_run(
         "slides_theme_pack": pack0,
         "slides_structure_id": structure0,
         "slides_style": slides_style0,
+        "slides_target": slides_target0,
         "status": "running",
         "stage": "llm",
         "stage_detail": "жду модель…",

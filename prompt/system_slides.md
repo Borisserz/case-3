@@ -7,7 +7,7 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
 # Hard rules
 
 1. **Facts and numbers — only from Source** (or captions/HTML of available charts). Never invent KPIs. Prefer Source wording; do not invent decimals that are not in Source/charts.
-2. **10–12 slides** preferred when Source is rich (hard max 12, hard min 6). Short Source → 6–8.
+2. **Slide count = BEAT PLAN target** (user wish, usually 6–24; default band 10–12). Hard max **24**, hard min **6** when Source can support it. Short Source → shorter deck. Never invent facts to hit the target — drop beats instead.
 3. **Layouts only:** `title` | `section` | `kpi_row` | `scorecard` | `card_row` | `chart_hero` | `chart_split` | `media_hero` | `media_split` | `table_hero` | `callout` | `bullets` | `closing`.
 4. **Arc (mandatory):**
    - First slide = `title`

@@ -277,7 +277,7 @@ def _chart_hero_slide(cid: str, *, title: str | None = None) -> dict[str, Any]:
         "id": f"s_native_{cid}",
         "layout": "chart_hero",
         "kicker": "DATA",
-        "title": title or "Ключевые цифры",
+        "title": _clip_label(title) or "Ключевые цифры",
         "chart_id": cid,
         "caption": "Источник — Source",
         "takeaway": "Цифры из Source",
@@ -287,8 +287,18 @@ def _chart_hero_slide(cid: str, *, title: str | None = None) -> dict[str, Any]:
 def ensure_deck_charts(
     deck: dict[str, Any],
     series_by_id: dict[str, dict[str, Any]],
+    *,
+    titles: dict[str, str] | None = None,
 ) -> list[str]:
     """Ensure every native-eligible cht_* appears on a slide. Return injected ids."""
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        cid = str(s.get("chart_id") or "").strip()
+        title = str(s.get("title") or "")
+        cap = (titles or {}).get(cid) or ""
+        if cid and cap and title.startswith("График "):
+            s["title"] = _clip_label(cap)
     if not series_by_id:
         return []
     present = _deck_chart_ids(deck)
@@ -314,8 +324,139 @@ def ensure_deck_charts(
     for j, cid in enumerate(missing):
         slides.insert(
             insert_at + j,
-            _chart_hero_slide(cid, title=f"График {cid}"),
+            _chart_hero_slide(cid, title=(titles or {}).get(cid) or None),
         )
         injected.append(cid)
+    deck["slides"] = slides
+    return injected
+
+
+_TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё]{4,}")
+_FILLER_LAYOUTS = frozenset({"card_row", "bullets", "callout", "section"})
+
+
+def _clip_label(text: str | None, limit: int = 80) -> str:
+    raw = " ".join(str(text or "").split())
+    if len(raw) <= limit:
+        return raw
+    return raw[: limit - 1].rstrip() + "…"
+
+
+def _tokens(text: str) -> set[str]:
+    return {m.group(0).casefold() for m in _TOKEN.finditer(text or "")}
+
+
+def _same_word(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    # линия/линию, смена/смены — same stem, not a full lemmatizer.
+    if len(a) >= 5 and len(b) >= 5 and a[:4] == b[:4]:
+        return True
+    return False
+
+
+def _overlap(left: set[str], right: set[str]) -> int:
+    n = 0
+    for a in left:
+        if any(_same_word(a, b) for b in right):
+            n += 1
+    return n
+
+
+def _used_media_ids(deck: dict[str, Any]) -> set[str]:
+    used: set[str] = set()
+    for s in deck.get("slides") or []:
+        if not isinstance(s, dict):
+            continue
+        mid = str(s.get("media_id") or s.get("chart_id") or "").strip()
+        if mid:
+            used.add(mid)
+    return used
+
+
+def _insert_after_match(slides: list[dict[str, Any]], caption: str) -> int:
+    """Index after the slide whose copy shares the most words with the caption."""
+    want = _tokens(caption)
+    best_i: int | None = None
+    best = 0
+    for i, s in enumerate(slides):
+        if str(s.get("layout") or "") in ("title", "closing"):
+            continue
+        blob = " ".join(
+            str(s.get(k) or "")
+            for k in ("title", "subtitle", "takeaway", "caption", "term", "definition")
+        )
+        score = _overlap(want, _tokens(blob))
+        if score > best:
+            best = score
+            best_i = i
+    if best_i is not None:
+        return best_i + 1
+    for i, s in enumerate(slides):
+        if str(s.get("layout") or "") == "closing":
+            return i
+    return len(slides)
+
+
+def _fresh_photo_id(used: set[str], fid: str) -> str:
+    base = f"s_photo_{fid}"
+    if base not in used:
+        return base
+    n = 2
+    while f"{base}_{n}" in used:
+        n += 1
+    return f"{base}_{n}"
+
+
+def ensure_deck_photos(
+    deck: dict[str, Any],
+    photos: list[dict[str, Any]],
+    *,
+    max_slides: int = 24,
+) -> list[str]:
+    """Put each unused usr_/fig_ on a media_split next to the matching slide.
+
+    The model often skips attached photos. Caption overlap decides the slot
+    so the picture sits with the claim it illustrates.
+    """
+    if not isinstance(deck, dict):
+        return []
+    slides = [s for s in (deck.get("slides") or []) if isinstance(s, dict)]
+    if not slides:
+        return []
+    used_media = _used_media_ids(deck)
+    used_ids = {str(s.get("id") or "") for s in slides}
+    injected: list[str] = []
+    for photo in photos:
+        if not isinstance(photo, dict):
+            continue
+        fid = str(photo.get("id") or "").strip()
+        if not fid.startswith(("usr_", "fig_")) or fid in used_media:
+            continue
+        caption = str(photo.get("caption") or "").strip() or fid
+        title = _clip_label(caption)
+        slide = {
+            "id": _fresh_photo_id(used_ids, fid),
+            "layout": "media_split",
+            "kicker": "КАДР",
+            "title": title,
+            "media_id": fid,
+            "caption": _clip_label(caption, 120),
+        }
+        if len(slides) >= max_slides:
+            replaced = False
+            for i in range(len(slides) - 2, 0, -1):
+                if str(slides[i].get("layout") or "") in _FILLER_LAYOUTS:
+                    slides[i] = slide
+                    replaced = True
+                    break
+            if not replaced:
+                continue
+        else:
+            at = _insert_after_match(slides, caption)
+            slides.insert(at, slide)
+        used_media.add(fid)
+        used_ids.add(slide["id"])
+        injected.append(fid)
     deck["slides"] = slides
     return injected
