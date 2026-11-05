@@ -22,7 +22,7 @@ def test_resolve_unknown_falls_back_atelier() -> None:
 def test_resolve_board_pack() -> None:
     tok = resolve_deck_theme("board")
     assert tok.pack_id == "board"
-    assert tok.colors["primary"].upper() in {"#172D40", "#142C40", "#17324D"}
+    assert tok.colors["primary"].upper() in {"#172D40", "#142C40", "#17324D", "#1B3A4B"}
     assert "teal" in tok.label.lower() or "board" in tok.label.lower() or tok.colors["accent"]
 
 

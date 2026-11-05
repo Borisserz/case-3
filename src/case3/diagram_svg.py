@@ -99,6 +99,9 @@ def render_mermaid_svg_string(
     primary = str(pal["primary"])
     accents = list(pal.get("accents") or [primary])
     accent = str(accents[0] if accents else primary)
+    from case3.diagram_style import ensure_role_classdefs
+
+    mermaid = ensure_role_classdefs(mermaid, palette)
     body = (
         (mermaid or "")
         .replace("&", "&amp;")

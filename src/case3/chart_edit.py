@@ -177,6 +177,41 @@ def _local_restyle_html(
     return new_html, final_type, modes
 
 
+def deck_chart_series(out_dir: Path) -> list[str]:
+    """Three pack colors from the frozen deck, when this run has a presentation."""
+    path = Path(out_dir) / "slides" / "deck.json"
+    if not path.is_file():
+        return []
+    try:
+        deck = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    style = deck.get("style") if isinstance(deck, dict) else None
+    if not isinstance(style, dict):
+        return []
+    return [
+        str(x).strip()
+        for x in (style.get("chart_series") or [])
+        if str(x).strip()
+    ]
+
+
+def paint_deck_chart_html(out_dir: Path, html: str, chart_type: str | None) -> str:
+    """Keep a chart inside the deck's soft triad after a palette or type edit."""
+    series = deck_chart_series(out_dir)
+    if len(series) < 2 or not (html or "").strip():
+        return html
+    from case3.chart_style import (
+        apply_hex_series_to_html,
+        apply_pack_category_colors_to_html,
+    )
+
+    painted = apply_hex_series_to_html(sanitize_chart_html(html), series)
+    return apply_pack_category_colors_to_html(
+        painted, series, chart_type=chart_type or None
+    )
+
+
 def preview_chart_html(
     out_dir: Path,
     chart_id: str,
@@ -195,6 +230,10 @@ def preview_chart_html(
     new_html, final_type, modes = _local_restyle_html(
         chart, palette_id=palette_id, want_type=want_type
     )
+    stored = str(chart.get("palette") or "")
+    chosen = palette_id not in ("", "auto") and palette_id != stored
+    if not chart.get("style_user") and not chosen:
+        new_html = paint_deck_chart_html(out_dir, new_html, final_type)
     return {
         "chart_id": chart_id,
         "id": chart_id,
@@ -316,11 +355,19 @@ def edit_chart_in_run(
         new_html = apply_kpi_palette_vars(new_html, palette_id)
     if new_html:
         new_html = harden_chart_html(new_html, final_type)
+    stored_palette = str(chart.get("palette") or "")
+    user_style = bool(chart.get("style_user")) or bool(style_notes) or (
+        palette_id not in ("", "auto") and palette_id != stored_palette
+    )
+    if new_html and not user_style:
+        new_html = paint_deck_chart_html(out_dir, new_html, final_type)
     chart["html"] = new_html
     chart["type"] = final_type
     # G2: persist so Liber edit sheet seeds this figure's palette next open.
     if palette_id and palette_id != "auto":
         chart["palette"] = palette_id
+    if user_style:
+        chart["style_user"] = True
     from case3.slides_chart_data import attach_series_ir
 
     attach_series_ir(chart)

@@ -656,6 +656,9 @@ export default function App() {
                                     ...(msg.result.downloads || {}),
                                     ...(extras?.downloads || {}),
                                   },
+                                  ...(extras?.diagrams
+                                    ? { diagrams: extras.diagrams }
+                                    : {}),
                                 },
                               };
                             }),

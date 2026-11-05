@@ -24,10 +24,10 @@ const STORAGE_KEY = "liber.deckStyle.v1";
 export const DEFAULT_DECK_STYLE: DeckStyle = {
   themePack: "atelier",
   structureId: undefined,
-  primary: "#2E4208",
-  accent: "#4F6B14",
-  background: "#FFFCF7",
-  text: "#14161A",
+  primary: "#2C3A22",
+  accent: "#6B7F45",
+  background: "#FBF8F1",
+  text: "#2C3A22",
   fontTitle: "Georgia",
   fontBody: "Segoe UI",
   presetId: "atelier",
@@ -37,42 +37,42 @@ export const FALLBACK_DECK_PACKS: DeckThemePackInfo[] = [
   {
     id: "atelier",
     label: "Atelier",
-    swatches: ["#2E4208", "#4F6B14", "#FFFCF7", "#14161A"],
+    swatches: ["#2C3A22", "#6B7F45", "#FBF8F1", "#2C3A22"],
   },
   {
     id: "board",
     label: "Board",
-    swatches: ["#142C40", "#087F8C", "#FFFFFF", "#142C40"],
+    swatches: ["#1B3A4B", "#3D8B84", "#F4F8F7", "#1B3A4B"],
   },
   {
     id: "signal",
     label: "Bold Signal",
-    swatches: ["#202020", "#FF5B23", "#202020", "#F7F5F0"],
+    swatches: ["#1E1C1A", "#C4785A", "#2A2724", "#F3EDE6"],
   },
   {
     id: "relay",
     label: "Split Pastel",
-    swatches: ["#416650", "#E8E0F2", "#FBF9F4", "#29352F"],
+    swatches: ["#3A463C", "#7D9478", "#FBF8F2", "#3A463C"],
   },
   {
     id: "ink",
     label: "Relay Ink",
-    swatches: ["#2448FF", "#2448FF", "#111118", "#FFFFFF"],
+    swatches: ["#141A24", "#7F97B0", "#1C2430", "#E6E4DC"],
   },
   {
     id: "voltage",
     label: "Creative Voltage",
-    swatches: ["#2438EB", "#E8FF35", "#11121A", "#F6F5F0"],
+    swatches: ["#161B28", "#E4D48A", "#1E2433", "#F4F0E6"],
   },
   {
     id: "studio",
     label: "Workshop Studio",
-    swatches: ["#1B1F3B", "#4F5BD5", "#F7F8FC", "#1B1F3B"],
+    swatches: ["#3E342C", "#A6846A", "#FBF7F2", "#3E342C"],
   },
   {
     id: "botanical",
     label: "Dark Botanical",
-    swatches: ["#101F19", "#C4AD7A", "#1A3026", "#EEE9DB"],
+    swatches: ["#101F19", "#C4AD7A", "#1C2E26", "#E8E2D4"],
   },
 ];
 

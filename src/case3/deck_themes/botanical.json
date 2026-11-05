@@ -2,37 +2,37 @@
   "id": "botanical",
   "label": "Dark Botanical",
   "colors": {
-    "primary": "#728B78",
+    "primary": "#8AA08A",
     "accent": "#C4AD7A",
-    "ink": "#EEE9DB",
-    "ink2": "#A9B8A0",
-    "muted": "#A9B8A0",
-    "paper": "#1A3026",
+    "ink": "#E8E2D4",
+    "ink2": "#B7C2B4",
+    "muted": "#B7C2B4",
+    "paper": "#1C2E26",
     "sheet": "#101F19",
-    "rule": "#3A5141",
+    "rule": "#31483C",
     "foil": "#C4AD7A",
     "background": "#101F19",
-    "text": "#EEE9DB",
-    "panel": "#1A3026"
+    "text": "#E8E2D4",
+    "panel": "#1C2E26"
   },
   "fonts": {
     "title": "Georgia",
     "body": "Calibri",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#C4AD7A", "#728B78", "#EEE9DB", "#A9B8A0", "#526A50"],
+  "chart_series": ["#C4AD7A", "#8AA08A", "#E8E2D4"],
   "table": {
-    "header_fill": "#1A3026",
-    "header_ink": "#EEE9DB",
-    "body_fill": "#243D32",
-    "grid": "#3A5141"
+    "header_fill": "#1C2E26",
+    "header_ink": "#E8E2D4",
+    "body_fill": "#24382E",
+    "grid": "#31483C"
   },
   "brand_mark": "VESPER · BOTANICAL",
   "motif": {
     "atmosphere": "dark",
     "hero_bleed": true,
     "foil_cards": true,
-    "card_fill": "#1A3026",
-    "panels": ["#1A3026", "#243D32", "#2A4538", "#334F40"]
+    "card_fill": "#1C2E26",
+    "panels": ["#1C2E26", "#24382E", "#2C4336", "#31483C"]
   }
 }

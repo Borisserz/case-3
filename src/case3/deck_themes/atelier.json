@@ -2,36 +2,36 @@
   "id": "atelier",
   "label": "Atelier",
   "colors": {
-    "primary": "#2E4208",
-    "accent": "#4F6B14",
-    "ink": "#14161a",
-    "ink2": "#2c3028",
+    "primary": "#2C3A22",
+    "accent": "#6B7F45",
+    "ink": "#2C3A22",
+    "ink2": "#5C6554",
     "muted": "#6A7160",
-    "paper": "#f0ede4",
-    "sheet": "#fffcf7",
-    "rule": "#e6e2d8",
-    "foil": "#b8a36a",
-    "background": "#fffcf7",
-    "text": "#14161a",
-    "panel": "#f0ede4"
+    "paper": "#F3EFE4",
+    "sheet": "#FBF8F1",
+    "rule": "#E4DFD2",
+    "foil": "#A89870",
+    "background": "#FBF8F1",
+    "text": "#2C3A22",
+    "panel": "#F3EFE4"
   },
   "fonts": {
     "title": "Liber Serif",
     "body": "Liber Sans",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#2E4208", "#4F6B14", "#7A9A28", "#B8D45A", "#D5DEC0"],
+  "chart_series": ["#2C3A22", "#6B7F45", "#C5CDB0"],
   "table": {
-    "header_fill": "#2E4208",
-    "header_ink": "#fffcf7",
-    "body_fill": "#f7f4ec",
-    "grid": "#e6e2d8"
+    "header_fill": "#2C3A22",
+    "header_ink": "#FBF8F1",
+    "body_fill": "#F3EFE4",
+    "grid": "#E4DFD2"
   },
   "brand_mark": "LIBER · ATELIER",
   "motif": {
     "atmosphere": "light",
     "foil_cards": true,
-    "card_fill": "#f7f4ec",
-    "panels": ["#f0ede4", "#ebe7dc", "#e6e2d8", "#f5f2ea"]
+    "card_fill": "#F3EFE4",
+    "panels": ["#F3EFE4", "#E7E3D6", "#DDD8C8", "#FBF8F1"]
   }
 }

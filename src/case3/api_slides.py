@@ -226,6 +226,30 @@ async def start_slides(
 
 
 @router.get("/api/runs/{run_id}/slides")
+def _chart_index(out_dir: Path) -> dict[str, dict[str, Any]]:
+    """Type and palette for each chart so the deck editor opens on the real figure."""
+    path = out_dir / "figures.json"
+    if not path.is_file():
+        return {}
+    try:
+        fj = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for ch in fj.get("charts") or []:
+        if not isinstance(ch, dict):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        if not cid:
+            continue
+        out[cid] = {
+            "type": str(ch.get("type") or ""),
+            "palette": str(ch.get("palette") or ""),
+            "style_user": bool(ch.get("style_user")),
+        }
+    return out
+
+
 def get_slides(run_id: str) -> dict[str, Any]:
     if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
@@ -248,7 +272,8 @@ def get_slides(run_id: str) -> dict[str, Any]:
         for key in ("pptx", "deck_pdf"):
             name = art.get(key)
             if isinstance(name, str) and (out_dir / name).is_file():
-                downloads[key] = f"/api/runs/{run_id}/files/{name}"
+                stamp = int((out_dir / name).stat().st_mtime)
+                downloads[key] = f"/api/runs/{run_id}/files/{name}?v={stamp}"
         mode = art.get("deck_pdf_mode")
         if isinstance(mode, str) and mode.strip():
             deck_pdf_mode = mode.strip()
@@ -266,6 +291,7 @@ def get_slides(run_id: str) -> dict[str, Any]:
         else [],
         "downloads": downloads,
         "deck_pdf_mode": deck_pdf_mode,
+        "charts": _chart_index(out_dir),
     }
 
 
@@ -581,7 +607,11 @@ def download_slide_media(run_id: str, name: str) -> FileResponse:
     if not name.lower().endswith(".png") or not FILE_OK.match(name):
         raise HTTPException(400, detail="invalid media name")
     out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
-    for parts in (("figures", name), ("slides", "diagrams", name)):
+    for parts in (
+        ("slides", "charts", name),
+        ("slides", "diagrams", name),
+        ("figures", name),
+    ):
         try:
             path = safe_run_file(run_id, *parts)
             return FileResponse(path, media_type="image/png", filename=path.name)

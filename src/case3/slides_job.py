@@ -791,6 +791,17 @@ def _recolor_deck_charts(
             html_by_id[cid] = str(ch.get("html") or "")
             type_by_id[cid] = str(ch.get("type") or "").strip().lower()
 
+    from case3.chart_style import palette_color_list
+
+    user_series: dict[str, list[str]] = {}
+    for ch in fj.get("charts") or []:
+        if not isinstance(ch, dict) or not ch.get("style_user"):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        cols = palette_color_list(str(ch.get("palette") or ""))
+        if cid and len(cols) >= 2:
+            user_series[cid] = cols
+
     dest_dir = slides_dir / "charts"
     dest_dir.mkdir(parents=True, exist_ok=True)
     work_root = slides_dir / "chart_work"
@@ -798,17 +809,18 @@ def _recolor_deck_charts(
     out_map: dict[str, Path] = {}
     for cid, html in html_by_id.items():
         try:
+            use = user_series.get(cid) or series
             remapped = apply_hex_series_to_html(
                 sanitize_chart_html(html),
-                series,
+                use,
                 muted=muted,
                 area=area,
                 grid=grid,
             )
-            # Twin ≈ native: per-category pack colors on single-series bar/donut.
+            # Twin ≈ native: per-category colors on single-series bar/donut.
             remapped = apply_pack_category_colors_to_html(
                 remapped,
-                series,
+                use,
                 chart_type=type_by_id.get(cid) or None,
             )
             if dark:
@@ -926,11 +938,22 @@ def _materialize_deck_artifacts(
             "native chart series missing for %s — those slides fall back to PNG",
             missing,
         )
+    from case3.chart_style import palette_color_list
+
+    series_hex_by_id: dict[str, list[str]] = {}
+    for ch in (fj.get("charts") if isinstance(fj, dict) else []) or []:
+        if not isinstance(ch, dict) or not ch.get("style_user"):
+            continue
+        cid = str(ch.get("id") or "").strip()
+        cols = palette_color_list(str(ch.get("palette") or ""))
+        if cid in needed and len(cols) >= 2:
+            series_hex_by_id[cid] = cols
     build_native_pptx(
         deck,
         tmp_pptx,
         media_by_id=media_map,
         chart_series_by_id=chart_series,
+        series_hex_by_id=series_hex_by_id,
     )
     meta["slides_native_charts"] = sorted(chart_series.keys())
 

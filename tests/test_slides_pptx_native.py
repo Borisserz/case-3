@@ -154,7 +154,7 @@ def test_native_section_scorecard_callout_table(tmp_path: Path) -> None:
         s.text_frame.text for s in prs.slides[1].shapes if s.has_text_frame
     )
     assert "Глава" in section_text
-    assert "01" in section_text
+    assert "Контекст" in section_text
     score_text = "\n".join(
         s.text_frame.text for s in prs.slides[2].shapes if s.has_text_frame
     )
@@ -237,7 +237,7 @@ def test_botanical_table_body_not_white(tmp_path: Path) -> None:
     table = next(s.table for s in prs.slides[0].shapes if s.has_table)
     body_rgb = table.cell(1, 0).fill.fore_color.rgb
     assert body_rgb != RGBColor(0xFF, 0xFF, 0xFF)
-    assert body_rgb == RGBColor(0x24, 0x3D, 0x32)
+    assert body_rgb == RGBColor(0x24, 0x38, 0x2E)
 
 
 def test_native_botanical_card_row_and_texture(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ type Props = {
   onClose: () => void;
   deck?: DeckIR | null;
   runId?: string;
+  diagramMermaid?: string | null;
 };
 
 const IDLE_MS = 2200;
@@ -31,6 +32,7 @@ export function PresentationFullscreen({
   onClose,
   deck = null,
   runId = "",
+  diagramMermaid = null,
 }: Props) {
   const reduce = useReducedMotion();
   const live = Boolean(deck?.slides?.length);
@@ -171,6 +173,7 @@ export function PresentationFullscreen({
                   editing={false}
                   onDeckChange={() => undefined}
                   onPatch={async () => undefined}
+                  diagramMermaid={diagramMermaid}
                 />
               ) : src ? (
                 <img src={src} alt="" className="presentation-fullscreen-img" />

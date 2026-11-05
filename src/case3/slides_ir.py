@@ -1049,6 +1049,51 @@ def _slide_payload(slide: dict[str, Any]) -> str:
     return _norm_ws(" ".join(parts)).casefold()
 
 
+def _echoes_title(text: str, title: str) -> bool:
+    left = _norm_ws(text).casefold()
+    right = _norm_ws(title).casefold()
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    return len(shorter) >= 12 and shorter in longer
+
+
+def _trim_slide_copy(slide: dict[str, Any]) -> None:
+    """One line per role: drop a repeat, keep kicker + line + one support."""
+    title = str(slide.get("title") or "")
+    if _echoes_title(str(slide.get("body") or ""), title):
+        slide.pop("body", None)
+    bullets = [
+        b
+        for b in (slide.get("bullets") or [])
+        if isinstance(b, str) and b.strip() and not _echoes_title(b, title)
+    ]
+    if bullets:
+        slide["bullets"] = bullets
+    elif slide.get("bullets"):
+        slide.pop("bullets", None)
+    subtitle = str(slide.get("subtitle") or "")
+    takeaway = str(slide.get("takeaway") or "")
+    if subtitle and takeaway:
+        sub_w, take_w = _word_keys(subtitle), _word_keys(takeaway)
+        if sub_w and take_w and (sub_w <= take_w or take_w <= sub_w or len(sub_w & take_w) >= 2):
+            slide.pop("takeaway", None)
+    if _echoes_title(str(slide.get("subtitle") or ""), title):
+        slide.pop("subtitle", None)
+    if _echoes_title(str(slide.get("takeaway") or ""), title):
+        slide.pop("takeaway", None)
+    if slide.get("layout") in ("chart_hero", "chart_split", "media_hero", "media_split"):
+        caption = str(slide.get("caption") or "").strip()
+        takeaway = str(slide.get("takeaway") or "").strip()
+        if not caption and takeaway:
+            slide["caption"] = takeaway
+        slide.pop("takeaway", None)
+        if slide.get("layout") != "chart_split":
+            slide.pop("body", None)
+
+
 def _fit_deck_content(
     slides: list[dict[str, Any]], source_norm: str
 ) -> list[dict[str, Any]]:
@@ -1056,6 +1101,7 @@ def _fit_deck_content(
     if len(slides) < 3:
         return slides
     for slide in slides:
+        _trim_slide_copy(slide)
         _demote_fake_compare(slide, source_norm)
         _shorten_scorecard(slide)
 

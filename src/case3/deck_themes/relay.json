@@ -2,34 +2,34 @@
   "id": "relay",
   "label": "Split Pastel (QBR)",
   "colors": {
-    "primary": "#416650",
-    "accent": "#416650",
-    "ink": "#29352F",
-    "ink2": "#59675E",
-    "muted": "#59675E",
-    "paper": "#FBF9F4",
-    "sheet": "#FBF9F4",
-    "rule": "#E4E0D8",
-    "foil": "#416650",
-    "background": "#FBF9F4",
-    "text": "#29352F",
-    "panel": "#E8E0F2"
+    "primary": "#3A463C",
+    "accent": "#7D9478",
+    "ink": "#3A463C",
+    "ink2": "#6A756C",
+    "muted": "#6A756C",
+    "paper": "#F7F3EA",
+    "sheet": "#FBF8F2",
+    "rule": "#E6E0D4",
+    "foil": "#C4A882",
+    "background": "#FBF8F2",
+    "text": "#3A463C",
+    "panel": "#E7EFE4"
   },
   "fonts": {
     "title": "Aptos Display",
     "body": "Aptos",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#416650", "#A9B99E", "#BCACD0", "#DDEADB", "#F6DDD0"],
+  "chart_series": ["#3A463C", "#7D9478", "#C9D4C4"],
   "table": {
-    "header_fill": "#DDEADB",
-    "header_ink": "#29352F",
-    "grid": "#E4E0D8"
+    "header_fill": "#E7EFE4",
+    "header_ink": "#3A463C",
+    "grid": "#E6E0D4"
   },
   "brand_mark": "LIBER · RELAY",
   "motif": {
     "split": 0.55,
     "panel_key": "panel",
-    "panels": ["#E8E0F2", "#DDEADB", "#F6DDD0", "#DDEAF0"]
+    "panels": ["#E7EFE4", "#F3E6D4", "#E4EDE8", "#EFE8DC"]
   }
 }

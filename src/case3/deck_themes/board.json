@@ -2,37 +2,37 @@
   "id": "board",
   "label": "Northstar Board",
   "colors": {
-    "primary": "#142C40",
-    "accent": "#087F8C",
-    "ink": "#142C40",
-    "ink2": "#647686",
-    "muted": "#647686",
-    "paper": "#EDF4F6",
-    "sheet": "#FFFFFF",
-    "rule": "#D5DEE6",
-    "foil": "#087F8C",
-    "background": "#FFFFFF",
-    "text": "#142C40",
-    "panel": "#EDF4F6"
+    "primary": "#1B3A4B",
+    "accent": "#3D8B84",
+    "ink": "#1B3A4B",
+    "ink2": "#5E7380",
+    "muted": "#5E7380",
+    "paper": "#E7F2F0",
+    "sheet": "#F4F8F7",
+    "rule": "#D3E2E0",
+    "foil": "#3D8B84",
+    "background": "#F4F8F7",
+    "text": "#1B3A4B",
+    "panel": "#E7F2F0"
   },
   "fonts": {
     "title": "Calibri",
     "body": "Calibri",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#142C40", "#087F8C", "#60D1CB", "#BE5147", "#B7CCD8"],
+  "chart_series": ["#1B3A4B", "#3D8B84", "#A9D4CE"],
   "table": {
-    "header_fill": "#142C40",
-    "header_ink": "#FFFFFF",
-    "body_fill": "#F4F8FA",
-    "grid": "#D5DEE6"
+    "header_fill": "#1B3A4B",
+    "header_ink": "#F4F8F7",
+    "body_fill": "#E7F2F0",
+    "grid": "#D3E2E0"
   },
   "brand_mark": "NORTHSTAR · BOARD",
   "motif": {
     "atmosphere": "light",
     "split": 0.55,
     "foil_cards": true,
-    "card_fill": "#F4F8FA",
-    "panels": ["#EDF4F6", "#E2EBF1", "#D8E4EC", "#EEF3F6"]
+    "card_fill": "#E7F2F0",
+    "panels": ["#E7F2F0", "#D7E8E5", "#CFE3DF", "#F4F8F7"]
   }
 }

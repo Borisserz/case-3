@@ -2,37 +2,37 @@
   "id": "signal",
   "label": "Bold Signal",
   "colors": {
-    "primary": "#202020",
-    "accent": "#FF5B23",
-    "ink": "#F7F5F0",
-    "ink2": "#B6B6B0",
-    "muted": "#B6B6B0",
-    "paper": "#2C2C2C",
-    "sheet": "#202020",
-    "rule": "#3A3A3A",
-    "foil": "#FF5B23",
-    "background": "#202020",
-    "text": "#F7F5F0",
-    "panel": "#2C2C2C"
+    "primary": "#2A2724",
+    "accent": "#C4785A",
+    "ink": "#F3EDE6",
+    "ink2": "#C4B8AE",
+    "muted": "#C4B8AE",
+    "paper": "#2A2724",
+    "sheet": "#1E1C1A",
+    "rule": "#3A3530",
+    "foil": "#C4785A",
+    "background": "#1E1C1A",
+    "text": "#F3EDE6",
+    "panel": "#2A2724"
   },
   "fonts": {
     "title": "Arial",
     "body": "Arial",
     "fallback_pptx": "Arial"
   },
-  "chart_series": ["#FF5B23", "#F7F5F0", "#B6B6B0", "#FF8A5B", "#4A4A4A"],
+  "chart_series": ["#C4785A", "#E4B49A", "#F3EDE6"],
   "table": {
-    "header_fill": "#FF5B23",
-    "header_ink": "#202020",
-    "body_fill": "#2C2C2C",
-    "grid": "#3A3A3A"
+    "header_fill": "#C4785A",
+    "header_ink": "#1E1C1A",
+    "body_fill": "#2A2724",
+    "grid": "#3A3530"
   },
   "brand_mark": "BOLD SIGNAL",
   "motif": {
     "atmosphere": "dark",
     "hero_bleed": true,
     "foil_cards": true,
-    "card_fill": "#2C2C2C",
-    "panels": ["#2C2C2C", "#323232", "#3A3A3A", "#282828"]
+    "card_fill": "#2A2724",
+    "panels": ["#2A2724", "#322E2A", "#3A3530", "#242220"]
   }
 }

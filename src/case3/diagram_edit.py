@@ -146,6 +146,9 @@ def edit_diagram_in_run(
 
     out = dict(parsed[0])
     out["undo"] = undo_meta(out_dir)
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
     return out
 
 

@@ -63,7 +63,7 @@ type Props = {
   onDeckUpdated?: (
     deck: DeckIR,
     slidePngs: string[],
-    extras?: { downloads?: Record<string, string> },
+    extras?: { downloads?: Record<string, string>; diagrams?: DiagramResult[] },
   ) => void;
   palettes?: PaletteInfo[];
   catalogTypes?: string[];
@@ -154,6 +154,10 @@ export function PresentationPane({
   const [diagrams, setDiagrams] = useState<DiagramResult[]>(diagramsProp ?? []);
   const [diagramError, setDiagramError] = useState<string | null>(null);
   const [mediaVersion, setMediaVersion] = useState(0);
+  const [chartIndex, setChartIndex] = useState<
+    Record<string, { type?: string; palette?: string; style_user?: boolean }>
+  >({});
+  const [chartPreview, setChartPreview] = useState<string | null>(null);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -176,12 +180,31 @@ export function PresentationPane({
     onDocsDirtyChange?.(false);
     setOpenMediaId(null);
     setOpenMediaKind(null);
+    setChartPreview(null);
+    setChartIndex({});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on run only
   }, [runId]);
 
   useEffect(() => {
     setDiagrams(diagramsProp ?? []);
   }, [diagramsProp]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`/api/runs/${encodeURIComponent(runId)}/slides`)
+      .then((r) => r.json())
+      .then((body: { charts?: Record<string, { type?: string; palette?: string }> }) => {
+        if (!cancelled && body?.charts && typeof body.charts === "object") {
+          setChartIndex(body.charts);
+        }
+      })
+      .catch(() => {
+        /* sheet falls back to the default palette */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
 
   const refreshSlidesNow = useCallback(async () => {
     const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
@@ -191,15 +214,21 @@ export function PresentationPane({
       ? (gBody.slide_pngs as string[])
       : [];
     if (gBody.deck) setDeck(gBody.deck as DeckIR);
+    if (gBody.charts && typeof gBody.charts === "object") {
+      setChartIndex(gBody.charts);
+    }
     if (pngs.length || gBody.deck) {
       const dl =
         gBody.downloads && typeof gBody.downloads === "object"
           ? (gBody.downloads as Record<string, string>)
           : undefined;
-      onDeckUpdated?.(gBody.deck as DeckIR, pngs, { downloads: dl });
+      onDeckUpdated?.(gBody.deck as DeckIR, pngs, {
+        downloads: dl,
+        diagrams,
+      });
     }
     setMediaVersion(Date.now());
-  }, [onDeckUpdated, runId]);
+  }, [diagrams, onDeckUpdated, runId]);
 
   const historyUndo = useCallback(async () => {
     await onHistoryUndo?.();
@@ -225,6 +254,9 @@ export function PresentationPane({
           ? (gBody.slide_pngs as string[])
           : [];
         if (gBody.deck) setDeck(gBody.deck as DeckIR);
+        if (gBody.charts && typeof gBody.charts === "object") {
+          setChartIndex(gBody.charts);
+        }
         if (pngs.length || gBody.deck) {
           onDeckUpdated?.(gBody.deck as DeckIR, pngs);
         }
@@ -268,7 +300,10 @@ export function PresentationPane({
             gBody.downloads && typeof gBody.downloads === "object"
               ? (gBody.downloads as Record<string, string>)
               : undefined;
-          onDeckUpdated?.(gBody.deck as DeckIR, pngs, { downloads: dl });
+          onDeckUpdated?.(gBody.deck as DeckIR, pngs, {
+            downloads: dl,
+            diagrams,
+          });
           setMediaVersion(Date.now());
           setSaveFlash(true);
           window.setTimeout(() => setSaveFlash(false), 1600);
@@ -288,7 +323,7 @@ export function PresentationPane({
         throw new Error("Сохранение заняло слишком долго — попробуйте ещё раз");
       }
     },
-    [onDeckUpdated, runId],
+    [diagrams, onDeckUpdated, runId],
   );
 
   const markDirty = useCallback(() => {
@@ -327,6 +362,7 @@ export function PresentationPane({
       void onClearEditHistory?.();
       setOpenMediaId(null);
       setOpenMediaKind(null);
+      setChartPreview(null);
       setEditing(false);
     } catch {
       /* stay in edit — error already shown */
@@ -404,6 +440,7 @@ export function PresentationPane({
   const closeMediaSheet = useCallback(() => {
     setOpenMediaId(null);
     setOpenMediaKind(null);
+    setChartPreview(null);
   }, []);
 
   const submitChart = useCallback(
@@ -887,6 +924,14 @@ export function PresentationPane({
                     }
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
+                    previewHtml={chartPreview}
+                    diagramMermaid={
+                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
+                        ?.mermaid ||
+                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.chart_id)
+                        ?.mermaid ||
+                      null
+                    }
                   />
                 ) : currentPng ? (
                   <img
@@ -1106,13 +1151,24 @@ export function PresentationPane({
             runId={runId}
             palettes={palettes}
             catalogTypes={catalogTypes}
-            initialPalette={defaultPalette}
+            initialPalette={
+              (openMediaId && chartIndex[openMediaId]?.palette) || defaultPalette
+            }
+            initialType={(openMediaId && chartIndex[openMediaId]?.type) || ""}
             busy={editingFigureId === openMediaId}
+            onPreviewHtml={setChartPreview}
             error={editErrorFigureId === openMediaId ? editError : null}
             onCancel={closeMediaSheet}
             onSubmit={(req) => void submitChart(req)}
           />
         </div>
+      ) : null}
+      {editing &&
+      view === "slide" &&
+      openMediaId &&
+      openMediaKind === "diagram" &&
+      !openDiagram ? (
+        <p className="presentation-media-wait">Открываю схему…</p>
       ) : null}
       {editing &&
       view === "slide" &&
@@ -1159,6 +1215,10 @@ export function PresentationPane({
           onClose={() => setFull(false)}
           deck={live ? deck : null}
           runId={runId}
+          diagramMermaid={
+            diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
+              ?.mermaid || null
+          }
         />
       ) : null}
     </div>

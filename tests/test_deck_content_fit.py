@@ -16,6 +16,32 @@ def _wrap(slides: list[dict]) -> dict:
     return {"version": 1, "palette": "board", "slides": slides}
 
 
+def test_body_that_repeats_the_title_is_dropped() -> None:
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "Неделя"},
+                {
+                    "id": "s02",
+                    "layout": "bullets",
+                    "title": "Поиск хороший",
+                    "body": "Поиск хороший",
+                    "subtitle": "Поиск хороший",
+                    "takeaway": "Баннеры плохие",
+                    "bullets": ["Поиск хороший", "Отдача 4,1."],
+                },
+                {"id": "s03", "layout": "closing", "title": "Дальше", "bullets": ["Поиск"]},
+            ]
+        ),
+        source="поиск хороший отдача 4,1 баннеры плохие",
+    )
+    slide = deck["slides"][1]
+    assert "body" not in slide
+    assert "subtitle" not in slide
+    assert slide["takeaway"] == "Баннеры плохие"
+    assert slide["bullets"] == ["Отдача 4,1."]
+
+
 def test_thousands_word_allows_the_absolute_form() -> None:
     deck = parse_deck_ir(
         _wrap(

@@ -42,6 +42,7 @@ def build_native_pptx(
     *,
     media_by_id: dict[str, Path] | None = None,
     chart_series_by_id: dict[str, dict[str, Any]] | None = None,
+    series_hex_by_id: dict[str, list[str]] | None = None,
 ) -> Path:
     """Build editable 16:9 PPTX from validated deck IR."""
     media = media_by_id or {}
@@ -134,28 +135,23 @@ def build_native_pptx(
             _layout_kpi(
                 slide, s, colors, style=style, slide_index=si
             )
-        elif layout in ("chart_hero", "media_hero"):
+        elif layout in ("chart_hero", "media_hero", "chart_split", "media_split"):
             mid = str(s.get("chart_id") or s.get("media_id") or "")
+            picked = (series_hex_by_id or {}).get(mid) or []
+            picked_rgbs: list[RGBColor] = []
+            for hx in picked:
+                try:
+                    picked_rgbs.append(_hex_rgb(str(hx)))
+                except Exception:
+                    continue
             _layout_media(
                 slide,
                 s,
                 colors,
                 media_path=media.get(mid),
-                split=False,
+                split=layout in ("chart_split", "media_split"),
                 chart_series=chart_series_by_id.get(mid),
-                series_colors=series_rgbs,
-                style=style,
-            )
-        elif layout in ("chart_split", "media_split"):
-            mid = str(s.get("chart_id") or s.get("media_id") or "")
-            _layout_media(
-                slide,
-                s,
-                colors,
-                media_path=media.get(mid),
-                split=True,
-                chart_series=chart_series_by_id.get(mid),
-                series_colors=series_rgbs,
+                series_colors=picked_rgbs or series_rgbs,
                 style=style,
             )
         else:

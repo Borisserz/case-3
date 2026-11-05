@@ -452,7 +452,7 @@ export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261102v3-ru";
+const PREVIEW_CACHE_BUST = "20261105-soft";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {

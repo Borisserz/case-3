@@ -2,37 +2,37 @@
   "id": "ink",
   "label": "Relay Ink",
   "colors": {
-    "primary": "#2448FF",
-    "accent": "#2448FF",
-    "ink": "#FFFFFF",
-    "ink2": "#AEB3C2",
-    "muted": "#646875",
-    "paper": "#1A1A24",
-    "sheet": "#111118",
-    "rule": "#2A2A36",
-    "foil": "#2448FF",
-    "background": "#111118",
-    "text": "#FFFFFF",
-    "panel": "#1A1A24"
+    "primary": "#7F97B0",
+    "accent": "#7F97B0",
+    "ink": "#E6E4DC",
+    "ink2": "#B7C0CC",
+    "muted": "#8E97A6",
+    "paper": "#1C2430",
+    "sheet": "#141A24",
+    "rule": "#2A3342",
+    "foil": "#7F97B0",
+    "background": "#141A24",
+    "text": "#E6E4DC",
+    "panel": "#1C2430"
   },
   "fonts": {
     "title": "Arial",
     "body": "Arial",
     "fallback_pptx": "Arial"
   },
-  "chart_series": ["#2448FF", "#FFFFFF", "#646875", "#AEB3C2", "#3D5CFF"],
+  "chart_series": ["#7F97B0", "#C5D0DC", "#E6E4DC"],
   "table": {
-    "header_fill": "#2448FF",
-    "header_ink": "#FFFFFF",
-    "body_fill": "#1A1A24",
-    "grid": "#2A2A36"
+    "header_fill": "#7F97B0",
+    "header_ink": "#141A24",
+    "body_fill": "#1C2430",
+    "grid": "#2A3342"
   },
   "brand_mark": "RELAY · INK",
   "motif": {
     "atmosphere": "dark",
     "hero_bleed": false,
     "foil_cards": true,
-    "card_fill": "#1A1A24",
-    "panels": ["#1A1A24", "#22222E", "#1E1E2A", "#252532"]
+    "card_fill": "#1C2430",
+    "panels": ["#1C2430", "#222A38", "#1A212C", "#263140"]
   }
 }

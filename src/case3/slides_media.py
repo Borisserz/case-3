@@ -189,6 +189,8 @@ def render_mermaid_png(
     dest: Path,
     palette: str = "atelier",
     work_dir: Path | None = None,
+    primary: str | None = None,
+    accent: str | None = None,
 ) -> Path:
     """Rasterize Mermaid to PNG via Playwright + local mermaid.min.js."""
     dest = Path(dest)
@@ -201,14 +203,18 @@ def render_mermaid_png(
     if not js_dest.is_file() or js_dest.stat().st_size != js_src.stat().st_size:
         shutil.copy2(js_src, js_dest)
 
-    pid = normalize_palette_id(palette)
-    if pid == "auto":
-        pid = "atelier"
-    pal = _PALETTES.get(pid) or _PALETTES["atelier"]
-    primary = str(pal["primary"])
-    accents = list(pal.get("accents") or [primary])
-    accent = str(accents[0] if accents else primary)
+    if not (primary and accent):
+        pid = normalize_palette_id(palette)
+        if pid == "auto":
+            pid = "atelier"
+        pal = _PALETTES.get(pid) or _PALETTES["atelier"]
+        primary = str(pal["primary"])
+        accents = list(pal.get("accents") or [primary])
+        accent = str(accents[0] if accents else primary)
 
+    from case3.diagram_style import ensure_role_classdefs
+
+    mermaid = ensure_role_classdefs(mermaid, palette)
     # Escape for HTML text node (mermaid body)
     body = (
         (mermaid or "")
@@ -294,13 +300,35 @@ def render_mermaid_png(
                   svg.style.height = h + 'px';
                   svg.style.maxWidth = 'none';
                   svg.style.maxHeight = 'none';
+                  svg.style.background = 'transparent';
+                  const box = svg.getBBox();
+                  svg.querySelectorAll('rect').forEach((r) => {
+                    let w = 0, h = 0;
+                    try { w = r.getBBox().width; h = r.getBBox().height; } catch (e) {}
+                    if (w > box.width * 0.85 && h > box.height * 0.85) {
+                      r.setAttribute('fill', 'transparent');
+                      r.style.fill = 'transparent';
+                    }
+                  });
                   document.body.style.width = (w + 64) + 'px';
                   document.body.style.height = (h + 64) + 'px';
-                  svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse')
-                    .forEach((el) => {
-                      const sw = parseFloat(el.getAttribute('stroke-width') || '0');
-                      if (sw > 0 && sw < 3.5) el.setAttribute('stroke-width', String(Math.max(2.5, sw * 2)));
-                    });
+                  svg.querySelectorAll('.edgeLabel rect, .edgeLabel .labelBkg, g.edgeLabel rect').forEach((r) => {
+                    r.setAttribute('fill', 'transparent');
+                    r.style.fill = 'transparent';
+                  });
+                  svg.querySelectorAll('g.node rect').forEach((r) => {
+                    const w = parseFloat(r.getAttribute('width') || '0');
+                    const h = parseFloat(r.getAttribute('height') || '0');
+                    if (w > 8 && h > 8) {
+                      const rx = Math.min(14, Math.max(8, Math.min(w, h) * 0.22));
+                      r.setAttribute('rx', String(rx));
+                      r.setAttribute('ry', String(rx));
+                    }
+                  });
+                  svg.querySelectorAll('path, line, polyline, polygon').forEach((el) => {
+                    el.setAttribute('stroke-linecap', 'round');
+                    el.setAttribute('stroke-linejoin', 'round');
+                  });
                   return { w, h };
                 }"""
                 )
@@ -314,7 +342,9 @@ def render_mermaid_png(
                 )
                 page.wait_for_timeout(100)
                 tmp = work / f"{dest.stem}_raw.png"
-                page.locator("#diagram svg").screenshot(path=str(tmp), type="png")
+                page.locator("#diagram svg").screenshot(
+                    path=str(tmp), type="png", omit_background=True
+                )
                 context.close()
                 _crop_diagram_png(tmp, dest, pad=36, min_h=0)
             finally:
@@ -336,10 +366,14 @@ def _crop_diagram_png(
     except ImportError:
         shutil.copy2(src, dest)
         return
-    im = Image.open(src).convert("RGB")
+    im = Image.open(src).convert("RGBA")
     arr = np.asarray(im)
-    # ink = not near-paper cream
-    ink = (arr[:, :, 0] < 245) | (arr[:, :, 1] < 245) | (arr[:, :, 2] < 240)
+    rgb = arr[:, :, :3]
+    alpha = arr[:, :, 3]
+    # ink = visible and not near-paper cream
+    ink = (alpha > 12) & (
+        (rgb[:, :, 0] < 245) | (rgb[:, :, 1] < 245) | (rgb[:, :, 2] < 240)
+    )
     if not ink.any():
         shutil.copy2(src, dest)
         return
@@ -371,6 +405,7 @@ def ensure_diagram_pngs(
     dest_dir: Path,
     palette: str,
     needed_ids: set[str] | None = None,
+    series: list[str] | None = None,
 ) -> dict[str, Path]:
     """Render requested diagrams; return id → png path."""
     dest_dir = Path(dest_dir)
@@ -384,11 +419,15 @@ def ensure_diagram_pngs(
             continue
         dest = dest_dir / f"{did}.png"
         try:
+            primary = series[0] if series else None
+            accent = series[1] if series and len(series) > 1 else None
             render_mermaid_png(
                 mermaid=spec["mermaid"],
                 dest=dest,
                 palette=palette,
                 work_dir=dest_dir / f"work_{did}",
+                primary=primary,
+                accent=accent,
             )
             out[did] = dest
         except Exception:

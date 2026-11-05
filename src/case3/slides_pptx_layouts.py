@@ -321,26 +321,29 @@ def _layout_section(
     if _wants_top_bar(style):
         _top_bar(slide, colors, style)
     _brand(slide, colors)
-    chapter = s.get("chapter")
-    ch = f"{int(chapter):02d}" if isinstance(chapter, int) else "—"
-    # Accent panel (Julius chapter splash / Split Pastel) — ~32% width
+    sub = str(s.get("subtitle") or s.get("takeaway") or "").strip()
+    # Accent panel — sentence on the color field, not a bare chapter number.
     panel = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE, Inches(8.55), Inches(0), Inches(4.8), _SLIDE_H
     )
     panel.fill.solid()
-    panel.fill.fore_color.rgb = _panel_rgb(colors, style, slide_index=slide_index)
+    panel.fill.fore_color.rgb = colors["accent"]
     panel.line.fill.background()
-    _add_textbox(
-        slide,
-        Inches(9.0),
-        Inches(2.8),
-        Inches(3.8),
-        Inches(1.2),
-        ch,
-        size_pt=48,
-        bold=True,
-        color=colors["ink"] if style and style.get("pack_id") == "relay" else colors["sheet"],
-    )
+    if sub:
+        raw = style.get("colors") if isinstance(style, dict) else {}
+        cmap = raw if isinstance(raw, dict) else {}
+        on = _hex_rgb(accent_fields(cmap)["on_accent"]) if cmap else colors["sheet"]
+        _add_textbox(
+            slide,
+            Inches(8.9),
+            Inches(3.6),
+            Inches(4.1),
+            Inches(2.4),
+            sub,
+            size_pt=22,
+            bold=True,
+            color=on,
+        )
     _add_textbox(
         slide,
         _MARGIN_X,
@@ -352,18 +355,6 @@ def _layout_section(
         bold=True,
         color=colors["ink"],
     )
-    sub = str(s.get("subtitle") or "").strip()
-    if sub:
-        _add_textbox(
-            slide,
-            _MARGIN_X,
-            Inches(4.2),
-            Inches(7.0),
-            Inches(1.0),
-            sub,
-            size_pt=16,
-            color=colors["muted"],
-        )
 
 
 def _layout_callout(
@@ -761,7 +752,7 @@ def _layout_kpi(
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
     # Pin cards under the title (HTML twin) — avoid floating mid-slide void.
-    card_h = Inches(2.15)
+    card_h = Inches(1.55)
     top = Inches(max(y_in + 0.18, 2.05))
     for i, k in enumerate(kpis):
         shape = slide.shapes.add_shape(
@@ -806,33 +797,14 @@ def _layout_kpi(
             r_h = p_h.add_run()
             r_h.text = hint
             _set_run(r_h, size_pt=13, color=colors["ink2"])
-        tf.margin_left = Inches(0.28)
-        tf.margin_top = Inches(0.38)
         delta = str(k.get("delta") or "").strip()
         if delta:
-            foot_top = Emu(int(top) + int(card_h) - int(Inches(0.95)))
-            rule = slide.shapes.add_shape(
-                MSO_SHAPE.RECTANGLE,
-                Emu(int(left) + int(Inches(0.22))),
-                foot_top,
-                Emu(int(card_w) - int(Inches(0.44))),
-                Inches(0.015),
-            )
-            rule.fill.solid()
-            rule.fill.fore_color.rgb = colors["rule"]
-            rule.line.fill.background()
-            foot_text = delta
-            _add_textbox(
-                slide,
-                Emu(int(left) + int(Inches(0.22))),
-                Emu(int(foot_top) + int(Inches(0.08))),
-                Emu(int(card_w) - int(Inches(0.44))),
-                Inches(0.78),
-                foot_text,
-                size_pt=12,
-                bold=bool(delta),
-                color=colors["accent"],
-            )
+            p_d = tf.add_paragraph()
+            r_d = p_d.add_run()
+            r_d.text = delta
+            _set_run(r_d, size_pt=13, bold=True, color=colors["accent"])
+        tf.margin_left = Inches(0.28)
+        tf.margin_top = Inches(0.22)
         left = Emu(int(left) + int(card_w) + int(gap))
 
 

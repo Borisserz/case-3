@@ -99,7 +99,10 @@ type ReportBundle = {
   onDeckUpdated?: (
     deck: import("./deckTypes").DeckIR,
     slidePngs: string[],
-    extras?: { downloads?: Record<string, string> },
+    extras?: {
+      downloads?: Record<string, string>;
+      diagrams?: DiagramInfo[];
+    },
   ) => void;
 };
 

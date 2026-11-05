@@ -321,6 +321,15 @@ def normalize_palette_id(raw: str | None) -> str:
     return "editorial"
 
 
+def palette_color_list(palette_id: str | None) -> list[str]:
+    """Named palette as ink then accents. Empty when the id is not a real palette."""
+    pid = normalize_palette_id(palette_id)
+    if pid == "auto" or pid not in _PALETTES:
+        return []
+    p = _PALETTES[pid]
+    return [str(p["primary"]), *[str(a) for a in p["accents"]]]
+
+
 def palette_css_vars(palette_id: str) -> str:
     """CSS custom properties for frame KPI / card chrome (inject into fragment)."""
     pid = normalize_palette_id(palette_id)

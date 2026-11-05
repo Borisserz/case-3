@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from case3.diagram_style import (
     DIAGRAM_ROLES,
+    ensure_role_classdefs,
     extract_diagram_legend,
     format_diagram_color_prompt,
     role_colors_for_palette,
@@ -15,6 +16,10 @@ def test_role_colors_atelier_has_all_roles() -> None:
     assert set(colors) >= set(DIAGRAM_ROLES)
     assert colors["start"]["fill"].startswith("#")
     assert colors["decision"]["fill"] != colors["ok"]["fill"]
+    assert colors["process"]["stroke"] != colors["ok"]["stroke"]
+    for pid in ("atelier", "editorial", "ocean", "sunset", "mono"):
+        strokes = [role_colors_for_palette(pid)[role]["stroke"].lower() for role in DIAGRAM_ROLES]
+        assert len(set(strokes)) == len(DIAGRAM_ROLES), pid
 
 
 def test_role_colors_ocean_differs_from_atelier() -> None:
@@ -44,3 +49,11 @@ def test_extract_legend_from_classdef() -> None:
     assert roles == ["start", "decision", "ok"]
     assert legend[0]["fill"].lower() == "#dce8df"
     assert legend[0]["label"]  # RU label
+
+
+def test_missing_role_classdef_is_filled() -> None:
+    src = "flowchart TD\n  A[Заявка]:::start --> B{Проверка}:::decision\n"
+    out = ensure_role_classdefs(src, "atelier")
+    assert "classDef start" in out
+    assert "classDef decision" in out
+    assert "classDef ok" not in out

@@ -53,13 +53,26 @@ def _brand(mark: str | None = None) -> str:
     return f'<div class="brand">{_esc(text)}</div>'
 
 
-def _bullets_html(items: list[Any]) -> str:
+def _bullets_html(items: list[Any], *, bands: bool = False) -> str:
     lis = "".join(f"<li>{_esc(str(b))}</li>" for b in items if str(b).strip())
-    return f'<ul class="bullets">{lis}</ul>' if lis else ""
+    if not lis:
+        return ""
+    cls = "bullets bullets--bands" if bands else "bullets"
+    return f'<ul class="{cls}">{lis}</ul>'
+
+
+def _len_class(text: str) -> str:
+    n = len(str(text or "").split())
+    if n <= 6:
+        return "is-short"
+    if n <= 12:
+        return "is-mid"
+    return "is-long"
 
 
 def _section_head(slide: dict[str, Any], *, compact: bool = False) -> str:
-    title = _esc(str(slide.get("title") or ""))
+    raw_title = str(slide.get("title") or "")
+    title = _esc(raw_title)
     kicker = str(slide.get("kicker") or "").strip()
     chapter = slide.get("chapter")
     takeaway = str(slide.get("takeaway") or "").strip()
@@ -77,7 +90,7 @@ def _section_head(slide: dict[str, Any], *, compact: bool = False) -> str:
         f'<header class="{cls}">'
         f"{chapter_html}"
         f"{kicker_html}"
-        f'<h2 class="section-title">{title}</h2>'
+        f'<h2 class="section-title {_len_class(raw_title)}">{title}</h2>'
         f"{takeaway_html}"
         f"</header>"
     )
@@ -220,6 +233,26 @@ def _title_panel_inner(takeaway: str) -> str:
     return '<p class="takeaway takeaway--hero"></p>'
 
 
+def _diagram_legend(palette: str) -> str:
+    """Four role dots under the diagram sentence."""
+    from case3.diagram_style import role_colors_for_palette
+
+    colors = role_colors_for_palette(palette)
+    items = (
+        ("start", "Старт"),
+        ("decision", "Решение"),
+        ("ok", "Успех"),
+        ("warn", "Риск"),
+    )
+    lis = []
+    for role, label in items:
+        stroke = colors[role]["stroke"]
+        lis.append(
+            f'<li><i style="background:{stroke}"></i>{_esc(label)}</li>'
+        )
+    return f'<ul class="dia-legend">{"".join(lis)}</ul>'
+
+
 def _body_for_slide(
     slide: dict[str, Any],
     *,
@@ -227,6 +260,7 @@ def _body_for_slide(
     brand_mark: str | None = None,
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
+    palette: str = "atelier",
 ) -> str:
     layout = str(slide.get("layout") or "")
     brand = _brand(brand_mark)
@@ -270,7 +304,7 @@ def _body_for_slide(
                 f'<div class="title-main title-main--bleed">'
                 f"{brand}"
                 f"{kicker_html}"
-                f"<h1>{title}</h1>"
+                f'<h1 class="{_len_class(str(slide.get("title") or ""))}">{title}</h1>'
                 f"{main_takeaway or _title_panel_inner(takeaway)}"
                 f"{sub_html}"
                 f"{bullets_html}"
@@ -282,7 +316,7 @@ def _body_for_slide(
                 f'<div class="title-field__copy">'
                 f"{brand}"
                 f"{kicker_html}"
-                f"<h1>{title}</h1>"
+                f'<h1 class="{_len_class(str(slide.get("title") or ""))}">{title}</h1>'
                 f"{main_takeaway}"
                 f"{sub_html}"
                 f"</div>"
@@ -295,7 +329,7 @@ def _body_for_slide(
             f'<div class="title-main">'
             f"{brand}"
             f"{kicker_html}"
-            f"<h1>{title}</h1>"
+            f'<h1 class="{_len_class(str(slide.get("title") or ""))}">{title}</h1>'
             f"{main_takeaway}"
             f"{sub_html}"
             f"</div>"
@@ -306,28 +340,30 @@ def _body_for_slide(
     if layout == "section":
         # Twin of PPTX _layout_section: title left, accent chapter panel right.
         sub = str(slide.get("subtitle") or slide.get("takeaway") or "").strip()
-        sub_html = f'<p class="section-splash__sub">{_esc(sub)}</p>' if sub else ""
-        chapter = slide.get("chapter")
-        ch = f"{int(chapter):02d}" if isinstance(chapter, int) else "—"
+        line = (
+            f'<p class="section-splash__line">{_esc(sub)}</p>' if sub else ""
+        )
+        panel = (
+            f'<aside class="section-splash__panel is-sentence">{line}</aside>'
+        )
+        sub_html = ""
         return (
             f'<div class="slide-inner section-splash">'
             f"{brand}"
             f'<div class="section-splash__main">'
-            f'<h1 class="section-splash__title">{_esc(str(slide.get("title") or ""))}</h1>'
+            f'<h1 class="section-splash__title {_len_class(str(slide.get("title") or ""))}">{_esc(str(slide.get("title") or ""))}</h1>'
             f"{sub_html}"
             f"</div>"
-            f'<aside class="section-splash__panel" aria-hidden="true">'
-            f'<p class="section-splash__num">{ch}</p>'
-            f"</aside>"
+            f"{panel}"
             f"</div>"
         )
 
     if layout == "bullets":
         return (
-            f'<div class="slide-inner">'
+            f'<div class="slide-inner bullets-stage">'
             f"{brand}"
             f"{_section_head(slide)}"
-            f"{_bullets_html(slide.get('bullets') or [])}"
+            f"{_bullets_html(slide.get('bullets') or [], bands=True)}"
             f"</div>"
         )
 
@@ -371,12 +407,24 @@ def _body_for_slide(
         head = dict(slide)
         if hero_html:
             head = {**slide, "takeaway": ""}
+        bullets = [
+            str(b).strip() for b in (slide.get("bullets") or []) if str(b).strip()
+        ]
+        decision = " ".join(bullets) or str(slide.get("title") or "")
+        title = str(slide.get("title") or "")
+        if hero_html:
+            left = hero_html
+            right = (
+                f'<p class="closing-plaque__kicker">{_esc(title)}</p>'
+                f'<p class="closing-plaque__decision">{_esc(decision)}</p>'
+            )
+        else:
+            left = f'<h2 class="closing-plaque__title">{_esc(title)}</h2>'
+            right = f'<p class="closing-plaque__decision">{_esc(decision)}</p>'
         return (
-            f'<div class="slide-inner closing-stage">'
-            f"{brand}"
-            f"{_section_head(head)}"
-            f"{hero_html}"
-            f"{_bullets_html(slide.get('bullets') or [])}"
+            f'<div class="slide-inner closing-stage closing-stage--split">'
+            f'<div class="closing-plaque closing-plaque--a">{brand}{left}</div>'
+            f'<div class="closing-plaque closing-plaque--b">{right}</div>'
             f"</div>"
         )
 
@@ -522,72 +570,54 @@ def _body_for_slide(
 
     if layout == "chart_hero":
         img = _media_img(media_png_href, kind="chart")
-        cap = str(slide.get("caption") or "").strip()
-        takeaway = str(slide.get("takeaway") or "").strip()
-        # Caption = insight under the chart; promote takeaway when caption empty.
-        head = slide
-        if not cap and takeaway:
-            cap = takeaway
-            head = {**slide, "takeaway": ""}
-        cap_html = (
-            f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap else ""
+        cap = str(
+            slide.get("caption") or slide.get("takeaway") or slide.get("title") or ""
+        ).strip()
+        line = (
+            f'<p class="caption caption--insight chart-hero__line">{_esc(cap)}</p>'
+            if cap
+            else ""
         )
         return (
-            f'<div class="slide-inner chart-hero">'
-            f"{brand}"
-            f"{_section_head(head, compact=True)}"
-            f'<div class="chart-stage">{img}</div>'
-            f"{cap_html}"
+            f'<div class="slide-inner chart-hero chart-hero--field">'
+            f'<aside class="chart-hero__rail">{brand}{line}</aside>'
+            f'<div class="chart-hero__plot">{img}</div>'
             f"</div>"
         )
 
     if layout == "chart_split":
         img = _media_img(media_png_href, kind="chart")
-        body = str(slide.get("body") or "").strip()
-        body_html = f'<p class="body">{_esc(body)}</p>' if body else ""
-        bullets = _bullets_html(slide.get("bullets") or [])
+        bullets = _bullets_html(slide.get("bullets") or [], bands=True)
         cap = str(slide.get("caption") or "").strip()
-        takeaway = str(slide.get("takeaway") or "").strip()
-        head = slide
-        if not cap and takeaway:
-            cap = takeaway
-            head = {**slide, "takeaway": ""}
         cap_html = (
-            f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap else ""
+            f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap and not bullets else ""
         )
         return (
-            f'<div class="slide-inner">'
-            f"{brand}"
-            f"{_section_head(head, compact=True)}"
-            f'<div class="chart-split">'
-            f'<div class="copy">{body_html}{bullets}</div>'
-            f'<div class="chart-col">'
-            f'<div class="chart-stage">{img}</div>'
-            f"{cap_html}"
-            f"</div></div></div>"
+            f'<div class="slide-inner chart-split chart-split--field">'
+            f'<div class="chart-split__copy">{brand}{_section_head(slide, compact=True)}{bullets}{cap_html}</div>'
+            f'<div class="chart-hero__plot">{img}</div>'
+            f"</div>"
         )
 
     if layout == "media_hero":
         mid = str(slide.get("media_id") or "")
         kind = _media_kind(mid)
-        frame_mod = " media-frame--photo" if kind == "photo" else " media-frame--diagram"
         img = _media_img(media_png_href, kind=kind)
-        cap = str(slide.get("caption") or "").strip()
-        cap_html = (
-            f'<p class="media-caption"><span class="media-caption__lead">'
-            f'{"Фото" if kind == "photo" else "Схема" if kind == "diagram" else "Рис."}.</span> '
-            f"{_esc(cap)}</p>"
-            if cap
-            else ""
-        )
+        cap = str(slide.get("caption") or slide.get("title") or "").strip()
+        line = f'<p class="caption caption--insight">{_esc(cap)}</p>' if cap else ""
+        if kind == "diagram":
+            return (
+                f'<div class="slide-inner media-hero media-hero--diagram">'
+                f'<aside class="chart-hero__rail">{brand}{line}{_diagram_legend(palette)}</aside>'
+                f'<div class="chart-hero__plot">{img}</div>'
+                f"</div>"
+            )
+        kicker = str(slide.get("kicker") or "").strip()
+        kick = f'<p class="kicker">{_esc(kicker)}</p>' if kicker else ""
         return (
-            f'<div class="slide-inner media-hero">'
-            f"{brand}"
-            f"{_section_head(slide, compact=True)}"
-            f'<figure class="media-frame{frame_mod}">'
-            f'<div class="media-frame__inset">{img}</div>'
-            f"</figure>"
-            f"{cap_html}"
+            f'<div class="slide-inner media-hero media-hero--bleed">'
+            f'<div class="media-hero__photo media-frame">{img}</div>'
+            f'<aside class="media-hero__plaque">{kick}{line}</aside>'
             f"</div>"
         )
 
@@ -778,6 +808,7 @@ def render_slide_html(
         brand_mark=brand_mark,
         style=style,
         slide_index=slide_index,
+        palette=palette,
     )
     layout = str(slide.get("layout") or "")
     footer = _esc(brand_mark)

@@ -9,7 +9,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
+from case3.chart_edit import (
+    ChartEditError,
+    edit_chart_in_run,
+    paint_deck_chart_html,
+    preview_chart_html,
+)
 
 _BAR_HTML = (
     '<canvas id="c1" width="1100" height="560"></canvas>'
@@ -104,6 +109,7 @@ def test_palette_only_no_llm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert "llm_style" not in result["mode"]
     fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
     assert fj["charts"][0]["palette"] == "ocean"
+    assert fj["charts"][0]["style_user"] is True
 
 
 def test_style_notes_still_allow_llm(
@@ -194,3 +200,33 @@ def test_empty_style_and_auto_palette_type_only_ok(
     fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
     assert fj["charts"][0]["type"] == "line"
     assert "type:'line'" in fj["charts"][0]["html"] or 'type:"line"' in fj["charts"][0]["html"]
+
+
+def test_preview_keeps_a_chosen_palette(tmp_path: Path) -> None:
+    out = _seed_run(tmp_path)
+    slides = out / "slides"
+    slides.mkdir()
+    (slides / "deck.json").write_text(
+        json.dumps({"style": {"chart_series": ["#1B3A4B", "#3D8B84", "#A9D4CE"]}}),
+        encoding="utf-8",
+    )
+    same = preview_chart_html(out, "cht_01", palette="editorial", chart_type="bar")
+    assert "#1B3A4B" in same["html"].upper() or "#3D8B84" in same["html"].upper()
+    changed = preview_chart_html(out, "cht_01", palette="ocean", chart_type="bar")
+    assert "#0072B2" in changed["html"].upper()
+
+
+def test_edit_preview_keeps_the_deck_triad(tmp_path: Path) -> None:
+    slides = tmp_path / "slides"
+    slides.mkdir()
+    (slides / "deck.json").write_text(
+        json.dumps({"style": {"chart_series": ["#1B3A4B", "#3D8B84", "#A9D4CE"]}}),
+        encoding="utf-8",
+    )
+    html = (
+        "<script>new Chart(c,{type:'bar',data:{datasets:[{backgroundColor:'#E15759'}]}});"
+        "</script>"
+    )
+    out = paint_deck_chart_html(tmp_path, html, "bar")
+    assert "#E15759" not in out.upper()
+    assert "#1B3A4B" in out.upper() or "#3D8B84" in out.upper()

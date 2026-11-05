@@ -12,6 +12,8 @@ import {
   type ReactNode,
 } from "react";
 import { DeckEditToolbar } from "./DeckEditToolbar";
+import { LiveChart } from "./LiveChart";
+import { MermaidView } from "./MermaidView";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 
 export type DeckMediaKind = "chart" | "photo" | "diagram";
@@ -28,6 +30,10 @@ type Props = {
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
   onDeckChange: (deck: DeckIR) => void;
   onPatch: (slides: Partial<DeckSlide> & { id: string }[]) => Promise<void>;
+  /** Live chart HTML while the edit sheet is open. */
+  previewHtml?: string | null;
+  /** Mermaid source for dia_* so the slide shows the same scheme as the editor. */
+  diagramMermaid?: string | null;
 };
 
 function panelForSlide(style: DeckIR["style"] | undefined, slideIndex: number): string {
@@ -187,6 +193,8 @@ function MediaSlot({
   version,
   hero,
   onMediaClick,
+  previewHtml,
+  diagramMermaid,
   children,
 }: {
   runId: string;
@@ -196,14 +204,26 @@ function MediaSlot({
   version?: number;
   hero?: boolean;
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  previewHtml?: string | null;
+  diagramMermaid?: string | null;
   children?: ReactNode;
 }) {
   const img = mediaUrl(runId, mediaId, version);
+  const live = Boolean(previewHtml && mediaId?.startsWith("cht_"));
+  const diagram = Boolean(diagramMermaid && mediaId?.startsWith("dia_"));
   const clickable = Boolean(editing && mediaId && onMediaClick);
   const className = `deck-cv-media${hero ? " deck-cv-media-hero" : ""}${
     clickable ? " is-editable" : ""
   }${open ? " is-open" : ""}`;
-  const body = img ? (
+  const body = live ? (
+    <div className="deck-cv-live">
+      <LiveChart html={previewHtml || ""} compact />
+    </div>
+  ) : diagram ? (
+    <div className="deck-cv-diagram-live">
+      <MermaidView source={diagramMermaid || ""} className="is-slide" />
+    </div>
+  ) : img ? (
     <img src={img} alt="" />
   ) : (
     <div className="deck-cv-empty">Media</div>
@@ -274,10 +294,11 @@ function SlideBody({
   splitTitle,
   darkBleed,
   motifPanels,
-  slideIndex,
   mediaVersion,
   openMediaId,
   onMediaClick,
+  previewHtml,
+  diagramMermaid,
 }: {
   runId: string;
   slide: DeckSlide;
@@ -287,16 +308,16 @@ function SlideBody({
   splitTitle?: boolean;
   darkBleed?: boolean;
   motifPanels?: string[];
-  slideIndex?: number;
   mediaVersion?: number;
   openMediaId?: string | null;
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  previewHtml?: string | null;
+  diagramMermaid?: string | null;
 }) {
   const layout = slide.layout;
   const mid = slide.chart_id || slide.media_id;
   const img = mediaUrl(runId, mid, mediaVersion);
   const panels = motifPanels || [];
-  const si = slideIndex ?? 0;
 
   if (layout === "title") {
     if (darkBleed && img) {
@@ -319,7 +340,7 @@ function SlideBody({
               />
             ) : null}
             <Editable
-              className="deck-cv-h1"
+              className={`deck-cv-h1 ${lenClass(slide.title || "")}`}
               value={slide.title || ""}
               editing={editing}
               multiline
@@ -363,7 +384,7 @@ function SlideBody({
               />
             ) : null}
             <Editable
-              className="deck-cv-h1"
+              className={`deck-cv-h1 ${lenClass(slide.title || "")}`}
               value={slide.title || ""}
               editing={editing}
               multiline
@@ -426,7 +447,7 @@ function SlideBody({
               />
             ) : null}
             <Editable
-              className="deck-cv-h1"
+              className={`deck-cv-h1 ${lenClass(slide.title || "")}`}
               value={slide.title || ""}
               editing={editing}
               multiline
@@ -465,7 +486,7 @@ function SlideBody({
           />
         ) : null}
         <Editable
-          className="deck-cv-h1"
+          className={`deck-cv-h1 ${lenClass(slide.title || "")}`}
           value={slide.title || ""}
           editing={editing}
           multiline
@@ -492,32 +513,28 @@ function SlideBody({
   }
 
   if (layout === "section") {
-    const ch =
-      typeof slide.chapter === "number"
-        ? String(slide.chapter).padStart(2, "0")
-        : "—";
     return (
       <div className="deck-cv-inner deck-cv-section">
         <div className="deck-cv-brand">{brand}</div>
         <div className="deck-cv-section-main">
           <Editable
-            className="deck-cv-h1"
+            className={`deck-cv-h1 ${lenClass(slide.title || "")}`}
             value={slide.title || ""}
             editing={editing}
             multiline
             onCommit={(v) => onField({ title: v })}
           />
+        </div>
+        <aside className="deck-cv-section-panel is-sentence">
           {slide.subtitle ? (
             <Editable
-              className="deck-cv-sub"
+              className="deck-cv-section-line"
               value={slide.subtitle}
               editing={editing}
+              multiline
               onCommit={(v) => onField({ subtitle: v })}
             />
           ) : null}
-        </div>
-        <aside className="deck-cv-section-panel" aria-hidden>
-          <span>{ch}</span>
         </aside>
       </div>
     );
@@ -768,15 +785,14 @@ function SlideBody({
     const kpi = (slide.kpis || [])[0];
     return (
       <div className="deck-cv-inner deck-cv-stat deck-cv-stat--field">
-        <div className="deck-cv-brand">{brand}</div>
-        <Head slide={slide} editing={editing} onField={onField} />
-        <div className="deck-cv-stat-grid">
-          <div className="deck-cv-stat-fig">
-            <div className="deck-cv-stat-val">{kpi?.value || ""}</div>
-            <div className="deck-cv-stat-lab">{kpi?.label || ""}</div>
-            {kpi?.delta ? <div className="deck-cv-stat-delta">{kpi.delta}</div> : null}
-            {kpi?.hint ? <div className="deck-cv-stat-hint">{kpi.hint}</div> : null}
-          </div>
+        <div className="deck-cv-stat-fig">
+          <div className="deck-cv-brand">{brand}</div>
+          <div className="deck-cv-stat-val">{kpi?.value || ""}</div>
+          <div className="deck-cv-stat-lab">{kpi?.label || ""}</div>
+          {kpi?.delta ? <div className="deck-cv-stat-delta">{kpi.delta}</div> : null}
+          {kpi?.hint ? <div className="deck-cv-stat-hint">{kpi.hint}</div> : null}
+        </div>
+        <div className="deck-cv-stat-notes">
           <Bullets slide={slide} editing={editing} onField={onField} />
         </div>
       </div>
@@ -822,71 +838,76 @@ function SlideBody({
     );
   }
 
-  if (
-    layout === "chart_hero" ||
-    layout === "media_hero" ||
-    layout === "chart_split" ||
-    layout === "media_split"
-  ) {
-    const split = layout.endsWith("_split");
+  if (layout === "chart_hero" || (layout === "media_hero" && String(slide.media_id || "").startsWith("dia_"))) {
+    const line = slide.caption || slide.title || "";
+    const isDiagram = layout !== "chart_hero";
     return (
-      <div className={`deck-cv-inner${split ? " deck-cv-split" : ""}`}>
-        <div className="deck-cv-brand">{brand}</div>
-        {!split ? <Head slide={slide} editing={editing} onField={onField} compact /> : null}
-        {split ? (
-          <div className="deck-cv-split-grid">
-            <div className="deck-cv-split-copy">
-              <Head slide={slide} editing={editing} onField={onField} />
-              {slide.body ? (
-                <Editable
-                  className="deck-cv-body"
-                  value={slide.body}
-                  editing={editing}
-                  multiline
-                  onCommit={(v) => onField({ body: v })}
-                />
-              ) : null}
-              <Bullets slide={slide} editing={editing} onField={onField} />
-            </div>
-            <MediaSlot
-              runId={runId}
-              mediaId={mid}
-              editing={editing}
-              open={Boolean(mid && openMediaId === mid)}
-              version={mediaVersion}
-              onMediaClick={onMediaClick}
-            >
-              {slide.caption ? (
-                <Editable
-                  className="deck-cv-cap"
-                  value={slide.caption}
-                  editing={editing}
-                  onCommit={(v) => onField({ caption: v })}
-                />
-              ) : null}
-            </MediaSlot>
-          </div>
-        ) : (
-          <>
-            <MediaSlot
-              runId={runId}
-              mediaId={mid}
-              editing={editing}
-              open={Boolean(mid && openMediaId === mid)}
-              version={mediaVersion}
-              hero
-              onMediaClick={onMediaClick}
-            />
-            {slide.caption ? (
-              <Editable
-                className="deck-cv-cap"
-                value={slide.caption}
-                editing={editing}
-                onCommit={(v) => onField({ caption: v })}
-              />
-            ) : null}
-          </>
-        )}
+      <div className={`deck-cv-inner deck-cv-chart-field${isDiagram ? " is-diagram" : ""}`}>
+        <aside className="deck-cv-chart-rail">
+          <div className="deck-cv-brand">{brand}</div>
+          <div className="deck-cv-chart-line">{line}</div>
+          {isDiagram ? (
+            <ul className="deck-cv-dia-legend">
+              <li><i className="is-start" />Старт</li>
+              <li><i className="is-decision" />Решение</li>
+              <li><i className="is-ok" />Успех</li>
+              <li><i className="is-warn" />Риск</li>
+            </ul>
+          ) : null}
+        </aside>
+        <MediaSlot
+          runId={runId}
+          mediaId={mid}
+          editing={editing}
+          open={Boolean(mid && openMediaId === mid)}
+          version={mediaVersion}
+          hero
+          onMediaClick={onMediaClick}
+          previewHtml={previewHtml}
+          diagramMermaid={diagramMermaid}
+        />
+      </div>
+    );
+  }
+
+  if (layout === "media_hero") {
+    return (
+      <div className="deck-cv-inner deck-cv-photo-bleed">
+        <MediaSlot
+          runId={runId}
+          mediaId={mid}
+          editing={editing}
+          open={Boolean(mid && openMediaId === mid)}
+          version={mediaVersion}
+          hero
+          onMediaClick={onMediaClick}
+        />
+        <aside className="deck-cv-photo-plaque">
+          <div className="deck-cv-chart-line">{slide.caption || slide.title || ""}</div>
+        </aside>
+      </div>
+    );
+  }
+
+  if (layout === "chart_split" || layout === "media_split") {
+    return (
+      <div className="deck-cv-inner deck-cv-chart-field">
+        <div className="deck-cv-chart-copy">
+          <div className="deck-cv-brand">{brand}</div>
+          <Head slide={slide} editing={editing} onField={onField} />
+          <Bullets slide={slide} editing={editing} onField={onField} bands />
+        </div>
+        <MediaSlot
+          runId={runId}
+          mediaId={mid}
+          editing={editing}
+          open={Boolean(mid && openMediaId === mid)}
+          version={mediaVersion}
+          hero
+          onMediaClick={onMediaClick}
+          previewHtml={previewHtml}
+          diagramMermaid={diagramMermaid}
+        />
       </div>
     );
   }
@@ -909,16 +930,69 @@ function SlideBody({
     );
   }
 
-  // bullets / closing / fallback
+  if (layout === "closing") {
+    const number = closingNumber(slide);
+    const decision = (slide.bullets || []).map((b) => b.trim()).filter(Boolean).join(" ");
+    return (
+      <div className="deck-cv-inner deck-cv-closing deck-cv-closing--split">
+        <div className="deck-cv-close-a">
+          <div className="deck-cv-brand">{brand}</div>
+          {number ? (
+            <>
+              <div className="deck-cv-close-num">{number.value}</div>
+              {number.label ? (
+                <div className="deck-cv-close-lab">{number.label}</div>
+              ) : null}
+            </>
+          ) : (
+            <Head slide={slide} editing={editing} onField={onField} />
+          )}
+        </div>
+        <div className="deck-cv-close-b">
+          {number && slide.title ? (
+            <div className="deck-cv-close-kicker">{slide.title}</div>
+          ) : null}
+          <div className="deck-cv-close-decision">{decision || slide.title || ""}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`deck-cv-inner${layout === "closing" ? " deck-cv-closing" : ""}`}
-    >
+    <div className="deck-cv-inner">
       <div className="deck-cv-brand">{brand}</div>
       <Head slide={slide} editing={editing} onField={onField} />
-      <Bullets slide={slide} editing={editing} onField={onField} />
+      <Bullets
+        slide={slide}
+        editing={editing}
+        onField={onField}
+        bands={layout === "bullets"}
+      />
     </div>
   );
+}
+
+function lenClass(text: string): string {
+  const n = text.trim().split(/\s+/).filter(Boolean).length;
+  if (n <= 6) return "is-short";
+  if (n <= 12) return "is-mid";
+  return "is-long";
+}
+
+function closingNumber(slide: DeckSlide): { value: string; label: string } | null {
+  const raw = (slide.takeaway || "").trim();
+  if (!raw) return null;
+  const line = raw.split("\n").map((s) => s.trim()).filter(Boolean)[0] || "";
+  for (const sep of [" — ", " – ", " - "]) {
+    if (line.includes(sep)) {
+      const [value, label] = line.split(sep);
+      if (value.trim() && label.trim() && value.trim().length <= 24) {
+        return { value: value.trim(), label: label.trim() };
+      }
+    }
+  }
+  if (line.length <= 24) return { value: line, label: "" };
+  return null;
 }
 
 function Head({
@@ -943,7 +1017,7 @@ function Head({
         />
       ) : null}
       <Editable
-        className="deck-cv-h2"
+        className={`deck-cv-h2 ${lenClass(slide.title || "")}`}
         value={slide.title || ""}
         editing={editing}
         multiline
@@ -965,15 +1039,17 @@ function Bullets({
   slide,
   editing,
   onField,
+  bands = false,
 }: {
   slide: DeckSlide;
   editing: boolean;
   onField: (p: Partial<DeckSlide>) => void;
+  bands?: boolean;
 }) {
   const bullets = slide.bullets || [];
   if (!bullets.length) return null;
   return (
-    <ul className="deck-cv-bullets">
+    <ul className={`deck-cv-bullets${bands ? " deck-cv-bullets--bands" : ""}`}>
       {bullets.map((b, i) => (
         <li key={i}>
           <Editable
@@ -1002,6 +1078,8 @@ export function DeckCanvas({
   onMediaClick,
   onDeckChange,
   onPatch,
+  previewHtml = null,
+  diagramMermaid = null,
 }: Props) {
   const slides = deck.slides || [];
   const slide = slides[Math.min(Math.max(0, index), Math.max(0, slides.length - 1))];
@@ -1127,10 +1205,11 @@ export function DeckCanvas({
           splitTitle={splitTitle}
           darkBleed={darkBleed}
           motifPanels={deck.style?.motif?.panels}
-          slideIndex={index}
           mediaVersion={mediaVersion}
           openMediaId={openMediaId}
           onMediaClick={onMediaClick}
+          previewHtml={previewHtml}
+          diagramMermaid={diagramMermaid}
         />
         <div className="deck-cv-footer" aria-hidden>
           {brand}
