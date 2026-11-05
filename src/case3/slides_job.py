@@ -36,6 +36,11 @@ from case3.slides_chart_data import (
 )
 from case3.slides_lo import write_deck_pdf
 from case3.slides_pptx_native import build_native_pptx
+from case3.source_brief import (
+    code_highlights,
+    ensure_code_callouts,
+    slides_source_text,
+)
 from case3.schema_redraw import (
     redraw_attached_schemas,
     schema_source_ids,
@@ -405,8 +410,16 @@ def run_slides_job(
             slide_target = int(raw_target) if raw_target is not None else None
         except (TypeError, ValueError):
             slide_target = None
+        slides_source = slides_source_text(source)
+        code_notes = code_highlights(source)
+        if slides_source != source:
+            log.info(
+                "slides source brief %d chars from %d",
+                len(slides_source),
+                len(source),
+            )
         beat_plan = plan_beats(
-            source=source,
+            source=slides_source,
             intent=intent,
             chart_ids=chart_ids,
             figure_ids=figure_ids,
@@ -458,7 +471,7 @@ def run_slides_job(
                 figure_ids=figure_ids,
                 diagram_ids=diagram_ids,
                 intent=intent,
-                source=source,
+                source=slides_source,
                 media_catalog=_media_catalog_block(out_dir),
                 theme_pack=theme_tokens.pack_id,
                 structure_id=structure_id,
@@ -477,7 +490,14 @@ def run_slides_job(
                 f"(chart captions/HTML): {allowed_preview}. "
                 "Do not invent decimals. "
                 "If images are attached, look at them: logo wordmark and UI labels "
-                "only if they are visible. Return only the JSON object."
+                "only if they are visible. "
+                + (
+                    "CODE HIGHLIGHTS are required callout slides: term is the name, "
+                    "definition is that single line. Do not paste the rest of a listing. "
+                    if code_notes
+                    else ""
+                )
+                + "Return only the JSON object."
             )
             vision = deck_vision_images(png_by_id, figure_ids)
             if vision:
@@ -563,6 +583,10 @@ def run_slides_job(
                 )
                 raw_ir = _extract_json_object(raw_text)
                 deck = _parse_or_scrub(raw_ir)
+        code_ids = ensure_code_callouts(deck, code_notes)
+        if code_ids:
+            meta["slides_code_callouts"] = code_ids
+            log.info("slides: code callouts %s", code_ids)
         # Freeze theme into IR (overwrite any LLM paint fields).
         deck["theme_id"] = theme_tokens.pack_id
         deck["style"] = theme_tokens.as_dict()
