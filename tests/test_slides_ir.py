@@ -689,3 +689,32 @@ def test_parse_accepts_sixteen_slide_deck() -> None:
     assert ir["slides"][0]["layout"] == "title"
     assert ir["slides"][-1]["layout"] == "closing"
     assert len(ir["slides"]) < 16
+
+
+def test_multiline_title_takeaway_keeps_hero_metric_pairs() -> None:
+    """Newline-separated ``VALUE — label`` lines must survive whitespace
+    normalization so the cover still shows one KPI card per metric."""
+    from case3.slides_html import parse_hero_metrics
+
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {
+                    "id": "s01",
+                    "layout": "title",
+                    "title": "Итоги",
+                    "takeaway": "120 млн — Выручка\n35% — Доля\n42 — NPS",
+                },
+                *_base_slides()[1:],
+            ],
+        },
+        source=SOURCE,
+    )
+    takeaway = ir["slides"][0]["takeaway"]
+    assert parse_hero_metrics(takeaway) == [
+        ("120 млн", "Выручка"),
+        ("35%", "Доля"),
+        ("42", "NPS"),
+    ]

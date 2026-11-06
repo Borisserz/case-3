@@ -225,7 +225,6 @@ async def start_slides(
     )
 
 
-@router.get("/api/runs/{run_id}/slides")
 def _chart_index(out_dir: Path) -> dict[str, dict[str, Any]]:
     """Type and palette for each chart so the deck editor opens on the real figure."""
     path = out_dir / "figures.json"
@@ -250,6 +249,7 @@ def _chart_index(out_dir: Path) -> dict[str, dict[str, Any]]:
     return out
 
 
+@router.get("/api/runs/{run_id}/slides")
 def get_slides(run_id: str) -> dict[str, Any]:
     if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")

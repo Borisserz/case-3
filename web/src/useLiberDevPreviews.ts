@@ -257,7 +257,9 @@ export function useLiberDevPreviews({
     if (!/preview=deck(?:-busy)?/.test(window.location.search)) return;
     if (/preview=deck-busy/.test(window.location.search)) return;
     const id = "preview-deck";
-    const runId = "source_20261030T083857Z";
+    const runId =
+      new URLSearchParams(window.location.search).get("run") ||
+      "source_20261030T083857Z";
     let cancelled = false;
     (async () => {
       let slidePngs: string[] = [];

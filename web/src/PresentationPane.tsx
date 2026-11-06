@@ -242,8 +242,8 @@ export function PresentationPane({
 
   // Safety net: rail opened with pptx downloads but empty twin/deck (old status).
   useEffect(() => {
-    if (status !== "ok") return;
-    if (slidePngs.length > 0 || deckProp) return;
+    if (deckProp?.slides?.length) return;
+    if (status !== "ok" && slidePngs.length === 0) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -910,7 +910,7 @@ export function PresentationPane({
                 exit="exit"
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               >
-                {live && deck ? (
+                {editing && live && deck ? (
                   <DeckCanvas
                     runId={runId}
                     deck={deck}
@@ -937,8 +937,36 @@ export function PresentationPane({
                 ) : currentPng ? (
                   <img
                     className="presentation-slide-img"
-                    src={currentPng}
+                    src={
+                      mediaVersion
+                        ? `${currentPng}${currentPng.includes("?") ? "&" : "?"}mv=${mediaVersion}`
+                        : currentPng
+                    }
                     alt={`Слайд ${safeIdx + 1} из ${n}`}
+                  />
+                ) : live && deck ? (
+                  <DeckCanvas
+                    runId={runId}
+                    deck={deck}
+                    index={safeIdx}
+                    editing={editing}
+                    saving={saving}
+                    mediaVersion={mediaVersion}
+                    openMediaId={openMediaId}
+                    onMediaClick={
+                      onEditFigure || onEditImage ? onMediaClick : undefined
+                    }
+                    onDeckChange={setDeck}
+                    onPatch={patchSlides}
+                    previewHtml={chartPreview}
+                    diagramMermaid={
+                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
+                        ?.mermaid ||
+                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.chart_id)
+                        ?.mermaid ||
+                      null
+                    }
+                    diagramPalette={defaultPalette}
                   />
                 ) : null}
               </motion.div>

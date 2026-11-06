@@ -92,6 +92,8 @@ export type RunResult = {
   deck?: import("../deckTypes").DeckIR | null;
   /** Liber composer mode that produced this run */
   output_mode?: string;
+  /** Source the user sent. Restored when a chat is opened from history. */
+  user_text?: string;
   error?: string;
   detail?: string;
 };
@@ -118,6 +120,13 @@ export type UserMsg = {
   chips?: string[];
   /** Pasted / attached source shown as doc plaque on the bubble. */
   attachment?: SourceAttachment;
+  /** Photos attached to this send. */
+  photos?: UserPhotoThumb[];
+};
+
+export type UserPhotoThumb = {
+  url: string;
+  name?: string;
 };
 
 export type BotMsg = {

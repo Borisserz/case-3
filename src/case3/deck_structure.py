@@ -16,6 +16,8 @@ STRUCTURE_IDS = (
     "campaign",
     "workshop",
     "hire",
+    "council",
+    "quarter",
 )
 
 _CACHE: dict[str, dict[str, Any]] | None = None

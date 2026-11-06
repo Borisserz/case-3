@@ -56,6 +56,7 @@ export function DeckChatHero({ runId, deck }: Props) {
           editing={false}
           onDeckChange={noopDeck}
           onPatch={noopPatch}
+          diagramPalette={deck.palette}
         />
       </div>
     </div>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from case3.slides_ir import parse_deck_ir
 
 BOARD = (
@@ -149,6 +151,82 @@ def test_hire_kickers_are_one_question() -> None:
     assert "cards" not in mid
 
 
+def test_bare_number_does_not_grow_a_unit() -> None:
+    source = "план выручки 19, факт 18,4. новые продажи 1,9."
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "План"},
+                {
+                    "id": "s02",
+                    "layout": "scorecard",
+                    "title": "Выручка",
+                    "kpis": [
+                        {
+                            "label": "План",
+                            "value": "19",
+                            "hint": "План выручки составляет 19 млн",
+                        }
+                    ],
+                },
+                {
+                    "id": "s03",
+                    "layout": "closing",
+                    "title": "Итог",
+                    "bullets": ["Факт выручки — 18,4 млн", "Новые продажи — 1,9 млн"],
+                },
+            ]
+        ),
+        source=source,
+    )
+    blob = json.dumps(deck["slides"], ensure_ascii=False)
+    assert "млн" not in blob
+    assert "19" in blob and "18,4" in blob
+
+
+def test_closing_cannot_invent_a_decision() -> None:
+    source = (
+        "нанять двух продавцов или нет. касса 20,4 на 24 месяца. "
+        "план выручки 19, факт 18,4."
+    )
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "Совет"},
+                {
+                    "id": "s02",
+                    "layout": "callout",
+                    "title": "Нанять двух продавцов или нет",
+                    "term": "Вопрос",
+                    "definition": "Нанять двух продавцов?",
+                },
+                {
+                    "id": "s03",
+                    "layout": "callout",
+                    "title": "Вопрос",
+                    "term": "Вопрос",
+                    "definition": "Нанять двух продавцов?",
+                },
+                {
+                    "id": "s04",
+                    "layout": "closing",
+                    "title": "Решение: отложить найм до закрытия разрыва",
+                    "bullets": ["Ждать следующий квартал."],
+                },
+            ]
+        ),
+        source=source,
+    )
+    blob = " ".join(
+        f"{s.get('title') or ''} {s.get('definition') or ''} {' '.join(s.get('bullets') or [])}"
+        for s in deck["slides"]
+    ).casefold()
+    assert "отложить" not in blob
+    assert "ждать" not in blob
+    assert sum(1 for s in deck["slides"] if s["layout"] == "callout") == 1
+    assert "20,4" in deck["slides"][-1]["title"] or "18,4" in deck["slides"][-1]["title"]
+
+
 def test_negated_compare_becomes_one_question() -> None:
     deck = parse_deck_ir(
         _wrap(
@@ -219,4 +297,63 @@ def test_source_question_is_its_own_slide_before_closing() -> None:
     assert deck["slides"][-2]["layout"] == "callout"
     assert "или нет" not in deck["slides"][-2]["definition"]
     assert deck["slides"][-2]["definition"].endswith("?")
+
+
+def test_locked_arc_drops_a_bullet_list_that_replaced_a_chart() -> None:
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "Каналы"},
+                {
+                    "id": "s02",
+                    "layout": "bullets",
+                    "title": "План",
+                    "bullets": ["План выручки 19."],
+                },
+                {
+                    "id": "s03",
+                    "layout": "scorecard",
+                    "title": "Факт",
+                    "kpis": [{"label": "Факт", "value": "18,4", "hint": "План 19."}],
+                },
+                {"id": "s04", "layout": "closing", "title": "Дальше"},
+            ]
+        ),
+        source="план выручки 19, факт 18,4.",
+        locked_arc=["title", "chart_hero", "scorecard", "closing"],
+    )
+    layouts = [s["layout"] for s in deck["slides"]]
+    assert layouts == ["title", "scorecard", "closing"]
+
+
+def test_locked_arc_keeps_template_order_and_may_skip_a_slot() -> None:
+    deck = parse_deck_ir(
+        _wrap(
+            [
+                {"id": "s01", "layout": "title", "title": "Квартал"},
+                {
+                    "id": "s02",
+                    "layout": "chart_hero",
+                    "title": "Каналы",
+                    "chart_id": "cht_01",
+                },
+                {
+                    "id": "s03",
+                    "layout": "table_hero",
+                    "title": "Сетка",
+                    "rows": [["Канал", "Факт"], ["Сайт", "6,2"]],
+                },
+                {"id": "s04", "layout": "closing", "title": "Дальше"},
+            ]
+        ),
+        source="сайт 6,2.",
+        allowed_media_ids=frozenset({"cht_01"}),
+        locked_arc=["title", "table_hero", "chart_hero", "quote", "closing"],
+    )
+    assert [s["layout"] for s in deck["slides"]] == [
+        "title",
+        "table_hero",
+        "chart_hero",
+        "closing",
+    ]
     assert deck["slides"][-1]["layout"] == "closing"

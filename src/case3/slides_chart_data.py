@@ -28,6 +28,18 @@ _DATASET_DATA_FIRST = re.compile(
     re.I | re.S,
 )
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
+_SCATTER_POINT = re.compile(
+    r"\{\s*x\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*y\s*:\s*(-?\d+(?:\.\d+)?)\s*\}",
+    re.I,
+)
+_KPI_VALUE = re.compile(
+    r'class\s*=\s*["\']value["\'][^>]*>([^<]+)',
+    re.I,
+)
+_KPI_LABEL = re.compile(
+    r'class\s*=\s*["\']label["\'][^>]*>([^<]+)',
+    re.I,
+)
 
 
 def _parse_labels(blob: str) -> list[str]:
@@ -88,6 +100,29 @@ def normalize_series_ir(raw: Any, *, default_type: str = "bar") -> dict[str, Any
     }
 
 
+def extract_scatter_ir(html: str) -> dict[str, Any] | None:
+    points = [
+        {"x": float(x), "y": float(y)} for x, y in _SCATTER_POINT.findall(html or "")
+    ]
+    if len(points) < 2:
+        return None
+    name_m = re.search(r"label\s*:\s*['\"]([^'\"]+)['\"]", html or "", re.I)
+    name = (name_m.group(1).strip() if name_m else "") or "Точки"
+    return {"type": "scatter", "series": [{"name": name, "points": points}]}
+
+
+def extract_kpi_ir(html: str) -> dict[str, Any] | None:
+    value_m = _KPI_VALUE.search(html or "")
+    if not value_m:
+        return None
+    value = " ".join(value_m.group(1).split())
+    if not value:
+        return None
+    label_m = _KPI_LABEL.search(html or "")
+    label = " ".join(label_m.group(1).split()) if label_m else ""
+    return {"type": "kpi", "value": value[:48], "label": label[:48]}
+
+
 def extract_chart_series(
     html: str,
     *,
@@ -95,8 +130,10 @@ def extract_chart_series(
 ) -> dict[str, Any] | None:
     """Return ChartSeriesIR or None if not extractable / not native-eligible."""
     ctype = (chart_type or "").strip().lower() or "bar"
-    if ctype == "kpi" or ctype == "scatter":
-        return None
+    if ctype == "kpi":
+        return extract_kpi_ir(html)
+    if ctype == "scatter":
+        return extract_scatter_ir(html)
     if ctype not in NATIVE_CHART_TYPES and ctype not in ("bar", "line"):
         # Still try bar/line-shaped data for unknown types
         if "labels" not in (html or "") or "data:" not in (html or ""):
@@ -177,7 +214,18 @@ def attach_series_ir(chart: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(chart, dict):
         return None
     ctype = str(chart.get("type") or "").strip().lower()
-    if ctype in ("kpi", "scatter"):
+    if ctype == "kpi":
+        ir = extract_kpi_ir(str(chart.get("html") or ""))
+        if ir:
+            chart["series"] = ir
+            return ir
+        chart.pop("series", None)
+        return None
+    if ctype == "scatter":
+        ir = extract_scatter_ir(str(chart.get("html") or ""))
+        if ir:
+            chart["series"] = ir
+            return ir
         chart.pop("series", None)
         return None
     existing = normalize_series_ir(chart.get("series"), default_type=ctype or "bar")
@@ -221,8 +269,15 @@ def series_from_figures_json(
         if str(ch.get("id") or "") != chart_id:
             continue
         ctype = str(ch.get("type") or "bar").strip().lower() or "bar"
-        if ctype in ("kpi", "scatter"):
-            return None
+        if ctype == "kpi":
+            return extract_kpi_ir(str(ch.get("html") or "")) or (
+                ch.get("series") if isinstance(ch.get("series"), dict) and ch["series"].get("type") == "kpi" else None
+            )
+        if ctype == "scatter":
+            stored_sc = ch.get("series")
+            if isinstance(stored_sc, dict) and stored_sc.get("type") == "scatter" and stored_sc.get("series"):
+                return stored_sc
+            return extract_scatter_ir(str(ch.get("html") or ""))
         stored = normalize_series_ir(
             ch.get("series"),
             default_type=ctype,

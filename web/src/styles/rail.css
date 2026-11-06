@@ -659,6 +659,12 @@
   color: var(--ink);
 }
 
+.artifact-rail-dl.is-current {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+  background: color-mix(in srgb, var(--secondary) 72%, var(--sheet));
+}
+
 .artifact-rail-dl.is-pulse {
   animation: liber-link-pulse 1.1s ease-out 2;
 }

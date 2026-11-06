@@ -884,7 +884,19 @@ def _layout_media(
         pic_w = Inches(7.1) if is_dia else Inches(5.9)
         pic_h = Inches(5.0) if is_dia else Inches(4.6)
         placed = False
-        if is_cht and chart_series:
+        if is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
+            from case3.slides_pptx_charts import add_native_kpi
+
+            placed = add_native_kpi(
+                slide,
+                chart_series,
+                left=pic_left,
+                top=Inches(1.55),
+                width=pic_w,
+                height=pic_h,
+                color=colors["ink"],
+            )
+        elif is_cht and chart_series:
             from case3.slides_pptx_charts import add_native_chart
 
             placed = add_native_chart(
@@ -943,7 +955,19 @@ def _layout_media(
         pic_left = rail_w + Inches(0.15)
         pic_w = _SLIDE_W - rail_w - Inches(0.35)
         placed = False
-        if is_cht and chart_series:
+        if is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
+            from case3.slides_pptx_charts import add_native_kpi
+
+            placed = add_native_kpi(
+                slide,
+                chart_series,
+                left=pic_left,
+                top=Inches(1.55),
+                width=pic_w,
+                height=pic_h,
+                color=colors["ink"],
+            )
+        elif is_cht and chart_series:
             from case3.slides_pptx_charts import add_native_chart
 
             placed = add_native_chart(

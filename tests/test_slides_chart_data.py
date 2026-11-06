@@ -216,29 +216,76 @@ def test_series_from_figures_ignores_stale_type() -> None:
     assert ir["type"] == "line"
 
 
-def test_attach_kpi_and_scatter_drop_series() -> None:
+def test_attach_kpi_and_scatter_become_native_ir() -> None:
     chart = {
         "id": "cht_01",
         "type": "kpi",
-        "html": '<div class="kpi"><div class="value">42</div></div>',
+        "html": '<div class="kpi"><div class="value">42</div><div class="label">NPS</div></div>',
         "series": {
             "type": "bar",
             "categories": ["A"],
             "series": [{"name": "S", "values": [1.0]}],
         },
     }
-    assert attach_series_ir(chart) is None
-    assert "series" not in chart
+    ir = attach_series_ir(chart)
+    assert ir is not None
+    assert ir["type"] == "kpi"
+    assert ir["value"] == "42"
+    assert ir["label"] == "NPS"
 
     chart = {
         "id": "cht_02",
         "type": "scatter",
-        "html": "<script>new Chart(c,{type:'scatter',data:{datasets:[{data:[{x:1,y:2}]}]}});</script>",
+        "html": "<script>new Chart(c,{type:'scatter',data:{datasets:[{label:'Точки',data:[{x:1,y:2},{x:3,y:4}]}]}});</script>",
         "series": {
             "type": "bar",
             "categories": ["A"],
             "series": [{"name": "S", "values": [1.0]}],
         },
     }
-    assert attach_series_ir(chart) is None
-    assert "series" not in chart
+    ir = attach_series_ir(chart)
+    assert ir is not None
+    assert ir["type"] == "scatter"
+    assert ir["series"][0]["points"] == [{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}]
+
+
+def test_scatter_and_kpi_land_as_native_shapes() -> None:
+    from pptx import Presentation
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.util import Inches
+
+    from case3.slides_pptx_charts import add_native_chart, add_native_kpi
+    from case3.slides_pptx_draw import _hex_rgb
+
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    assert add_native_chart(
+        slide,
+        {
+            "type": "scatter",
+            "series": [
+                {
+                    "name": "Точки",
+                    "points": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
+                }
+            ],
+        },
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(4),
+        height=Inches(3),
+    )
+    assert slide.shapes[-1].chart.chart_type == XL_CHART_TYPE.XY_SCATTER
+
+    kpi = prs.slides.add_slide(blank)
+    assert add_native_kpi(
+        kpi,
+        {"type": "kpi", "value": "42", "label": "NPS"},
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(4),
+        height=Inches(2),
+        color=_hex_rgb("#1B3A4B"),
+    )
+    assert "42" in kpi.shapes[-1].text_frame.text

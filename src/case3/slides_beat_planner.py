@@ -23,44 +23,40 @@ _MODE_PACK: dict[str, str] = {
     "campaign": "atelier",
     "workshop": "studio",
     "hire": "board",
+    "council": "studio",
+    "quarter": "botanical",
     "general": "atelier",
 }
 
 _MODE_ARCS: dict[str, list[str]] = {
     "board_update": [
         "title",
-        "callout",
         "scorecard",
         "table_hero",
+        "chart_hero",
         "table_hero",
         "card_row",
-        "section",
-        "table_hero",
         "callout",
         "closing",
     ],
     "performance": [
         "title",
         "chart_hero",
-        "scorecard",
         "chart_split",
         "table_hero",
-        "table_hero",
+        "scorecard",
         "card_row",
         "callout",
-        "table_hero",
         "closing",
     ],
     "qbr": [
         "title",
         "section",
         "scorecard",
+        "card_row",
         "chart_hero",
-        "card_row",
-        "callout",
         "section",
-        "table_hero",
-        "card_row",
+        "callout",
         "closing",
     ],
     "survey": [
@@ -68,20 +64,32 @@ _MODE_ARCS: dict[str, list[str]] = {
         "callout",
         "scorecard",
         "card_row",
-        "card_row",
+        "quote",
         "callout",
-        "table_hero",
-        "card_row",
         "closing",
     ],
     "investor": [
         "title",
-        "section",
         "stat_hero",
         "chart_hero",
+        "bullets",
+        "callout",
+        "closing",
+    ],
+    "council": [
+        "title",
+        "callout",
+        "scorecard",
+        "callout",
+        "closing",
+    ],
+    "quarter": [
+        "title",
+        "section",
+        "card_row",
+        "section",
         "table_hero",
         "callout",
-        "card_row",
         "closing",
     ],
     "launch": [
@@ -96,11 +104,11 @@ _MODE_ARCS: dict[str, list[str]] = {
     ],
     "campaign": [
         "title",
-        "scorecard",
         "compare",
         "table_hero",
+        "chart_hero",
         "card_row",
-        "bullets",
+        "callout",
         "closing",
     ],
     "workshop": [
@@ -484,7 +492,15 @@ def plan_beats(
             lo, hi = int(slides_range[0]), int(slides_range[-1])
         except (TypeError, ValueError, IndexError):
             lo, hi = 8, 12
-        target = max(lo, min(hi, 10 if len(charts) + len(figs) >= 1 else 8))
+        media_n = len(charts) + len(figs) + len(dias)
+        text_len = len(_blob(source, intent))
+        if media_n >= 2 or text_len >= 600:
+            raw_t = len(arc)
+        elif media_n >= 1 or text_len >= 280:
+            raw_t = min(len(arc), max(10, lo + 2))
+        else:
+            raw_t = max(8, lo)
+        target = max(lo, min(hi, raw_t))
         rationale = f"structure template {sid}"
         from_structure = True
         mode = sid
@@ -533,8 +549,27 @@ def plan_beats(
 
 
 def format_beat_overlay(plan: BeatPlan) -> str:
-    """Layout menu for the model. Pack is color. The model picks blocks that fit Source."""
+    """Layout menu for the model. A chosen template locks the skeleton."""
     hint = " → ".join(plan.beats)
+    if plan.from_structure:
+        return "\n".join(
+            [
+                "# BEAT PLAN (locked template skeleton)",
+                "",
+                f"**Target length:** {plan.target_slides} slides. "
+                "Drop a beat when Source has no fact for it. "
+                "Do not invent facts to hit the number.",
+                f"**Visual pack:** `{plan.pack_hint}` — this template's only colors.",
+                f"**Template:** `{plan.mode}`.",
+                "",
+                "Use these layouts in this order. "
+                "Do not replace `chart_hero`, `chart_split`, `table_hero`, "
+                "`compare`, `stat_hero`, `scorecard`, `quote`, or `card_row` "
+                "with `bullets`.",
+                f"`{hint}`",
+                "",
+            ]
+        )
     lines = [
         "# BEAT PLAN (length + menu — you choose the layouts)",
         "",

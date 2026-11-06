@@ -22,7 +22,8 @@ _METHOD = re.compile(
 )
 
 _BRIEF_AT = 8000
-_BRIEF_MAX = 9000
+_BRIEF_MAX = 14000
+_FACTS_PER_SECTION = 8
 _CODE_MAX = 4
 _TERM_MAX = 48
 _DEF_MAX = 220
@@ -68,7 +69,7 @@ def slides_source_text(source: str) -> str:
     if highs:
         parts.append(_highlights_block(highs))
     for title, body in _sections(prose):
-        facts = _fact_lines(body, limit=2)
+        facts = _fact_lines(body, limit=_FACTS_PER_SECTION)
         if not title and not facts:
             continue
         if title:

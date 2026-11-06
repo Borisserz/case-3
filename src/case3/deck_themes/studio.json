@@ -2,36 +2,37 @@
   "id": "studio",
   "label": "Workshop Studio",
   "colors": {
-    "primary": "#3E342C",
-    "accent": "#A6846A",
-    "ink": "#3E342C",
-    "ink2": "#6E6258",
-    "muted": "#6E6258",
-    "paper": "#F4EFE8",
-    "sheet": "#FBF7F2",
-    "rule": "#E6DDD2",
-    "foil": "#A6846A",
-    "background": "#FBF7F2",
-    "text": "#3E342C",
-    "panel": "#F4EFE8"
+    "primary": "#2D5A88",
+    "accent": "#3B7A57",
+    "ink": "#23201D",
+    "ink2": "#4A433C",
+    "muted": "#7A6F64",
+    "paper": "#F3E9DA",
+    "sheet": "#FBF6EE",
+    "rule": "#DED2C1",
+    "foil": "#D47A3E",
+    "background": "#FBF6EE",
+    "text": "#23201D",
+    "panel": "#E4EEF7"
   },
   "fonts": {
     "title": "Arial",
     "body": "Arial",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#3E342C", "#A6846A", "#E4D3C4"],
+  "chart_series": ["#2D5A88", "#D47A3E", "#3B7A57"],
   "table": {
-    "header_fill": "#3E342C",
-    "header_ink": "#FBF7F2",
-    "body_fill": "#F4EFE8",
-    "grid": "#E6DDD2"
+    "header_fill": "#2D5A88",
+    "header_ink": "#FBF6EE",
+    "body_fill": "#F3E9DA",
+    "grid": "#DED2C1"
   },
-  "brand_mark": "LIBER · STUDIO",
+  "brand_mark": "ATELIER · STUDIO COUNCIL",
   "motif": {
     "atmosphere": "light",
+    "split": true,
     "foil_cards": false,
-    "card_fill": "#F4EFE8",
-    "panels": ["#F4EFE8", "#EADFD4", "#E7E1D6", "#F6F0E8"]
+    "card_fill": "#F3E9DA",
+    "panels": ["#E4EEF7", "#F4E6D8", "#E4F0E8", "#F9EFE4"]
   }
 }

@@ -25,6 +25,7 @@ import { PresentationPane } from "./PresentationPane";
 import type { ReportPreview } from "./domain/reportPreview";
 import { ReportView } from "./ReportView";
 import { IconPanelRight } from "./icons";
+import { deckDownloadLinks } from "./domain/deckDownloads";
 import { reportDownloadLinks } from "./domain/reportDownloads";
 import {
   docsNeedRebuild,
@@ -666,6 +667,27 @@ export function ArtifactRail({
                     {link.label}
                   </a>
                 ))
+              : null}
+            {isReport && (tab === "presentation" || tab === "slides")
+              ? deckDownloadLinks(report?.downloads).map((link) => {
+                  const current =
+                    (tab === "presentation" && link.kind === "pptx") ||
+                    (tab === "slides" && link.kind === "deck_pdf");
+                  const label =
+                    link.kind === "pptx" ? "Скачать PPTX" : "Скачать PDF";
+                  return (
+                    <a
+                      key={link.kind}
+                      href={link.href}
+                      download
+                      title={link.title || label}
+                      aria-current={current ? "true" : undefined}
+                      className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}${current ? " is-current" : ""}`}
+                    >
+                      {label}
+                    </a>
+                  );
+                })
               : null}
             <button
               type="button"

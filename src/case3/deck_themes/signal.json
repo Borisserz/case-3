@@ -2,37 +2,47 @@
   "id": "signal",
   "label": "Bold Signal",
   "colors": {
-    "primary": "#2A2724",
-    "accent": "#C4785A",
-    "ink": "#F3EDE6",
-    "ink2": "#C4B8AE",
-    "muted": "#C4B8AE",
-    "paper": "#2A2724",
-    "sheet": "#1E1C1A",
-    "rule": "#3A3530",
-    "foil": "#C4785A",
-    "background": "#1E1C1A",
-    "text": "#F3EDE6",
-    "panel": "#2A2724"
+    "primary": "#24211E",
+    "accent": "#E86A33",
+    "ink": "#F7F2EB",
+    "ink2": "#D8CFC4",
+    "muted": "#A89D91",
+    "paper": "#23201D",
+    "sheet": "#181614",
+    "rule": "#36312C",
+    "foil": "#F2A93B",
+    "background": "#181614",
+    "text": "#F7F2EB",
+    "panel": "#26221E"
   },
   "fonts": {
-    "title": "Arial",
-    "body": "Arial",
-    "fallback_pptx": "Arial"
+    "title": "Georgia",
+    "body": "Segoe UI",
+    "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#C4785A", "#E4B49A", "#F3EDE6"],
+  "chart_series": [
+    "#E86A33",
+    "#F2A93B",
+    "#38A889",
+    "#E5C697"
+  ],
   "table": {
-    "header_fill": "#C4785A",
-    "header_ink": "#1E1C1A",
-    "body_fill": "#2A2724",
-    "grid": "#3A3530"
+    "header_fill": "#E86A33",
+    "header_ink": "#181614",
+    "body_fill": "#23201D",
+    "grid": "#36312C"
   },
-  "brand_mark": "BOLD SIGNAL",
+  "brand_mark": "BOLD SIGNAL · ATELIER",
   "motif": {
     "atmosphere": "dark",
-    "hero_bleed": true,
+    "split": 0.55,
     "foil_cards": true,
-    "card_fill": "#2A2724",
-    "panels": ["#2A2724", "#322E2A", "#3A3530", "#242220"]
+    "card_fill": "#23201D",
+    "panels": [
+      "#23201D",
+      "#2A241F",
+      "#1F2623",
+      "#2B231D"
+    ]
   }
 }

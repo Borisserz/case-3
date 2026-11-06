@@ -8,11 +8,13 @@ import {
   loadFolders,
   loadHistory,
   loadHistoryPayload,
+  loadUserTurn,
   moveHistoryToFolder,
   pushHistory,
   renameFolder,
   saveRunPayload,
   togglePinHistory,
+  uploadedPhotoThumbs,
   type HistoryFolder,
   type HistoryItem,
 } from "../domain/reportHistory";
@@ -56,22 +58,71 @@ export function useReportHistory({
   const openHistoryItem = useCallback(
     (item: HistoryItem) => {
       if (busy) return;
-      const stored = loadHistoryPayload(item.runId);
-      if (!stored?.preview?.blocks?.length) {
-        showToast("Отчёт недоступен в этой сессии");
-        return;
-      }
-      const result = stored as RunResult;
-      const id = uid();
-      setChatTitle(item.title || reportTitle(result));
-      setMsgs([
-        {
-          id,
-          role: "bot",
-          text: reportReadyText(result),
-          result,
-        },
-      ]);
+      void (async () => {
+        const stored = loadHistoryPayload(item.runId);
+        let remote: RunResult | null = null;
+        try {
+          const res = await fetch(
+            `/api/runs/${encodeURIComponent(item.runId)}/status`,
+          );
+          if (res.ok) remote = (await res.json()) as RunResult;
+        } catch {
+          /* session copy is enough */
+        }
+        const base = (stored || remote) as RunResult | null;
+        if (!base) {
+          showToast("Отчёт недоступен в этой сессии");
+          return;
+        }
+        const result: RunResult = {
+          ...base,
+          ...(remote || {}),
+          downloads: {
+            ...(base.downloads || {}),
+            ...(remote?.downloads || {}),
+          },
+          preview: remote?.preview?.blocks?.length
+            ? remote.preview
+            : base.preview,
+          previews: remote?.previews?.length ? remote.previews : base.previews,
+          user_text: remote?.user_text || base.user_text || "",
+        };
+        const turn = loadUserTurn(item.runId);
+        const userText = (turn?.text || result.user_text || "").trim();
+        const photos = turn?.photos?.length
+          ? turn.photos
+          : uploadedPhotoThumbs(result.previews);
+        const hasArtifact = Boolean(
+          result.preview?.blocks?.length ||
+            result.downloads?.pdf ||
+            result.downloads?.pptx ||
+            result.downloads?.deck_pdf ||
+            result.diagrams?.length,
+        );
+        if (!hasArtifact && !userText && !photos.length) {
+          showToast("Отчёт недоступен в этой сессии");
+          return;
+        }
+        setChatTitle(item.title || reportTitle(result));
+        const next: Msg[] = [];
+        if (userText || photos.length) {
+          next.push({
+            id: uid(),
+            role: "user",
+            text: userText,
+            photos,
+          });
+        }
+        if (hasArtifact) {
+          next.push({
+            id: uid(),
+            role: "bot",
+            text: reportReadyText(result),
+            result,
+          });
+        }
+        setMsgs(next);
+      })();
     },
     [busy, setChatTitle, setMsgs, showToast],
   );

@@ -5,9 +5,12 @@ import {
   deleteFolder,
   loadFolders,
   loadHistory,
+  loadUserTurn,
   moveHistoryToFolder,
   pushHistory,
+  saveUserTurn,
   togglePinHistory,
+  uploadedPhotoThumbs,
 } from "./domain/reportHistory";
 
 const mem = new Map<string, string>();
@@ -63,5 +66,29 @@ describe("reportHistory folders + pin", () => {
     assert.equal(after.folders.length, 0);
     assert.equal(loadHistory()[0].folderId, null);
     assert.equal(loadFolders().length, 0);
+  });
+
+  it("keeps the sent text and drops blob photo urls", () => {
+    saveUserTurn("run_a", {
+      text: "Собери презу",
+      photos: [
+        { url: "blob:http://local/1", name: "a.jpg" },
+        { url: "/api/runs/run_a/figures/usr_01.png", name: "usr_01" },
+      ],
+    });
+    const turn = loadUserTurn("run_a");
+    assert.equal(turn?.text, "Собери презу");
+    assert.deepEqual(turn?.photos, [
+      { url: "/api/runs/run_a/figures/usr_01.png", name: "usr_01" },
+    ]);
+  });
+
+  it("picks only uploaded figure thumbs", () => {
+    const thumbs = uploadedPhotoThumbs([
+      { id: "cht_01", url: "/c.png" },
+      { id: "usr_01", url: "/u.png" },
+      { id: "fig_01", url: "/f.png" },
+    ]);
+    assert.deepEqual(thumbs, [{ url: "/u.png", name: "usr_01" }]);
   });
 });

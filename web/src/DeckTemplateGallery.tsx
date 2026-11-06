@@ -31,8 +31,12 @@ type Props = {
   ) => void;
 };
 
-function withStructure(style: DeckStyle, structureId: string): DeckStyle {
-  return { ...style, structureId };
+function withStructure(
+  style: DeckStyle,
+  structureId: string,
+  templateId: string,
+): DeckStyle {
+  return { ...style, structureId, templateId };
 }
 
 function cardTone(packId: string, structureId: string): "light" | "dark" {
@@ -258,10 +262,10 @@ export function DeckTemplateGallery({
     [preview],
   );
   const previewPngs = useMemo(
-    () =>
-      preview && hasPreviewPngs(preview.card.structureId)
-        ? previewPngUrls(preview.card.structureId)
-        : [],
+    () => {
+      const key = preview?.card.previewId || preview?.card.structureId || "";
+      return preview && hasPreviewPngs(key) ? previewPngUrls(key) : [];
+    },
     [preview],
   );
   const useRaster = previewPngs.length >= 6;
@@ -327,9 +331,10 @@ export function DeckTemplateGallery({
   function applyPreview() {
     if (!preview) return;
     onApply(
-      withStructure(
+        withStructure(
         applyPackToStyle(preview.pack, deckStyle),
         preview.card.structureId,
+        preview.card.id,
       ),
       {
         title: preview.card.title,
@@ -371,12 +376,14 @@ export function DeckTemplateGallery({
             deckPacks.find((p) => p.id === card.packId) ||
             FALLBACK_DECK_PACKS.find((p) => p.id === card.packId);
           const swatches = pack?.swatches || ["#2E4208", "#4F6B14", "#FFFCF7", "#14161a"];
-          const on =
-            deckStyle.themePack === card.packId &&
-            deckStyle.structureId === card.structureId;
+          const previewKey = card.previewId || card.structureId;
+          const on = deckStyle.templateId
+            ? deckStyle.templateId === card.id
+            : deckStyle.themePack === card.packId &&
+              deckStyle.structureId === card.structureId;
           const thumb = previewSlidesFor(card.structureId)[0];
-          const pngs = hasPreviewPngs(card.structureId)
-            ? previewPngUrls(card.structureId)
+          const pngs = hasPreviewPngs(previewKey)
+            ? previewPngUrls(previewKey)
             : [];
           const thumbPng = pngs[0] || null;
           const strip = pngs.slice(0, 3);

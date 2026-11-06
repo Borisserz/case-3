@@ -191,6 +191,7 @@ def render_mermaid_png(
     work_dir: Path | None = None,
     primary: str | None = None,
     accent: str | None = None,
+    theme_pack: str | None = None,
 ) -> Path:
     """Rasterize Mermaid to PNG via Playwright + local mermaid.min.js."""
     dest = Path(dest)
@@ -203,18 +204,41 @@ def render_mermaid_png(
     if not js_dest.is_file() or js_dest.stat().st_size != js_src.stat().st_size:
         shutil.copy2(js_src, js_dest)
 
+    from case3.diagram_style import ensure_role_classdefs, role_colors_for_palette
+
+    style_key = (theme_pack or palette or "atelier").strip().lower()
+    role_colors = role_colors_for_palette(style_key)
+    dark = style_key in ("signal", "voltage", "botanical", "ink")
+
     if not (primary and accent):
-        pid = normalize_palette_id(palette)
-        if pid == "auto":
-            pid = "atelier"
-        pal = _PALETTES.get(pid) or _PALETTES["atelier"]
-        primary = str(pal["primary"])
-        accents = list(pal.get("accents") or [primary])
-        accent = str(accents[0] if accents else primary)
+        primary = role_colors["start"]["stroke"]
+        accent = role_colors["decision"]["stroke"]
 
-    from case3.diagram_style import ensure_role_classdefs
+    node_fill = role_colors["process"]["fill"]
+    text_color = role_colors["process"]["color"]
+    start_fill = role_colors["start"]["fill"]
+    start_stroke = role_colors["start"]["stroke"]
+    decision_fill = role_colors["decision"]["fill"]
+    decision_stroke = role_colors["decision"]["stroke"]
+    ok_fill = role_colors["ok"]["fill"]
+    ok_stroke = role_colors["ok"]["stroke"]
+    warn_fill = role_colors["warn"]["fill"]
+    warn_stroke = role_colors["warn"]["stroke"]
+    data_fill = role_colors["data"]["fill"]
+    data_stroke = role_colors["data"]["stroke"]
+    line_color = "#A89D91" if style_key == "signal" else (
+        "#94A3B8" if dark else role_colors["process"]["stroke"]
+    )
+    cluster_fill = "#241F1C" if style_key == "signal" else (
+        "#1E242B" if dark else "#F4F6F8"
+    )
+    cluster_border = "#4A3F37" if style_key == "signal" else (
+        "#3A4452" if dark else "#CBD5E1"
+    )
 
-    mermaid = ensure_role_classdefs(mermaid, palette)
+    mermaid = ensure_role_classdefs(
+        mermaid, style_key, overwrite=bool(theme_pack)
+    )
     # Escape for HTML text node (mermaid body)
     body = (
         (mermaid or "")
@@ -227,6 +251,21 @@ def render_mermaid_png(
         .replace("{{MERMAID}}", body)
         .replace("{{PRIMARY}}", primary)
         .replace("{{ACCENT}}", accent)
+        .replace("{{NODE_FILL}}", node_fill)
+        .replace("{{TEXT_COLOR}}", text_color)
+        .replace("{{LINE_COLOR}}", line_color)
+        .replace("{{CLUSTER_FILL}}", cluster_fill)
+        .replace("{{CLUSTER_BORDER}}", cluster_border)
+        .replace("{{START_FILL}}", start_fill)
+        .replace("{{START_STROKE}}", start_stroke)
+        .replace("{{DECISION_FILL}}", decision_fill)
+        .replace("{{DECISION_STROKE}}", decision_stroke)
+        .replace("{{OK_FILL}}", ok_fill)
+        .replace("{{OK_STROKE}}", ok_stroke)
+        .replace("{{WARN_FILL}}", warn_fill)
+        .replace("{{WARN_STROKE}}", warn_stroke)
+        .replace("{{DATA_FILL}}", data_fill)
+        .replace("{{DATA_STROKE}}", data_stroke)
     )
     index = (work / "index.html").resolve()
     index.write_text(html, encoding="utf-8")
@@ -303,9 +342,10 @@ def render_mermaid_png(
                   svg.style.background = 'transparent';
                   const box = svg.getBBox();
                   svg.querySelectorAll('rect').forEach((r) => {
+                    if (r.closest && r.closest('.cluster')) return;
                     let w = 0, h = 0;
                     try { w = r.getBBox().width; h = r.getBBox().height; } catch (e) {}
-                    if (w > box.width * 0.85 && h > box.height * 0.85) {
+                    if (w > box.width * 0.92 && h > box.height * 0.92) {
                       r.setAttribute('fill', 'transparent');
                       r.style.fill = 'transparent';
                     }
@@ -317,6 +357,11 @@ def render_mermaid_png(
                     r.style.fill = 'transparent';
                   });
                   svg.querySelectorAll('rect').forEach((r) => {
+                    if (r.closest && r.closest('.cluster')) {
+                      r.setAttribute('rx', '16');
+                      r.setAttribute('ry', '16');
+                      return;
+                    }
                     let w = 0, h = 0;
                     try { w = r.getBBox().width; h = r.getBBox().height; } catch (e) {}
                     if (w > 18 && h > 14 && w < box.width * 0.8 && h < box.height * 0.8) {
@@ -368,12 +413,9 @@ def _crop_diagram_png(
         return
     im = Image.open(src).convert("RGBA")
     arr = np.asarray(im)
-    rgb = arr[:, :, :3]
     alpha = arr[:, :, 3]
-    # ink = visible and not near-paper cream
-    ink = (alpha > 12) & (
-        (rgb[:, :, 0] < 245) | (rgb[:, :, 1] < 245) | (rgb[:, :, 2] < 240)
-    )
+    # Screenshot uses omit_background=True, so any visible pixel has alpha > 12.
+    ink = alpha > 12
     if not ink.any():
         shutil.copy2(src, dest)
         return
@@ -406,6 +448,7 @@ def ensure_diagram_pngs(
     palette: str,
     needed_ids: set[str] | None = None,
     series: list[str] | None = None,
+    theme_pack: str | None = None,
 ) -> dict[str, Path]:
     """Render requested diagrams; return id → png path."""
     dest_dir = Path(dest_dir)
@@ -428,6 +471,7 @@ def ensure_diagram_pngs(
                 work_dir=dest_dir / f"work_{did}",
                 primary=primary,
                 accent=accent,
+                theme_pack=theme_pack,
             )
             out[did] = dest
         except Exception:

@@ -433,6 +433,86 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
       subtitle: "Заметки в течение 24 ч",
     },
   ],
+  council: [
+    {
+      kind: "title",
+      kicker: "ВОПРОС СОВЕТУ",
+      title: "Нанять двух продавцов или нет",
+      subtitle: "Одна фраза. Без второй колонки.",
+    },
+    {
+      kind: "quote",
+      kicker: "ВОПРОС",
+      title: "Нанять двух продавцов или нет?",
+    },
+    {
+      kind: "scorecard",
+      kicker: "КАК НАПИСАНО",
+      title: "Цифры без пересчёта",
+      cells: [
+        { label: "Касса", value: "20,4" },
+        { label: "План", value: "19" },
+        { label: "Факт", value: "18,4" },
+      ],
+    },
+    {
+      kind: "quote",
+      kicker: "РЕШЕНИЕ",
+      title: "Одна фраза из источника",
+    },
+    {
+      kind: "closing",
+      kicker: "ДАЛЬШЕ",
+      title: "Закрытие одним решением",
+    },
+  ],
+  quarter: [
+    {
+      kind: "title",
+      kicker: "ДВЕ ГЛАВЫ",
+      title: "Что вышло и что нет",
+      subtitle: "Тёмная бумага, один латунный акцент",
+      dark: true,
+    },
+    {
+      kind: "split",
+      kicker: "01",
+      title: "Вышло",
+      subtitle: "Глава только из фактов квартала",
+      dark: true,
+    },
+    {
+      kind: "cards",
+      kicker: "ВЫШЛО",
+      title: "Три результата",
+      cards: ["Канал", "Маржа", "Срок"],
+      dark: true,
+    },
+    {
+      kind: "split",
+      kicker: "02",
+      title: "Не вышло",
+      subtitle: "Вторая глава, не повтор первой",
+      dark: true,
+    },
+    {
+      kind: "table",
+      kicker: "РЕШЕНИЯ",
+      title: "Что проверить в следующем квартале",
+      rows: [
+        ["Решение", "Факт"],
+        ["Оставить", "как в Source"],
+        ["Снять", "как в Source"],
+      ],
+      dark: true,
+    },
+    {
+      kind: "closing",
+      kicker: "Q+1",
+      title: "План следующей главы",
+      dark: true,
+    },
+  ],
 };
 
 export function previewSlidesFor(structureId: string): PreviewSlide[] {
@@ -441,19 +521,27 @@ export function previewSlidesFor(structureId: string): PreviewSlide[] {
 
 /** Must match PNG count under web/public/deck/previews/{id}/ (else broken ? thumbs). */
 export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
-  board_update: 11,
-  performance: 11,
-  qbr: 12,
-  survey: 9,
-  investor: 9,
+  board_update: 15,
+  performance: 15,
+  qbr: 15,
+  survey: 14,
+  council: 15,
+  campaign: 14,
+  quarter: 15,
+  investor: 14,
   launch: 9,
-  campaign: 8,
   workshop: 11,
   hire: 6,
+  board_classic: 15,
+  performance_classic: 15,
+  qbr_classic: 15,
+  survey_classic: 14,
+  campaign_css: 14,
+  investor_css: 14,
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261105-open";
+const PREVIEW_CACHE_BUST = "20261106-all8-premium";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {

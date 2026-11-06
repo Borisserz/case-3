@@ -4,6 +4,8 @@ export type DeckStyle = {
   themePack: string;
   /** Narrative structure id (board_update, investor, …) — not a color pack. */
   structureId?: string;
+  /** Which gallery card is selected when two cards share a structure. */
+  templateId?: string;
   primary: string;
   accent: string;
   background: string;
@@ -24,10 +26,10 @@ const STORAGE_KEY = "liber.deckStyle.v1";
 export const DEFAULT_DECK_STYLE: DeckStyle = {
   themePack: "atelier",
   structureId: undefined,
-  primary: "#2C3A22",
-  accent: "#6B7F45",
-  background: "#FBF8F1",
-  text: "#2C3A22",
+  primary: "#233322",
+  accent: "#5A7D4C",
+  background: "#FAF7F0",
+  text: "#233322",
   fontTitle: "Georgia",
   fontBody: "Segoe UI",
   presetId: "atelier",
@@ -36,43 +38,43 @@ export const DEFAULT_DECK_STYLE: DeckStyle = {
 export const FALLBACK_DECK_PACKS: DeckThemePackInfo[] = [
   {
     id: "atelier",
-    label: "Atelier",
-    swatches: ["#2C3A22", "#6B7F45", "#FBF8F1", "#2C3A22"],
+    label: "Atelier Olive",
+    swatches: ["#233322", "#5A7D4C", "#FAF7F0", "#233322"],
   },
   {
     id: "board",
-    label: "Board",
-    swatches: ["#1B3A4B", "#3D8B84", "#F4F8F7", "#1B3A4B"],
+    label: "Northstar Sapphire",
+    swatches: ["#172D40", "#226496", "#FAF7F2", "#122334"],
   },
   {
     id: "signal",
     label: "Bold Signal",
-    swatches: ["#1E1C1A", "#C4785A", "#2A2724", "#F3EDE6"],
+    swatches: ["#24211E", "#E86A33", "#181614", "#F7F2EB"],
   },
   {
     id: "relay",
     label: "Split Pastel",
-    swatches: ["#3A463C", "#7D9478", "#FBF8F2", "#3A463C"],
+    swatches: ["#5C2A24", "#C45B46", "#FDF9F6", "#2C1D1A"],
   },
   {
     id: "ink",
     label: "Relay Ink",
-    swatches: ["#141A24", "#7F97B0", "#1C2430", "#E6E4DC"],
+    swatches: ["#1D3557", "#4EA8DE", "#0F1520", "#EEF2F7"],
   },
   {
     id: "voltage",
     label: "Creative Voltage",
-    swatches: ["#161B28", "#E4D48A", "#1E2433", "#F4F0E6"],
+    swatches: ["#111823", "#38BDF8", "#E4E869", "#F3F6FA"],
   },
   {
     id: "studio",
     label: "Workshop Studio",
-    swatches: ["#3E342C", "#A6846A", "#FBF7F2", "#3E342C"],
+    swatches: ["#2D5A88", "#D47A3E", "#FBF6EE", "#23201D"],
   },
   {
     id: "botanical",
     label: "Dark Botanical",
-    swatches: ["#101F19", "#C4AD7A", "#1C2E26", "#E8E2D4"],
+    swatches: ["#101F19", "#C4AD7A", "#182B23", "#EDE7D9"],
   },
 ];
 
@@ -145,6 +147,29 @@ export function applyPackToStyle(
   };
 }
 
+/** Same Office faces as slides_pptx_draw._office_font_name. */
+export function officeFace(
+  name: string | undefined,
+  kind: "title" | "body",
+): string {
+  const raw = (name || "").toLowerCase();
+  if (
+    /fraunces|liber serif|iowan|georgia|garamond|playfair|source serif|baskerville|newsreader|serif/.test(
+      raw,
+    )
+  ) {
+    return "Georgia";
+  }
+  if (
+    /inter|source sans|liber sans|segoe|calibri|aptos|manrope|dm sans|sans/.test(
+      raw,
+    )
+  ) {
+    return "Calibri";
+  }
+  return kind === "title" ? "Georgia" : "Calibri";
+}
+
 /** Diagram legend strokes. Keep in sync with diagram_style._ROLE_MAP. */
 const DIAGRAM_LEGEND_STROKES: Record<
   string,
@@ -155,6 +180,14 @@ const DIAGRAM_LEGEND_STROKES: Record<
   ocean: { start: "#0072B2", decision: "#E69F00", ok: "#009E73", warn: "#D55E00" },
   sunset: { start: "#9A4A58", decision: "#A89830", ok: "#228833", warn: "#EE6677" },
   mono: { start: "#1A1F28", decision: "#8B7355", ok: "#2F4A38", warn: "#6B4038" },
+  board: { start: "#226496", decision: "#D96B43", ok: "#2A8C72", warn: "#C9522B" },
+  signal: { start: "#E86A33", decision: "#F2A93B", ok: "#38A889", warn: "#FF7B47" },
+  relay: { start: "#C45B46", decision: "#D4884E", ok: "#3B7A6B", warn: "#B83B2A" },
+  pastel: { start: "#C45B46", decision: "#D4884E", ok: "#3B7A6B", warn: "#B83B2A" },
+  voltage: { start: "#38BDF8", decision: "#E4D48A", ok: "#34D399", warn: "#FB7185" },
+  studio: { start: "#9C6644", decision: "#D48C46", ok: "#3B7A57", warn: "#C25944" },
+  botanical: { start: "#52B788", decision: "#D4B475", ok: "#40916C", warn: "#E07A5F" },
+  ink: { start: "#58A6FF", decision: "#E3B341", ok: "#3FB950", warn: "#F85149" },
 };
 
 export function diagramLegendStrokes(palette: string | undefined): {

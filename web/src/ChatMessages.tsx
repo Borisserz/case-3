@@ -111,6 +111,17 @@ export function ChatMessages({
             >
               {m.role === "user" ? (
                 <>
+                  {m.photos?.length ? (
+                    <div className="msg-photos" aria-label="Прикреплённые фото">
+                      {m.photos.map((photo) => (
+                        <img
+                          key={photo.url}
+                          src={photo.url}
+                          alt={photo.name || "Фото"}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                   {m.attachment ? (
                     <div className="msg-attach-row">
                       <ContextPlaque

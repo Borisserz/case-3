@@ -31,6 +31,51 @@
     .edgeLabel, .edgeLabel span, .edgeLabel p, .labelBkg {
       background: transparent !important;
       fill: transparent !important;
+      color: {{TEXT_COLOR}} !important;
+      font-weight: 600 !important;
+    }
+    .cluster rect {
+      rx: 16px !important;
+      ry: 16px !important;
+      stroke-width: 1.5px !important;
+    }
+    .node rect, .node polygon, .node circle {
+      stroke-width: 2.2px !important;
+    }
+    .nodeLabel, .label {
+      font-weight: 600 !important;
+    }
+    /* Sequence, state, mindmap, and timeline legibility across light & dark packs */
+    .messageText, .loopText, .loopText > tspan, .labelText, .labelText > tspan,
+    .noteText, .noteText > tspan, .actor, text.actor > tspan,
+    .statediagram-state .nodeLabel, .mindmap-node text, .mindmap-node span,
+    .sectionTitle, .taskText, .taskTextOutsideRight, .taskTextOutsideLeft {
+      fill: {{TEXT_COLOR}} !important;
+      color: {{TEXT_COLOR}} !important;
+      font-weight: 600 !important;
+    }
+    rect.actor, .actor-man line, .actor-man circle {
+      fill: {{START_FILL}} !important;
+      stroke: {{START_STROKE}} !important;
+      stroke-width: 2px !important;
+      rx: 10px !important;
+      ry: 10px !important;
+    }
+    rect.note {
+      fill: {{DECISION_FILL}} !important;
+      stroke: {{DECISION_STROKE}} !important;
+      rx: 8px !important;
+      ry: 8px !important;
+    }
+    .labelBox {
+      fill: {{CLUSTER_FILL}} !important;
+      stroke: {{CLUSTER_BORDER}} !important;
+    }
+    .loopLine {
+      stroke: {{CLUSTER_BORDER}} !important;
+    }
+    .messageLine0, .messageLine1, .actor-line, .transition {
+      stroke: {{LINE_COLOR}} !important;
     }
   </style>
 </head>
@@ -45,26 +90,89 @@
       flowchart: {
         htmlLabels: true,
         curve: "basis",
-        padding: 20,
-        nodeSpacing: 48,
-        rankSpacing: 56,
+        padding: 22,
+        nodeSpacing: 52,
+        rankSpacing: 60,
+        useMaxWidth: false
+      },
+      sequence: {
+        useMaxWidth: false,
+        boxMargin: 14,
+        mirrorActors: false,
+        messageMargin: 42,
+        actorMargin: 64
+      },
+      state: {
+        useMaxWidth: false,
+        padding: 16
+      },
+      mindmap: {
+        useMaxWidth: false,
+        padding: 18
+      },
+      timeline: {
         useMaxWidth: false
       },
       themeVariables: {
         fontSize: "22px",
-        fontFamily: "Georgia, 'Times New Roman', serif",
-        primaryColor: "#dce8df",
-        primaryTextColor: "#1a2e22",
-        primaryBorderColor: "#6b8f76",
-        lineColor: "#5a7a64",
-        secondaryColor: "#f4f7f4",
-        tertiaryColor: "#eef3ef",
+        fontFamily: "system-ui, -apple-system, 'Segoe UI', Calibri, sans-serif",
+        primaryColor: "{{NODE_FILL}}",
+        primaryTextColor: "{{TEXT_COLOR}}",
+        primaryBorderColor: "{{PRIMARY}}",
+        lineColor: "{{LINE_COLOR}}",
+        secondaryColor: "{{DECISION_FILL}}",
+        secondaryTextColor: "{{TEXT_COLOR}}",
+        secondaryBorderColor: "{{DECISION_STROKE}}",
+        tertiaryColor: "{{OK_FILL}}",
+        tertiaryTextColor: "{{TEXT_COLOR}}",
+        tertiaryBorderColor: "{{OK_STROKE}}",
         background: "transparent",
-        mainBkg: "#eef3ef",
-        nodeBorder: "#6b8f76",
-        clusterBkg: "#f4f7f4",
-        titleColor: "#1a2e22",
-        edgeLabelBackground: "transparent"
+        mainBkg: "{{NODE_FILL}}",
+        nodeBorder: "{{PRIMARY}}",
+        clusterBkg: "{{CLUSTER_FILL}}",
+        clusterBorder: "{{CLUSTER_BORDER}}",
+        titleColor: "{{TEXT_COLOR}}",
+        edgeLabelBackground: "transparent",
+        actorBkg: "{{START_FILL}}",
+        actorBorder: "{{START_STROKE}}",
+        actorTextColor: "{{TEXT_COLOR}}",
+        actorLineColor: "{{LINE_COLOR}}",
+        signalColor: "{{LINE_COLOR}}",
+        signalTextColor: "{{TEXT_COLOR}}",
+        labelBoxBkgColor: "{{CLUSTER_FILL}}",
+        labelBoxBorderColor: "{{CLUSTER_BORDER}}",
+        labelTextColor: "{{TEXT_COLOR}}",
+        loopTextColor: "{{TEXT_COLOR}}",
+        noteBkgColor: "{{DECISION_FILL}}",
+        noteTextColor: "{{TEXT_COLOR}}",
+        noteBorderColor: "{{DECISION_STROKE}}",
+        altBackground: "{{CLUSTER_FILL}}",
+        stateBkg: "{{NODE_FILL}}",
+        stateLabelColor: "{{TEXT_COLOR}}",
+        transitionColor: "{{LINE_COLOR}}",
+        transitionLabelColor: "{{TEXT_COLOR}}",
+        cScale0: "{{START_FILL}}",
+        cScale1: "{{NODE_FILL}}",
+        cScale2: "{{DECISION_FILL}}",
+        cScale3: "{{OK_FILL}}",
+        cScale4: "{{DATA_FILL}}",
+        cScale5: "{{WARN_FILL}}",
+        cScale6: "{{START_FILL}}",
+        cScale7: "{{DECISION_FILL}}",
+        cScalePeer0: "{{START_STROKE}}",
+        cScalePeer1: "{{PRIMARY}}",
+        cScalePeer2: "{{DECISION_STROKE}}",
+        cScalePeer3: "{{OK_STROKE}}",
+        cScalePeer4: "{{DATA_STROKE}}",
+        cScalePeer5: "{{WARN_STROKE}}",
+        cScaleLabel0: "{{TEXT_COLOR}}",
+        cScaleLabel1: "{{TEXT_COLOR}}",
+        cScaleLabel2: "{{TEXT_COLOR}}",
+        cScaleLabel3: "{{TEXT_COLOR}}",
+        cScaleLabel4: "{{TEXT_COLOR}}",
+        cScaleLabel5: "{{TEXT_COLOR}}",
+        cScaleLabel6: "{{TEXT_COLOR}}",
+        cScaleLabel7: "{{TEXT_COLOR}}"
       }
     });
   </script>

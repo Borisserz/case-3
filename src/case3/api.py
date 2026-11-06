@@ -242,6 +242,7 @@ def _run_result_payload(
     if not summary_status and chat_summary:
         summary_status = "ok"
     slides_dir = out_dir / "slides"
+    user_text = _user_source_text(meta)
     slide_pngs = (
         [
             f"/api/runs/{run_id}/slides/png/{p.name}"
@@ -280,9 +281,31 @@ def _run_result_payload(
         # Twin thumbs for Liber chat/rail — without these, pptx-ready runs look empty.
         "slide_pngs": slide_pngs,
         "output_mode": meta.get("output_mode") or "auto",
+        "user_text": user_text,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),
     }
+
+
+def _user_source_text(meta: dict[str, Any]) -> str:
+    """The message the user sent. Intent is the expanded UI prompt."""
+    raw = meta.get("source")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    path = Path(raw).expanduser().resolve()
+    root = (run_store.ROOT / "runs").resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return ""
+    if not path.is_file():
+        return ""
+    try:
+        if path.stat().st_size > 200_000:
+            return ""
+        return path.read_text(encoding="utf-8").strip()[:20_000]
+    except OSError:
+        return ""
 
 
 # Win desk: parallel daemon pipelines share case3 FileHandlers + meta lock and
@@ -512,10 +535,9 @@ async def api_run(
         max_diagrams = max(1, max_diagrams)
         formats = "none"
     # Composer «Презентация»: no print PDF/DOCX — slides job builds the deck.
-    # Liber Mermaid diagrams[] stay off so UI shows only PPTX + deck PDF.
+    # Diagrams stay on the deck (dia_*), they are not a separate report.
     if out_mode == "presentation":
         formats = "none"
-        max_diagrams = 0
 
     # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
     upload_dir = run_store.ROOT / "runs" / "uploads" / datetime_stamp()

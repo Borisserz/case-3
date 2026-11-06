@@ -35,6 +35,7 @@ import {
   stageLabel,
   uid,
 } from "../domain/runHelpers";
+import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
   attachSlidesPayload,
   needsSlidesHydrate,
@@ -222,6 +223,11 @@ async () => {
         ? ("presentation" as const)
         : ("report" as const);
   const pendingId = uid();
+  const userMsgId = uid();
+  const photoViews = attachPhotos.map((file) => ({
+    name: file.name,
+    url: URL.createObjectURL(file),
+  }));
   cancelRequestedRef.current = false;
   pendingBotIdRef.current = pendingId;
   activeRunIdRef.current = null;
@@ -234,11 +240,12 @@ async () => {
   setMsgs((m) => [
     ...m,
     {
-      id: uid(),
+      id: userMsgId,
       role: "user",
       text: userBody,
       chips: userChips.length ? userChips : undefined,
       attachment,
+      photos: photoViews.length ? photoViews : undefined,
     },
     appendBotThinking(
       {
@@ -335,6 +342,7 @@ async () => {
       const runId = asString(data.run_id);
       if (!runId) throw new Error("server did not return run_id");
       activeRunIdRef.current = runId;
+      saveUserTurn(runId, { text: userBody });
       setMsgs((m) =>
         m.map((msg) => {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -812,6 +820,13 @@ async () => {
       Boolean(result.run_id) &&
       !slidesAlreadyDone;
 
+    const stablePhotos = uploadedPhotoThumbs(result.previews);
+    if (result.run_id) {
+      saveUserTurn(result.run_id, {
+        text: userBody,
+        photos: stablePhotos,
+      });
+    }
     try {
       setChatTitle(reportTitle(result));
       if (
@@ -828,6 +843,9 @@ async () => {
     }
     setMsgs((m) =>
       m.map((msg) => {
+        if (msg.id === userMsgId && msg.role === "user" && stablePhotos.length) {
+          return { ...msg, photos: stablePhotos };
+        }
         if (msg.id !== pendingId || msg.role !== "bot") return msg;
         const streamed =
           msg.streamingSummary && msg.text.trim() ? msg.text : "";

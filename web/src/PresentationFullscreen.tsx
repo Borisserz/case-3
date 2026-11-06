@@ -37,10 +37,11 @@ export function PresentationFullscreen({
   diagramPalette,
 }: Props) {
   const reduce = useReducedMotion();
-  const live = Boolean(deck?.slides?.length);
-  const n = live ? deck!.slides.length : slides.length;
+  const hasPngs = slides.length > 0;
+  const live = Boolean(deck?.slides?.length) && !hasPngs;
+  const n = hasPngs ? slides.length : live ? deck!.slides.length : 0;
   const safe = n ? Math.min(Math.max(index, 0), n - 1) : 0;
-  const src = !live && n ? slides[safe] : null;
+  const src = hasPngs && n ? slides[safe] : null;
   const [dir, setDir] = useState(0);
   const [chromeOn, setChromeOn] = useState(true);
   const idleTimer = useRef<number | null>(null);

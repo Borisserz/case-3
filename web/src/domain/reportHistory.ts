@@ -180,6 +180,50 @@ export function loadHistoryPayload(runId: string): StoredRun | null {
   }
 }
 
+export type StoredUserTurn = {
+  text: string;
+  photos?: { url: string; name?: string }[];
+};
+
+function userTurnKey(runId: string): string {
+  return `liber-user-${runId}`;
+}
+
+export function saveUserTurn(runId: string, turn: StoredUserTurn): void {
+  if (!runId) return;
+  const photos = (turn.photos || []).filter(
+    (p) => p.url && !p.url.startsWith("blob:"),
+  );
+  try {
+    sessionStorage.setItem(
+      userTurnKey(runId),
+      JSON.stringify({ text: turn.text || "", photos }),
+    );
+  } catch {
+    /* quota */
+  }
+}
+
+export function loadUserTurn(runId: string): StoredUserTurn | null {
+  try {
+    const raw = sessionStorage.getItem(userTurnKey(runId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredUserTurn;
+    if (!parsed || typeof parsed.text !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function uploadedPhotoThumbs(
+  previews?: { id?: string; url?: string }[] | null,
+): { url: string; name: string }[] {
+  return (previews || [])
+    .filter((p) => (p.id || "").startsWith("usr_") && Boolean(p.url))
+    .map((p) => ({ url: String(p.url), name: String(p.id) }));
+}
+
 export function saveRunPayload(result: StoredRun): void {
   try {
     sessionStorage.setItem(LAST, JSON.stringify(result));

@@ -14,7 +14,7 @@ import {
 import { DeckEditToolbar } from "./DeckEditToolbar";
 import { LiveChart } from "./LiveChart";
 import { MermaidView } from "./MermaidView";
-import { diagramLegendStrokes } from "./deckStyle";
+import { diagramLegendStrokes, officeFace } from "./deckStyle";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 
 export type DeckMediaKind = "chart" | "photo" | "diagram";
@@ -64,10 +64,8 @@ function luma(hex: string): number {
 function cssVars(style?: DeckIR["style"], slideIndex = 0): CSSProperties {
   const c = style?.colors || {};
   const f = style?.fonts || {};
-  const titleFont =
-    f.title || f.display || '"Fraunces", "Iowan Old Style", Georgia, serif';
-  const bodyFont =
-    f.body || f.fallback_pptx || '"Source Sans 3", "Segoe UI", system-ui, sans-serif';
+  const titleFont = officeFace(f.title || f.display, "title");
+  const bodyFont = officeFace(f.body || f.fallback_pptx, "body");
   const accent = c.accent || "#4F6B14";
   const sheet = c.sheet || c.background || "#fffcf7";
   const paper = c.paper || sheet;
@@ -405,6 +403,13 @@ function SlideBody({
                 onCommit={(v) => onField({ subtitle: v })}
               />
             ) : null}
+            {(slide.bullets || []).length ? (
+              <div className="deck-cv-pills">
+                {(slide.bullets || []).slice(0, 4).map((b, i) => (
+                  <span key={i} className="deck-cv-pill">{b}</span>
+                ))}
+              </div>
+            ) : null}
           </div>
           <aside className="deck-cv-title-panel">
             {(() => {
@@ -414,6 +419,7 @@ function SlideBody({
                   <div className="deck-cv-hero-metrics">
                     {metrics.map((m, i) => (
                       <div className="deck-cv-hero-metric" key={i}>
+                        <span className="deck-cv-hero-idx">{String(i + 1).padStart(2, "0")}</span>
                         <div className="deck-cv-hero-val">{m.value}</div>
                         {m.label ? (
                           <div className="deck-cv-hero-lab">{m.label}</div>
@@ -792,13 +798,30 @@ function SlideBody({
       <div className="deck-cv-inner deck-cv-stat deck-cv-stat--field">
         <div className="deck-cv-stat-fig">
           <div className="deck-cv-brand">{brand}</div>
+          {slide.kicker ? (
+            <Editable
+              className="deck-cv-kicker"
+              value={slide.kicker}
+              editing={editing}
+              onCommit={(v) => onField({ kicker: v })}
+            />
+          ) : null}
+          {slide.title ? (
+            <Editable
+              className="deck-cv-h2"
+              value={slide.title}
+              editing={editing}
+              multiline
+              onCommit={(v) => onField({ title: v })}
+            />
+          ) : null}
           <div className="deck-cv-stat-val">{kpi?.value || ""}</div>
           <div className="deck-cv-stat-lab">{kpi?.label || ""}</div>
           {kpi?.delta ? <div className="deck-cv-stat-delta">{kpi.delta}</div> : null}
           {kpi?.hint ? <div className="deck-cv-stat-hint">{kpi.hint}</div> : null}
         </div>
         <div className="deck-cv-stat-notes">
-          <Bullets slide={slide} editing={editing} onField={onField} />
+          <Bullets slide={slide} editing={editing} onField={onField} bands />
         </div>
       </div>
     );
@@ -813,9 +836,31 @@ function SlideBody({
         <ol className="deck-cv-timeline">
           {cards.map((c, i) => (
             <li key={i}>
+              <span className="deck-cv-time-num">{String(i + 1).padStart(2, "0")}</span>
               <span className="deck-cv-time">{c.kicker || ""}</span>
-              <span className="deck-cv-time-title">{c.title || ""}</span>
-              {c.body ? <span className="deck-cv-time-body">{c.body}</span> : null}
+              <Editable
+                className="deck-cv-time-title"
+                value={c.title || ""}
+                editing={editing}
+                onCommit={(v) => {
+                  const next = cards.map((x) => ({ ...x }));
+                  next[i] = { ...next[i], title: v };
+                  onField({ cards: next });
+                }}
+              />
+              {c.body ? (
+                <Editable
+                  className="deck-cv-time-body"
+                  value={c.body}
+                  editing={editing}
+                  multiline
+                  onCommit={(v) => {
+                    const next = cards.map((x) => ({ ...x }));
+                    next[i] = { ...next[i], body: v };
+                    onField({ cards: next });
+                  }}
+                />
+              ) : null}
             </li>
           ))}
         </ol>
@@ -844,19 +889,21 @@ function SlideBody({
   }
 
   if (layout === "chart_hero" || (layout === "media_hero" && String(slide.media_id || "").startsWith("dia_"))) {
-    const line = slide.caption || slide.title || "";
+    const line = slide.caption || slide.takeaway || slide.title || "";
     const isDiagram = layout !== "chart_hero";
+    const legend = diagramLegendStrokes(diagramPalette);
     return (
       <div className={`deck-cv-inner deck-cv-chart-field${isDiagram ? " is-diagram" : ""}`}>
         <aside className="deck-cv-chart-rail">
           <div className="deck-cv-brand">{brand}</div>
-          <div className="deck-cv-chart-line">{line}</div>
+          <Head slide={slide} editing={editing} onField={onField} compact />
+          {line ? <div className="deck-cv-chart-line">{line}</div> : null}
           {isDiagram ? (
             <ul className="deck-cv-dia-legend">
-              <li><i style={{ background: diagramLegendStrokes(diagramPalette).start }} />Старт</li>
-              <li><i style={{ background: diagramLegendStrokes(diagramPalette).decision }} />Решение</li>
-              <li><i style={{ background: diagramLegendStrokes(diagramPalette).ok }} />Успех</li>
-              <li><i style={{ background: diagramLegendStrokes(diagramPalette).warn }} />Риск</li>
+              <li><i style={{ background: legend.start }} />Старт</li>
+              <li><i style={{ background: legend.decision }} />Решение</li>
+              <li><i style={{ background: legend.ok }} />Успех</li>
+              <li><i style={{ background: legend.warn }} />Риск</li>
             </ul>
           ) : null}
         </aside>
@@ -876,8 +923,14 @@ function SlideBody({
   }
 
   if (layout === "media_hero") {
+    const line = slide.caption || slide.takeaway || slide.title || "";
     return (
-      <div className="deck-cv-inner deck-cv-photo-bleed">
+      <div className="deck-cv-inner deck-cv-chart-field">
+        <aside className="deck-cv-chart-rail">
+          <div className="deck-cv-brand">{brand}</div>
+          <Head slide={slide} editing={editing} onField={onField} compact />
+          {line ? <div className="deck-cv-chart-line">{line}</div> : null}
+        </aside>
         <MediaSlot
           runId={runId}
           mediaId={mid}
@@ -887,20 +940,27 @@ function SlideBody({
           hero
           onMediaClick={onMediaClick}
         />
-        <aside className="deck-cv-photo-plaque">
-          <div className="deck-cv-chart-line">{slide.caption || slide.title || ""}</div>
-        </aside>
       </div>
     );
   }
 
   if (layout === "chart_split" || layout === "media_split") {
+    const splitDiagram = layout === "media_split" && String(slide.media_id || "").startsWith("dia_");
+    const legend = diagramLegendStrokes(diagramPalette);
     return (
-      <div className="deck-cv-inner deck-cv-chart-field">
+      <div className={`deck-cv-inner deck-cv-chart-field${splitDiagram ? " is-diagram" : ""}`}>
         <div className="deck-cv-chart-copy">
           <div className="deck-cv-brand">{brand}</div>
           <Head slide={slide} editing={editing} onField={onField} />
           <Bullets slide={slide} editing={editing} onField={onField} bands />
+          {splitDiagram ? (
+            <ul className="deck-cv-dia-legend">
+              <li><i style={{ background: legend.start }} />Старт</li>
+              <li><i style={{ background: legend.decision }} />Решение</li>
+              <li><i style={{ background: legend.ok }} />Успех</li>
+              <li><i style={{ background: legend.warn }} />Риск</li>
+            </ul>
+          ) : null}
         </div>
         <MediaSlot
           runId={runId}
@@ -938,6 +998,7 @@ function SlideBody({
   if (layout === "closing") {
     const number = closingNumber(slide);
     const decision = (slide.bullets || []).map((b) => b.trim()).filter(Boolean).join(" ");
+    const hasBullets = (slide.bullets || []).some((b) => b.trim());
     return (
       <div className="deck-cv-inner deck-cv-closing deck-cv-closing--split">
         <div className="deck-cv-close-a">
@@ -948,16 +1009,26 @@ function SlideBody({
               {number.label ? (
                 <div className="deck-cv-close-lab">{number.label}</div>
               ) : null}
+              {slide.title ? (
+                <Editable
+                  className="deck-cv-h2"
+                  value={slide.title}
+                  editing={editing}
+                  multiline
+                  onCommit={(v) => onField({ title: v })}
+                />
+              ) : null}
             </>
           ) : (
             <Head slide={slide} editing={editing} onField={onField} />
           )}
         </div>
         <div className="deck-cv-close-b">
-          {number && slide.title ? (
-            <div className="deck-cv-close-kicker">{slide.title}</div>
-          ) : null}
-          <div className="deck-cv-close-decision">{decision || slide.title || ""}</div>
+          {hasBullets ? (
+            <Bullets slide={slide} editing={editing} onField={onField} bands />
+          ) : (
+            <div className="deck-cv-close-decision">{decision || slide.title || ""}</div>
+          )}
         </div>
       </div>
     );
@@ -1103,6 +1174,13 @@ export function DeckCanvas({
     !darkBleed &&
     (packId === "relay" ||
       packId === "pastel" ||
+      packId === "board" ||
+      packId === "signal" ||
+      packId === "studio" ||
+      packId === "atelier" ||
+      packId === "ink" ||
+      packId === "voltage" ||
+      parseHeroMetrics(slide?.takeaway || "").length >= 2 ||
       Boolean(
         deck.style &&
           typeof (deck.style as { motif?: { split?: number } }).motif?.split ===
@@ -1216,7 +1294,7 @@ export function DeckCanvas({
           onMediaClick={onMediaClick}
           previewHtml={previewHtml}
           diagramMermaid={diagramMermaid}
-          diagramPalette={diagramPalette}
+          diagramPalette={packId || diagramPalette}
         />
         <div className="deck-cv-footer" aria-hidden>
           {brand}

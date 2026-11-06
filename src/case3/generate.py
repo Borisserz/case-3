@@ -844,6 +844,26 @@ def generate_document(
         system=system, user_text=user, cancel_check=cancel_check
     )
     finish = getattr(llm, "last_finish_reason", "") or ""
+    if finish == "error" or (
+        "\\documentclass" not in (raw or "") and "```json" not in (raw or "").lower()
+    ):
+        log.warning(
+            "model returned no document (finish_reason=%r, %d chars) — retry once",
+            finish,
+            len(raw or ""),
+        )
+        raw = llm.complete(
+            system=system,
+            user_text=(
+                f"{user}\n\n"
+                "Previous answer had no JSON and no LaTeX. "
+                "Return ONLY two fenced blocks: a ```json object "
+                "(charts, then diagrams, then figures) and a ```latex document "
+                "that contains \\documentclass. No prose."
+            ),
+            cancel_check=cancel_check,
+        )
+        finish = getattr(llm, "last_finish_reason", "") or ""
     need_cont = output_looks_truncated(raw or "") or finish == "length"
     hard_trunc = finish == "length"
     if need_cont:

@@ -519,6 +519,7 @@ def run_slides_job(
 
         allowed_media = frozenset(chart_ids + figure_ids + diagram_ids)
         allowed_numbers = numbers_from_media_json(load_figures_json(out_dir))
+        locked_arc = list(beat_plan.beats) if beat_plan.from_structure else None
 
         _set_slides(out_dir, meta, status="running", stage="llm", logs_dir=logs_dir)
         if skip_llm_ir is not None:
@@ -528,6 +529,7 @@ def run_slides_job(
                 source=source,
                 allowed_media_ids=allowed_media,
                 allowed_number_strings=allowed_numbers,
+                locked_arc=locked_arc,
             )
         else:
             system = load_slides_system_prompt(
@@ -543,15 +545,32 @@ def run_slides_job(
                 beat_overlay=beat_overlay,
             )
             allowed_preview = ", ".join(sorted(allowed_numbers)[:60]) or "(none from charts)"
-            user = (
-                "Build the executive deck JSON now. "
-                "Choose layouts from the BEAT PLAN menu by what Source can fill. "
-                "Do not follow a theme script. "
-                f"Target {beat_plan.target_slides} slides. "
+            if beat_plan.from_structure:
+                user = (
+                    "Build the executive deck JSON now. "
+                    "The BEAT PLAN is the locked skeleton of the chosen template. "
+                    "Fill those layouts in that order. "
+                    "Drop a beat when Source has no fact for it. "
+                    "Do not replace a chart, table, scorecard, compare, quote, "
+                    "stat, or card row with a bullet list. "
+                    f"Target {beat_plan.target_slides} slides. "
+                )
+            else:
+                user = (
+                    "Build the executive deck JSON now. "
+                    "Choose layouts from the BEAT PLAN menu by what Source can fill. "
+                    "Do not follow a theme script. "
+                    f"Target {beat_plan.target_slides} slides. "
+                )
+            user += (
                 "If Source lacks distinct facts, emit fewer (still title … closing) — "
                 "do not invent numbers or repeat the same claim. "
-                "Keep ≥5 distinct layouts when ≥8 slides. "
-                "Use available chart/figure/diagram ids only. "
+                + (
+                    ""
+                    if beat_plan.from_structure
+                    else "Keep ≥5 distinct layouts when ≥8 slides. "
+                )
+                + "Use available chart/figure/diagram ids only. "
                 "Numbers only from Source or this allowed token list "
                 f"(chart captions/HTML): {allowed_preview}. "
                 "Do not invent decimals. "
@@ -579,6 +598,7 @@ def run_slides_job(
                         source=source,
                         allowed_media_ids=allowed_media,
                         allowed_number_strings=allowed_numbers,
+                        locked_arc=locked_arc,
                     )
                 except DeckIrError as err:
                     # Digits scrub + demote chart/media slides with no PNG
@@ -597,6 +617,7 @@ def run_slides_job(
                             source=source,
                             allowed_media_ids=allowed_media,
                             allowed_number_strings=allowed_numbers,
+                            locked_arc=locked_arc,
                         )
                     except DeckIrError as scrub_err:
                         # Prefer the post-scrub error (chart_id after number heal).
@@ -831,9 +852,38 @@ def _recolor_deck_charts(
                 chart_type=type_by_id.get(cid) or None,
             )
             if dark:
+                remapped = re.sub(
+                    r"(?<!background)(?<!border)color\s*:\s*['\"]#[0-9A-Fa-f]{3,6}['\"]",
+                    f"color:'{ink}'",
+                    remapped,
+                    flags=re.I,
+                )
+                muted_ink = muted or ink
                 remapped = (
                     f"<style>html,body,#mount{{background:{bg}!important;"
-                    f"color:{ink}!important}}</style>"
+                    f"color:{ink}!important;"
+                    f"--chart-ink:{ink}!important;"
+                    f"--chart-accent:{foil}!important;"
+                    f"--chart-muted:{muted_ink}!important;"
+                    f"--kpi-value:{foil}!important;"
+                    f"--kpi-label:{muted_ink}!important;"
+                    f"--kpi-ink:{ink}!important}}</style>"
+                    f"<script>if(window.Chart){{Chart.defaults.color='{ink}';"
+                    f"Chart.defaults.scale.grid.color='{grid}';"
+                    f"Chart.defaults.scale.border.color='{grid}';}}</script>"
+                    + remapped
+                )
+            else:
+                muted_ink = muted or "#64748B"
+                remapped = (
+                    f"<style>#mount{{--chart-ink:{ink};"
+                    f"--chart-accent:{foil};"
+                    f"--chart-muted:{muted_ink};"
+                    f"--kpi-value:{foil};"
+                    f"--kpi-label:{muted_ink};"
+                    f"--kpi-ink:{ink}}}</style>"
+                    f"<script>if(window.Chart){{Chart.defaults.color='{ink}';"
+                    f"Chart.defaults.scale.grid.color='{grid}';}}</script>"
                     + remapped
                 )
             dest = dest_dir / f"{cid}.png"
@@ -881,11 +931,22 @@ def _materialize_deck_artifacts(
     _set_slides(out_dir, meta, status="running", stage="diagrams", logs_dir=logs_dir)
     media_map = dict(png_by_id)
     if needed_dias:
+        style_dict = deck.get("style") if isinstance(deck.get("style"), dict) else {}
+        pack_for_dia = str(
+            style_dict.get("pack_id") or deck.get("theme_id") or ""
+        ).strip() or None
+        series_for_dia = [
+            str(x)
+            for x in (style_dict.get("chart_series") or [])
+            if str(x).strip()
+        ]
         dia_pngs = ensure_diagram_pngs(
             diagram_specs or {},
             dest_dir=slides_dir / "diagrams",
             palette=palette,
             needed_ids=needed_dias,
+            series=series_for_dia or None,
+            theme_pack=pack_for_dia,
         )
         media_map.update(dia_pngs)
 

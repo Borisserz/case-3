@@ -410,3 +410,174 @@ def test_compare_columns_are_two_color_fields() -> None:
     assert html.count('class="compare__col') == 2
     assert ">01<" in html and ">02<" in html
 
+
+def test_media_hero_diagram_renders_section_head_and_pack_legend() -> None:
+    from case3.deck_theme import resolve_deck_theme
+    from case3.diagram_style import ensure_role_classdefs, role_colors_for_palette
+
+    sig_colors = role_colors_for_palette("signal")
+    board_colors = role_colors_for_palette("board")
+    assert sig_colors["start"]["stroke"].upper() == "#E86A33"
+    assert board_colors["start"]["stroke"].upper() == "#226496"
+
+    mmd = ensure_role_classdefs("flowchart LR\n  A[Старт]:::start --> B[Итог]:::ok", "signal")
+    assert "fill:" in mmd and "#E86A33" in mmd.upper()
+
+    html = render_slide_html(
+        {
+            "id": "s_dia",
+            "layout": "media_hero",
+            "kicker": "13 / АРХИТЕКТУРА ПОТОКА",
+            "title": "Контур сквозной синхронизации",
+            "caption": "Автоматическая проверка качества данных на каждом гейте",
+            "media_id": "dia_arch",
+        },
+        palette="atelier",
+        media_png_href="media.png",
+        style=resolve_deck_theme("signal").as_dict(),
+    )
+    assert "media-hero--diagram" in html
+    assert "13 / АРХИТЕКТУРА ПОТОКА" in html
+    assert "Контур сквозной синхронизации" in html
+    assert "Автоматическая проверка качества данных на каждом гейте" in html
+    assert "#E86A33" in html.upper()
+
+
+def test_media_split_uses_numbered_bands_and_diagram_legend() -> None:
+    from case3.deck_theme import resolve_deck_theme
+
+    html = render_slide_html(
+        {
+            "id": "s_ms",
+            "layout": "media_split",
+            "kicker": "12 / КОКПИТ",
+            "title": "Живой радар телеметрии",
+            "media_id": "dia_flow",
+            "body": "Единая шина событий",
+            "bullets": ["Первый контур", "Второй контур"],
+            "caption": "Схема маршрутизации",
+        },
+        palette="atelier",
+        media_png_href="media.png",
+        style=resolve_deck_theme("board").as_dict(),
+    )
+    assert "bullets--bands" in html
+    assert "dia-legend" in html
+    assert "#226496" in html.upper()
+
+
+def test_relay_terracotta_blush_theme_and_qbr_15_slides() -> None:
+    from case3.deck_structure import list_structures
+    from case3.deck_theme import resolve_deck_theme
+    from case3.diagram_style import role_colors_for_palette
+
+    tok = resolve_deck_theme("relay")
+    assert tok.pack_id == "relay"
+    assert tok.colors["primary"].upper() == "#5C2A24"
+    assert tok.colors["accent"].upper() == "#C45B46"
+    assert tok.colors["foil"].upper() == "#D4884E"
+    assert len(tok.motif.get("panels") or []) == 4
+    assert tok.motif["panels"][0].upper() == "#FADFD8"
+
+    roles = role_colors_for_palette("relay")
+    assert roles["start"]["stroke"].upper() == "#C45B46"
+
+    rows = {s["id"]: s for s in list_structures()}
+    qbr = rows["qbr"]
+    assert qbr["default_pack"] == "relay"
+    assert len(qbr["arc"]) == 15
+    assert qbr["arc"].count("section") == 2
+    assert "media_hero" in qbr["arc"] and "media_split" in qbr["arc"]
+
+
+def test_voltage_and_studio_distinct_themes_structures_and_layouts() -> None:
+    from case3.deck_structure import list_structures
+    from case3.deck_theme import resolve_deck_theme
+
+    volt = resolve_deck_theme("voltage")
+    assert volt.pack_id == "voltage"
+    assert volt.colors["sheet"].upper() == "#111823"
+    assert volt.colors["accent"].upper() == "#38BDF8"
+    assert volt.colors["foil"].upper() == "#E4E869"
+
+    volt_title = render_slide_html(
+        {
+            "id": "s01",
+            "layout": "title",
+            "kicker": "UX LAB · Q3",
+            "title": "Импульс продукта",
+            "takeaway": "72% — CSAT\n+41 — NPS\n240 — респондентов",
+        },
+        palette="voltage",
+        style=volt.as_dict(),
+    )
+    assert 'class="slide-inner title-stage title-stage--field"' in volt_title
+    assert "title-field__rail" in volt_title
+    assert "hero-metrics" in volt_title
+
+    studio = resolve_deck_theme("studio")
+    assert studio.pack_id == "studio"
+    assert studio.colors["sheet"].upper() == "#FBF6EE"
+    assert studio.colors["primary"].upper() == "#2D5A88"
+    assert studio.colors["foil"].upper() == "#D47A3E"
+    assert len(studio.motif.get("panels") or []) == 4
+
+    rows = {s["id"]: s for s in list_structures()}
+    survey = rows["survey"]
+    assert survey["default_pack"] == "voltage"
+    assert len(survey["arc"]) == 14
+    assert "chart_hero" not in survey["arc"]
+    assert "chart_split" in survey["arc"]
+    assert "media_hero" in survey["arc"] and "media_split" in survey["arc"]
+
+    council = rows["council"]
+    assert council["default_pack"] == "studio"
+    assert len(council["arc"]) == 15
+    assert "table_hero" not in council["arc"]
+    assert "chart_hero" in council["arc"] and "chart_split" in council["arc"]
+    assert "media_hero" in council["arc"] and "media_split" in council["arc"]
+
+
+def test_atelier_botanical_ink_themes_and_structures() -> None:
+    from case3.deck_structure import list_structures
+    from case3.deck_theme import resolve_deck_theme
+
+    atelier = resolve_deck_theme("atelier")
+    assert atelier.pack_id == "atelier"
+    assert atelier.colors["primary"].upper() == "#233322"
+    assert atelier.colors["accent"].upper() == "#5A7D4C"
+    assert atelier.colors["foil"].upper() == "#C87D4B"
+
+    bot = resolve_deck_theme("botanical")
+    assert bot.pack_id == "botanical"
+    assert bot.colors["sheet"].upper() == "#101F19"
+    assert bot.colors["foil"].upper() == "#C4AD7A"
+    assert bot.motif.get("hero_bleed") is True
+
+    ink = resolve_deck_theme("ink")
+    assert ink.pack_id == "ink"
+    assert ink.colors["sheet"].upper() == "#0F1520"
+    assert ink.colors["accent"].upper() == "#4EA8DE"
+    assert ink.colors["foil"].upper() == "#E6B85C"
+
+    rows = {s["id"]: s for s in list_structures()}
+    camp = rows["campaign"]
+    assert camp["default_pack"] == "atelier"
+    assert len(camp["arc"]) == 14
+    assert "media_hero" in camp["arc"] and "media_split" in camp["arc"]
+
+    qtr = rows["quarter"]
+    assert qtr["default_pack"] == "botanical"
+    assert len(qtr["arc"]) == 15
+    assert qtr["arc"].count("section") == 2
+    assert "media_hero" in qtr["arc"] and "media_split" in qtr["arc"]
+
+    inv = rows["investor"]
+    assert inv["default_pack"] == "ink"
+    assert len(inv["arc"]) == 14
+    assert "media_hero" in inv["arc"] and "media_split" in inv["arc"]
+
+
+
+
+

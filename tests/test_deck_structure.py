@@ -25,6 +25,33 @@ def test_normalize_aliases() -> None:
     assert normalize_structure_id("nope") is None
 
 
+def test_eight_templates_do_not_share_arc_or_pack() -> None:
+    wanted = {
+        "board_update": "board",
+        "performance": "signal",
+        "qbr": "relay",
+        "survey": "voltage",
+        "council": "studio",
+        "campaign": "atelier",
+        "quarter": "botanical",
+        "investor": "ink",
+    }
+    rows = {s["id"]: s for s in list_structures()}
+    arcs = []
+    packs = []
+    for sid, pack in wanted.items():
+        row = rows[sid]
+        assert row["default_pack"] == pack
+        arcs.append(tuple(row["arc"]))
+        packs.append(pack)
+    assert len(set(arcs)) == len(arcs)
+    assert len(set(packs)) == len(packs)
+    assert "chart_hero" not in rows["survey"]["arc"]
+    assert "table_hero" not in rows["council"]["arc"]
+    assert rows["quarter"]["arc"] != rows["qbr"]["arc"]
+    assert rows["council"]["arc"] != rows["board_update"]["arc"]
+
+
 def test_structure_overlay_nonempty() -> None:
     text = structure_overlay("board_update")
     assert "Scorecard" in text or "scorecard" in text.lower()

@@ -1,38 +1,38 @@
 {
   "id": "board",
-  "label": "Northstar Board",
+  "label": "Northstar Sapphire & Silk",
   "colors": {
-    "primary": "#1B3A4B",
-    "accent": "#3D8B84",
-    "ink": "#1B3A4B",
-    "ink2": "#5E7380",
-    "muted": "#5E7380",
-    "paper": "#E7F2F0",
-    "sheet": "#F4F8F7",
-    "rule": "#D3E2E0",
-    "foil": "#3D8B84",
-    "background": "#F4F8F7",
-    "text": "#1B3A4B",
-    "panel": "#E7F2F0"
+    "primary": "#172D40",
+    "accent": "#226496",
+    "ink": "#122334",
+    "ink2": "#354F69",
+    "muted": "#627C96",
+    "paper": "#F2EDE4",
+    "sheet": "#FAF7F2",
+    "rule": "#DED8CE",
+    "foil": "#D96B43",
+    "background": "#FAF7F2",
+    "text": "#122334",
+    "panel": "#172D40"
   },
   "fonts": {
-    "title": "Calibri",
+    "title": "Georgia",
     "body": "Calibri",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#1B3A4B", "#3D8B84", "#A9D4CE"],
+  "chart_series": ["#172D40", "#226496", "#D96B43", "#2A8C72"],
   "table": {
-    "header_fill": "#1B3A4B",
-    "header_ink": "#F4F8F7",
-    "body_fill": "#E7F2F0",
-    "grid": "#D3E2E0"
+    "header_fill": "#172D40",
+    "header_ink": "#FAF7F2",
+    "body_fill": "#F2EDE4",
+    "grid": "#DED8CE"
   },
-  "brand_mark": "NORTHSTAR · BOARD",
+  "brand_mark": "NORTHSTAR · ATELIER",
   "motif": {
     "atmosphere": "light",
     "split": 0.55,
     "foil_cards": true,
-    "card_fill": "#E7F2F0",
-    "panels": ["#E7F2F0", "#D7E8E5", "#CFE3DF", "#F4F8F7"]
+    "card_fill": "#FFFFFF",
+    "panels": ["#FFFFFF", "#F4EFE6", "#EBF3F8", "#FBF0EB"]
   }
 }

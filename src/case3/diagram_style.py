@@ -20,7 +20,7 @@ ROLE_LABEL_RU: dict[str, str] = {
 
 _TEXT = "#1a2e22"
 
-# Soft role fills derived from each chart palette (no purple).
+# Soft role fills derived from each chart palette & deck theme pack (no purple).
 _ROLE_MAP: dict[str, dict[str, tuple[str, str]]] = {
     # Soft fills aligned with chart_style presets (Okabe–Ito / Tol / Tableau 10).
     "atelier": {
@@ -63,6 +63,78 @@ _ROLE_MAP: dict[str, dict[str, tuple[str, str]]] = {
         "warn": ("#EBE4E4", "#6B4038"),
         "data": ("#E8EAED", "#5C6570"),
     },
+    # ——— Deck theme packs (8 presentation templates) ———
+    "board": {
+        "start": ("#E6F0F8", "#226496"),
+        "process": ("#EDF3F8", "#172D40"),
+        "decision": ("#FAEDE6", "#D96B43"),
+        "ok": ("#E3F3EE", "#2A8C72"),
+        "warn": ("#FBE8DF", "#C9522B"),
+        "data": ("#E4EEF7", "#2B6A99"),
+    },
+    "signal": {
+        "start": ("#35231B", "#E86A33"),
+        "process": ("#2C2621", "#D8CFC4"),
+        "decision": ("#382B1B", "#F2A93B"),
+        "ok": ("#1D312B", "#38A889"),
+        "warn": ("#3B211C", "#FF7B47"),
+        "data": ("#2E2822", "#E5C697"),
+    },
+    "relay": {
+        "start": ("#FADFD8", "#C45B46"),
+        "process": ("#F5EFE6", "#6B4F49"),
+        "decision": ("#F9EAE0", "#D4884E"),
+        "ok": ("#E2F0EB", "#3B7A6B"),
+        "warn": ("#FCE2DC", "#B83B2A"),
+        "data": ("#F3E6DF", "#5C2A24"),
+    },
+    "pastel": {
+        "start": ("#FADFD8", "#C45B46"),
+        "process": ("#F5EFE6", "#6B4F49"),
+        "decision": ("#F9EAE0", "#D4884E"),
+        "ok": ("#E2F0EB", "#3B7A6B"),
+        "warn": ("#FCE2DC", "#B83B2A"),
+        "data": ("#F3E6DF", "#5C2A24"),
+    },
+    "voltage": {
+        "start": ("#162A3E", "#38BDF8"),
+        "process": ("#1E2B3E", "#94A3B8"),
+        "decision": ("#2C2E1A", "#E4E869"),
+        "ok": ("#16332B", "#34D399"),
+        "warn": ("#382124", "#FB7185"),
+        "data": ("#1B2E47", "#60A5FA"),
+    },
+    "studio": {
+        "start": ("#E4EEF7", "#2D5A88"),
+        "process": ("#F3E9DA", "#5C5346"),
+        "decision": ("#F9E8D2", "#D47A3E"),
+        "ok": ("#E2F0E8", "#3B7A57"),
+        "warn": ("#F7DFD8", "#C25944"),
+        "data": ("#EAE4DA", "#4A6F8A"),
+    },
+    "botanical": {
+        "start": ("#1E352B", "#52B788"),
+        "process": ("#22332B", "#A3B899"),
+        "decision": ("#312C1F", "#D4B475"),
+        "ok": ("#1B3B2E", "#40916C"),
+        "warn": ("#382520", "#E07A5F"),
+        "data": ("#1E3133", "#64A6BD"),
+    },
+    "ink": {
+        "start": ("#1D2938", "#58A6FF"),
+        "process": ("#202834", "#94A3B8"),
+        "decision": ("#2D281E", "#E3B341"),
+        "ok": ("#1A3129", "#3FB950"),
+        "warn": ("#362222", "#F85149"),
+        "data": ("#1E2C3A", "#79C0FF"),
+    },
+}
+
+_DARK_TEXT_MAP: dict[str, str] = {
+    "signal": "#F7F2EB",
+    "voltage": "#F4F0E6",
+    "botanical": "#E8E2D4",
+    "ink": "#E6E4DC",
 }
 
 _CLASSDEF_FILL = re.compile(
@@ -74,14 +146,19 @@ _NODE_CLASS = re.compile(r":::\s*([a-zA-Z][\w-]*)")
 
 def role_colors_for_palette(palette_id: str | None) -> dict[str, dict[str, str]]:
     """Return {role: {fill, stroke, color}} for Liber Mermaid classDef."""
-    pid = normalize_palette_id(palette_id)
-    if pid == "auto":
-        pid = "atelier"
+    raw_key = (palette_id or "").strip().lower()
+    if raw_key in _ROLE_MAP:
+        pid = raw_key
+    else:
+        pid = normalize_palette_id(palette_id)
+        if pid == "auto":
+            pid = "atelier"
     table = _ROLE_MAP.get(pid) or _ROLE_MAP["atelier"]
+    txt = _DARK_TEXT_MAP.get(pid, _TEXT)
     out: dict[str, dict[str, str]] = {}
     for role in DIAGRAM_ROLES:
         fill, stroke = table.get(role, _ROLE_MAP["atelier"][role])
-        out[role] = {"fill": fill, "stroke": stroke, "color": _TEXT}
+        out[role] = {"fill": fill, "stroke": stroke, "color": txt}
     return out
 
 
@@ -118,19 +195,33 @@ def format_diagram_color_prompt(palette_id: str | None) -> str:
 _CLASSDEF_NAME = re.compile(r"classDef\s+([A-Za-z][\w-]*)", re.I)
 
 
-def ensure_role_classdefs(mermaid: str, palette: str | None = None) -> str:
-    """Add missing role classDefs so a flowchart stays colorful on the slide."""
+def ensure_role_classdefs(
+    mermaid: str, palette: str | None = None, *, overwrite: bool = False
+) -> str:
+    """Add or retheme role classDefs so a flowchart matches the target palette/pack."""
     text = mermaid or ""
     head = text.lstrip().splitlines()[:1]
     first = head[0].lower() if head else ""
     if not first.startswith("flowchart") and not first.startswith("graph"):
         return text
+    colors = role_colors_for_palette(palette)
+    if overwrite:
+        cleaned_lines = [
+            ln
+            for ln in text.splitlines()
+            if not (
+                _CLASSDEF_NAME.search(ln)
+                and _CLASSDEF_NAME.search(ln).group(1).lower() in DIAGRAM_ROLES  # type: ignore[union-attr]
+            )
+        ]
+        text = "\n".join(cleaned_lines)
     used = {m.group(1).lower() for m in _NODE_CLASS.finditer(text)}
     defined = {m.group(1).lower() for m in _CLASSDEF_NAME.finditer(text)}
-    missing = [role for role in DIAGRAM_ROLES if role in used and role not in defined]
+    missing = [
+        role for role in DIAGRAM_ROLES if (role in used or overwrite) and role not in defined
+    ]
     if not missing:
         return text
-    colors = role_colors_for_palette(palette)
     lines = [
         (
             f"    classDef {role} fill:{colors[role]['fill']},"

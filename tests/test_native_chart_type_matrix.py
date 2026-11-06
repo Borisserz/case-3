@@ -10,13 +10,14 @@ from pathlib import Path
 
 import pytest
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 from pptx.util import Inches
 
 from case3.chart_coerce import apply_type_to_chart
 from case3.chart_html import CHART_TYPES
 from case3.docx_charts import replace_docx_native_charts
 from case3.slides_chart_data import NATIVE_CHART_TYPES, attach_series_ir
-from case3.slides_pptx_charts import add_native_chart
+from case3.slides_pptx_charts import add_native_chart, add_native_kpi
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "docx_with_cht_pictures.docx"
 
@@ -40,11 +41,51 @@ def seed_chart() -> dict:
 
 
 def test_coerce_attach_native_matrix(seed_chart: dict) -> None:
-    """Each type: native-eligible get Series IR + add_native_chart; kpi/scatter drop IR."""
+    """Each type: native-eligible get Series IR + add_native_chart.
+
+    PPTX also renders kpi (editable text box) and scatter (XY chart) natively;
+    DOCX keeps both as pictures (see test_docx_kpi_stays_picture).
+    """
     for want in sorted(CHART_TYPES):
         chart = apply_type_to_chart(dict(seed_chart), want)
         ir = attach_series_ir(chart)
-        if want in NATIVE_CHART_TYPES:
+        if want == "kpi":
+            assert ir is not None, "kpi: expected KPI IR"
+            assert ir["type"] == "kpi"
+            assert ir["value"], "kpi: value must be extracted"
+            assert chart.get("series", {}).get("type") == "kpi"
+            prs = Presentation()
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            ok = add_native_kpi(
+                slide,
+                ir,
+                left=Inches(0.5),
+                top=Inches(0.5),
+                width=Inches(8),
+                height=Inches(4.5),
+                color=RGBColor(0x1F, 0x2A, 0x44),
+            )
+            assert ok, "kpi: add_native_kpi failed"
+            texts = [sh.text_frame.text for sh in slide.shapes if sh.has_text_frame]
+            assert any(ir["value"] in t for t in texts)
+        elif want == "scatter":
+            assert ir is not None, "scatter: expected XY IR"
+            assert ir["type"] == "scatter"
+            assert len(ir["series"][0]["points"]) >= 2
+            assert chart.get("series", {}).get("type") == "scatter"
+            prs = Presentation()
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            ok = add_native_chart(
+                slide,
+                ir,
+                left=Inches(0.5),
+                top=Inches(0.5),
+                width=Inches(8),
+                height=Inches(4.5),
+            )
+            assert ok, "scatter: add_native_chart failed"
+            assert any(sh.has_chart for sh in slide.shapes)
+        elif want in NATIVE_CHART_TYPES:
             assert ir is not None, f"{want}: expected Series IR"
             assert ir["type"] == want, f"{want}: IR type mismatch {ir['type']}"
             assert chart.get("series", {}).get("type") == want

@@ -1,35 +1,37 @@
 {
   "id": "relay",
-  "label": "Split Pastel (QBR)",
+  "label": "Split Pastel — Розовый кварц и гранат",
   "colors": {
-    "primary": "#3A463C",
-    "accent": "#7D9478",
-    "ink": "#3A463C",
-    "ink2": "#6A756C",
-    "muted": "#6A756C",
-    "paper": "#F7F3EA",
-    "sheet": "#FBF8F2",
-    "rule": "#E6E0D4",
-    "foil": "#C4A882",
-    "background": "#FBF8F2",
-    "text": "#3A463C",
-    "panel": "#E7EFE4"
+    "primary": "#5C2A24",
+    "accent": "#C45B46",
+    "ink": "#2C1D1A",
+    "ink2": "#6B4F49",
+    "muted": "#8A6D66",
+    "paper": "#F7EFEA",
+    "sheet": "#FDF9F6",
+    "rule": "#E8DAD2",
+    "foil": "#D4884E",
+    "background": "#FDF9F6",
+    "text": "#2C1D1A",
+    "panel": "#FADFD8"
   },
   "fonts": {
-    "title": "Aptos Display",
+    "title": "Georgia",
     "body": "Aptos",
     "fallback_pptx": "Calibri"
   },
-  "chart_series": ["#3A463C", "#7D9478", "#C9D4C4"],
+  "chart_series": ["#C45B46", "#D4884E", "#3B7A6B", "#5C2A24"],
   "table": {
-    "header_fill": "#E7EFE4",
-    "header_ink": "#3A463C",
-    "grid": "#E6E0D4"
+    "header_fill": "#5C2A24",
+    "header_ink": "#FDF9F6",
+    "body_fill": "#F7EFEA",
+    "grid": "#E8DAD2"
   },
-  "brand_mark": "LIBER · RELAY",
+  "brand_mark": "SPLIT PASTEL · ATELIER",
   "motif": {
+    "atmosphere": "light",
     "split": 0.55,
     "panel_key": "panel",
-    "panels": ["#E7EFE4", "#F3E6D4", "#E4EDE8", "#EFE8DC"]
+    "panels": ["#FADFD8", "#F9EAE0", "#E2F0EB", "#F5EFE6"]
   }
 }

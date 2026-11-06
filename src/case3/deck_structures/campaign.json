@@ -1,23 +1,25 @@
 {
   "id": "campaign",
-  "label": "Campaign Status",
-  "blurb": "Week KPI → winners table → bets → Friday review",
+  "label": "Atelier Olive — Операционный статус и маркетинг",
+  "blurb": "14 форматов: Оливковый журнал → матрица креативов → 2×2 спринт-доска → схема",
   "default_pack": "atelier",
   "tone": "light",
-  "slides": [12, 15],
+  "slides": [10, 14],
   "arc": [
     "title",
+    "section",
     "scorecard",
     "compare",
     "table_hero",
     "chart_hero",
+    "chart_split",
     "card_row",
+    "stat_hero",
     "bullets",
-    "callout",
-    "table_hero",
-    "card_row",
-    "section",
+    "timeline",
+    "media_split",
+    "media_hero",
     "closing"
   ],
-  "signature": "compare scale/pause · status table · olive paper"
+  "signature": "editorial olive paper · status chips · right-rail chart hero · 2x2 ops checklist"
 }

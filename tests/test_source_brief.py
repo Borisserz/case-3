@@ -37,13 +37,27 @@ def test_long_tech_doc_becomes_a_short_map_that_keeps_facts() -> None:
     )
     assert len(source) > 8000
     brief = slides_source_text(source)
-    assert len(brief) < 9000
+    assert len(brief) < 14000
     assert "3.4%" in brief
     assert "1.1%" in brief
     assert "Смена 2" in brief
     assert "def defect_rate" in brief
     assert "return bad / total" not in brief
     assert str(len(source)) in brief
+
+
+def test_one_section_keeps_every_numbered_sentence() -> None:
+    filler = "Пояснение без чисел. " * 400
+    source = (
+        "## Каналы\n"
+        "Сайт принёс 6,2. Партнёры принесли 4,1. Звонки закрыли 8,1. "
+        + filler
+    )
+    assert len(source) > 8000
+    brief = slides_source_text(source)
+    assert "6,2" in brief
+    assert "4,1" in brief
+    assert "8,1" in brief
 
 
 def test_code_callout_is_inserted_once() -> None:
