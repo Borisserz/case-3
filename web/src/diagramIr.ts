@@ -60,27 +60,39 @@ const CLASSDEF_RE =
 const ARROW_RE = /<-->|-->|---|-\.->/g;
 const BR_TAG = /<br\s*\/?>/gi;
 
+function stripQuotes(s: string): string {
+  let t = (s || "").trim();
+  while (
+    (t.startsWith('"') && t.endsWith('"') && t.length >= 2) ||
+    (t.startsWith("'") && t.endsWith("'") && t.length >= 2)
+  ) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
 function parseShape(
   raw: string | undefined,
 ): { label: string; kindHint?: DiaKind } {
   if (!raw) return { label: "" };
+  let label = raw;
+  let kindHint: DiaKind | undefined;
   if (raw.startsWith("[[") && raw.endsWith("]]")) {
-    return { label: raw.slice(2, -2), kindHint: "data" };
+    label = raw.slice(2, -2);
+    kindHint = "data";
+  } else if (raw.startsWith("([") && raw.endsWith("])")) {
+    label = raw.slice(2, -2);
+    kindHint = "process";
+  } else if (raw.startsWith("{") && raw.endsWith("}")) {
+    label = raw.slice(1, -1);
+    kindHint = "decision";
+  } else if (raw.startsWith("(") && raw.endsWith(")")) {
+    label = raw.slice(1, -1);
+    kindHint = "ok";
+  } else if (raw.startsWith("[") && raw.endsWith("]")) {
+    label = raw.slice(1, -1);
   }
-  // Stadium ([label]) — pill / soft process (editor look).
-  if (raw.startsWith("([") && raw.endsWith("])")) {
-    return { label: raw.slice(2, -2), kindHint: "process" };
-  }
-  if (raw.startsWith("{") && raw.endsWith("}")) {
-    return { label: raw.slice(1, -1), kindHint: "decision" };
-  }
-  if (raw.startsWith("(") && raw.endsWith(")")) {
-    return { label: raw.slice(1, -1), kindHint: "ok" };
-  }
-  if (raw.startsWith("[") && raw.endsWith("]")) {
-    return { label: raw.slice(1, -1) };
-  }
-  return { label: raw };
+  return { label: stripQuotes(label), kindHint };
 }
 
 function asKind(raw: string | undefined, hint?: DiaKind): DiaKind {
@@ -116,11 +128,13 @@ export function isSupportedFlowchartSubset(mermaid: string): boolean {
 }
 
 function cleanLabel(label: string): string {
-  return (label || "")
+  let s = stripQuotes(label || "");
+  s = s
     .replace(BR_TAG, "\n")
     .replace(/\s+\n/g, "\n")
     .replace(/\n\s+/g, "\n")
     .trim();
+  return stripQuotes(s);
 }
 
 function splitEdgeLine(line: string): {

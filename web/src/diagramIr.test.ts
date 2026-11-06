@@ -138,4 +138,16 @@ describe("diagramIr", () => {
     assert.match(byId.NP.label, /Цифра/);
     assert.ok(ir.edges.some((e) => e.source === "C" && e.target === "MinInf"));
   });
+
+  it("strips wrapping quotes from node labels", () => {
+    const src = `flowchart TD
+  A(["Лид<br/>340"]):::start --> B["Квалификация 210"]:::process
+  B --> C{"Бюджет?"}:::decision
+`;
+    const ir = parseMermaidFlowchart(src, { id: "dia_01", title: "Quotes" });
+    const byId = Object.fromEntries(ir.nodes.map((n) => [n.id, n]));
+    assert.equal(byId.A.label, "Лид\n340");
+    assert.equal(byId.B.label, "Квалификация 210");
+    assert.equal(byId.C.label, "Бюджет?");
+  });
 });

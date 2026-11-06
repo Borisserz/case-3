@@ -53,6 +53,7 @@ export function DiagramPane({
   const [fullscreen, setFullscreen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [forceCodeEditor, setForceCodeEditor] = useState(false);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -437,7 +438,7 @@ export function DiagramPane({
         />
       ) : null}
 
-      {visualOk && editOpen ? (
+      {visualOk && !forceCodeEditor && editOpen ? (
         <Suspense fallback={null}>
           <DiagramVisualEditor
             open={editOpen}
@@ -449,14 +450,16 @@ export function DiagramPane({
             focusNodeId={focusNodeId}
             onCancel={() => {
               setEditOpen(false);
+              setForceCodeEditor(false);
               setFocusNodeId(null);
               setErr(null);
             }}
             onSave={(m, t) => void doApplyEdit(m, t)}
+            onSwitchToCode={() => setForceCodeEditor(true)}
           />
         </Suspense>
       ) : null}
-      {!visualOk ? (
+      {(!visualOk || forceCodeEditor) && editOpen ? (
         <DiagramEditSheet
           open={editOpen}
           title={diagram.title}
@@ -465,10 +468,14 @@ export function DiagramPane({
           error={err}
           onCancel={() => {
             setEditOpen(false);
+            setForceCodeEditor(false);
             setFocusNodeId(null);
             setErr(null);
           }}
-          onApply={(m, t) => void doApplyEdit(m, t)}
+          onApply={(m, t) => {
+            setForceCodeEditor(false);
+            void doApplyEdit(m, t);
+          }}
         />
       ) : null}
     </div>

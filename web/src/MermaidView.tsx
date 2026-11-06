@@ -13,6 +13,7 @@ type Props = {
   source: string;
   className?: string;
   onSvgReady?: (svg: SVGSVGElement | null) => void;
+  onError?: (err: string | null) => void;
   /** Highlight these Mermaid node ids; others dim. null = clear. */
   highlightNodeIds?: Set<string> | null;
   /** Double-click a flowchart node → id */
@@ -65,12 +66,15 @@ export function MermaidView({
   source,
   className,
   onSvgReady,
+  onError,
   highlightNodeIds = null,
   onNodeDblClick,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onSvgReady);
   onReadyRef.current = onSvgReady;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const dblRef = useRef(onNodeDblClick);
   dblRef.current = onNodeDblClick;
   const reactId = useId().replace(/:/g, "");
@@ -90,6 +94,7 @@ export function MermaidView({
       svgRef.current = null;
       onReadyRef.current?.(null);
       setError("Пустая схема");
+      onErrorRef.current?.("Пустая схема");
       setLoading(false);
       return;
     }
@@ -102,6 +107,7 @@ export function MermaidView({
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
         setError(null);
+        onErrorRef.current?.(null);
         const el = hostRef.current.querySelector("svg");
         svgRef.current = el;
         if (el) {
@@ -118,9 +124,14 @@ export function MermaidView({
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
+        onErrorRef.current?.(msg);
         if (hostRef.current) hostRef.current.innerHTML = "";
         svgRef.current = null;
         onReadyRef.current?.(null);
+        const stray =
+          document.getElementById("d" + renderId) ||
+          document.getElementById(renderId);
+        if (stray) stray.remove();
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -155,6 +155,7 @@ function irToFlow(ir: DiagramIR): { nodes: Node[]; edges: Edge[] } {
     label: e.label,
     markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
     style: { stroke: "#5a7a64", strokeWidth: 1.6 },
+    interactionWidth: 24,
     labelStyle: { fill: "#1a2e22", fontSize: 12 },
     labelBgStyle: { fill: "#f7faf7" },
     labelBgPadding: [4, 6] as [number, number],
@@ -208,6 +209,7 @@ type Props = {
   focusNodeId?: string | null;
   onCancel: () => void;
   onSave: (mermaid: string, title: string) => void;
+  onSwitchToCode?: () => void;
 };
 
 function FitOnFocus({
@@ -248,6 +250,7 @@ function EditorInner({
   focusNodeId = null,
   onCancel,
   onSave,
+  onSwitchToCode,
 }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open });
@@ -276,6 +279,7 @@ function EditorInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState(seed.flow.edges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [showMiniMap, setShowMiniMap] = useState(false);
   const [parseErr] = useState(seed.err);
   const [dirty, setDirty] = useState(false);
   const [draftBanner, setDraftBanner] = useState(false);
@@ -473,8 +477,12 @@ function EditorInner({
             {
               ...c,
               id: `e_${c.source}_${c.target}_${eds.length}`,
-              markerEnd: { type: MarkerType.ArrowClosed },
+              markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
               style: { stroke: "#5a7a64", strokeWidth: 1.6 },
+              interactionWidth: 24,
+              labelStyle: { fill: "#1a2e22", fontSize: 12 },
+              labelBgStyle: { fill: "#f7faf7" },
+              labelBgPadding: [4, 6] as [number, number],
             },
             eds,
           ),
@@ -550,16 +558,24 @@ function EditorInner({
           source: dId,
           target: yId,
           label: "да",
-          markerEnd: { type: MarkerType.ArrowClosed },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
           style: { stroke: "#5a7a64", strokeWidth: 1.6 },
+          interactionWidth: 24,
+          labelStyle: { fill: "#1a2e22", fontSize: 12 },
+          labelBgStyle: { fill: "#f7faf7" },
+          labelBgPadding: [4, 6] as [number, number],
         },
         {
           id: `e_${dId}_${nId}`,
           source: dId,
           target: nId,
           label: "нет",
-          markerEnd: { type: MarkerType.ArrowClosed },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
           style: { stroke: "#5a7a64", strokeWidth: 1.6 },
+          interactionWidth: 24,
+          labelStyle: { fill: "#1a2e22", fontSize: 12 },
+          labelBgStyle: { fill: "#f7faf7" },
+          labelBgPadding: [4, 6] as [number, number],
         },
       ]);
       setSelectedNodeId(dId);
@@ -677,6 +693,16 @@ function EditorInner({
             />
           </div>
           <div className="diagram-visual-head-actions">
+            {onSwitchToCode ? (
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={onSwitchToCode}
+                title="Перейти в текстовый редактор Mermaid"
+              >
+                Код
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn ghost"
@@ -814,6 +840,27 @@ function EditorInner({
                   <option value="LR">Слева направо</option>
                 </select>
               </label>
+              <button
+                type="button"
+                className={`btn ghost diagram-visual-minimap-btn ${showMiniMap ? "is-active" : ""}`}
+                onClick={() => setShowMiniMap((v) => !v)}
+                title={showMiniMap ? "Скрыть миникарту" : "Показать миникарту"}
+                aria-pressed={showMiniMap}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden
+                >
+                  <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                  <path d="M6 3v10M10 3v10" strokeDasharray="1.5 1.5" />
+                </svg>
+                Карта
+              </button>
               <span className="diagram-visual-hint">
                 Тяните от точки — стрелка · ⌘Z — отмена
               </span>
@@ -864,6 +911,7 @@ function EditorInner({
                 onConnect={onConnect}
                 nodeTypes={nodeTypes}
                 fitView
+                fitViewOptions={{ padding: 0.2 }}
                 onSelectionChange={({ nodes: ns, edges: es }) => {
                   setSelectedNodeId(ns[0]?.id ?? null);
                   setSelectedEdgeId(es[0]?.id ?? null);
@@ -874,14 +922,16 @@ function EditorInner({
                 <FitOnFocus nodeId={focusNodeId} nodeCount={nodes.length} />
                 <Background gap={18} color="#d5ddd6" />
                 <Controls showInteractive={false} />
-                <MiniMap
-                  pannable
-                  zoomable
-                  nodeColor={(n) => {
-                    const k = (n.data as NodeData)?.kind || "process";
-                    return DEFAULT_COLORS[k]?.fill || "#dce8df";
-                  }}
-                />
+                {showMiniMap ? (
+                  <MiniMap
+                    pannable
+                    zoomable
+                    nodeColor={(n) => {
+                      const k = (n.data as NodeData)?.kind || "process";
+                      return DEFAULT_COLORS[k]?.fill || "#dce8df";
+                    }}
+                  />
+                ) : null}
               </ReactFlow>
             </div>
           </div>
