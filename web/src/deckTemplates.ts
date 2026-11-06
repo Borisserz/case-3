@@ -103,6 +103,36 @@ export const DECK_TEMPLATE_CARDS: DeckTemplateCard[] = [
     starterPrompt:
       "Собери презентацию эффективности и роста в стиле Bold Signal: тёмная контрастная подача, графики на первом плане, scorecard ключевых метрик, глубокая таблица каналов и сегментов, сравнение сценариев перераспределения бюджета и 90-дневная дорожная карта. Цифры только из Source или брифа.",
   },
+  {
+    id: "launch",
+    structureId: "launch",
+    packId: "botanical",
+    title: "Product Launch — Запуск и Go-To-Market",
+    blurb: "12 форматов: Dark Emerald · Bleed-титул → история продукта → таблица GTM → роадмап",
+    arc: "Bleed Title → Section → Story Callout → Features 3-Card → Product Hero → GTM Table → Scorecard → Launch Close",
+    starterPrompt:
+      "Собери презентацию запуска продукта (Product Launch) в стиле Dark Botanical: широкоформатный фото-титул, ключевой продуктовый тезис, карточки фичей и преимуществ, таблица каналов вывода на рынок (GTM), метрики ожидаемого эффекта и финальный призыв к запуску. Данные строго из Source.",
+  },
+  {
+    id: "workshop",
+    structureId: "workshop",
+    packId: "studio",
+    title: "Strategy Workshop — Стратегическая сессия",
+    blurb: "15 форматов: Ice Indigo · Повестка таймлайном → карточки упражнений → матрица гейтов",
+    arc: "Title → Section → Goals Scorecard → Timeline Agenda → Exercise Cards → Decision Table → Action Rules → Close",
+    starterPrompt:
+      "Собери структуру стратегической сессии или воркшопа в стиле Workshop Studio: цели сессии, повестка в виде таймлайна, карточки упражнений для команд, сводная таблица решений с владельцами и датами, правила фиксации договорённостей. Данные строго из Source.",
+  },
+  {
+    id: "hire",
+    structureId: "hire",
+    packId: "board",
+    title: "Decision Memorandum — Кадровое решение и найм",
+    blurb: "12 форматов: Sapphire & Silk · Фокус на главном вопросе → за и против → касса и ФОТ",
+    arc: "Question Title → Callout Dilemma → Compare (За vs Против) → Cash Runway → Decision Quote → Next Steps",
+    starterPrompt:
+      "Собери презентацию-меморандум по кадровому решению или найму в стиле Northstar Sapphire: четкая формулировка вопроса на титуле, аргументы «за» и «против», проверка запаса кассы и влияния на ФОТ, однозначный вывод с условиями испытательного срока и следующие шаги. Числа только из Source.",
+  },
 ];
 
 export function starterPromptForStructure(structureId?: string | null): string {

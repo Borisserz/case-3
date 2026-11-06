@@ -513,6 +513,41 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
       dark: true,
     },
   ],
+  hire: [
+    {
+      kind: "title",
+      kicker: "ВОПРОС НАЙМА",
+      title: "Нанимаем двух продавцов или нет",
+      subtitle: "Решение, аргументы за и против, касса",
+    },
+    {
+      kind: "quote",
+      kicker: "01 / ВОПРОС",
+      title: "Главный вопрос найма и баланс ресурсов",
+    },
+    {
+      kind: "cards",
+      kicker: "02 / ДВЕ СТОРОНЫ",
+      title: "Плюсы и риски решения",
+      cards: ["Рост выручки и покрытия", "Нагрузка на ФОТ и окупаемость", "Запас кассы на 24 мес."],
+    },
+    {
+      kind: "scorecard",
+      kicker: "03 / ЦИФРЫ",
+      title: "Касса и динамика плана",
+      cells: [
+        { label: "Касса", value: "20,4 млн" },
+        { label: "План", value: "19 млн" },
+        { label: "Факт", value: "18,4 млн" },
+      ],
+    },
+    {
+      kind: "closing",
+      kicker: "РЕШЕНИЕ",
+      title: "Финальный вердикт и следующий шаг",
+      subtitle: "Запуск испытательного срока",
+    },
+  ],
 };
 
 export function previewSlidesFor(structureId: string): PreviewSlide[] {

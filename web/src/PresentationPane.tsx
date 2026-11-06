@@ -763,6 +763,7 @@ export function PresentationPane({
                   if (editing) void leaveEdit();
                   else setEditing(false);
                 }}
+                title="Сетка слайдов (G)"
               >
                 Сетка
               </button>
@@ -775,6 +776,7 @@ export function PresentationPane({
                 if (editing) void leaveEdit();
                 else setEditing(false);
               }}
+              title="Просмотр слайда (S)"
             >
               Слайд
             </button>
@@ -794,10 +796,10 @@ export function PresentationPane({
                     setEditing(true);
                   }
                 }}
-                title="E"
+                title={editing ? "Завершить редактирование (E)" : "Редактировать слайд (E)"}
               >
                 {saving && editing
-                  ? "Собираю…"
+                  ? "Сохраняю…"
                   : editing
                     ? "Готово"
                     : "Редактировать"}
