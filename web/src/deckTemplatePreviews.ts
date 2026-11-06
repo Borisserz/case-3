@@ -566,7 +566,7 @@ export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
   investor: 14,
   launch: 9,
   workshop: 11,
-  hire: 6,
+  hire: 8,
   board_classic: 15,
   performance_classic: 15,
   qbr_classic: 15,
@@ -576,7 +576,7 @@ export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
 };
 
 /** Bust browser cache when Liber twins are re-rendered. */
-const PREVIEW_CACHE_BUST = "20261106-all8-premium";
+const PREVIEW_CACHE_BUST = "20261106-all11-premium";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {

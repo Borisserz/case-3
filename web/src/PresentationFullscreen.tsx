@@ -205,7 +205,7 @@ export function PresentationFullscreen({
           </button>
         </div>
         <p className="presentation-fullscreen-hint" aria-hidden={!chromeOn}>
-          Клик / Space · Esc выход
+          ← → / Space / клик — листать · Esc — выход
         </p>
       </div>
     </motion.div>,

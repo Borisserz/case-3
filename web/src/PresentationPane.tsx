@@ -379,6 +379,17 @@ export function PresentationPane({
         e.preventDefault();
         go(1);
       }
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        // fall through to undo/redo below; no plain-letter shortcuts with modifiers
+      } else if ((e.key === "g" || e.key === "G") && slidePngs.length > 0) {
+        setView("grid");
+        if (editing) void leaveEdit();
+        return;
+      } else if (e.key === "s" || e.key === "S") {
+        setView("slide");
+        if (editing) void leaveEdit();
+        return;
+      }
       if (e.key === "f" || e.key === "F") setFull(true);
       if (e.key === "e" || e.key === "E") {
         setView("slide");
@@ -393,7 +404,7 @@ export function PresentationPane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [full, go, editing, leaveEdit, historyUndo, historyRedo, setEditing]);
+  }, [full, go, editing, leaveEdit, historyUndo, historyRedo, setEditing, slidePngs.length]);
 
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
