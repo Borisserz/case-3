@@ -6,7 +6,7 @@ import copy
 import re
 from typing import Any
 
-from case3.slides_ir import DeckIrError, _norm_ws
+from case3.slides_ir import DeckIrError, _norm_ws, SLIDE_LAYOUTS
 
 _ID_OK = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 
@@ -196,6 +196,134 @@ def _fresh_slide_id(existing: set[str]) -> str:
     raise DeckIrError("could not allocate slide id")
 
 
+def _default_slide_for_layout(new_id: str, layout: str) -> dict[str, Any]:
+    slide: dict[str, Any] = {"id": new_id, "layout": layout}
+    if layout == "title":
+        slide.update({
+            "title": "Новый заголовок презентации",
+            "subtitle": "Подзаголовок и краткое описание",
+            "kicker": "СТРАТЕГИЯ · 2026",
+            "takeaway": "100 млн — Цель года\n+25% — Рост",
+        })
+    elif layout == "section":
+        slide.update({
+            "title": "Новый раздел",
+            "subtitle": "Краткое введение в тему раздела",
+            "kicker": "ГЛАВА",
+        })
+    elif layout == "callout":
+        slide.update({
+            "title": "Ключевой стратегический тезис",
+            "kicker": "ТЕЗИС",
+            "term": "ГЛАВНЫЙ ВЫВОД",
+            "definition": "Формулировка решения или принципа, определяющего дальнейшие действия.",
+            "body": "Пояснение контекста и условий реализации принятого решения.",
+        })
+    elif layout == "quote":
+        slide.update({
+            "title": "Фокусная позиция или цитата",
+            "kicker": "ПОЗИЦИЯ",
+            "definition": "Точная цитата или формулировка ключевого аргумента из источника.",
+            "term": "ЭКСПЕРТ ИЛИ ИСТОЧНИК",
+        })
+    elif layout == "scorecard":
+        slide.update({
+            "title": "Сводная панель показателей",
+            "kicker": "МЕТРИКИ",
+            "kpis": [
+                {"label": "Выручка", "value": "24.6 млн", "delta": "+34%", "status": "up"},
+                {"label": "Удержание", "value": "117%", "delta": "+3 п.п.", "status": "up"},
+                {"label": "Маржа", "value": "78%", "delta": "+4 п.п.", "status": "up"},
+                {"label": "Касса", "value": "30 мес.", "delta": "запас", "status": "up"},
+            ],
+            "caption": "Данные за последний отчетный период",
+        })
+    elif layout == "stat_hero":
+        slide.update({
+            "title": "Ключевой мультипликатор эффективности",
+            "kicker": "МАСШТАБ",
+            "kpis": [
+                {"label": "Рост отдачи ключевого канала", "value": "2,6×", "delta": "+160% к базе"}
+            ],
+            "bullets": [
+                "Фактор ускорения за счет фокуса на ядре",
+                "Снижение издержек на единицу продукции",
+            ],
+        })
+    elif layout == "compare":
+        slide.update({
+            "title": "Сравнение ключевых подходов",
+            "kicker": "ВЫБОР МОДЕЛИ",
+            "cards": [
+                {
+                    "kicker": "ВАРИАНТ А · МАСШТАБ",
+                    "title": "Целевая архитектура",
+                    "body": "Быстрый вывод в промышленный контур, предсказуемая экономика и снижение операционных рисков.",
+                },
+                {
+                    "kicker": "ВАРИАНТ Б · СТАТУС-КВО",
+                    "title": "Текущий процесс",
+                    "body": "Растянутые циклы согласования, высокая стоимость сопровождения и распыление ресурсов.",
+                },
+            ],
+        })
+    elif layout == "card_row":
+        slide.update({
+            "title": "Три приоритетных направления",
+            "kicker": "ПРИОРИТЕТЫ",
+            "cards": [
+                {"kicker": "ТРЕК 01", "title": "Ускорение ядра", "body": "Оптимизация ключевых сценариев взаимодействия."},
+                {"kicker": "ТРЕК 02", "title": "Автоматизация", "body": "Внедрение типовых шаблонов и контроля качества."},
+                {"kicker": "ТРЕК 03", "title": "Масштабирование", "body": "Выход в смежные сегменты и каналы привлечения."},
+            ],
+        })
+    elif layout == "table_hero":
+        slide.update({
+            "title": "Сводная матрица параметров",
+            "kicker": "ДАННЫЕ",
+            "rows": [
+                ["Сегмент", "План", "Факт", "Статус"],
+                ["Корпоративный", "12.4 млн", "13.1 млн", "Выполнен"],
+                ["Малый бизнес", "8.2 млн", "8.5 млн", "Выполнен"],
+                ["Партнеры", "4.0 млн", "3.0 млн", "В работе"],
+            ],
+            "caption": "Итоги выполнения программы по ключевым каналам",
+        })
+    elif layout == "timeline":
+        slide.update({
+            "title": "Дорожная карта реализации на 4 этапа",
+            "kicker": "ПЛАН РЕАЛИЗАЦИИ",
+            "cards": [
+                {"kicker": "ЭТАП 01", "title": "Аудит и рамка", "body": "Формулировка целевых требований."},
+                {"kicker": "ЭТАП 02", "title": "Пилотный запуск", "body": "Проверка гипотез на первом сегменте."},
+                {"kicker": "ЭТАП 03", "title": "Тиражирование", "body": "Масштабирование на всю клиентскую базу."},
+                {"kicker": "ЭТАП 04", "title": "Фиксация метрик", "body": "Оценка совокупного эффекта программы."},
+            ],
+        })
+    elif layout == "closing":
+        slide.update({
+            "title": "Финальные решения и следующие шаги",
+            "kicker": "РЕШЕНИЕ",
+            "takeaway": "3 — ключевые договоренности",
+            "bullets": [
+                "Утвердить план и закрепить ответственных владельцев",
+                "Запустить реализацию первого этапа в течение недели",
+                "Провести промежуточный статус-чек через 30 дней",
+            ],
+        })
+    else:  # bullets, chart_hero, media_hero, etc.
+        slide.update({
+            "title": "Ключевые тезисы реализации",
+            "kicker": "ТЕЗИСЫ",
+            "bullets": [
+                "Первый ключевой тезис реализации",
+                "Второй аргумент в пользу выбранного направления",
+                "Ожидаемый результат и сроки исполнения",
+            ],
+        })
+    return slide
+
+
 def apply_deck_structure(
     deck: dict[str, Any],
     op_body: dict[str, Any],
@@ -237,6 +365,21 @@ def apply_deck_structure(
         if len(slides) <= 1:
             raise DeckIrError("cannot delete the last slide")
         out["slides"] = [s for s in slides if str(s["id"]) != sid]
+        return out
+
+    if op in ("insert", "add"):
+        layout = str(op_body.get("layout") or "bullets").strip().lower()
+        if layout not in SLIDE_LAYOUTS:
+            raise DeckIrError(f"unknown layout: {layout!r}")
+        new_id = _fresh_slide_id(set(by_id))
+        new_slide = _default_slide_for_layout(new_id, layout)
+        at_id = str(op_body.get("id") or op_body.get("after_id") or "")
+        if at_id and at_id in by_id:
+            idx = next(i for i, s in enumerate(slides) if str(s["id"]) == at_id)
+            slides.insert(idx + 1, new_slide)
+        else:
+            slides.append(new_slide)
+        out["slides"] = slides
         return out
 
     raise DeckIrError(f"unknown structure op: {op!r}")

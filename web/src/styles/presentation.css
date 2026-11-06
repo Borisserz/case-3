@@ -2071,3 +2071,217 @@ button.deck-cv-media {
 .deck-cv-compare-t { margin: 0.35rem 0 0; font-family: Georgia, serif; font-size: 1.25rem; color: var(--deck-ink); }
 .deck-cv-compare-b { margin-top: 0.6rem; color: var(--deck-ink-2); font-size: 0.85rem; }
 
+/* —— Inline table & bullet editing —— */
+.deck-cv-table-op-cell {
+  width: 28px;
+  padding: 0 4px !important;
+  text-align: center !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.deck-cv-table-actions,
+.deck-cv-bullet-actions {
+  display: flex;
+  margin-top: 0.5rem;
+}
+
+.deck-cv-bullet-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.deck-cv-inline-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--deck-sheet, #fff) 90%, transparent);
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: all 0.15s ease;
+}
+
+.deck-cv-inline-del:hover {
+  opacity: 1;
+  background: #fee2e2;
+  border-color: #dc2626;
+  transform: scale(1.05);
+}
+
+.deck-cv-inline-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1.5px dashed var(--deck-rule, rgba(0, 0, 0, 0.25));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deck-sheet, #fff) 85%, transparent);
+  color: var(--deck-ink, #222);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.deck-cv-inline-add:hover {
+  background: var(--deck-sheet, #fff);
+  border-color: var(--deck-foil, var(--deck-accent, #3b82f6));
+  color: var(--deck-foil, var(--deck-accent, #3b82f6));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* Toolbar separator */
+.presentation-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: color-mix(in srgb, var(--deck-rule, rgba(0, 0, 0, 0.2)) 70%, transparent);
+  margin: 0 0.35rem;
+}
+
+/* —— Layout Picker Modal —— */
+.presentation-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 14, 16, 0.68);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: presentation-modal-fade 0.2s ease-out;
+}
+
+@keyframes presentation-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.presentation-layout-picker {
+  background: var(--sheet, #ffffff);
+  color: var(--ink, #14161a);
+  border: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.15)) 90%, var(--primary, #1e3a8a));
+  border-radius: 14px;
+  max-width: 680px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 48px rgba(12, 14, 16, 0.28);
+  overflow: hidden;
+  animation: presentation-modal-pop 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes presentation-modal-pop {
+  from { transform: scale(0.96) translateY(6px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.presentation-layout-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.1)) 80%, transparent);
+}
+
+.presentation-layout-picker-title {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink, #14161a);
+  line-height: 1.3;
+}
+
+.presentation-layout-picker-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted, #6b7280);
+}
+
+.presentation-layout-picker-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.presentation-layout-picker-close:hover {
+  color: var(--ink, #14161a);
+  background: color-mix(in srgb, var(--primary, #1e3a8a) 8%, transparent);
+}
+
+.presentation-layout-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  overflow-y: auto;
+}
+
+.presentation-layout-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--border, rgba(0, 0, 0, 0.12)) 90%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sheet, #fff) 96%, var(--paper, #f7f6f2));
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.presentation-layout-opt:hover {
+  border-color: var(--deck-foil, var(--deck-accent, #3b82f6));
+  background: color-mix(in srgb, var(--deck-accent, #3b82f6) 8%, var(--sheet, #fff));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.presentation-layout-opt-icon {
+  font-size: 1.4rem;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.presentation-layout-opt-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.presentation-layout-opt-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ink, #14161a);
+}
+
+.presentation-layout-opt-desc {
+  font-size: 0.75rem;
+  color: var(--muted, #6b7280);
+  line-height: 1.35;
+}
+
+

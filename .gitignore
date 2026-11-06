@@ -36,6 +36,7 @@ scripts/**
 notes.txt
 .cursorignore
 _qa/
+.preview-q1/
 .cursor/*.png
 
 # Run artifacts (keep directory markers)

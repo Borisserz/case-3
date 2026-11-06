@@ -1216,6 +1216,46 @@
   color: var(--ink);
 }
 
+.deck-gallery-card--add {
+  cursor: pointer;
+}
+.deck-gallery-add-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.deck-gallery-add-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border: 1.5px dashed color-mix(in srgb, var(--primary) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--secondary) 18%, var(--sheet));
+  color: var(--primary);
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+.deck-gallery-card--add:hover .deck-gallery-add-frame {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--sheet));
+  box-shadow: 0 6px 16px rgba(15, 20, 18, 0.08);
+}
+.deck-gallery-add-icon {
+  font-size: 1.8rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
 /* —— Deck style sheet (Julius-parity UX, Liber DNA) —— */
 /* Ghost primary still used by ArtifactCard Julius CTA */
 .deck-make-primary.is-ghost {

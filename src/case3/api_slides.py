@@ -302,11 +302,12 @@ class SlidesIrPatchBody(BaseModel):
 
 
 class SlidesStructureBody(BaseModel):
-    """Structural IR op — reorder / duplicate / delete; rebuild twin+PPTX only."""
+    """Structural IR op — reorder / duplicate / delete / insert; rebuild twin+PPTX only."""
 
     op: str = Field(default="")
     id: str | None = Field(default=None)
     order: list[str] | None = Field(default=None)
+    layout: str | None = Field(default=None)
 
 
 def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
@@ -565,6 +566,8 @@ async def post_slides_structure(
         op_body["id"] = body.id
     if body.order is not None:
         op_body["order"] = body.order
+    if body.layout is not None:
+        op_body["layout"] = body.layout
 
     try:
         patched = apply_deck_structure(base, op_body)

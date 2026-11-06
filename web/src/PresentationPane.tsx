@@ -21,6 +21,7 @@ import {
 import { DiagramVisualEditor } from "./DiagramVisualEditor";
 import type { DiagramResult } from "./domain/liberTypes";
 import { PresentationFullscreen } from "./PresentationFullscreen";
+import { LayoutPickerModal } from "./LayoutPickerModal";
 
 /** Survive tab switches: PresentationPane unmounts on Preview/PDF. */
 const slidesTimerStartedAt = new Map<string, number>();
@@ -158,6 +159,9 @@ export function PresentationPane({
     Record<string, { type?: string; palette?: string; style_user?: boolean }>
   >({});
   const [chartPreview, setChartPreview] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAfterId, setPickerAfterId] = useState<string | null>(null);
+  const [copiedPng, setCopiedPng] = useState(false);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -549,9 +553,10 @@ export function PresentationPane({
 
   const structureOp = useCallback(
     async (payload: {
-      op: "reorder" | "duplicate" | "delete";
+      op: "reorder" | "duplicate" | "delete" | "insert";
       id?: string;
       order?: string[];
+      layout?: string;
     }) => {
       if (!deck?.slides?.length) {
         setSaveError("Нет IR деки — соберите презентацию");
@@ -584,6 +589,16 @@ export function PresentationPane({
           const at = next.slides.findIndex((s) => s.id === payload.id);
           if (at >= 0) setIdx(Math.min(at + 1, next.slides.length - 1));
         }
+        if (next?.slides && payload.op === "insert") {
+          let target = next.slides.length - 1;
+          if (payload.id) {
+            const at = next.slides.findIndex((s) => s.id === payload.id);
+            if (at >= 0) target = Math.min(at + 1, next.slides.length - 1);
+          }
+          setIdx(target);
+          setView("slide");
+          setEditing(true);
+        }
         if (body.undo) {
           onEditHistory?.(
             parseEditHistory(
@@ -598,7 +613,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [deck, onEditHistory, runId, waitPatchRebuild],
+    [deck, onEditHistory, runId, waitPatchRebuild, setEditing],
   );
 
   const onReorderIndices = useCallback(
@@ -614,6 +629,47 @@ export function PresentationPane({
     },
     [deck, saving, structureOp],
   );
+
+  const handleDownloadPng = useCallback(async () => {
+    if (!currentPng) return;
+    try {
+      const res = await fetch(currentPng);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const slideNum = String(safeIdx + 1).padStart(2, "0");
+      const safeTitle = (deck?.slides?.[safeIdx]?.title || "slide")
+        .slice(0, 30)
+        .replace(/[^\wа-яА-ЯёЁ0-9-_]+/gi, "_");
+      a.download = `slide_${slideNum}_${safeTitle}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setSaveError(
+        `Не удалось скачать PNG: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, [currentPng, deck, safeIdx]);
+
+  const handleCopyPng = useCallback(async () => {
+    if (!currentPng) return;
+    try {
+      const res = await fetch(currentPng);
+      const blob = await res.blob();
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
+      setCopiedPng(true);
+      setTimeout(() => setCopiedPng(false), 2000);
+    } catch (err) {
+      setSaveError(
+        `Не удалось скопировать PNG в буфер: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, [currentPng]);
 
   const pending =
     status === "running" ||
@@ -904,6 +960,16 @@ export function PresentationPane({
                 }
               : undefined
           }
+          onAddSlide={
+            live
+              ? () => {
+                  const lastId =
+                    deck?.slides?.[deck.slides.length - 1]?.id || null;
+                  setPickerAfterId(lastId);
+                  setPickerOpen(true);
+                }
+              : undefined
+          }
         />
       ) : (
         <>
@@ -1148,6 +1214,19 @@ export function PresentationPane({
                 className="presentation-nav"
                 disabled={saving}
                 onClick={() => {
+                  const id = deck?.slides?.[safeIdx]?.id || null;
+                  setPickerAfterId(id);
+                  setPickerOpen(true);
+                }}
+                title="Добавить новый слайд после текущего"
+              >
+                + Слайд
+              </button>
+              <button
+                type="button"
+                className="presentation-nav"
+                disabled={saving}
+                onClick={() => {
                   const id = deck?.slides?.[safeIdx]?.id;
                   if (id) void structureOp({ op: "duplicate", id });
                 }}
@@ -1174,6 +1253,27 @@ export function PresentationPane({
                 }}
               >
                 Удалить
+              </button>
+            </>
+          ) : null}
+          {currentPng ? (
+            <>
+              <span className="presentation-toolbar-sep" aria-hidden />
+              <button
+                type="button"
+                className="presentation-nav"
+                onClick={() => void handleCopyPng()}
+                title="Скопировать PNG слайда в буфер обмена"
+              >
+                {copiedPng ? "Скопировано ✓" : "Копировать PNG"}
+              </button>
+              <button
+                type="button"
+                className="presentation-nav"
+                onClick={() => void handleDownloadPng()}
+                title="Скачать текущий слайд как PNG"
+              >
+                Скачать PNG
               </button>
             </>
           ) : null}
@@ -1264,6 +1364,23 @@ export function PresentationPane({
           diagramPalette={defaultPalette}
         />
       ) : null}
+
+      <LayoutPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        afterSlideNum={
+          pickerAfterId && deck?.slides
+            ? deck.slides.findIndex((s) => s.id === pickerAfterId) + 1
+            : undefined
+        }
+        onPick={(layout) => {
+          void structureOp({
+            op: "insert",
+            id: pickerAfterId || undefined,
+            layout,
+          });
+        }}
+      />
     </div>
   );
 }

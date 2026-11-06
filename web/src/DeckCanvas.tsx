@@ -624,10 +624,46 @@ function SlideBody({
                     </Tag>
                   );
                 })}
+                {editing ? (
+                  <td className="deck-cv-table-op-cell">
+                    {ri > 0 && rows.length > 2 ? (
+                      <button
+                        type="button"
+                        className="deck-cv-inline-del"
+                        title="Удалить строку"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = rows.filter((_, idx) => idx !== ri);
+                          onField({ rows: next });
+                        }}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
         </table>
+        {editing ? (
+          <div className="deck-cv-table-actions">
+            <button
+              type="button"
+              className="deck-cv-inline-add"
+              onClick={(e) => {
+                e.stopPropagation();
+                const cols = rows[0]?.length || 3;
+                const newRow = Array.from({ length: cols }, (_, i) =>
+                  i === 0 ? "Новая строка" : "—",
+                );
+                onField({ rows: [...rows, newRow] });
+              }}
+            >
+              + Строка таблицы
+            </button>
+          </div>
+        ) : null}
         {slide.caption ? (
           <Editable
             className="deck-cv-cap"
@@ -1123,23 +1159,55 @@ function Bullets({
   bands?: boolean;
 }) {
   const bullets = slide.bullets || [];
-  if (!bullets.length) return null;
+  if (!bullets.length && !editing) return null;
   return (
-    <ul className={`deck-cv-bullets${bands ? " deck-cv-bullets--bands" : ""}`}>
-      {bullets.map((b, i) => (
-        <li key={i}>
-          <Editable
-            value={b}
-            editing={editing}
-            onCommit={(v) => {
-              const next = [...bullets];
-              next[i] = v;
-              onField({ bullets: next });
+    <div className="deck-cv-bullets-wrap">
+      <ul className={`deck-cv-bullets${bands ? " deck-cv-bullets--bands" : ""}`}>
+        {bullets.map((b, i) => (
+          <li key={i}>
+            <div className="deck-cv-bullet-row">
+              <Editable
+                value={b}
+                editing={editing}
+                onCommit={(v) => {
+                  const next = [...bullets];
+                  next[i] = v;
+                  onField({ bullets: next });
+                }}
+              />
+              {editing && bullets.length > 1 ? (
+                <button
+                  type="button"
+                  className="deck-cv-inline-del"
+                  title="Удалить пункт"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = bullets.filter((_, idx) => idx !== i);
+                    onField({ bullets: next });
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {editing ? (
+        <div className="deck-cv-bullet-actions">
+          <button
+            type="button"
+            className="deck-cv-inline-add"
+            onClick={(e) => {
+              e.stopPropagation();
+              onField({ bullets: [...bullets, "Новый тезис"] });
             }}
-          />
-        </li>
-      ))}
-    </ul>
+          >
+            + Пункт списка
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -12,6 +12,7 @@ type Props = {
   onReorder?: (from: number, to: number) => void;
   onDuplicate?: (index: number) => void;
   onDelete?: (index: number) => void;
+  onAddSlide?: (afterIndex?: number) => void;
 };
 
 export function DeckGallery({
@@ -23,6 +24,7 @@ export function DeckGallery({
   onReorder,
   onDuplicate,
   onDelete,
+  onAddSlide,
 }: Props) {
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   if (!slidePngs.length) return null;
@@ -109,6 +111,34 @@ export function DeckGallery({
           </motion.div>
         );
       })}
+      {canStructure && onAddSlide ? (
+        <motion.div
+          role="listitem"
+          className="deck-gallery-card deck-gallery-card--add"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.28,
+            delay: Math.min(slidePngs.length * 0.03, 0.35),
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          whileHover={{ y: -2 }}
+        >
+          <button
+            type="button"
+            className="deck-gallery-add-btn"
+            onClick={() => onAddSlide(slidePngs.length - 1)}
+            title="Добавить новый слайд"
+          >
+            <span className="deck-gallery-add-frame">
+              <span className="deck-gallery-add-icon" aria-hidden>+</span>
+            </span>
+            <span className="deck-gallery-caption">
+              <span className="deck-gallery-caption-title">Добавить слайд</span>
+            </span>
+          </button>
+        </motion.div>
+      ) : null}
     </div>
   );
 }
