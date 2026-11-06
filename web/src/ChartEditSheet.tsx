@@ -65,8 +65,19 @@ export function ChartEditSheet({
   onDraftChange,
   onPreviewHtml,
 }: Props) {
+  const DEFAULT_TYPES = [
+    "bar",
+    "line",
+    "area",
+    "donut",
+    "grouped_bar",
+    "horizontal_bar",
+    "stacked_bar",
+    "scatter",
+    "kpi",
+  ];
   const usable = palettes.filter((p) => p.id !== "auto");
-  const types = catalogTypes.filter(Boolean);
+  const types = (catalogTypes && catalogTypes.length > 0 ? catalogTypes : DEFAULT_TYPES).filter(Boolean);
   const [palette, setPalette] = useState(initialPalette);
   const [chartType, setChartType] = useState(initialType || types[0] || "bar");
   const [styleNotes, setStyleNotes] = useState("");

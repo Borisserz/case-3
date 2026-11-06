@@ -19,10 +19,15 @@ def rebuild_run_docs(
     Raises ``RenderError`` from ``render_tex``; ``FileNotFoundError`` if no .tex.
     """
     out_dir = out_dir.resolve()
+    fmt = formats if formats is not None else {"pdf", "docx"}
+    fmt = {f for f in fmt if f and f != "none"}
     texs = sorted(out_dir.glob("*.tex"))
     if not texs:
+        if not fmt or (out_dir / "slides" / "deck.json").is_file():
+            return {}
         raise FileNotFoundError("no .tex in run")
-    fmt = formats if formats is not None else {"pdf", "docx"}
+    if not fmt:
+        return {}
     figs_dir = out_dir / "figures"
     return render_tex(
         texs[0],

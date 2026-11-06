@@ -1,13 +1,13 @@
-/** Liber desk: regenerate or img2img-edit one photo — inline sheet (как графики). */
+/** Liber desk: regenerate, img2img-edit, or upload one photo. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { useFocusTrap } from "./useFocusTrap";
 
-export type ImageEditMode = "generate" | "edit";
+export type ImageEditMode = "generate" | "edit" | "upload";
 
 export type ImageEditRequest = {
   figureId: string;
-  mode: ImageEditMode;
+  mode: "generate" | "edit";
   prompt: string;
   caption: string;
 };
@@ -18,12 +18,12 @@ type Props = {
   trapFocus?: boolean;
   figureId: string;
   caption?: string;
-  /** @deprecated Kept for callers; preview stays on the figure above (как графики). */
   previewUrl?: string;
   busy?: boolean;
   error?: string | null;
   onCancel: () => void;
   onSubmit: (req: ImageEditRequest) => void;
+  onUpload?: (file: File, caption?: string) => void;
 };
 
 export function ImageEditModal({
@@ -31,34 +31,80 @@ export function ImageEditModal({
   trapFocus = true,
   figureId,
   caption: initialCaption,
+  previewUrl,
   busy,
   error,
   onCancel,
   onSubmit,
+  onUpload,
 }: Props) {
   const [mode, setMode] = useState<ImageEditMode>("generate");
   const [prompt, setPrompt] = useState("");
   const [caption, setCaption] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open && trapFocus });
 
   useEffect(() => {
     if (!open) return;
-    setMode("generate");
+    setMode(previewUrl ? "edit" : "generate");
     setPrompt("");
     setCaption((initialCaption || "").trim());
-  }, [open, figureId, initialCaption]);
+    setFile(null);
+    setFilePreview(null);
+  }, [open, figureId, initialCaption, previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (filePreview) URL.revokeObjectURL(filePreview);
+    };
+  }, [filePreview]);
 
   if (!open) return null;
 
+  function onSelectFile(selected: File | null) {
+    if (!selected) return;
+    if (!selected.type.startsWith("image/")) return;
+    if (filePreview) URL.revokeObjectURL(filePreview);
+    setFile(selected);
+    setFilePreview(URL.createObjectURL(selected));
+  }
+
+  function handleFileInput(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] || null;
+    onSelectFile(f);
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0] || null;
+    onSelectFile(f);
+  }
+
   function apply() {
-    const p = prompt.trim();
+    if (busy) return;
     const cap = caption.trim();
-    if (!p || !cap || busy) return;
+
+    if (mode === "upload") {
+      if (file && onUpload) {
+        onUpload(file, cap);
+      }
+      return;
+    }
+
+    const p = prompt.trim();
+    if (!p) return;
     onSubmit({ figureId, mode, prompt: p, caption: cap });
   }
 
-  const canApply = Boolean(prompt.trim() && caption.trim()) && !busy;
+  const canApply =
+    !busy &&
+    ((mode === "upload" && Boolean(file)) ||
+      ((mode === "generate" || mode === "edit") && Boolean(prompt.trim())));
 
   return (
     <div
@@ -83,8 +129,18 @@ export function ImageEditModal({
         </button>
       </header>
 
+      {previewUrl && mode !== "upload" ? (
+        <div className="img-edit-preview-current">
+          <img src={previewUrl} alt="Текущее фото" />
+          <div className="img-edit-preview-meta">
+            <span className="img-edit-preview-label">Текущее изображение</span>
+            <span className="img-edit-preview-fid">{figureId}</span>
+          </div>
+        </div>
+      ) : null}
+
       <section className="chart-edit-block">
-        <label className="field">Режим</label>
+        <label className="field">Режим замены</label>
         <div className="chips img-edit-modes" role="group" aria-label="Режим">
           <button
             type="button"
@@ -100,52 +156,105 @@ export function ImageEditModal({
             disabled={busy}
             onClick={() => setMode("edit")}
           >
-            Внести изменения
+            Изменить детали
           </button>
+          {onUpload ? (
+            <button
+              type="button"
+              className={`chip${mode === "upload" ? " on" : ""}`}
+              disabled={busy}
+              onClick={() => setMode("upload")}
+            >
+              Загрузить файл
+            </button>
+          ) : null}
         </div>
         <p className="chart-edit-foot-hint" style={{ marginTop: "0.45rem" }}>
-          {mode === "generate"
-            ? "Новое фото по вашему описанию"
-            : "Правки поверх текущего кадра"}
+          {mode === "generate" && "Image API сгенерирует новое изображение по вашему описанию"}
+          {mode === "edit" && "Image API изменит детали поверх текущего изображения (пользовательского или сгенерированного)"}
+          {mode === "upload" && "Загрузить своё изображение с компьютера (.png, .jpg, .webp)"}
         </p>
       </section>
 
+      {mode === "upload" ? (
+        <section className="chart-edit-block">
+          <label className="field">Файл изображения</label>
+          <div
+            className={`img-edit-dropzone${dragOver ? " is-drag" : ""}${file ? " has-file" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/avif"
+              style={{ display: "none" }}
+              onChange={handleFileInput}
+              disabled={busy}
+            />
+            {filePreview ? (
+              <div className="img-edit-file-selected">
+                <img src={filePreview} alt="Превью" />
+                <div className="img-edit-file-meta">
+                  <span className="img-edit-file-name">{file?.name}</span>
+                  <span className="img-edit-file-size">
+                    {Math.round((file?.size || 0) / 1024)} КБ
+                  </span>
+                  <span className="img-edit-file-change">Нажмите для выбора другого файла</span>
+                </div>
+              </div>
+            ) : (
+              <div className="img-edit-drop-prompt">
+                <span className="img-edit-drop-icon" aria-hidden>📁</span>
+                <span className="img-edit-drop-text">Перетащите сюда фото или нажмите для выбора</span>
+                <span className="img-edit-drop-sub">PNG, JPEG, WebP</span>
+              </div>
+            )}
+          </div>
+        </section>
+      ) : (
+        <section className="chart-edit-block">
+          <label className="field" htmlFor={`img-prompt-${figureId}`}>
+            {mode === "generate" ? "Описание нового фото" : "Что изменить на фото"}
+          </label>
+          <textarea
+            id={`img-prompt-${figureId}`}
+            rows={3}
+            className="img-edit-textarea"
+            placeholder={
+              mode === "generate"
+                ? "современный офисный холл, дневной свет, без текста на кадре…"
+                : "сделай свет теплее, добавь графики на экраны, убери лишнее…"
+            }
+            value={prompt}
+            disabled={busy}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canApply) {
+                e.preventDefault();
+                apply();
+              }
+            }}
+          />
+        </section>
+      )}
+
       <section className="chart-edit-block">
         <label className="field" htmlFor={`img-cap-${figureId}`}>
-          Подпись в отчёте
+          Подпись к фото
         </label>
         <input
           id={`img-cap-${figureId}`}
           type="text"
-          placeholder="короткая подпись на русском…"
+          placeholder="краткая подпись на русском…"
           value={caption}
           disabled={busy}
           onChange={(e) => setCaption(e.target.value)}
-        />
-      </section>
-
-      <section className="chart-edit-block">
-        <label className="field" htmlFor={`img-prompt-${figureId}`}>
-          {mode === "generate" ? "Описание нового фото" : "Что изменить"}
-        </label>
-        <textarea
-          id={`img-prompt-${figureId}`}
-          rows={3}
-          className="img-edit-textarea"
-          placeholder={
-            mode === "generate"
-              ? "современный офисный холл, дневной свет, без текста на кадре…"
-              : "сделай свет теплее, убери лишнее со стола…"
-          }
-          value={prompt}
-          disabled={busy}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canApply) {
-              e.preventDefault();
-              apply();
-            }
-          }}
         />
       </section>
 
@@ -153,7 +262,9 @@ export function ImageEditModal({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Подпись и PNG — в Preview сразу; PDF и DOCX — на «Готово».
+          {mode === "upload"
+            ? "Файл мгновенно сохранится в слайд и обновит PPTX/превью."
+            : "Запрос будет отправлен в Image API контура Liber."}
         </p>
         <div className="chart-edit-actions">
           <button
@@ -162,7 +273,13 @@ export function ImageEditModal({
             disabled={!canApply}
             onClick={apply}
           >
-            {busy ? "Обновляю…" : "В превью"}
+            {busy
+              ? "Обновляю…"
+              : mode === "upload"
+                ? "Загрузить фото"
+                : mode === "generate"
+                  ? "Сгенерировать"
+                  : "Применить правки"}
           </button>
           <button
             type="button"

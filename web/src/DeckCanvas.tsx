@@ -164,7 +164,7 @@ function Editable({
   );
 }
 
-function mediaUrl(
+export function mediaUrl(
   runId: string,
   id: string | undefined,
   version?: number,
@@ -212,7 +212,9 @@ function MediaSlot({
   const img = mediaUrl(runId, mediaId, version);
   const live = Boolean(previewHtml && mediaId?.startsWith("cht_"));
   const diagram = Boolean(diagramMermaid && mediaId?.startsWith("dia_"));
-  const clickable = Boolean(editing && mediaId && onMediaClick);
+  const effectiveId = mediaId || "usr_01";
+  const kind = mediaKind(effectiveId);
+  const clickable = Boolean(editing && onMediaClick);
   const className = `deck-cv-media${hero ? " deck-cv-media-hero" : ""}${
     clickable ? " is-editable" : ""
   }${open ? " is-open" : ""}`;
@@ -227,20 +229,23 @@ function MediaSlot({
   ) : img ? (
     <img src={img} alt="" />
   ) : (
-    <div className="deck-cv-empty">Media</div>
+    <div className="deck-cv-empty deck-cv-empty--clickable">
+      <span className="deck-cv-empty-icon" aria-hidden>📷</span>
+      <span>{editing ? "+ Добавить фото" : "Медиа"}</span>
+    </div>
   );
-  if (clickable && mediaId) {
+  if (clickable) {
     return (
       <button
         type="button"
         className={className}
-        aria-label={mediaLabel(mediaKind(mediaId))}
+        aria-label={mediaLabel(kind)}
         aria-pressed={open}
-        onClick={() => onMediaClick?.(mediaId, mediaKind(mediaId))}
+        onClick={() => onMediaClick?.(effectiveId, kind)}
       >
         {body}
         <span className="deck-cv-media-hint" aria-hidden>
-          Изменить
+          {mediaId ? "Изменить" : "+ Добавить"}
         </span>
         {children}
       </button>
@@ -331,6 +336,16 @@ function SlideBody({
               <img src={img} alt="" />
               <div className="deck-cv-bleed-veil" />
             </div>
+          ) : null}
+          {editing ? (
+            <button
+              type="button"
+              className="deck-cv-bleed-edit-btn"
+              onClick={() => onMediaClick?.(mid || "usr_01", "photo")}
+              title="Изменить фото обложки"
+            >
+              📷 Изменить фото
+            </button>
           ) : null}
           <div className="deck-cv-title-main deck-cv-title-main--bleed">
             <div className="deck-cv-brand">{brand}</div>
@@ -1021,6 +1036,16 @@ function SlideBody({
             <img src={img} alt="" />
             <div className="deck-cv-bleed-veil" />
           </div>
+        ) : null}
+        {editing ? (
+          <button
+            type="button"
+            className="deck-cv-bleed-edit-btn"
+            onClick={() => onMediaClick?.(mid || "usr_01", "photo")}
+            title="Изменить фото слайда"
+          >
+            📷 Изменить фото
+          </button>
         ) : null}
         <div className="deck-cv-title-main deck-cv-title-main--bleed">
           <div className="deck-cv-brand">{brand}</div>

@@ -8,9 +8,9 @@ import logging
 import re
 import time
 from functools import partial
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -348,6 +348,125 @@ async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> 
             "mode": result.get("mode"),
             "prompt": result.get("prompt"),
             "caption": result.get("caption"),
+            "preview_figure": {
+                "id": figure_id,
+                "kind": "figure",
+                "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
+            },
+        },
+    )
+
+
+@router.post("/api/runs/{run_id}/figures/{figure_id}/upload")
+async def upload_run_figure(
+    run_id: str,
+    figure_id: str,
+    image: Optional[UploadFile] = File(None),
+    file: Optional[UploadFile] = File(None),
+    caption: str = Form(""),
+) -> dict[str, Any]:
+    """Replace one photo with an uploaded image file; rebuild PDF/DOCX and deck."""
+    if not FILE_OK.match(figure_id):
+        raise HTTPException(400, detail="invalid figure_id")
+    if figure_id.startswith("cht_"):
+        raise HTTPException(400, detail="cannot upload to chart_id")
+    upload = image or file
+    if upload is None:
+        raise HTTPException(422, detail="field 'image' or 'file' required")
+    out_dir = resolve_run_dir(run_id)
+
+    raw = await upload.read()
+    if not raw:
+        raise HTTPException(400, detail="uploaded file is empty")
+
+    from io import BytesIO
+    from PIL import Image
+
+    try:
+        im = Image.open(BytesIO(raw))
+        im.load()
+    except Exception as exc:
+        raise HTTPException(400, detail=f"invalid image file: {exc}") from exc
+
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    dest = figs_dir / f"{figure_id}.png"
+
+    from case3.run_undo import capture_before_edit
+    capture_before_edit(out_dir, kind="figure", target=figure_id)
+
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGBA" if "transparency" in im.info else "RGB")
+    im.save(dest, format="PNG")
+
+    caption_clean = caption.strip() or None
+    fj_path = out_dir / "figures.json"
+    if fj_path.is_file():
+        try:
+            fj = json.loads(fj_path.read_text(encoding="utf-8"))
+            figures = list(fj.get("figures") or [])
+            idx = next(
+                (i for i, f in enumerate(figures) if isinstance(f, dict) and f.get("id") == figure_id),
+                -1,
+            )
+            if idx >= 0:
+                fig = dict(figures[idx])
+                if caption_clean:
+                    fig["caption"] = caption_clean
+                figures[idx] = fig
+                fj["figures"] = figures
+                fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    meta_path = out_dir / "meta.json"
+    meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+    media = dict(meta.get("media_status") or {})
+    media[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
+    meta["media_status"] = media
+    meta["last_figure_edit"] = {
+        "id": figure_id,
+        "mode": "upload",
+        "caption": caption_clean,
+        "ts": int(time.time()),
+    }
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    from case3.run_rebuild import rebuild_run_docs
+    try:
+        artifacts = rebuild_run_docs(out_dir, formats={"none"})
+    except Exception:
+        artifacts = {}
+
+    from case3.deck_refresh import refresh_deck_from_ir
+    refresh_deck_from_ir(out_dir)
+
+    v = int(dest.stat().st_mtime)
+    from case3.run_undo import undo_meta
+    result = {
+        "figure_id": figure_id,
+        "mode": "upload",
+        "caption": caption_clean,
+        "media_status": media,
+        "artifacts": {k: str(p) for k, p in artifacts.items()},
+        "version": v,
+        "undo": undo_meta(out_dir),
+    }
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        bust_needles=(figure_id,),
+        extra={
+            "figure_id": figure_id,
+            "mode": "upload",
+            "caption": caption_clean,
             "preview_figure": {
                 "id": figure_id,
                 "kind": "figure",

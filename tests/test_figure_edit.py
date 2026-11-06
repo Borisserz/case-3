@@ -217,3 +217,49 @@ def test_generate_refreshes_existing_deck(
 
     rebuild.assert_called_once()
     assert rebuild.call_args[0][0] == out
+
+
+def test_rebuild_run_docs_no_tex_in_presentation(tmp_path: Path) -> None:
+    from case3.run_rebuild import rebuild_run_docs
+    out = tmp_path / "deck_run"
+    out.mkdir()
+    slides_dir = out / "slides"
+    slides_dir.mkdir()
+    (slides_dir / "deck.json").write_text("{}", encoding="utf-8")
+
+    # Should return empty dict instead of FileNotFoundError
+    res = rebuild_run_docs(out, formats=set())
+    assert res == {}
+    res_none = rebuild_run_docs(out, formats={"none"})
+    assert res_none == {}
+
+
+def test_upload_figure_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+    from case3.api import app
+    from io import BytesIO
+    from PIL import Image
+
+    out = _seed_run(tmp_path, with_deck=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+
+    # create a small test image
+    img = Image.new("RGB", (32, 32), color=(255, 0, 0))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    client = TestClient(app)
+    run_id = out.name
+    with patch("case3.deck_refresh.refresh_deck_from_ir"):
+        resp = client.post(
+            f"/api/runs/{run_id}/figures/usr_01/upload",
+            files={"image": ("test.png", buf.getvalue(), "image/png")},
+            data={"caption": "Загруженное фото"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["figure_id"] == "usr_01"
+    assert data["mode"] == "upload"
+    assert (out / "figures" / "usr_01.png").is_file()

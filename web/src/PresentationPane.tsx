@@ -1,13 +1,13 @@
 /** Liber deck viewer: Julius-like live twin + filmstrip + fullscreen. */
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartEditSheet,
   type ChartEditRequest,
   type PaletteInfo,
 } from "./ChartEditSheet";
-import { DeckCanvas, type DeckMediaKind } from "./DeckCanvas";
+import { DeckCanvas, mediaUrl, type DeckMediaKind } from "./DeckCanvas";
 import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 import {
@@ -447,38 +447,160 @@ export function PresentationPane({
     [markDirty, onEditHistory, runId],
   );
 
+  const mediaSheetRef = useRef<HTMLDivElement | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (openMediaId && mediaSheetRef.current) {
+      mediaSheetRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [openMediaId]);
+
   const onMediaClick = useCallback((id: string, kind: DeckMediaKind) => {
     setOpenMediaId(id);
     setOpenMediaKind(kind);
+    setImageUploadError(null);
   }, []);
 
   const closeMediaSheet = useCallback(() => {
     setOpenMediaId(null);
     setOpenMediaKind(null);
     setChartPreview(null);
+    setImageUploadError(null);
   }, []);
 
   const submitChart = useCallback(
     async (req: ChartEditRequest) => {
-      const ok = await onEditFigure?.(req);
-      if (ok) {
-        // Chart path already soft-rebuilds twin+PPTX; refresh film cache-bust.
+      if (onEditFigure) {
+        const ok = await onEditFigure(req);
+        if (ok) {
+          setMediaVersion((v) => v + 1);
+          await refreshSlidesNow();
+          closeMediaSheet();
+        }
+        return;
+      }
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const res = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(req.figureId)}/edit`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chart_type: req.chartType,
+              palette: req.palette,
+            }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data.detail === "string"
+              ? data.detail
+              : `chart edit ${res.status}`,
+          );
+        }
+        setMediaVersion((v) => v + 1);
         await refreshSlidesNow();
         closeMediaSheet();
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
       }
     },
-    [closeMediaSheet, onEditFigure, refreshSlidesNow],
+    [closeMediaSheet, onEditFigure, refreshSlidesNow, runId],
   );
 
   const submitImage = useCallback(
     async (req: ImageEditRequest) => {
-      const ok = await onEditImage?.(req);
-      if (ok) {
+      if (onEditImage) {
+        const ok = await onEditImage(req);
+        if (ok) {
+          setMediaVersion((v) => v + 1);
+          await refreshSlidesNow();
+          closeMediaSheet();
+        }
+        return;
+      }
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const res = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/figures/${encodeURIComponent(req.figureId)}/edit`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: req.mode,
+              prompt: req.prompt,
+              caption: req.caption,
+            }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data.detail === "string"
+              ? data.detail
+              : `image edit ${res.status}`,
+          );
+        }
+        setMediaVersion((v) => v + 1);
         await refreshSlidesNow();
         closeMediaSheet();
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
       }
     },
-    [closeMediaSheet, onEditImage, refreshSlidesNow],
+    [closeMediaSheet, onEditImage, refreshSlidesNow, runId],
+  );
+
+  const submitImageUpload = useCallback(
+    async (file: File, caption?: string) => {
+      if (!openMediaId) return;
+      setImageUploading(true);
+      setImageUploadError(null);
+      try {
+        const form = new FormData();
+        form.append("image", file);
+        form.append("file", file);
+        if (caption) {
+          form.append("caption", caption);
+        }
+        const res = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/figures/${encodeURIComponent(openMediaId)}/upload`,
+          {
+            method: "POST",
+            body: form,
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data.detail === "string"
+              ? data.detail
+              : `upload failed (${res.status})`,
+          );
+        }
+        setMediaVersion((v) => v + 1);
+        await refreshSlidesNow();
+        closeMediaSheet();
+      } catch (err) {
+        setImageUploadError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setImageUploading(false);
+      }
+    },
+    [closeMediaSheet, openMediaId, refreshSlidesNow, runId],
   );
 
   const openDiagram = diagrams.find((d) => d.id === openMediaId) || null;
@@ -999,7 +1121,7 @@ export function PresentationPane({
                     mediaVersion={mediaVersion}
                     openMediaId={openMediaId}
                     onMediaClick={
-                      onEditFigure || onEditImage ? onMediaClick : undefined
+                      editing ? onMediaClick : undefined
                     }
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
@@ -1033,7 +1155,7 @@ export function PresentationPane({
                     mediaVersion={mediaVersion}
                     openMediaId={openMediaId}
                     onMediaClick={
-                      onEditFigure || onEditImage ? onMediaClick : undefined
+                      editing ? onMediaClick : undefined
                     }
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
@@ -1283,9 +1405,8 @@ export function PresentationPane({
       {editing &&
       view === "slide" &&
       openMediaId &&
-      openMediaKind === "chart" &&
-      onEditFigure ? (
-        <div className="presentation-media-sheet is-below-film">
+      openMediaKind === "chart" ? (
+        <div className="presentation-media-sheet is-below-film" ref={mediaSheetRef}>
           <ChartEditSheet
             open
             trapFocus
@@ -1297,9 +1418,9 @@ export function PresentationPane({
               (openMediaId && chartIndex[openMediaId]?.palette) || defaultPalette
             }
             initialType={(openMediaId && chartIndex[openMediaId]?.type) || ""}
-            busy={editingFigureId === openMediaId}
+            busy={editingFigureId === openMediaId || saving}
             onPreviewHtml={setChartPreview}
-            error={editErrorFigureId === openMediaId ? editError : null}
+            error={editErrorFigureId === openMediaId ? editError : saveError}
             onCancel={closeMediaSheet}
             onSubmit={(req) => void submitChart(req)}
           />
@@ -1331,17 +1452,21 @@ export function PresentationPane({
       {editing &&
       view === "slide" &&
       openMediaId &&
-      openMediaKind === "photo" &&
-      onEditImage ? (
-        <div className="presentation-media-sheet is-below-film">
+      openMediaKind === "photo" ? (
+        <div className="presentation-media-sheet is-below-film" ref={mediaSheetRef}>
           <ImageEditModal
             open
             trapFocus
             figureId={openMediaId}
-            busy={editingFigureId === openMediaId}
-            error={editErrorFigureId === openMediaId ? editError : null}
+            previewUrl={mediaUrl(runId, openMediaId, mediaVersion) || undefined}
+            busy={editingFigureId === openMediaId || imageUploading || saving}
+            error={
+              imageUploadError ||
+              (editErrorFigureId === openMediaId ? editError : saveError)
+            }
             onCancel={closeMediaSheet}
             onSubmit={(req) => void submitImage(req)}
+            onUpload={(file, caption) => void submitImageUpload(file, caption)}
           />
         </div>
       ) : null}
