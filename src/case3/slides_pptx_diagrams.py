@@ -61,6 +61,26 @@ class DiagramSubgraph:
 
 
 @dataclass
+class TimelinePeriod:
+    period: str
+    events: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TimelineSpec:
+    title: str = ""
+    periods: list[TimelinePeriod] = field(default_factory=list)
+
+
+@dataclass
+class MindmapNode:
+    id: str
+    label: str
+    level: int = 0
+    children: list[MindmapNode] = field(default_factory=list)
+
+
+@dataclass
 class DiagramGraph:
     direction: str  # "TD" | "LR"
     nodes: dict[str, DiagramNode] = field(default_factory=dict)
@@ -378,6 +398,96 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
     return DiagramGraph(direction=direction, nodes=nodes, edges=edges, subgraphs=subgraphs)
 
 
+def parse_mermaid_timeline(mermaid: str) -> TimelineSpec | None:
+    """Parse Mermaid timeline diagram syntax into TimelineSpec."""
+    if not mermaid or not isinstance(mermaid, str):
+        return None
+    lines = [ln.strip() for ln in mermaid.strip().splitlines() if ln.strip()]
+    if not lines or not re.match(r"^timeline\b", lines[0], re.IGNORECASE):
+        return None
+
+    spec = TimelineSpec()
+    curr_period: TimelinePeriod | None = None
+
+    for line in lines[1:]:
+        if line.startswith("%%"):
+            continue
+        m_title = re.match(r"^title\s+(.*)$", line, re.IGNORECASE)
+        if m_title:
+            spec.title = m_title.group(1).strip()
+            continue
+        if re.match(r"^section\b", line, re.IGNORECASE):
+            continue
+        if ":" in line:
+            parts = [p.strip() for p in line.split(":") if p.strip()]
+            if not parts:
+                continue
+            if line.startswith(":"):
+                if curr_period is not None:
+                    curr_period.events.extend(parts)
+            else:
+                period_name = parts[0]
+                events = parts[1:]
+                curr_period = TimelinePeriod(period=period_name, events=events)
+                spec.periods.append(curr_period)
+        else:
+            curr_period = TimelinePeriod(period=line, events=[])
+            spec.periods.append(curr_period)
+
+    spec.periods = [p for p in spec.periods if p.period or p.events]
+    return spec if spec.periods else None
+
+
+def parse_mermaid_mindmap(mermaid: str) -> MindmapNode | None:
+    """Parse Mermaid mindmap indentation tree into MindmapNode."""
+    if not mermaid or not isinstance(mermaid, str):
+        return None
+    raw_lines = mermaid.splitlines()
+    non_empty = [ln for ln in raw_lines if ln.strip() and not ln.strip().startswith("%%")]
+    if not non_empty or not re.match(r"^mindmap\b", non_empty[0].strip(), re.IGNORECASE):
+        return None
+
+    def clean_label(text: str) -> str:
+        s = text.strip()
+        m = re.match(r"^(?:[A-Za-z0-9_]+\s*)?(?:\(\((.*?)\)\)|\((.*?)\)|\[(.*?)\]|\)(.*?)\()$", s)
+        if m:
+            lbl = m.group(1) or m.group(2) or m.group(3) or m.group(4) or ""
+            return lbl.strip()
+        if s.lower().startswith("root"):
+            s = s[4:].strip()
+        return s or text.strip()
+
+    nodes_with_indent: list[tuple[int, str]] = []
+    for line in non_empty[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
+        nodes_with_indent.append((indent, clean_label(stripped)))
+
+    if not nodes_with_indent:
+        return None
+
+    root_indent, root_label = nodes_with_indent[0]
+    root_node = MindmapNode(id="root", label=root_label or "Root", level=0)
+    stack: list[tuple[int, MindmapNode]] = [(root_indent, root_node)]
+
+    for ind, lbl in nodes_with_indent[1:]:
+        while stack and stack[-1][0] >= ind:
+            stack.pop()
+        parent = stack[-1][1] if stack else root_node
+
+        child_node = MindmapNode(
+            id=f"n_{len(stack)}_{len(parent.children)}",
+            label=lbl,
+            level=parent.level + 1,
+        )
+        parent.children.append(child_node)
+        stack.append((ind, child_node))
+
+    return root_node
+
+
 def _to_inches(val: Any) -> float:
     if hasattr(val, "inches"):
         return float(val.inches)
@@ -425,57 +535,29 @@ def _set_shape_alpha(shape: Any, alpha: float) -> None:
         pass
 
 
-def add_native_diagram(
+def _draw_native_flowchart(
     slide: Any,
     dia_spec: dict[str, Any],
+    graph: DiagramGraph,
     *,
-    left: Any,
-    top: Any,
-    width: Any,
-    height: Any,
-    colors: dict[str, Any] | None = None,
-    palette: str = "atelier",
-    font_name: str | None = None,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    colors: dict[str, Any],
+    palette: str,
+    font_name: str,
 ) -> bool:
-    """Render a process flowchart into native PowerPoint vector shapes and connectors.
-
-    Returns True if successfully drawn; False if unsupported or density exceeded (triggers fallback).
-    """
-    if not dia_spec or not isinstance(dia_spec, dict):
-        return False
-    dtype = str(dia_spec.get("type", "")).strip().lower()
-    if dtype != "flowchart":
-        return False
-
-    mermaid = str(dia_spec.get("mermaid", "")).strip()
-    if not mermaid:
-        return False
-
-    graph = parse_mermaid_flowchart(mermaid)
-    if not graph or not graph.nodes:
-        return False
-
-    # Guard: density limit for clean slide presentation
-    if len(graph.nodes) > 10:
-        log.info("diagram %s has %d nodes (>10) — falling back to raster PNG", dia_spec.get("id"), len(graph.nodes))
-        return False
-
-    l_in = _to_inches(left)
-    t_in = _to_inches(top)
-    w_in = _to_inches(width)
-    h_in = _to_inches(height)
-
     try:
-        layout = compute_diagram_layout(graph, l_in, t_in, w_in, h_in)
+        layout = compute_diagram_layout(graph, left, top, width, height)
     except Exception as exc:
         log.warning("diagram layout failed for %s: %s", dia_spec.get("id"), exc)
         return False
 
     role_colors = role_colors_for_palette(palette)
-    colors = colors or {}
     line_rgb = _hex_to_rgb(str(colors.get("muted") or "#5c6570"))
     text_default_rgb = _hex_to_rgb(str(colors.get("ink") or "#1a2e22"))
-    deck_font = font_name or "Calibri"
+    deck_font = font_name
 
     is_td = graph.direction in ("TD", "TB")
     shapes_by_id: dict[str, Any] = {}
@@ -496,10 +578,10 @@ def add_native_diagram(
             pad_top = 0.28
             pad_bottom = 0.10
 
-            box_x = max(l_in, min_x - pad_x)
-            box_y = max(t_in, min_y - pad_top)
-            box_w = min(l_in + w_in - box_x, (max_x - min_x) + 2 * pad_x)
-            box_h = min(t_in + h_in - box_y, (max_y - min_y) + pad_top + pad_bottom)
+            box_x = max(left, min_x - pad_x)
+            box_y = max(top, min_y - pad_top)
+            box_w = min(left + width - box_x, (max_x - min_x) + 2 * pad_x)
+            box_h = min(top + height - box_y, (max_y - min_y) + pad_top + pad_bottom)
 
             sg_shape = slide.shapes.add_shape(
                 MSO_SHAPE.ROUNDED_RECTANGLE,
@@ -626,6 +708,377 @@ def add_native_diagram(
 
         return True
     except Exception as exc:
-        log.warning("failed to draw native diagram shapes: %s", exc)
+        log.warning("failed to draw native flowchart shapes: %s", exc)
         return False
+
+
+def _draw_native_timeline(
+    slide: Any,
+    dia_spec: dict[str, Any],
+    spec: TimelineSpec,
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    colors: dict[str, Any],
+    palette: str,
+    font_name: str,
+) -> bool:
+    num_p = len(spec.periods)
+    if num_p < 1 or num_p > 8:
+        return False
+    total_events = sum(len(p.events) for p in spec.periods)
+    if total_events > 16:
+        return False
+
+    deck_font = font_name
+    role_colors = role_colors_for_palette(palette)
+    accent_rgb = _hex_to_rgb(str(colors.get("accent") or role_colors.get("process", {}).get("fill") or "#275035"))
+    line_rgb = _hex_to_rgb(str(colors.get("muted") or "#5c6570"))
+    text_default_rgb = _hex_to_rgb(str(colors.get("ink") or "#1a2e22"))
+    card_bg_rgb = _hex_to_rgb(str(colors.get("card") or "#f7f9f8"))
+
+    curr_top = top
+    curr_height = height
+
+    try:
+        # 1. Optional diagram title
+        if spec.title:
+            title_box = slide.shapes.add_textbox(Inches(left), Inches(curr_top), Inches(width), Inches(0.35))
+            tf = title_box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = spec.title
+            p.font.name = deck_font
+            p.font.size = Pt(12)
+            p.font.bold = True
+            p.font.color.rgb = text_default_rgb
+            curr_top += 0.40
+            curr_height -= 0.40
+
+        # 2. Horizontal timeline spine
+        spine_y = curr_top + curr_height * 0.35
+        spine_margin = 0.4
+        spine_start_x = left + spine_margin
+        spine_end_x = left + width - spine_margin
+        spine_w = spine_end_x - spine_start_x
+
+        spine = slide.shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT,
+            Inches(spine_start_x),
+            Inches(spine_y),
+            Inches(spine_end_x),
+            Inches(spine_y),
+        )
+        spine.line.color.rgb = accent_rgb
+        spine.line.width = Pt(2.5)
+
+        # 3. Period badges and event cards
+        badge_w = min(1.3, (spine_w / num_p) * 0.80)
+        badge_h = 0.36
+        step_x = spine_w / max(1, num_p - 1) if num_p > 1 else 0
+
+        for i, per in enumerate(spec.periods):
+            cx = spine_start_x + i * step_x if num_p > 1 else spine_start_x + spine_w / 2.0
+            bx = cx - badge_w / 2.0
+            by = spine_y - badge_h / 2.0
+
+            badge = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Inches(bx),
+                Inches(by),
+                Inches(badge_w),
+                Inches(badge_h),
+            )
+            badge.fill.solid()
+            badge.fill.fore_color.rgb = accent_rgb
+            badge.line.color.rgb = accent_rgb
+            badge.line.width = Pt(1.0)
+
+            tf = badge.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tf.paragraphs[0]
+            p.text = per.period
+            p.alignment = PP_ALIGN.CENTER
+            p.font.name = deck_font
+            p.font.size = Pt(9.5)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(255, 255, 255)
+
+            if per.events:
+                card_w = min(1.6, max(badge_w, (spine_w / num_p) * 0.90))
+                card_x = cx - card_w / 2.0
+                start_event_y = spine_y + badge_h / 2.0 + 0.12
+
+                for j, ev_text in enumerate(per.events):
+                    card_h = 0.42 if len(ev_text) > 25 else 0.32
+                    card_y = start_event_y + j * (card_h + 0.08)
+                    if card_y + card_h > top + height:
+                        break
+
+                    conn_y1 = by + badge_h if j == 0 else card_y - 0.08
+                    conn = slide.shapes.add_connector(
+                        MSO_CONNECTOR.STRAIGHT,
+                        Inches(cx),
+                        Inches(conn_y1),
+                        Inches(cx),
+                        Inches(card_y),
+                    )
+                    conn.line.color.rgb = line_rgb
+                    conn.line.width = Pt(1.0)
+
+                    ev_shape = slide.shapes.add_shape(
+                        MSO_SHAPE.ROUNDED_RECTANGLE,
+                        Inches(card_x),
+                        Inches(card_y),
+                        Inches(card_w),
+                        Inches(card_h),
+                    )
+                    ev_shape.fill.solid()
+                    ev_shape.fill.fore_color.rgb = card_bg_rgb
+                    ev_shape.line.color.rgb = line_rgb
+                    ev_shape.line.width = Pt(1.0)
+
+                    tf = ev_shape.text_frame
+                    tf.word_wrap = True
+                    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+                    tf.margin_left = Inches(0.06)
+                    tf.margin_right = Inches(0.06)
+                    p = tf.paragraphs[0]
+                    p.text = ev_text
+                    p.alignment = PP_ALIGN.CENTER
+                    p.font.name = deck_font
+                    p.font.size = Pt(8.5)
+                    p.font.color.rgb = text_default_rgb
+
+        return True
+    except Exception as exc:
+        log.warning("failed to draw native timeline shapes: %s", exc)
+        return False
+
+
+def _draw_native_mindmap(
+    slide: Any,
+    dia_spec: dict[str, Any],
+    root_node: MindmapNode,
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    colors: dict[str, Any],
+    palette: str,
+    font_name: str,
+) -> bool:
+    def count_nodes(n: MindmapNode) -> int:
+        return 1 + sum(count_nodes(c) for c in n.children)
+
+    total_nodes = count_nodes(root_node)
+    if total_nodes > 14:
+        return False
+
+    deck_font = font_name
+    role_colors = role_colors_for_palette(palette)
+    accent_rgb = _hex_to_rgb(str(colors.get("accent") or role_colors.get("process", {}).get("fill") or "#275035"))
+    line_rgb = _hex_to_rgb(str(colors.get("muted") or "#5c6570"))
+    text_default_rgb = _hex_to_rgb(str(colors.get("ink") or "#1a2e22"))
+    card_bg_rgb = _hex_to_rgb(str(colors.get("card") or "#f7f9f8"))
+
+    root_w = min(1.8, width * 0.25)
+    root_h = 0.65
+    root_x = left + 0.2
+    root_y = top + (height - root_h) / 2.0
+
+    try:
+        # Draw root shape
+        root_shape = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Inches(root_x),
+            Inches(root_y),
+            Inches(root_w),
+            Inches(root_h),
+        )
+        root_shape.fill.solid()
+        root_shape.fill.fore_color.rgb = accent_rgb
+        root_shape.line.color.rgb = accent_rgb
+        root_shape.line.width = Pt(1.5)
+
+        tf = root_shape.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        p.text = root_node.label
+        p.alignment = PP_ALIGN.CENTER
+        p.font.name = deck_font
+        p.font.size = Pt(11)
+        p.font.bold = True
+        p.font.color.rgb = RGBColor(255, 255, 255)
+
+        branches = root_node.children
+        if not branches:
+            return True
+
+        num_branches = len(branches)
+        branch_w = min(1.7, width * 0.26)
+        branch_h = min(0.55, height / (num_branches * 1.5))
+        branch_x = left + width * 0.34
+
+        branch_gap_y = (height - num_branches * branch_h) / (num_branches + 1)
+
+        for bi, branch in enumerate(branches):
+            by = top + branch_gap_y * (bi + 1) + bi * branch_h
+            b_shape = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Inches(branch_x),
+                Inches(by),
+                Inches(branch_w),
+                Inches(branch_h),
+            )
+            b_shape.fill.solid()
+            b_shape.fill.fore_color.rgb = card_bg_rgb
+            b_shape.line.color.rgb = accent_rgb
+            b_shape.line.width = Pt(1.5)
+
+            tf = b_shape.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tf.paragraphs[0]
+            p.text = branch.label
+            p.alignment = PP_ALIGN.CENTER
+            p.font.name = deck_font
+            p.font.size = Pt(10)
+            p.font.bold = True
+            p.font.color.rgb = text_default_rgb
+
+            # Connector root -> branch
+            rx = root_x + root_w
+            ry = root_y + root_h / 2.0
+            bx_mid = branch_x
+            by_mid = by + branch_h / 2.0
+            conn = slide.shapes.add_connector(
+                MSO_CONNECTOR.ELBOW,
+                Inches(rx),
+                Inches(ry),
+                Inches(bx_mid),
+                Inches(by_mid),
+            )
+            conn.line.color.rgb = accent_rgb
+            conn.line.width = Pt(1.5)
+
+            # Leaves for this branch
+            leaves = branch.children
+            if leaves:
+                num_leaves = len(leaves)
+                leaf_w = min(1.8, width * 0.28)
+                leaf_h = min(0.42, height / max(1, total_nodes * 0.9))
+                leaf_x = left + width * 0.68
+
+                sub_span = max(branch_h, (num_leaves - 1) * (leaf_h + 0.10) + leaf_h)
+                leaf_start_y = by_mid - sub_span / 2.0
+                for li, leaf in enumerate(leaves):
+                    ly = leaf_start_y + li * (leaf_h + 0.10)
+                    ly = max(top + 0.05, min(top + height - leaf_h - 0.05, ly))
+                    l_shape = slide.shapes.add_shape(
+                        MSO_SHAPE.ROUNDED_RECTANGLE,
+                        Inches(leaf_x),
+                        Inches(ly),
+                        Inches(leaf_w),
+                        Inches(leaf_h),
+                    )
+                    l_shape.fill.solid()
+                    l_shape.fill.fore_color.rgb = card_bg_rgb
+                    l_shape.line.color.rgb = line_rgb
+                    l_shape.line.width = Pt(1.0)
+
+                    tf = l_shape.text_frame
+                    tf.word_wrap = True
+                    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+                    p = tf.paragraphs[0]
+                    p.text = leaf.label
+                    p.alignment = PP_ALIGN.CENTER
+                    p.font.name = deck_font
+                    p.font.size = Pt(9)
+                    p.font.color.rgb = text_default_rgb
+
+                    l_conn = slide.shapes.add_connector(
+                        MSO_CONNECTOR.ELBOW,
+                        Inches(branch_x + branch_w),
+                        Inches(by_mid),
+                        Inches(leaf_x),
+                        Inches(ly + leaf_h / 2.0),
+                    )
+                    l_conn.line.color.rgb = line_rgb
+                    l_conn.line.width = Pt(1.0)
+
+        return True
+    except Exception as exc:
+        log.warning("failed to draw native mindmap shapes: %s", exc)
+        return False
+
+
+def add_native_diagram(
+    slide: Any,
+    dia_spec: dict[str, Any],
+    *,
+    left: Any,
+    top: Any,
+    width: Any,
+    height: Any,
+    colors: dict[str, Any] | None = None,
+    palette: str = "atelier",
+    font_name: str | None = None,
+) -> bool:
+    """Render a diagram into native PowerPoint vector shapes and connectors.
+
+    Supported types: 'flowchart', 'timeline', 'mindmap'.
+    Returns True if successfully drawn; False if unsupported or density exceeded (triggers fallback).
+    """
+    if not dia_spec or not isinstance(dia_spec, dict):
+        return False
+    dtype = str(dia_spec.get("type", "")).strip().lower()
+    mermaid = str(dia_spec.get("mermaid", "")).strip()
+    if not mermaid:
+        return False
+
+    l_in = _to_inches(left)
+    t_in = _to_inches(top)
+    w_in = _to_inches(width)
+    h_in = _to_inches(height)
+    colors_dict = colors or {}
+    font = font_name or "Calibri"
+
+    if dtype == "flowchart":
+        graph = parse_mermaid_flowchart(mermaid)
+        if not graph or not graph.nodes:
+            return False
+        if len(graph.nodes) > 10:
+            log.info("flowchart %s has %d nodes (>10) — falling back to raster PNG", dia_spec.get("id"), len(graph.nodes))
+            return False
+        return _draw_native_flowchart(
+            slide, dia_spec, graph,
+            left=l_in, top=t_in, width=w_in, height=h_in,
+            colors=colors_dict, palette=palette, font_name=font,
+        )
+    elif dtype == "timeline":
+        tl_spec = parse_mermaid_timeline(mermaid)
+        if not tl_spec or not tl_spec.periods:
+            return False
+        return _draw_native_timeline(
+            slide, dia_spec, tl_spec,
+            left=l_in, top=t_in, width=w_in, height=h_in,
+            colors=colors_dict, palette=palette, font_name=font,
+        )
+    elif dtype == "mindmap":
+        root_node = parse_mermaid_mindmap(mermaid)
+        if not root_node:
+            return False
+        return _draw_native_mindmap(
+            slide, dia_spec, root_node,
+            left=l_in, top=t_in, width=w_in, height=h_in,
+            colors=colors_dict, palette=palette, font_name=font,
+        )
+
+    return False
 

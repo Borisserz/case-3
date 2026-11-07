@@ -232,12 +232,10 @@ def _make_dummy_png(path) -> None:
     ("dtype", "mermaid_body"),
     [
         ("sequence", "sequenceDiagram\nAlice->>Bob: Ping\nBob-->>Alice: Pong"),
-        ("mindmap", "mindmap\n  root((Цели))\n    Маркетинг\n    Продажи"),
-        ("timeline", "timeline\n  title История\n  2024 : Старт\n  2025 : Рост"),
         ("stateDiagram", "stateDiagram-v2\n  [*] --> Active\n  Active --> [*]"),
     ],
 )
-def test_non_flowcharts_fallback_to_raster(tmp_path, dtype, mermaid_body):
+def test_non_supported_diagrams_fallback_to_raster(tmp_path, dtype, mermaid_body):
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
     from case3.slides_pptx_native import build_native_pptx
@@ -280,6 +278,59 @@ def test_non_flowcharts_fallback_to_raster(tmp_path, dtype, mermaid_body):
     # In fallback, slide contains a PICTURE shape for the raster PNG
     picture_shapes = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
     assert len(picture_shapes) == 1
+
+
+@pytest.mark.parametrize(
+    ("dtype", "mermaid_body"),
+    [
+        ("mindmap", "mindmap\n  root((Цели))\n    Маркетинг\n    Продажи"),
+        ("timeline", "timeline\n  title История\n  2024 : Старт\n  2025 : Рост"),
+    ],
+)
+def test_native_diagram_timeline_and_mindmap_in_deck(tmp_path, dtype, mermaid_body):
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    from case3.slides_pptx_native import build_native_pptx
+
+    png_path = tmp_path / f"dia_{dtype}.png"
+    _make_dummy_png(png_path)
+
+    deck = {
+        "title": "Тест нативных диаграмм",
+        "style": {"theme_pack": "atelier"},
+        "slides": [
+            {
+                "id": "s1",
+                "layout": "media_hero",
+                "title": f"Нативная диаграмма {dtype}",
+                "media_id": f"dia_{dtype}",
+            }
+        ],
+    }
+    diagrams_by_id = {
+        f"dia_{dtype}": {
+            "id": f"dia_{dtype}",
+            "type": dtype,
+            "title": f"Нативная диаграмма {dtype}",
+            "mermaid": mermaid_body,
+        }
+    }
+    media_by_id = {f"dia_{dtype}": png_path}
+
+    out_pptx = tmp_path / f"deck_native_{dtype}.pptx"
+    res = build_native_pptx(
+        deck,
+        out_pptx,
+        media_by_id=media_by_id,
+        diagrams_by_id=diagrams_by_id,
+    )
+    assert res.is_file()
+    prs = Presentation(str(res))
+    slide = prs.slides[0]
+    # Native diagrams place vector shapes and connectors; no PICTURE fallback
+    picture_shapes = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(picture_shapes) == 0
+    assert len(slide.shapes) >= 3
 
 
 def test_mixed_deck_has_native_and_raster_slides(tmp_path):
@@ -398,6 +449,60 @@ def test_add_native_diagram_renders_subgraph_frames():
     assert placed is True
     # In addition to 4 nodes + 3 connectors, there should be 2 subgraph container shapes
     assert len(slide.shapes) >= 9
+
+
+def test_add_native_diagram_timeline():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    spec = {
+        "id": "dia_tl",
+        "type": "timeline",
+        "title": "Дорожная карта",
+        "mermaid": """timeline
+        title Дорожная карта 2024-2026
+        2024 : Исследование : MVP
+        2025 : Масштабирование : B2B пилоты
+        2026 : Лидерство на рынке
+        """,
+    }
+    placed = add_native_diagram(
+        slide, spec, left=Inches(1), top=Inches(1), width=Inches(8), height=Inches(4), colors={"accent": "#275035"}
+    )
+    assert placed is True
+    # At least spine line + 3 period badges + event cards
+    assert len(slide.shapes) >= 4
+
+
+def test_add_native_diagram_mindmap():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    spec = {
+        "id": "dia_mm",
+        "type": "mindmap",
+        "title": "Карта целей",
+        "mermaid": """mindmap
+          root((Стратегия))
+            Маркетинг
+              Лидогенерация
+            Продажи
+              Enterprise
+        """,
+    }
+    placed = add_native_diagram(
+        slide, spec, left=Inches(1), top=Inches(1), width=Inches(8), height=Inches(5), colors={"accent": "#275035"}
+    )
+    assert placed is True
+    # Central root + 2 level-1 branches + 2 level-2 leaves + connectors
+    assert len(slide.shapes) >= 5
+
 
 
 
