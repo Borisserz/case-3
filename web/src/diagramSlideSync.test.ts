@@ -63,4 +63,22 @@ describe("diagramSlideSync", () => {
     assert.equal(idxB, 1);
     assert.equal(idxD, 2);
   });
+
+  it("prefers explicit bullet_node_map over keyword heuristic", () => {
+    // Even if bullet text has completely arbitrary words, bullet_node_map takes priority
+    const matched = matchBulletToNodeIds(
+      "Совершенно другой текст без ключевых слов",
+      0,
+      sampleNodes,
+      3,
+      { "0": "B" },
+    );
+    assert.deepEqual(Array.from(matched), ["B"]);
+  });
+
+  it("reverse maps nodeId via bullet_node_map even with arbitrary text", () => {
+    const bullets = ["Кастомный текст 1", "Кастомный текст 2"];
+    const idx = matchNodeToBulletIndex("B", sampleNodes, bullets, { "1": "B" });
+    assert.equal(idx, 1);
+  });
 });

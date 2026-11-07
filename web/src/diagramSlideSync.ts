@@ -35,8 +35,23 @@ export function matchBulletToNodeIds(
   bulletIndex: number,
   nodes: DiaNode[],
   totalBullets: number = 0,
+  bulletNodeMap?: Record<string, string | string[]>,
 ): Set<string> {
   if (!nodes || nodes.length === 0) return new Set();
+
+  // 0. Explicit persistent mapping priority (survives copy edits)
+  if (bulletNodeMap) {
+    const key = String(bulletIndex);
+    const mapped = bulletNodeMap[key];
+    if (mapped) {
+      if (Array.isArray(mapped)) {
+        const found = mapped.filter((id) => nodes.some((n) => n.id === id));
+        if (found.length > 0) return new Set(found);
+      } else if (nodes.some((n) => n.id === mapped)) {
+        return new Set([mapped]);
+      }
+    }
+  }
 
   const bulletNorm = normalizeText(bullet);
   const bulletKeywords = extractKeywords(bullet);
@@ -110,12 +125,28 @@ export function matchNodeToBulletIndex(
   nodeId: string,
   nodes: DiaNode[],
   bullets: string[],
+  bulletNodeMap?: Record<string, string | string[]>,
 ): number | null {
   if (!bullets || bullets.length === 0 || !nodeId) return null;
 
+  // 0. Explicit persistent mapping priority
+  if (bulletNodeMap) {
+    for (const [idxStr, mapped] of Object.entries(bulletNodeMap)) {
+      const idx = parseInt(idxStr, 10);
+      if (!Number.isNaN(idx) && idx >= 0 && idx < bullets.length) {
+        if (Array.isArray(mapped) && mapped.includes(nodeId)) {
+          return idx;
+        }
+        if (mapped === nodeId) {
+          return idx;
+        }
+      }
+    }
+  }
+
   // 1. Direct check using matchBulletToNodeIds
   for (let i = 0; i < bullets.length; i++) {
-    const matched = matchBulletToNodeIds(bullets[i], i, nodes, bullets.length);
+    const matched = matchBulletToNodeIds(bullets[i], i, nodes, bullets.length, bulletNodeMap);
     if (matched.has(nodeId)) {
       return i;
     }

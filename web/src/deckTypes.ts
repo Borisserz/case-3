@@ -32,6 +32,7 @@ export type DeckSlide = {
   chart_id?: string;
   media_id?: string;
   chapter?: number;
+  bullet_node_map?: Record<string, string | string[]>;
 };
 
 export type DeckStyle = {

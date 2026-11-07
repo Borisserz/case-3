@@ -266,19 +266,26 @@ function MediaSlot({
   );
   if (clickable) {
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className={className}
         aria-label={mediaLabel(kind)}
         aria-pressed={open}
         onClick={() => onMediaClick?.(effectiveId, kind)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onMediaClick?.(effectiveId, kind);
+          }
+        }}
       >
         {body}
         <span className="deck-cv-media-hint" aria-hidden>
           {mediaId ? "Изменить" : "+ Добавить"}
         </span>
         {children}
-      </button>
+      </div>
     );
   }
   return (
@@ -395,13 +402,14 @@ function SlideBody({
       hoveredBulletIdx,
       diagramIr.nodes,
       slide.bullets.length,
+      slide.bullet_node_map,
     );
-  }, [hoveredBulletIdx, diagramIr, slide.bullets]);
+  }, [hoveredBulletIdx, diagramIr, slide.bullets, slide.bullet_node_map]);
 
   const highlightedBulletIdx = useMemo(() => {
     if (!hoveredNodeId || !diagramIr || !slide.bullets) return null;
-    return matchNodeToBulletIndex(hoveredNodeId, diagramIr.nodes, slide.bullets);
-  }, [hoveredNodeId, diagramIr, slide.bullets]);
+    return matchNodeToBulletIndex(hoveredNodeId, diagramIr.nodes, slide.bullets, slide.bullet_node_map);
+  }, [hoveredNodeId, diagramIr, slide.bullets, slide.bullet_node_map]);
 
   const handleDiagramZoom = useCallback(() => {
     if (!onDiagramZoom || !diagramMermaid) return;

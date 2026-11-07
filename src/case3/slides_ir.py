@@ -799,6 +799,14 @@ def _parse_slide(
             if not body and not bullets:
                 out["layout"] = "media_hero"
                 layout = "media_hero"
+        if isinstance(raw.get("bullet_node_map"), dict):
+            out["bullet_node_map"] = {
+                str(k): (
+                    [str(x) for x in v] if isinstance(v, list) else str(v)
+                )
+                for k, v in raw["bullet_node_map"].items()
+                if v is not None
+            }
     elif layout == "stat_hero":
         raw_kpis = raw.get("kpis")
         if not raw_kpis and (raw.get("value") or raw.get("label")):

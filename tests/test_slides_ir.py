@@ -718,3 +718,28 @@ def test_multiline_title_takeaway_keeps_hero_metric_pairs() -> None:
         ("35%", "Доля"),
         ("42", "NPS"),
     ]
+
+
+def test_parse_deck_ir_preserves_bullet_node_map() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "T"},
+                {
+                    "id": "s02",
+                    "layout": "media_split",
+                    "title": "Схема процесса",
+                    "media_id": "dia_01",
+                    "bullets": ["Первый шаг", "Второй шаг"],
+                    "bullet_node_map": {"0": "A", "1": "B"},
+                },
+                {"id": "s03", "layout": "closing", "title": "C", "bullets": ["Итог"]},
+            ],
+        },
+        source="Схема процесса",
+        allowed_media_ids={"dia_01"},
+    )
+    assert ir["slides"][1]["bullet_node_map"] == {"0": "A", "1": "B"}
+

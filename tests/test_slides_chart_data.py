@@ -289,3 +289,28 @@ def test_scatter_and_kpi_land_as_native_shapes() -> None:
         color=_hex_rgb("#1B3A4B"),
     )
     assert "42" in kpi.shapes[-1].text_frame.text
+
+
+def test_populate_deck_bullet_node_maps() -> None:
+    from case3.slides_chart_data import populate_deck_bullet_node_maps
+
+    deck = {
+        "slides": [
+            {
+                "id": "s1",
+                "layout": "media_split",
+                "media_id": "dia_01",
+                "bullets": ["Первый шаг процесса", "Второй шаг процесса"],
+            }
+        ]
+    }
+    diagrams = [
+        {
+            "id": "dia_01",
+            "type": "flowchart",
+            "mermaid": "flowchart LR\nStep1[Старт] --> Step2[Финиш]",
+        }
+    ]
+    populate_deck_bullet_node_maps(deck, diagrams)
+    assert deck["slides"][0].get("bullet_node_map") == {"0": "Step1", "1": "Step2"}
+

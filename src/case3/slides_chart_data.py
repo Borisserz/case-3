@@ -630,4 +630,61 @@ def ensure_deck_diagrams(
             used_ids.add(str(slide["id"]))
             injected.append(did)
     deck["slides"] = slides
+    populate_deck_bullet_node_maps(deck, diagrams)
     return injected
+
+
+def populate_deck_bullet_node_maps(
+    deck: dict[str, Any],
+    diagrams: list[dict[str, Any]],
+) -> None:
+    """Pre-populate 1:1 or 1:N bullet_node_map on diagram slides in deck."""
+    if not isinstance(deck, dict):
+        return
+    slides = deck.get("slides")
+    if not isinstance(slides, list) or not diagrams:
+        return
+
+    dia_map = {str(d.get("id")): d for d in diagrams if isinstance(d, dict) and d.get("id")}
+
+    for s in slides:
+        if not isinstance(s, dict):
+            continue
+        mid = str(s.get("media_id") or "")
+        if not mid.startswith("dia_"):
+            continue
+        bullets = s.get("bullets")
+        if not bullets or not isinstance(bullets, list) or s.get("bullet_node_map"):
+            continue
+
+        dia = dia_map.get(mid)
+        if not dia:
+            continue
+
+        mermaid = str(dia.get("mermaid") or "")
+        try:
+            from case3.slides_pptx_diagrams import (
+                parse_mermaid_flowchart,
+                parse_mermaid_mindmap,
+                parse_mermaid_timeline,
+            )
+
+            node_ids: list[str] = []
+            g = parse_mermaid_flowchart(mermaid)
+            if g and g.nodes:
+                node_ids = list(g.nodes.keys())
+            else:
+                tl = parse_mermaid_timeline(mermaid)
+                if tl and tl.periods:
+                    node_ids = [f"p_{i}" for i in range(len(tl.periods))]
+                else:
+                    mm = parse_mermaid_mindmap(mermaid)
+                    if mm and mm.children:
+                        node_ids = [c.id for c in mm.children]
+
+            if node_ids:
+                s["bullet_node_map"] = {
+                    str(i): node_ids[i] for i in range(min(len(bullets), len(node_ids)))
+                }
+        except Exception:
+            pass
