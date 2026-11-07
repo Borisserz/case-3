@@ -1016,12 +1016,19 @@ def _materialize_deck_artifacts(
         cols = palette_color_list(str(ch.get("palette") or ""))
         if cid in needed and len(cols) >= 2:
             series_hex_by_id[cid] = cols
+
+    diagrams_by_id: dict[str, dict[str, Any]] = {}
+    for d in (fj.get("diagrams") if isinstance(fj, dict) else []) or []:
+        if isinstance(d, dict) and d.get("id"):
+            diagrams_by_id[str(d["id"]).strip()] = d
+
     build_native_pptx(
         deck,
         tmp_pptx,
         media_by_id=media_map,
         chart_series_by_id=chart_series,
         series_hex_by_id=series_hex_by_id,
+        diagrams_by_id=diagrams_by_id,
     )
     meta["slides_native_charts"] = sorted(chart_series.keys())
 

@@ -188,4 +188,38 @@ def test_add_native_diagram_fallback_on_over_capacity():
     assert len(slide.shapes) == 0
 
 
+def test_build_native_pptx_with_diagram(tmp_path):
+    from pptx import Presentation
+    from case3.slides_pptx_native import build_native_pptx
+
+    deck = {
+        "title": "Тестовый отчёт",
+        "style": {"theme_pack": "atelier"},
+        "slides": [
+            {
+                "id": "s1",
+                "layout": "media_hero",
+                "title": "Схема согласования",
+                "media_id": "dia_01",
+            }
+        ],
+    }
+    diagrams_by_id = {
+        "dia_01": {
+            "id": "dia_01",
+            "type": "flowchart",
+            "title": "Схема согласования",
+            "mermaid": "flowchart TD\nA([Вход]) --> B[Проверка] --> C([Выход])",
+        }
+    }
+    out_pptx = tmp_path / "deck.pptx"
+    res = build_native_pptx(deck, out_pptx, diagrams_by_id=diagrams_by_id)
+    assert res.is_file()
+    prs = Presentation(str(res))
+    assert len(prs.slides) == 1
+    # Check that shapes were created (nodes + connectors) rather than single picture or empty
+    assert len(prs.slides[0].shapes) >= 5
+
+
+
 

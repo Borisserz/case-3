@@ -43,10 +43,12 @@ def build_native_pptx(
     media_by_id: dict[str, Path] | None = None,
     chart_series_by_id: dict[str, dict[str, Any]] | None = None,
     series_hex_by_id: dict[str, list[str]] | None = None,
+    diagrams_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     """Build editable 16:9 PPTX from validated deck IR."""
     media = media_by_id or {}
     chart_series_by_id = chart_series_by_id or {}
+    diagrams_by_id = diagrams_by_id or {}
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -153,6 +155,7 @@ def build_native_pptx(
                 chart_series=chart_series_by_id.get(mid),
                 series_colors=picked_rgbs or series_rgbs,
                 style=style,
+                diagram_spec=diagrams_by_id.get(mid) if mid.startswith("dia_") else None,
             )
         else:
             _layout_bullets(slide, s, colors, style=style)
