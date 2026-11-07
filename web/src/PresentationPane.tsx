@@ -19,6 +19,7 @@ import {
   type ImageEditRequest,
 } from "./ImageEditModal";
 import { DiagramVisualEditor } from "./DiagramVisualEditor";
+import { DiagramFullscreen, type DiagramInfo } from "./DiagramFullscreen";
 import type { DiagramResult } from "./domain/liberTypes";
 import { PresentationFullscreen } from "./PresentationFullscreen";
 import { LayoutPickerModal } from "./LayoutPickerModal";
@@ -161,6 +162,7 @@ export function PresentationPane({
   const [chartPreview, setChartPreview] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerAfterId, setPickerAfterId] = useState<string | null>(null);
+  const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
   const [copiedPng, setCopiedPng] = useState(false);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
@@ -464,6 +466,10 @@ export function PresentationPane({
     setOpenMediaId(id);
     setOpenMediaKind(kind);
     setImageUploadError(null);
+  }, []);
+
+  const handleDiagramZoom = useCallback((dia: DiagramInfo) => {
+    setZoomDiagram(dia);
   }, []);
 
   const closeMediaSheet = useCallback(() => {
@@ -1123,6 +1129,7 @@ export function PresentationPane({
                     onMediaClick={
                       editing ? onMediaClick : undefined
                     }
+                    onDiagramZoom={handleDiagramZoom}
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
                     previewHtml={chartPreview}
@@ -1157,6 +1164,7 @@ export function PresentationPane({
                     onMediaClick={
                       editing ? onMediaClick : undefined
                     }
+                    onDiagramZoom={handleDiagramZoom}
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
                     previewHtml={chartPreview}
@@ -1487,6 +1495,13 @@ export function PresentationPane({
               ?.mermaid || null
           }
           diagramPalette={defaultPalette}
+        />
+      ) : null}
+
+      {zoomDiagram ? (
+        <DiagramFullscreen
+          diagram={zoomDiagram}
+          onClose={() => setZoomDiagram(null)}
         />
       ) : null}
 

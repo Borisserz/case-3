@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { DeckCanvas } from "./DeckCanvas";
 import type { DeckIR } from "./deckTypes";
+import { DiagramFullscreen, type DiagramInfo } from "./DiagramFullscreen";
 import { useFocusTrap } from "./useFocusTrap";
 
 type Props = {
@@ -44,6 +45,7 @@ export function PresentationFullscreen({
   const src = hasPngs && n ? slides[safe] : null;
   const [dir, setDir] = useState(0);
   const [chromeOn, setChromeOn] = useState(true);
+  const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
   const idleTimer = useRef<number | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, { active: true });
@@ -76,6 +78,7 @@ export function PresentationFullscreen({
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       bumpChrome();
+      if (document.querySelector(".diagram-fullscreen")) return;
       if (e.key === "Escape") onClose();
       if (!n) return;
       if (e.key === "ArrowLeft") {
@@ -178,6 +181,7 @@ export function PresentationFullscreen({
                   onPatch={async () => undefined}
                   diagramMermaid={diagramMermaid}
                   diagramPalette={diagramPalette}
+                  onDiagramZoom={(dia) => setZoomDiagram(dia)}
                 />
               ) : src ? (
                 <img src={src} alt="" className="presentation-fullscreen-img" />
@@ -185,6 +189,12 @@ export function PresentationFullscreen({
             </motion.div>
           </AnimatePresence>
         </div>
+        {zoomDiagram ? (
+          <DiagramFullscreen
+            diagram={zoomDiagram}
+            onClose={() => setZoomDiagram(null)}
+          />
+        ) : null}
         <div
           className="presentation-fullscreen-nav"
           aria-hidden={!chromeOn}
