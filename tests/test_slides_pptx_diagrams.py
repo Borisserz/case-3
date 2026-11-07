@@ -102,3 +102,90 @@ def test_layout_handles_cycles_and_branching():
     assert layout.boxes["A"].y < layout.boxes["B"].y
 
 
+def test_add_native_diagram_success():
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    spec = {
+        "id": "dia_01",
+        "type": "flowchart",
+        "title": "Процесс аудита",
+        "mermaid": """flowchart TD
+        A([Старт]) --> B[Анализ данных]
+        B --> C{Соответствие?}
+        C -->|Да| D([Успех])
+        """,
+    }
+    placed = add_native_diagram(
+        slide,
+        spec,
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(6),
+        height=Inches(4),
+        colors={"ink": "1a2e22", "paper": "ffffff"},
+        palette="editorial",
+    )
+    assert placed is True
+    # Verify shapes were created
+    shape_types = []
+    for s in slide.shapes:
+        try:
+            shape_types.append(s.auto_shape_type)
+        except (ValueError, AttributeError):
+            pass
+    assert MSO_SHAPE.ROUNDED_RECTANGLE in shape_types
+    assert MSO_SHAPE.DIAMOND in shape_types
+    # Nodes + connectors + labels
+    assert len(slide.shapes) >= 4
+
+
+def test_add_native_diagram_fallback_on_unsupported():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    spec = {"id": "dia_02", "type": "sequence", "mermaid": "sequenceDiagram\nA->>B: ping"}
+    placed = add_native_diagram(
+        slide,
+        spec,
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(5),
+        height=Inches(4),
+        colors={},
+    )
+    assert placed is False
+    assert len(slide.shapes) == 0
+
+
+def test_add_native_diagram_fallback_on_over_capacity():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    # 12 nodes > 10 limit
+    nodes = " --> ".join([f"N{i}" for i in range(12)])
+    spec = {"id": "dia_03", "type": "flowchart", "mermaid": f"flowchart TD\n{nodes}"}
+    placed = add_native_diagram(
+        slide,
+        spec,
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(5),
+        height=Inches(4),
+        colors={},
+    )
+    assert placed is False
+    assert len(slide.shapes) == 0
+
+
+

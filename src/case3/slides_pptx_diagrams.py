@@ -7,6 +7,14 @@ import logging
 import re
 from typing import Any
 
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.xmlchemy import OxmlElement
+from pptx.util import Inches, Pt
+
+from case3.diagram_style import role_colors_for_palette
+
 log = logging.getLogger("case3.slides_pptx_diagrams")
 
 _RE_FLOWCHART = re.compile(r"^\s*(?:flowchart|graph)\s+([A-Za-z]+)", re.IGNORECASE)
@@ -302,3 +310,190 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
         return None
 
     return DiagramGraph(direction=direction, nodes=nodes, edges=edges)
+
+
+def _to_inches(val: Any) -> float:
+    if hasattr(val, "inches"):
+        return float(val.inches)
+    return float(val)
+
+
+def _hex_to_rgb(hex_str: str) -> RGBColor:
+    s = hex_str.lstrip("#")
+    if len(s) == 3:
+        s = "".join([c * 2 for c in s])
+    return RGBColor(int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
+
+def _set_arrowhead(connector: Any) -> None:
+    """Inject drawingML triangle arrowhead at connector end."""
+    try:
+        spPr = connector._element.spPr
+        ln = spPr.ln
+        if ln is None:
+            ln = spPr._add_ln()
+        tailEnd = OxmlElement("a:tailEnd")
+        tailEnd.set("type", "triangle")
+        tailEnd.set("w", "med")
+        tailEnd.set("len", "med")
+        ln.append(tailEnd)
+    except Exception:
+        pass
+
+
+def add_native_diagram(
+    slide: Any,
+    dia_spec: dict[str, Any],
+    *,
+    left: Any,
+    top: Any,
+    width: Any,
+    height: Any,
+    colors: dict[str, Any] | None = None,
+    palette: str = "atelier",
+    font_name: str | None = None,
+) -> bool:
+    """Render a process flowchart into native PowerPoint vector shapes and connectors.
+
+    Returns True if successfully drawn; False if unsupported or density exceeded (triggers fallback).
+    """
+    if not dia_spec or not isinstance(dia_spec, dict):
+        return False
+    dtype = str(dia_spec.get("type", "")).strip().lower()
+    if dtype != "flowchart":
+        return False
+
+    mermaid = str(dia_spec.get("mermaid", "")).strip()
+    if not mermaid:
+        return False
+
+    graph = parse_mermaid_flowchart(mermaid)
+    if not graph or not graph.nodes:
+        return False
+
+    # Guard: density limit for clean slide presentation
+    if len(graph.nodes) > 10:
+        log.info("diagram %s has %d nodes (>10) — falling back to raster PNG", dia_spec.get("id"), len(graph.nodes))
+        return False
+
+    l_in = _to_inches(left)
+    t_in = _to_inches(top)
+    w_in = _to_inches(width)
+    h_in = _to_inches(height)
+
+    try:
+        layout = compute_diagram_layout(graph, l_in, t_in, w_in, h_in)
+    except Exception as exc:
+        log.warning("diagram layout failed for %s: %s", dia_spec.get("id"), exc)
+        return False
+
+    role_colors = role_colors_for_palette(palette)
+    colors = colors or {}
+    line_rgb = _hex_to_rgb(str(colors.get("muted") or "#5c6570"))
+    text_default_rgb = _hex_to_rgb(str(colors.get("ink") or "#1a2e22"))
+    deck_font = font_name or "Calibri"
+
+    is_td = graph.direction in ("TD", "TB")
+    shapes_by_id: dict[str, Any] = {}
+
+    try:
+        # 1. Place nodes as shapes
+        for nid, box in layout.boxes.items():
+            shape_type = MSO_SHAPE.DIAMOND if box.node.shape == "diamond" else MSO_SHAPE.ROUNDED_RECTANGLE
+
+            shape = slide.shapes.add_shape(
+                shape_type,
+                Inches(box.x),
+                Inches(box.y),
+                Inches(box.w),
+                Inches(box.h),
+            )
+            shapes_by_id[nid] = shape
+
+            # Color styling
+            role_token = role_colors.get(box.node.role) or role_colors.get("process")
+            fill_rgb = _hex_to_rgb(role_token["fill"]) if role_token else _hex_to_rgb("#e8eaed")
+            stroke_rgb = _hex_to_rgb(role_token["stroke"]) if role_token else line_rgb
+            text_rgb = _hex_to_rgb(role_token["color"]) if role_token else text_default_rgb
+
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = fill_rgb
+            shape.line.color.rgb = stroke_rgb
+            shape.line.width = Pt(1.5)
+
+            # Text framing
+            tf = shape.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tf.paragraphs[0]
+            p.text = box.node.label
+            p.alignment = PP_ALIGN.CENTER
+            p.font.name = deck_font
+            p.font.size = Pt(10) if len(box.node.label) > 28 else Pt(11)
+            p.font.bold = box.node.shape in ("capsule", "diamond")
+            p.font.color.rgb = text_rgb
+
+        # 2. Place connectors
+        for edge in layout.edges:
+            s_src = shapes_by_id.get(edge.src)
+            s_dst = shapes_by_id.get(edge.dst)
+            b_src = layout.boxes.get(edge.src)
+            b_dst = layout.boxes.get(edge.dst)
+            if not s_src or not s_dst or not b_src or not b_dst:
+                continue
+
+            if is_td:
+                x1, y1 = b_src.x + b_src.w / 2.0, b_src.y + b_src.h
+                x2, y2 = b_dst.x + b_dst.w / 2.0, b_dst.y
+                is_elbow = abs(b_src.x - b_dst.x) > 0.1
+            else:
+                x1, y1 = b_src.x + b_src.w, b_src.y + b_src.h / 2.0
+                x2, y2 = b_dst.x, b_dst.y + b_dst.h / 2.0
+                is_elbow = abs(b_src.y - b_dst.y) > 0.1
+
+            conn_type = MSO_CONNECTOR.ELBOW if is_elbow else MSO_CONNECTOR.STRAIGHT
+            conn = slide.shapes.add_connector(
+                conn_type,
+                Inches(x1),
+                Inches(y1),
+                Inches(x2),
+                Inches(y2),
+            )
+
+            # Connect to shape ports
+            try:
+                if is_td:
+                    conn.begin_connect(s_src, 2)  # bottom port
+                    conn.end_connect(s_dst, 0)    # top port
+                else:
+                    conn.begin_connect(s_src, 3)  # right port
+                    conn.end_connect(s_dst, 1)    # left port
+            except Exception:
+                pass
+
+            conn.line.color.rgb = stroke_rgb if edge.src == edge.dst else line_rgb
+            conn.line.width = Pt(1.5)
+            _set_arrowhead(conn)
+
+            # Optional edge label
+            if edge.label:
+                mid_x = (x1 + x2) / 2.0
+                mid_y = (y1 + y2) / 2.0
+                tb = slide.shapes.add_textbox(
+                    Inches(mid_x - 0.45),
+                    Inches(mid_y - 0.15),
+                    Inches(0.9),
+                    Inches(0.3),
+                )
+                p = tb.text_frame.paragraphs[0]
+                p.text = edge.label
+                p.alignment = PP_ALIGN.CENTER
+                p.font.name = deck_font
+                p.font.size = Pt(9)
+                p.font.color.rgb = line_rgb
+
+        return True
+    except Exception as exc:
+        log.warning("failed to draw native diagram shapes: %s", exc)
+        return False
+
