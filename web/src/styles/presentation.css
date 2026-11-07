@@ -1700,7 +1700,8 @@
     border-color 0.2s ease,
     transform 0.2s var(--ease-out, ease);
 }
-button.deck-cv-media {
+button.deck-cv-media,
+[role="button"].deck-cv-media {
   appearance: none;
   font: inherit;
   color: inherit;
