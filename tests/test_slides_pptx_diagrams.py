@@ -221,5 +221,136 @@ def test_build_native_pptx_with_diagram(tmp_path):
     assert len(prs.slides[0].shapes) >= 5
 
 
+def _make_dummy_png(path) -> None:
+    from PIL import Image
+
+    im = Image.new("RGB", (100, 100), color=(220, 220, 220))
+    im.save(str(path))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "mermaid_body"),
+    [
+        ("sequence", "sequenceDiagram\nAlice->>Bob: Ping\nBob-->>Alice: Pong"),
+        ("mindmap", "mindmap\n  root((Цели))\n    Маркетинг\n    Продажи"),
+        ("timeline", "timeline\n  title История\n  2024 : Старт\n  2025 : Рост"),
+        ("stateDiagram", "stateDiagram-v2\n  [*] --> Active\n  Active --> [*]"),
+    ],
+)
+def test_non_flowcharts_fallback_to_raster(tmp_path, dtype, mermaid_body):
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    from case3.slides_pptx_native import build_native_pptx
+
+    png_path = tmp_path / f"dia_{dtype}.png"
+    _make_dummy_png(png_path)
+
+    deck = {
+        "title": "Тест фоллбэка",
+        "style": {"theme_pack": "atelier"},
+        "slides": [
+            {
+                "id": "s1",
+                "layout": "media_hero",
+                "title": f"Диаграмма {dtype}",
+                "media_id": f"dia_{dtype}",
+            }
+        ],
+    }
+    diagrams_by_id = {
+        f"dia_{dtype}": {
+            "id": f"dia_{dtype}",
+            "type": dtype,
+            "title": f"Диаграмма {dtype}",
+            "mermaid": mermaid_body,
+        }
+    }
+    media_by_id = {f"dia_{dtype}": png_path}
+
+    out_pptx = tmp_path / f"deck_{dtype}.pptx"
+    res = build_native_pptx(
+        deck,
+        out_pptx,
+        media_by_id=media_by_id,
+        diagrams_by_id=diagrams_by_id,
+    )
+    assert res.is_file()
+    prs = Presentation(str(res))
+    slide = prs.slides[0]
+    # In fallback, slide contains a PICTURE shape for the raster PNG
+    picture_shapes = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(picture_shapes) == 1
+
+
+def test_mixed_deck_has_native_and_raster_slides(tmp_path):
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
+    from case3.slides_pptx_native import build_native_pptx
+
+    png_seq = tmp_path / "dia_seq.png"
+    _make_dummy_png(png_seq)
+
+    deck = {
+        "title": "Смешанная презентация",
+        "style": {"theme_pack": "ocean"},
+        "slides": [
+            {
+                "id": "s1",
+                "layout": "media_hero",
+                "title": "Нативный процесс",
+                "media_id": "dia_flow",
+            },
+            {
+                "id": "s2",
+                "layout": "media_hero",
+                "title": "Растровый sequence",
+                "media_id": "dia_seq",
+            },
+        ],
+    }
+    diagrams_by_id = {
+        "dia_flow": {
+            "id": "dia_flow",
+            "type": "flowchart",
+            "title": "Нативный процесс",
+            "mermaid": "flowchart LR\nStart([Старт]) --> Check{Проверка} --> End([Финиш])",
+        },
+        "dia_seq": {
+            "id": "dia_seq",
+            "type": "sequence",
+            "title": "Растровый sequence",
+            "mermaid": "sequenceDiagram\nClient->>Server: Request",
+        },
+    }
+    media_by_id = {"dia_seq": png_seq}
+
+    out_pptx = tmp_path / "mixed_deck.pptx"
+    res = build_native_pptx(
+        deck,
+        out_pptx,
+        media_by_id=media_by_id,
+        diagrams_by_id=diagrams_by_id,
+    )
+    assert res.is_file()
+    prs = Presentation(str(res))
+    assert len(prs.slides) == 2
+
+    # Slide 1 (flowchart): has native shapes (diamond, rounded rect, connectors), no pictures
+    s1_pics = [s for s in prs.slides[0].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(s1_pics) == 0
+    s1_auto = []
+    for s in prs.slides[0].shapes:
+        try:
+            s1_auto.append(s.auto_shape_type)
+        except (ValueError, AttributeError):
+            pass
+    assert MSO_SHAPE.DIAMOND in s1_auto
+
+    # Slide 2 (sequence): has picture shape
+    s2_pics = [s for s in prs.slides[1].shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(s2_pics) == 1
+
+
+
 
 
