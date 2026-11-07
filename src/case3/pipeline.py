@@ -339,6 +339,7 @@ def _pipeline_materialize_media(
     status: dict[str, Any],
     figures: list,
     charts: list,
+    diagrams: list | None = None,
     fj: dict[str, Any],
     fj_path: Path,
     figs_dir: Path,
@@ -480,6 +481,57 @@ def _pipeline_materialize_media(
         fj_path.write_text(
             json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+    if diagrams is None and isinstance(fj.get("diagrams"), list):
+        diagrams = fj["diagrams"]
+
+    if diagrams and not dry_run:
+        diagram_targets = [
+            d
+            for d in diagrams
+            if isinstance(d, dict)
+            and d.get("id")
+            and (
+                not only_missing
+                or not _media_ok_on_disk(str(d.get("id")), status, figs_dir)
+            )
+        ]
+        if diagram_targets:
+            bump("charts", "схемы…")
+            from case3.chart_style import palette_from_intent
+            from case3.slides_media import ensure_diagram_pngs
+
+            palette_for_diags = (
+                str(meta.get("image_style_pack") or "")
+                or palette_from_intent(intent or "")
+                or "atelier"
+            )
+            specs = {d["id"]: d for d in diagram_targets}
+            rendered = ensure_diagram_pngs(
+                specs,
+                figs_dir,
+                palette=palette_for_diags,
+                theme_pack=palette_for_diags,
+            )
+            for d in diagram_targets:
+                did = str(d.get("id") or "")
+                if (
+                    did in rendered
+                    and rendered[did].is_file()
+                    and rendered[did].stat().st_size > 0
+                ):
+                    status[did] = {"ok": True, "kind": "diagram"}
+                elif (
+                    (figs_dir / f"{did}.png").is_file()
+                    and (figs_dir / f"{did}.png").stat().st_size > 0
+                ):
+                    status[did] = {"ok": True, "kind": "diagram"}
+                else:
+                    status[did] = {
+                        "ok": False,
+                        "error": "render failed",
+                        "kind": "diagram",
+                    }
 
 
 def _pipeline_print_and_summary(
@@ -746,7 +798,7 @@ def resume_pipeline(
     try:
         need_media = failed_from in {"images", "charts"} or any(
             not _media_ok_on_disk(str(x.get("id") or ""), status, figs_dir)
-            for x in figures + charts
+            for x in figures + charts + diagrams
             if isinstance(x, dict) and x.get("id")
         )
 
@@ -755,6 +807,7 @@ def resume_pipeline(
                 status=status,
                 figures=figures,
                 charts=charts,
+                diagrams=diagrams,
                 fj=fj,
                 fj_path=fj_path,
                 figs_dir=figs_dir,
@@ -777,7 +830,9 @@ def resume_pipeline(
         )
 
         bump("inject")
-        write_injected(tex_path, figures, status, charts=charts)
+        write_injected(
+            tex_path, figures, status, charts=charts, diagrams=diagrams
+        )
         shutil.copy2(tex_path, out / tex_path.name)
         for name in ("figures.json", "status.json"):
             p = work / name
@@ -1119,6 +1174,7 @@ def run_pipeline(
             status=status,
             figures=figures,
             charts=charts,
+            diagrams=diagrams,
             fj=fj,
             fj_path=fj_path,
             figs_dir=figs_dir,
@@ -1142,14 +1198,17 @@ def run_pipeline(
         # Log BEFORE bump: Win AV can stall meta write; without this line stage=inject
         # looked like a hang inside inject with no pipeline.log progress.
         log.info(
-            "inject: about to bump run_id=%s figs=%d charts=%d",
+            "inject: about to bump run_id=%s figs=%d charts=%d diags=%d",
             run_id,
             len(figures or []),
             len(charts or []),
+            len(diagrams or []),
         )
         bump("inject")
         log.info("inject: write_injected start run_id=%s", run_id)
-        write_injected(tex_path, figures, status, charts=charts)
+        write_injected(
+            tex_path, figures, status, charts=charts, diagrams=diagrams
+        )
         log.info("inject: write_injected done, copy → out/")
 
         shutil.copy2(tex_path, out / tex_path.name)

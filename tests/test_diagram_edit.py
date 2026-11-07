@@ -150,3 +150,24 @@ def test_regenerate_replaces_diagrams_with_llm(tmp_path: Path) -> None:
     # Pre-regen snapshot kept «Черновик»
     draft = fj.get("diagrams_draft") or []
     assert draft and draft[0]["title"] == "Черновик"
+
+
+def test_edit_diagram_re_renders_png_and_updates_status(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    out = _seed_run(tmp_path)
+    new_src = "flowchart TD\n  A[Заявка] --> B[Одобрено]"
+
+    def fake_render(mermaid, dest, **kwargs):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x89PNG\r\n\x1a\nrendered")
+        return dest
+
+    with patch("case3.slides_media.render_mermaid_png", side_effect=fake_render):
+        result = edit_diagram_in_run(out, "dia_01", mermaid=new_src, title="Одобрено")
+
+    assert (out / "figures" / "dia_01.png").is_file()
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta.get("media_status", {}).get("dia_01", {}).get("ok") is True
+    assert "version" in result
+

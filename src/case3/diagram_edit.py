@@ -97,8 +97,9 @@ def edit_diagram_in_run(
     *,
     mermaid: str,
     title: str | None = None,
+    formats: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Replace one diagram's mermaid/title in figures.json (sanitize)."""
+    """Replace one diagram's mermaid/title in figures.json, re-render PNG, and sync slides/docs."""
     out_dir = out_dir.resolve()
     did = (diagram_id or "").strip()
     if not _ID_OK.match(did):
@@ -142,10 +143,55 @@ def edit_diagram_in_run(
     fj["diagrams"] = diagrams
     _save_fj(out_dir, fj)
     _sync_diagram_slide(out_dir, did, str(parsed[0].get("title") or ""))
+
+    # Re-render PNG in figures/ for PDF/DOCX reports
+    figs_dir = out_dir / "figures"
+    dest_png = figs_dir / f"{did}.png"
+    meta = _load_meta(out_dir)
+    palette = str(meta.get("image_style_pack") or "atelier")
+    png_rendered = False
+    try:
+        from case3.slides_media import render_mermaid_png
+
+        render_mermaid_png(
+            mermaid=clean,
+            dest=dest_png,
+            palette=palette,
+            theme_pack=palette,
+        )
+        png_rendered = dest_png.is_file() and dest_png.stat().st_size > 0
+    except Exception:
+        log.warning("failed to re-render PNG for diagram %s", did, exc_info=True)
+
+    meta_path = out_dir / "meta.json"
+    if meta_path.is_file():
+        media = dict(meta.get("media_status") or {})
+        if png_rendered:
+            media[did] = {"ok": True, "path": str(dest_png), "kind": "diagram"}
+            meta["media_status"] = media
+            meta_path.write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+    artifacts: dict[str, str] = {}
+    if formats:
+        from case3.run_rebuild import rebuild_run_docs
+
+        try:
+            art_paths = rebuild_run_docs(out_dir, formats=formats)
+            artifacts = {k: str(p) for k, p in art_paths.items()}
+        except Exception:
+            log.warning("failed to rebuild docs after diagram edit", exc_info=True)
+
     from case3.run_undo import undo_meta
 
     out = dict(parsed[0])
     out["undo"] = undo_meta(out_dir)
+    if artifacts:
+        out["artifacts"] = artifacts
+    if png_rendered:
+        out["version"] = int(dest_png.stat().st_mtime)
     from case3.deck_refresh import refresh_deck_from_ir
 
     refresh_deck_from_ir(out_dir)

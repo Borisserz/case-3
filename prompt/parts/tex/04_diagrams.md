@@ -1,6 +1,6 @@
-## Mermaid `diagrams` (Liber UI only) — **default ON**
+## Mermaid `diagrams` (Liber UI & PDF/DOCX) — **default ON**
 
-`{{MAX_DIAGRAMS}}` is a **ceiling**. Liber shows these in the Artifact rail (not in PDF). Showcase the product: when the budget is ≥ 1, **prefer emitting 1 useful diagram** over leaving `"diagrams": []`.
+`{{MAX_DIAGRAMS}}` is a **ceiling**. Liber renders these into high-resolution graphics for PDF and DOCX reports, as well as showing them in the Artifact rail. Showcase the product: when the budget is ≥ 1, **prefer emitting 1 useful diagram** over leaving `"diagrams": []`.
 
 ### Default-on rule (mandatory when {{MAX_DIAGRAMS}} ≥ 1)
 
@@ -88,7 +88,7 @@ Rules for colors:
 - **Node ids ASCII** (`A`, `step1`); Russian only inside `[]` / `()` / participant aliases — never invent actors/steps not in Source.
 - `title`: short Russian (≤80 chars) for Liber tab «Схема» — **specific** (not «Универсальная схема процесса»).
 - Ids prefer `dia_NN`. Unique across figures + charts + diagrams.
-- **No TeX slots** — never `%CASE3_DIAG`, never put Mermaid in LaTeX.
+- **TeX slots:** In LaTeX prose, place `%CASE3_DIAG:dia_NN%` on its own line beside the related process / architecture description. Do not put raw Mermaid syntax in LaTeX. If you omit the slot, Liber will automatically place the diagram before the conclusion.
 - **Annotated flow (numbers on structure):** when Source ties a number/% to a step/entity/branch, put it **in the node or edge label** — prefer short two-line `["Заявка<br/>820"]` or `Заявка · 820`. Digits **verbatim from Source only**. **Keep text short:** ≤4 words in the title line; **do not** stuff role codes (SDR/SE/AE/Legal) into the node label — roles are optional on edges or omitted. Edge labels short: `62%`, `нет бюджета · 95`. Prefer 1 key metric per node; do **not** dump a full chart series. Charts still own series; diagram owns structure + KPI callouts.
 - **No `click` / links** in Mermaid.
 

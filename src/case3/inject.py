@@ -16,6 +16,13 @@ _FIG_SLOT = re.compile(
 _CHART_SLOT = re.compile(
     r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
 )
+_DIAG_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_DIAG:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
+_CONCLUSION_SECTION = re.compile(
+    r"(?m)^[ \t]*\\section\*?\{[^\}]*(?:заключен|вывод|итог|рекомендац|conclusion|summary)[^\}]*\}",
+    re.I,
+)
 # Model sometimes wraps a slot in figure; after a failed chart we must drop the shell.
 _EMPTY_FIGURE = re.compile(
     r"\\begin\{figure\}(?:\[[^\]]*\])?\{?\}?\s*"
@@ -33,17 +40,17 @@ _EMPTY_FIGURE_LOOSE = re.compile(
 # eats the closing ``}`` (Gin@ii / runaway caption cascade). Line-anchored slot
 # inject misses these.
 _INLINE_SLOT_INCLUDEGRAPHICS = re.compile(
-    r"\\includegraphics(\[[^\]]*\])?\{%CASE3_(?:FIG|CHART):([a-z][a-z0-9_]{0,31})%\}",
+    r"\\includegraphics(\[[^\]]*\])?\{%CASE3_(?:FIG|CHART|DIAG):([a-z][a-z0-9_]{0,31})%\}",
     re.I,
 )
 # LLM sometimes writes \includegraphics{fig_02.png} instead of a CASE3 slot.
 _MEDIA_INCLUDEGRAPHICS = re.compile(
-    r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?((?:fig|cht|usr)_[a-z0-9_]+)\.png\}",
+    r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?((?:fig|cht|dia|usr)_[a-z0-9_]+)\.png\}",
     re.I,
 )
-# Diagrams are Liber UI-only — never a print PNG (ADR-0007).
+# Diagrams in TeX: captured with dia_ id for unapproved strip.
 _DIAG_INCLUDEGRAPHICS = re.compile(
-    r"\\includegraphics(\[[^\]]*\])?\{(?:figures/)?dia_[a-z0-9_]+\.png\}",
+    r"\\includegraphics(\[[^\]]*\])?\{((?:figures/)?(dia_[a-z0-9_]+)\.png)\}",
     re.I,
 )
 # Any relative PNG include — used only for missing-file soft strip.
@@ -75,9 +82,23 @@ def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -
     return _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex or "")
 
 
-def strip_diagram_includegraphics(tex: str) -> str:
-    """Drop diagram PNG includes — Mermaid lives in Liber UI, not PDF/DOCX."""
-    return _DIAG_INCLUDEGRAPHICS.sub("", tex or "")
+def strip_diagram_includegraphics(tex: str, status: dict[str, Any] | None = None) -> str:
+    """Drop diagram PNG includes unless explicitly marked ok in status."""
+    if status is None:
+        return _DIAG_INCLUDEGRAPHICS.sub("", tex or "")
+    ok_ids = {
+        mid
+        for mid, st in status.items()
+        if isinstance(st, dict) and st.get("ok")
+    }
+
+    def _repl(m: re.Match[str]) -> str:
+        did = m.group(3)
+        if did in ok_ids:
+            return m.group(0)
+        return ""
+
+    return _DIAG_INCLUDEGRAPHICS.sub(_repl, tex or "")
 
 
 def strip_failed_media_includes(tex: str, status: dict[str, Any]) -> str:
@@ -140,18 +161,31 @@ def strip_missing_media_includes(tex: str, work_dir: Path) -> str:
     return _drop_hollow_figures(out)
 
 
-def _includegraphics_line(fid: str, meta: dict[str, Any], *, rel_dir: str) -> str:
-    width = sanitize_width(meta.get("width"))
+def _includegraphics_line(
+    fid: str,
+    meta: dict[str, Any],
+    *,
+    rel_dir: str,
+    label_prefix: str = "fig",
+) -> str:
+    default_w = r"0.92\linewidth" if label_prefix == "dia" else r"0.85\linewidth"
+    width = sanitize_width(meta.get("width")) if meta.get("width") else default_w
     path = f"{rel_dir}/{fid}.png"
     return f"  \\includegraphics[width={width}]{{{path}}}\n"
 
 
-def _figure_env(fid: str, meta: dict[str, Any], *, rel_dir: str, label_prefix: str) -> str:
-    caption = escape_tex_text(str(meta.get("caption") or fid))
+def _figure_env(
+    fid: str,
+    meta: dict[str, Any],
+    *,
+    rel_dir: str,
+    label_prefix: str,
+) -> str:
+    caption = escape_tex_text(str(meta.get("caption") or meta.get("title") or fid))
     return (
         "\\begin{figure}[H]\n"
         "  \\centering\n"
-        + _includegraphics_line(fid, meta, rel_dir=rel_dir)
+        + _includegraphics_line(fid, meta, rel_dir=rel_dir, label_prefix=label_prefix)
         + f"  \\caption{{{caption}}}\n"
         f"  \\label{{{label_prefix}:{fid}}}\n"
         "\\end{figure}\n"
@@ -185,14 +219,14 @@ def _inner_slot_replacement(
     label_prefix: str,
 ) -> str:
     """Inside an existing figure: image + caption/label if the shell has none."""
-    body = _includegraphics_line(fid, meta, rel_dir=rel_dir)
+    body = _includegraphics_line(fid, meta, rel_dir=rel_dir, label_prefix=label_prefix)
     span = _enclosing_figure_span(tex, start)
     if span is None:
         return body
     shell = tex[span[0] : span[1]]
     if r"\caption" in shell:
         return body
-    caption = escape_tex_text(str(meta.get("caption") or fid))
+    caption = escape_tex_text(str(meta.get("caption") or meta.get("title") or fid))
     return (
         body
         + f"  \\caption{{{caption}}}\n"
@@ -207,9 +241,11 @@ def inject_media(
     status: dict[str, Any],
     *,
     rel_dir: str = "figures",
+    diagrams: list[dict[str, Any]] | None = None,
 ) -> str:
     by_fig = {f["id"]: f for f in figures}
     by_chart = {c["id"]: c for c in charts}
+    by_diag = {d["id"]: d for d in (diagrams or [])}
 
     def repl_fig(m: re.Match[str]) -> str:
         fid = m.group(1)
@@ -239,12 +275,52 @@ def inject_media(
         return _figure_env(cid, meta, rel_dir=rel_dir, label_prefix="chart")
 
     out = _CHART_SLOT.sub(repl_chart, out)
+
+    def repl_diag(m: re.Match[str]) -> str:
+        did = m.group(1)
+        st = status.get(did) or {}
+        meta = by_diag.get(did)
+        if not st.get("ok") or not meta:
+            return ""
+        if _slot_inside_figure(out, m.start()):
+            return _inner_slot_replacement(
+                out, m.start(), did, meta, rel_dir=rel_dir, label_prefix="dia"
+            )
+        return _figure_env(did, meta, rel_dir=rel_dir, label_prefix="dia")
+
+    out = _DIAG_SLOT.sub(repl_diag, out)
+
+    # Fallback placement for diagrams that were not slotted in TeX
+    fallback_envs: list[str] = []
+    for diag in diagrams or []:
+        did = diag.get("id")
+        if not did:
+            continue
+        st = status.get(did) or {}
+        if not st.get("ok"):
+            continue
+        if did in out:
+            continue
+        fallback_envs.append(_figure_env(did, diag, rel_dir=rel_dir, label_prefix="dia"))
+
+    if fallback_envs:
+        fallback_block = "\n" + "\n".join(fallback_envs)
+        concl_match = _CONCLUSION_SECTION.search(out)
+        if concl_match:
+            idx = concl_match.start()
+            out = out[:idx] + fallback_block + "\n" + out[idx:]
+        elif r"\end{document}" in out:
+            idx = out.rfind(r"\end{document}")
+            out = out[:idx] + fallback_block + "\n" + out[idx:]
+        else:
+            out = out + "\n" + fallback_block
+
     # Before orphan strip: heal slots trapped inside \\includegraphics{…%…%}.
     out = rewrite_inline_slot_includegraphics(out, rel_dir=rel_dir)
     out = strip_orphan_slots(out)
     out = rewrite_media_includegraphics_paths(out, rel_dir=rel_dir)
     out = strip_failed_media_includes(out, status)
-    out = strip_diagram_includegraphics(out)
+    out = strip_diagram_includegraphics(out, status)
     out = _drop_hollow_figures(out)
     out = ensure_document_preamble(out)
     return out
@@ -256,8 +332,9 @@ def write_injected(
     status: dict[str, Any],
     *,
     charts: list[dict[str, Any]] | None = None,
+    diagrams: list[dict[str, Any]] | None = None,
 ) -> Path:
     raw = tex_path.read_text(encoding="utf-8")
-    new = inject_media(raw, figures, charts or [], status)
+    new = inject_media(raw, figures, charts or [], status, diagrams=diagrams)
     tex_path.write_text(new, encoding="utf-8")
     return tex_path

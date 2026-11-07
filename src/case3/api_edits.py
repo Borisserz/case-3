@@ -61,6 +61,10 @@ class ChartPreviewBody(BaseModel):
 class DiagramEditBody(BaseModel):
     mermaid: str = Field(default="")
     title: str | None = Field(default=None)
+    formats: list[str] | None = Field(
+        default=None,
+        description="Print formats to rebuild (e.g. ['pdf', 'docx']); empty/None skips rebuild",
+    )
 
 
 class DiagramRegenBody(BaseModel):
@@ -154,10 +158,11 @@ def preview_run_chart(
 async def edit_run_diagram(
     run_id: str, diagram_id: str, body: DiagramEditBody
 ) -> dict[str, Any]:
-    """Save edited Mermaid for one Liber diagram (no PDF/TeX)."""
+    """Save edited Mermaid for one Liber diagram, re-render PNG, and optionally rebuild PDF/DOCX."""
     if not FILE_OK.match(diagram_id):
         raise HTTPException(400, detail="invalid diagram_id")
     out_dir = resolve_run_dir(run_id)
+    fmt_set = formats_from_edit_body(body.formats)
     try:
         diagram = await asyncio.to_thread(
             partial(
@@ -166,18 +171,24 @@ async def edit_run_diagram(
                 diagram_id,
                 mermaid=body.mermaid or "",
                 title=body.title,
+                formats=fmt_set,
             )
         )
     except DiagramEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
     undo = None
+    artifacts = None
     if isinstance(diagram, dict):
         undo = diagram.pop("undo", None)
-    return {
+        artifacts = diagram.pop("artifacts", None)
+    res: dict[str, Any] = {
         "diagram": diagram,
         "diagrams": load_diagrams_from_out(out_dir),
         "undo": undo,
     }
+    if artifacts:
+        res["artifacts"] = artifacts
+    return res
 
 
 @router.get("/api/runs/{run_id}/diagrams/{diagram_id}/svg")
