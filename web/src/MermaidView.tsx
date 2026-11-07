@@ -18,6 +18,8 @@ type Props = {
   highlightNodeIds?: Set<string> | null;
   /** Double-click a flowchart node → id */
   onNodeDblClick?: (nodeId: string) => void;
+  /** Hover over a flowchart node → id, or null when pointer leaves */
+  onNodeHover?: (nodeId: string | null) => void;
 };
 
 let mermaidReady = false;
@@ -69,6 +71,7 @@ export function MermaidView({
   onError,
   highlightNodeIds = null,
   onNodeDblClick,
+  onNodeHover,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onReadyRef = useRef(onSvgReady);
@@ -77,6 +80,8 @@ export function MermaidView({
   onErrorRef.current = onError;
   const dblRef = useRef(onNodeDblClick);
   dblRef.current = onNodeDblClick;
+  const hoverRef = useRef(onNodeHover);
+  hoverRef.current = onNodeHover;
   const reactId = useId().replace(/:/g, "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -158,6 +163,24 @@ export function MermaidView({
     host.addEventListener("dblclick", onDbl);
     return () => host.removeEventListener("dblclick", onDbl);
   }, [onNodeDblClick, loading, source]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !onNodeHover) return;
+    const onMove = (e: MouseEvent) => {
+      const id = mermaidNodeIdFromElement(e.target as Element);
+      hoverRef.current?.(id || null);
+    };
+    const onLeave = () => {
+      hoverRef.current?.(null);
+    };
+    host.addEventListener("mousemove", onMove);
+    host.addEventListener("mouseleave", onLeave);
+    return () => {
+      host.removeEventListener("mousemove", onMove);
+      host.removeEventListener("mouseleave", onLeave);
+    };
+  }, [onNodeHover, loading, source]);
 
   return (
     <div className={`mermaid-view${className ? ` ${className}` : ""}`}>

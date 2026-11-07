@@ -1033,11 +1033,52 @@
   border-radius: 0;
 }
 .deck-cv-diagram-live {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.deck-cv-diagram-live g.node {
+  transition: opacity 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
+}
+.deck-cv-diagram-zoom-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--deck-ink, #232a26);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  z-index: 10;
+}
+.deck-cv-diagram-live:hover .deck-cv-diagram-zoom-btn,
+.deck-cv-media:hover .deck-cv-diagram-zoom-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+.deck-cv-diagram-zoom-btn:hover {
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+.deck-cv-zoom-icon {
+  font-size: 0.9rem;
+  line-height: 1;
 }
 .deck-cv-diagram-live .mermaid-view,
 .deck-cv-diagram-live .mermaid-view-svg {
@@ -1461,6 +1502,19 @@
   font-family: Georgia, serif;
   font-size: 1.6cqw;
   color: var(--deck-accent);
+}
+.deck-cv-bullets li.is-bullet-interactive {
+  cursor: pointer;
+  transition: opacity 0.22s ease, transform 0.22s ease, background 0.22s ease, box-shadow 0.22s ease, border-left-color 0.22s ease;
+}
+.deck-cv-bullets li.is-bullet-interactive.is-active {
+  transform: translateX(4px);
+  background: rgba(107, 143, 118, 0.12) !important;
+  border-left-color: var(--deck-accent, #6b8f76) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.deck-cv-bullets li.is-bullet-interactive.is-dimmed {
+  opacity: 0.38;
 }
 .deck-cv-closing--split {
   inset: 0;

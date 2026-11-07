@@ -16,6 +16,9 @@ import { LiveChart } from "./LiveChart";
 import { MermaidView } from "./MermaidView";
 import { diagramLegendStrokes, officeFace } from "./deckStyle";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+import type { DiagramInfo } from "./DiagramFullscreen";
+import { parseMermaidFlowchart } from "./diagramIr";
+import { matchBulletToNodeIds, matchNodeToBulletIndex } from "./diagramSlideSync";
 
 export type DeckMediaKind = "chart" | "photo" | "diagram";
 
@@ -29,6 +32,7 @@ type Props = {
   mediaVersion?: number;
   openMediaId?: string | null;
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  onDiagramZoom?: (diagram: DiagramInfo) => void;
   onDeckChange: (deck: DeckIR) => void;
   onPatch: (slides: Partial<DeckSlide> & { id: string }[]) => Promise<void>;
   /** Live chart HTML while the edit sheet is open. */
@@ -194,6 +198,9 @@ function MediaSlot({
   version,
   hero,
   onMediaClick,
+  onDiagramZoom,
+  highlightNodeIds,
+  onNodeHover,
   previewHtml,
   diagramMermaid,
   children,
@@ -205,6 +212,9 @@ function MediaSlot({
   version?: number;
   hero?: boolean;
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  onDiagramZoom?: () => void;
+  highlightNodeIds?: Set<string> | null;
+  onNodeHover?: (nodeId: string | null) => void;
   previewHtml?: string | null;
   diagramMermaid?: string | null;
   children?: ReactNode;
@@ -224,7 +234,27 @@ function MediaSlot({
     </div>
   ) : diagram ? (
     <div className="deck-cv-diagram-live">
-      <MermaidView source={diagramMermaid || ""} className="is-slide" />
+      <MermaidView
+        source={diagramMermaid || ""}
+        className="is-slide"
+        highlightNodeIds={highlightNodeIds}
+        onNodeHover={onNodeHover}
+      />
+      {onDiagramZoom ? (
+        <button
+          type="button"
+          className="deck-cv-diagram-zoom-btn"
+          title="Открыть схему в полном размере"
+          aria-label="Открыть схему в полном размере"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDiagramZoom();
+          }}
+        >
+          <span className="deck-cv-zoom-icon" aria-hidden>🔍</span>
+          <span>Увеличить</span>
+        </button>
+      ) : null}
     </div>
   ) : img ? (
     <img src={img} alt="" />
@@ -252,7 +282,19 @@ function MediaSlot({
     );
   }
   return (
-    <div className={className}>
+    <div
+      className={className}
+      onClick={
+        diagram && onDiagramZoom
+          ? (e) => {
+              e.stopPropagation();
+              onDiagramZoom();
+            }
+          : undefined
+      }
+      style={diagram && onDiagramZoom ? { cursor: "zoom-in" } : undefined}
+      title={diagram && onDiagramZoom ? "Нажмите для увеличения схемы" : undefined}
+    >
       {body}
       {children}
     </div>
@@ -303,6 +345,7 @@ function SlideBody({
   mediaVersion,
   openMediaId,
   onMediaClick,
+  onDiagramZoom,
   previewHtml,
   diagramMermaid,
   diagramPalette,
@@ -318,6 +361,7 @@ function SlideBody({
   mediaVersion?: number;
   openMediaId?: string | null;
   onMediaClick?: (id: string, kind: DeckMediaKind) => void;
+  onDiagramZoom?: (diagram: DiagramInfo) => void;
   previewHtml?: string | null;
   diagramMermaid?: string | null;
   diagramPalette?: string;
@@ -326,6 +370,48 @@ function SlideBody({
   const mid = slide.chart_id || slide.media_id;
   const img = mediaUrl(runId, mid, mediaVersion);
   const panels = motifPanels || [];
+
+  const [hoveredBulletIdx, setHoveredBulletIdx] = useState<number | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const diagramIr = useMemo(() => {
+    if (!diagramMermaid) return null;
+    try {
+      return parseMermaidFlowchart(diagramMermaid, {
+        id: slide.media_id || "dia_01",
+        title: slide.title || "Схема",
+      });
+    } catch {
+      return null;
+    }
+  }, [diagramMermaid, slide.media_id, slide.title]);
+
+  const highlightNodeIds = useMemo(() => {
+    if (hoveredBulletIdx === null || !diagramIr || !slide.bullets?.[hoveredBulletIdx]) {
+      return null;
+    }
+    return matchBulletToNodeIds(
+      slide.bullets[hoveredBulletIdx],
+      hoveredBulletIdx,
+      diagramIr.nodes,
+      slide.bullets.length,
+    );
+  }, [hoveredBulletIdx, diagramIr, slide.bullets]);
+
+  const highlightedBulletIdx = useMemo(() => {
+    if (!hoveredNodeId || !diagramIr || !slide.bullets) return null;
+    return matchNodeToBulletIndex(hoveredNodeId, diagramIr.nodes, slide.bullets);
+  }, [hoveredNodeId, diagramIr, slide.bullets]);
+
+  const handleDiagramZoom = useCallback(() => {
+    if (!onDiagramZoom || !diagramMermaid) return;
+    const did = String(slide.media_id || "dia_01");
+    onDiagramZoom({
+      id: did,
+      title: slide.title || slide.caption || "Схема процесса",
+      mermaid: diagramMermaid,
+    });
+  }, [onDiagramZoom, diagramMermaid, slide.media_id, slide.title, slide.caption]);
 
   if (layout === "title") {
     if (darkBleed && img) {
@@ -966,6 +1052,9 @@ function SlideBody({
           version={mediaVersion}
           hero
           onMediaClick={onMediaClick}
+          onDiagramZoom={handleDiagramZoom}
+          highlightNodeIds={highlightNodeIds}
+          onNodeHover={setHoveredNodeId}
           previewHtml={previewHtml}
           diagramMermaid={diagramMermaid}
         />
@@ -1003,7 +1092,16 @@ function SlideBody({
         <div className="deck-cv-chart-copy">
           <div className="deck-cv-brand">{brand}</div>
           <Head slide={slide} editing={editing} onField={onField} />
-          <Bullets slide={slide} editing={editing} onField={onField} bands />
+          <Bullets
+            slide={slide}
+            editing={editing}
+            onField={onField}
+            bands
+            interactive={Boolean(splitDiagram && diagramMermaid)}
+            hoveredBulletIdx={hoveredBulletIdx}
+            onHoverBullet={setHoveredBulletIdx}
+            highlightedBulletIdx={highlightedBulletIdx}
+          />
           {splitDiagram ? (
             <ul className="deck-cv-dia-legend">
               <li><i style={{ background: legend.start }} />Старт</li>
@@ -1021,6 +1119,9 @@ function SlideBody({
           version={mediaVersion}
           hero
           onMediaClick={onMediaClick}
+          onDiagramZoom={handleDiagramZoom}
+          highlightNodeIds={highlightNodeIds}
+          onNodeHover={setHoveredNodeId}
           previewHtml={previewHtml}
           diagramMermaid={diagramMermaid}
         />
@@ -1177,46 +1278,74 @@ function Bullets({
   editing,
   onField,
   bands = false,
+  interactive = false,
+  hoveredBulletIdx = null,
+  onHoverBullet,
+  highlightedBulletIdx = null,
 }: {
   slide: DeckSlide;
   editing: boolean;
   onField: (p: Partial<DeckSlide>) => void;
   bands?: boolean;
+  interactive?: boolean;
+  hoveredBulletIdx?: number | null;
+  onHoverBullet?: (idx: number | null) => void;
+  highlightedBulletIdx?: number | null;
 }) {
   const bullets = slide.bullets || [];
   if (!bullets.length && !editing) return null;
   return (
     <div className="deck-cv-bullets-wrap">
       <ul className={`deck-cv-bullets${bands ? " deck-cv-bullets--bands" : ""}`}>
-        {bullets.map((b, i) => (
-          <li key={i}>
-            <div className="deck-cv-bullet-row">
-              <Editable
-                value={b}
-                editing={editing}
-                onCommit={(v) => {
-                  const next = [...bullets];
-                  next[i] = v;
-                  onField({ bullets: next });
-                }}
-              />
-              {editing && bullets.length > 1 ? (
-                <button
-                  type="button"
-                  className="deck-cv-inline-del"
-                  title="Удалить пункт"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const next = bullets.filter((_, idx) => idx !== i);
+        {bullets.map((b, i) => {
+          const isActive = hoveredBulletIdx === i || highlightedBulletIdx === i;
+          const isDimmed =
+            interactive &&
+            (hoveredBulletIdx !== null || highlightedBulletIdx !== null) &&
+            !isActive;
+          const cls = [
+            interactive ? "is-bullet-interactive" : "",
+            isActive ? "is-active" : "",
+            isDimmed ? "is-dimmed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
+          return (
+            <li
+              key={i}
+              className={cls || undefined}
+              onMouseEnter={interactive ? () => onHoverBullet?.(i) : undefined}
+              onMouseLeave={interactive ? () => onHoverBullet?.(null) : undefined}
+            >
+              <div className="deck-cv-bullet-row">
+                <Editable
+                  value={b}
+                  editing={editing}
+                  onCommit={(v) => {
+                    const next = [...bullets];
+                    next[i] = v;
                     onField({ bullets: next });
                   }}
-                >
-                  ×
-                </button>
-              ) : null}
-            </div>
-          </li>
-        ))}
+                />
+                {editing && bullets.length > 1 ? (
+                  <button
+                    type="button"
+                    className="deck-cv-inline-del"
+                    title="Удалить пункт"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const next = bullets.filter((_, idx) => idx !== i);
+                      onField({ bullets: next });
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {editing ? (
         <div className="deck-cv-bullet-actions">
@@ -1245,6 +1374,7 @@ export function DeckCanvas({
   mediaVersion = 0,
   openMediaId = null,
   onMediaClick,
+  onDiagramZoom,
   onDeckChange,
   onPatch,
   previewHtml = null,
@@ -1385,6 +1515,7 @@ export function DeckCanvas({
           mediaVersion={mediaVersion}
           openMediaId={openMediaId}
           onMediaClick={onMediaClick}
+          onDiagramZoom={onDiagramZoom}
           previewHtml={previewHtml}
           diagramMermaid={diagramMermaid}
           diagramPalette={packId || diagramPalette}
