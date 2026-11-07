@@ -1671,6 +1671,29 @@
   border: 1px solid var(--deck-rule);
   padding: 0.45rem 0.55rem;
   text-align: left;
+  vertical-align: middle;
+}
+.deck-cv.is-editing .deck-cv-table th.deck-ed,
+.deck-cv.is-editing .deck-cv-table td.deck-ed {
+  cursor: text;
+  min-width: 60px;
+  min-height: 1.3em;
+  outline: none;
+  transition: background 0.12s ease, outline-color 0.12s ease;
+}
+.deck-cv.is-editing .deck-cv-table th.deck-ed:hover,
+.deck-cv.is-editing .deck-cv-table td.deck-ed:hover {
+  outline: 1px dashed color-mix(in srgb, var(--deck-accent, #275035) 45%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--deck-accent, #275035) 8%, var(--deck-sheet, white));
+}
+.deck-cv.is-editing .deck-cv-table th.deck-ed:focus,
+.deck-cv.is-editing .deck-cv-table td.deck-ed:focus {
+  outline: 2px solid var(--deck-primary, var(--deck-accent, #275035)) !important;
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--deck-foil, var(--deck-accent, #275035)) 12%, var(--deck-sheet, white)) !important;
+  position: relative;
+  z-index: 3;
 }
 .deck-cv-table th {
   background: var(--deck-primary);
@@ -2228,6 +2251,25 @@ button.deck-cv-media,
   background: #fee2e2;
   border-color: #dc2626;
   transform: scale(1.05);
+}
+
+.deck-cv-inline-del-col {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1.5px dashed var(--deck-rule, rgba(0, 0, 0, 0.25));
+  background: color-mix(in srgb, var(--deck-sheet, #fff) 85%, transparent);
+  color: var(--deck-ink, #222);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.deck-cv-inline-del-col:hover {
+  border-color: #d9383a;
+  color: #d9383a;
+  background: color-mix(in srgb, #d9383a 8%, transparent);
 }
 
 .deck-cv-inline-add {

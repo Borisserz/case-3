@@ -19,6 +19,14 @@ import type { DeckIR, DeckSlide } from "./deckTypes";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { parseMermaidFlowchart } from "./diagramIr";
 import { matchBulletToNodeIds, matchNodeToBulletIndex } from "./diagramSlideSync";
+import {
+  addTableCol,
+  addTableRow,
+  deleteTableCol,
+  deleteTableRow,
+  ensureTableRows,
+  updateTableCell,
+} from "./domain/tableSlideEdit";
 
 export type DeckMediaKind = "chart" | "photo" | "diagram";
 
@@ -165,6 +173,101 @@ function Editable({
         }
       }}
     />
+  );
+}
+
+function TableCell({
+  tag: Tag,
+  value,
+  rowIndex,
+  colIndex,
+  editing,
+  onCommit,
+}: {
+  tag: "th" | "td";
+  value: string | number;
+  rowIndex: number;
+  colIndex: number;
+  editing: boolean;
+  onCommit: (next: string) => void;
+}) {
+  const { onFocusField } = useContext(EditFocusCtx);
+  const ref = useRef<HTMLTableCellElement | null>(null);
+  const valStr = String(value ?? "");
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (document.activeElement === el) return;
+    if (el.innerText !== valStr) el.innerText = valStr;
+  }, [valStr]);
+
+  if (!editing) {
+    return <Tag className="deck-cv-table-cell">{valStr}</Tag>;
+  }
+
+  const label =
+    rowIndex === 0
+      ? `Заголовок (${colIndex + 1})`
+      : `Ячейка (${rowIndex}, ${colIndex + 1})`;
+
+  return (
+    <Tag
+      ref={ref as never}
+      className={`deck-cv-table-cell deck-ed ${rowIndex === 0 ? "is-header" : ""}`}
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      tabIndex={0}
+      data-deck-label={label}
+      data-row-idx={rowIndex}
+      data-col-idx={colIndex}
+      onFocus={(e) => onFocusField(e.currentTarget, label)}
+      onBlur={(e) => {
+        const next = (e.currentTarget.innerText || "").replace(/\s+/g, " ").trim();
+        if (next !== valStr) onCommit(next);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const tbody = e.currentTarget.closest("tbody") || e.currentTarget.closest("table");
+          const nextRow = tbody?.querySelectorAll("tr")?.[rowIndex + 1];
+          const nextCell = nextRow?.querySelectorAll<HTMLElement>("th, td")?.[colIndex];
+          if (nextCell && (nextCell as HTMLElement).isContentEditable) {
+            nextCell.focus();
+          } else {
+            (e.currentTarget as HTMLElement).blur();
+          }
+        } else if (e.key === "Tab") {
+          const tbody = e.currentTarget.closest("tbody") || e.currentTarget.closest("table");
+          const allRows = tbody?.querySelectorAll("tr");
+          if (!allRows) return;
+          if (e.shiftKey) {
+            e.preventDefault();
+            let targetCell: HTMLElement | null = null;
+            if (colIndex > 0) {
+              targetCell = allRows[rowIndex]?.querySelectorAll<HTMLElement>("th, td")?.[colIndex - 1] ?? null;
+            } else if (rowIndex > 0) {
+              const prevCells = allRows[rowIndex - 1]?.querySelectorAll<HTMLElement>("th, td");
+              targetCell = prevCells && prevCells.length > 1 ? prevCells[prevCells.length - 2] : null;
+            }
+            targetCell?.focus();
+          } else {
+            e.preventDefault();
+            let targetCell: HTMLElement | null = null;
+            const currentCells = allRows[rowIndex]?.querySelectorAll<HTMLElement>("th, td");
+            if (currentCells && colIndex + 1 < currentCells.length && !currentCells[colIndex + 1].classList.contains("deck-cv-table-op-cell")) {
+              targetCell = currentCells[colIndex + 1];
+            } else if (rowIndex + 1 < allRows.length) {
+              targetCell = allRows[rowIndex + 1]?.querySelectorAll<HTMLElement>("th, td")?.[0] ?? null;
+            }
+            targetCell?.focus();
+          }
+        }
+      }}
+    >
+      {valStr}
+    </Tag>
   );
 }
 
@@ -708,53 +811,57 @@ function SlideBody({
   }
 
   if (layout === "table_hero") {
-    const rows = slide.rows || [];
+    const rawRows = slide.rows || [];
+    const rows = editing ? ensureTableRows(rawRows.length > 0 ? rawRows : undefined) : rawRows;
     return (
       <div className="deck-cv-inner">
         <div className="deck-cv-brand">{brand}</div>
         <Head slide={slide} editing={editing} onField={onField} compact />
-        <table className="deck-cv-table">
-          <tbody>
-            {rows.map((row, ri) => (
-              <tr key={ri}>
-                {row.map((cell, ci) => {
-                  const Tag = ri === 0 ? "th" : "td";
-                  return (
-                    <Tag key={ci}>
-                      <Editable
+        <div className="deck-cv-table-wrapper">
+          <table className="deck-cv-table">
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => {
+                    const Tag = ri === 0 ? "th" : "td";
+                    return (
+                      <TableCell
+                        key={ci}
+                        tag={Tag}
                         value={cell}
+                        rowIndex={ri}
+                        colIndex={ci}
                         editing={editing}
-                        onCommit={(v) => {
-                          const next = rows.map((r) => [...r]);
-                          next[ri][ci] = v;
+                        onCommit={(nextVal) => {
+                          const next = updateTableCell(rows, ri, ci, nextVal);
                           onField({ rows: next });
                         }}
                       />
-                    </Tag>
-                  );
-                })}
-                {editing ? (
-                  <td className="deck-cv-table-op-cell">
-                    {ri > 0 && rows.length > 2 ? (
-                      <button
-                        type="button"
-                        className="deck-cv-inline-del"
-                        title="Удалить строку"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const next = rows.filter((_, idx) => idx !== ri);
-                          onField({ rows: next });
-                        }}
-                      >
-                        ×
-                      </button>
-                    ) : null}
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    );
+                  })}
+                  {editing ? (
+                    <td className="deck-cv-table-op-cell">
+                      {ri > 0 && rows.length > 2 ? (
+                        <button
+                          type="button"
+                          className="deck-cv-inline-del"
+                          title="Удалить строку"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = deleteTableRow(rows, ri);
+                            onField({ rows: next });
+                          }}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {editing ? (
           <div className="deck-cv-table-actions">
             <button
@@ -762,15 +869,37 @@ function SlideBody({
               className="deck-cv-inline-add"
               onClick={(e) => {
                 e.stopPropagation();
-                const cols = rows[0]?.length || 3;
-                const newRow = Array.from({ length: cols }, (_, i) =>
-                  i === 0 ? "Новая строка" : "—",
-                );
-                onField({ rows: [...rows, newRow] });
+                const next = addTableRow(rows);
+                onField({ rows: next });
               }}
             >
               + Строка таблицы
             </button>
+            <button
+              type="button"
+              className="deck-cv-inline-add"
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = addTableCol(rows);
+                onField({ rows: next });
+              }}
+            >
+              + Колонка
+            </button>
+            {rows[0]?.length > 2 ? (
+              <button
+                type="button"
+                className="deck-cv-inline-del-col"
+                title="Удалить последнюю колонку"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = deleteTableCol(rows, rows[0].length - 1);
+                  onField({ rows: next });
+                }}
+              >
+                − Колонка
+              </button>
+            ) : null}
           </div>
         ) : null}
         {slide.caption ? (
