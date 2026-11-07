@@ -58,3 +58,47 @@ def test_parse_mermaid_flowchart_lr_and_classes():
     assert g.nodes["Out"].shape == "capsule"
     assert g.nodes["Out"].role == "ok"
 
+
+def test_layout_computes_valid_bounds():
+    from case3.slides_pptx_diagrams import compute_diagram_layout, parse_mermaid_flowchart
+
+    mermaid = """flowchart TD
+    A([Начало]) --> B[Этап 1]
+    B --> C[Этап 2]
+    """
+    g = parse_mermaid_flowchart(mermaid)
+    assert g is not None
+    layout = compute_diagram_layout(g, left=1.0, top=1.0, width=6.0, height=4.0)
+    assert len(layout.boxes) == 3
+    for nid, box in layout.boxes.items():
+        assert box.x >= 1.0 - 1e-4
+        assert box.y >= 1.0 - 1e-4
+        assert box.x + box.w <= 7.0 + 1e-4
+        assert box.y + box.h <= 5.0 + 1e-4
+    # Vertical ordering in TD: y(A) < y(B) < y(C)
+    assert layout.boxes["A"].y < layout.boxes["B"].y < layout.boxes["C"].y
+
+
+def test_layout_handles_cycles_and_branching():
+    from case3.slides_pptx_diagrams import compute_diagram_layout, parse_mermaid_flowchart
+
+    mermaid = """flowchart TD
+    A([Старт]) --> B{Проверка}
+    B -->|Ок| C([Финиш])
+    B -->|Ошибка| D[Доработка]
+    D --> B
+    """
+    g = parse_mermaid_flowchart(mermaid)
+    assert g is not None
+    layout = compute_diagram_layout(g, left=0.5, top=0.5, width=7.0, height=5.0)
+    assert len(layout.boxes) == 4
+    # All boxes within bounds
+    for nid, box in layout.boxes.items():
+        assert box.x >= 0.5 - 1e-4
+        assert box.y >= 0.5 - 1e-4
+        assert box.x + box.w <= 7.5 + 1e-4
+        assert box.y + box.h <= 5.5 + 1e-4
+    # B and D should have valid positions without crashing from cycle D -> B
+    assert layout.boxes["A"].y < layout.boxes["B"].y
+
+

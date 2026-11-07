@@ -50,6 +50,163 @@ class DiagramGraph:
     edges: list[DiagramEdge] = field(default_factory=list)
 
 
+@dataclass
+class NodeBox:
+    node: DiagramNode
+    x: float  # inches
+    y: float  # inches
+    w: float  # inches
+    h: float  # inches
+
+
+@dataclass
+class DiagramLayout:
+    direction: str
+    boxes: dict[str, NodeBox] = field(default_factory=dict)
+    edges: list[DiagramEdge] = field(default_factory=list)
+
+
+def compute_diagram_layout(
+    graph: DiagramGraph,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+) -> DiagramLayout:
+    """Assign 2D positions (in inches) to diagram nodes using a layered DAG layout."""
+    nodes = graph.nodes
+    if not nodes:
+        return DiagramLayout(direction=graph.direction, boxes={}, edges=graph.edges)
+
+    # 1. Cycle detection & forward DAG edges extraction
+    adj: dict[str, list[str]] = {nid: [] for nid in nodes}
+    for e in graph.edges:
+        if e.src in nodes and e.dst in nodes and e.dst not in adj[e.src]:
+            adj[e.src].append(e.dst)
+
+    # DFS to find back-edges (cycles)
+    visited: dict[str, int] = {}  # 0: unvisited, 1: visiting, 2: visited
+    back_edges: set[tuple[str, str]] = set()
+
+    def dfs(u: str):
+        visited[u] = 1
+        for v in adj[u]:
+            if visited.get(v, 0) == 1:
+                back_edges.add((u, v))
+            elif visited.get(v, 0) == 0:
+                dfs(v)
+        visited[u] = 2
+
+    for nid in nodes:
+        if visited.get(nid, 0) == 0:
+            dfs(nid)
+
+    # 2. Compute layer ranks via longest path on forward DAG
+    ranks: dict[str, int] = {nid: 0 for nid in nodes}
+    for _ in range(len(nodes)):
+        changed = False
+        for e in graph.edges:
+            if (e.src, e.dst) in back_edges:
+                continue
+            if e.src in nodes and e.dst in nodes:
+                if ranks[e.dst] < ranks[e.src] + 1:
+                    ranks[e.dst] = ranks[e.src] + 1
+                    changed = True
+        if not changed:
+            break
+
+    # Group by layer
+    num_layers = max(ranks.values()) + 1
+    layers: dict[int, list[str]] = {layer_idx: [] for layer_idx in range(num_layers)}
+    for nid, r in ranks.items():
+        layers[r].append(nid)
+
+    max_layer_size = max(len(layer_nodes) for layer_nodes in layers.values()) if layers else 1
+
+    # 3. Geometry placement in target rectangle [left, top, width, height]
+    pad = 0.15
+    avail_w = max(0.5, width - 2 * pad)
+    avail_h = max(0.5, height - 2 * pad)
+
+    is_td = graph.direction in ("TD", "TB")
+    boxes: dict[str, NodeBox] = {}
+
+    if is_td:
+        # TD: Primary axis is Y (layers), Secondary axis is X
+        # Node dimensions
+        node_h = min(0.85, avail_h / (num_layers * 1.45))
+        node_w = min(1.9, avail_w / (max_layer_size * 1.25))
+
+        # Ensure bounds fit
+        if num_layers * node_h > avail_h:
+            node_h = avail_h / max(1, num_layers * 1.1)
+        if max_layer_size * node_w > avail_w:
+            node_w = avail_w / max(1, max_layer_size * 1.1)
+
+        # Gap between layers
+        if num_layers > 1:
+            gap_y = (avail_h - num_layers * node_h) / (num_layers - 1)
+        else:
+            gap_y = 0.0
+
+        for layer_idx, layer_nodes in layers.items():
+            if num_layers == 1:
+                y = top + pad + (avail_h - node_h) / 2.0
+            else:
+                y = top + pad + layer_idx * (node_h + gap_y)
+
+            k = len(layer_nodes)
+            if k == 1:
+                gap_x = 0.0
+                layer_w = node_w
+                start_x = left + pad + (avail_w - layer_w) / 2.0
+            else:
+                gap_x = min(0.6, (avail_w - k * node_w) / (k - 1))
+                layer_w = k * node_w + (k - 1) * gap_x
+                start_x = left + pad + (avail_w - layer_w) / 2.0
+
+            for i, nid in enumerate(layer_nodes):
+                x = start_x + i * (node_w + gap_x)
+                boxes[nid] = NodeBox(node=nodes[nid], x=round(x, 4), y=round(y, 4), w=round(node_w, 4), h=round(node_h, 4))
+    else:
+        # LR: Primary axis is X (layers), Secondary axis is Y
+        node_w = min(1.75, avail_w / (num_layers * 1.45))
+        node_h = min(0.85, avail_h / (max_layer_size * 1.25))
+
+        if num_layers * node_w > avail_w:
+            node_w = avail_w / max(1, num_layers * 1.1)
+        if max_layer_size * node_h > avail_h:
+            node_h = avail_h / max(1, max_layer_size * 1.1)
+
+        if num_layers > 1:
+            gap_x = (avail_w - num_layers * node_w) / (num_layers - 1)
+        else:
+            gap_x = 0.0
+
+        for layer_idx, layer_nodes in layers.items():
+            if num_layers == 1:
+                x = left + pad + (avail_w - node_w) / 2.0
+            else:
+                x = left + pad + layer_idx * (node_w + gap_x)
+
+            k = len(layer_nodes)
+            if k == 1:
+                gap_y = 0.0
+                layer_h = node_h
+                start_y = top + pad + (avail_h - layer_h) / 2.0
+            else:
+                gap_y = min(0.6, (avail_h - k * node_h) / (k - 1))
+                layer_h = k * node_h + (k - 1) * gap_y
+                start_y = top + pad + (avail_h - layer_h) / 2.0
+
+            for i, nid in enumerate(layer_nodes):
+                y = start_y + i * (node_h + gap_y)
+                boxes[nid] = NodeBox(node=nodes[nid], x=round(x, 4), y=round(y, 4), w=round(node_w, 4), h=round(node_h, 4))
+
+    return DiagramLayout(direction=graph.direction, boxes=boxes, edges=graph.edges)
+
+
+
 def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
     """Parse a Mermaid flowchart string into a structured DiagramGraph.
 
