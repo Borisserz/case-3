@@ -25,21 +25,44 @@ type Props = {
 let mermaidReady = false;
 let mermaidMod: Mermaid | null = null;
 
+// Safeguard against Mermaid's internal btoa calls on Cyrillic / Unicode strings
+if (typeof window !== "undefined" && typeof window.btoa === "function") {
+  const origBtoa = window.btoa.bind(window);
+  window.btoa = (str: string) => {
+    try {
+      return origBtoa(str);
+    } catch {
+      return origBtoa(
+        encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+          String.fromCharCode(parseInt(p1, 16)),
+        ),
+      );
+    }
+  };
+}
+
 async function loadMermaid(): Promise<Mermaid> {
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      /* ignore font loading timeouts */
+    }
+  }
   if (mermaidMod) return mermaidMod;
   const mod = await import("mermaid");
   const mermaid = mod.default;
   if (!mermaidReady) {
     mermaid.initialize({
       startOnLoad: false,
-      securityLevel: "strict",
+      securityLevel: "loose",
       theme: "base",
       // Match Liber visual editor: soft curves, not sharp orthogonal edges.
       flowchart: {
         curve: "basis",
-        padding: 18,
-        nodeSpacing: 48,
-        rankSpacing: 52,
+        padding: 20,
+        nodeSpacing: 52,
+        rankSpacing: 64,
         htmlLabels: true,
         useMaxWidth: true,
       },
@@ -82,7 +105,7 @@ export function MermaidView({
   dblRef.current = onNodeDblClick;
   const hoverRef = useRef(onNodeHover);
   hoverRef.current = onNodeHover;
-  const reactId = useId().replace(/:/g, "");
+  const reactId = useId().replace(/[^a-zA-Z0-9]/g, "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -102,12 +125,23 @@ export function MermaidView({
       setLoading(false);
       return;
     }
-    const renderId = `mmd_${reactId}_${Math.random().toString(36).slice(2, 8)}`;
-    (async () => {
+    let retryTimer: number | null = null;
+    let fallbackSrc = src;
+
+    const tryRender = async (attempt = 0) => {
+      retryTimer = null;
+      if (attempt === 0) {
+        // Yield to browser layout so font metrics and container dimensions are non-zero
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      if (cancelled || !hostRef.current) return;
+      // Must be clean alphanumeric ID — consecutive underscores break Dagre label calculations in Mermaid
+      const rand = Math.random().toString(36).replace(/[^a-zA-Z0-9]/g, "").slice(0, 6);
+      const renderId = `mmd${reactId}${rand}`;
       try {
         const mermaid = await loadMermaid();
         if (cancelled || !hostRef.current) return;
-        const { svg } = await mermaid.render(renderId, src);
+        const { svg } = await mermaid.render(renderId, fallbackSrc);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
         setError(null);
@@ -124,24 +158,73 @@ export function MermaidView({
         }
         onReadyRef.current?.(el);
         applyMermaidRoleHighlight(el, highlightNodeIds);
+        setLoading(false);
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : "";
+        if (typeof window !== "undefined") {
+          (window as unknown as { __lastMermaidErr?: unknown }).__lastMermaidErr = {
+            msg,
+            stack,
+            attempt,
+            renderId,
+            srcLen: fallbackSrc.length,
+          };
+        }
+        document
+          .querySelectorAll(`[id*="${renderId}"]`)
+          .forEach((el) => el.remove());
+
+        // If failure was due to layout/DOM zero-dimension timing or dagre spline edge calculation,
+        // retry up to 3 times with fallback curve ("cardinal" -> "linear") and relaxed rank spacing.
+        if (
+          attempt < 3 &&
+          (msg.includes("suitable point") ||
+            msg.includes("getBoundingClientRect") ||
+            msg.includes("point for the given distance"))
+        ) {
+          try {
+            const m = await loadMermaid();
+            m.initialize({
+              startOnLoad: false,
+              securityLevel: "loose",
+              theme: "base",
+              flowchart: {
+                curve: attempt === 0 ? "cardinal" : "linear",
+                padding: 22,
+                nodeSpacing: 56,
+                rankSpacing: 70,
+                htmlLabels: true,
+                useMaxWidth: true,
+              },
+            });
+          } catch {
+            /* ignore init reset error */
+          }
+          if (attempt >= 1) {
+            // Strip edge labels as safety net if Dagre label position keeps failing on tight edges
+            fallbackSrc = fallbackSrc.replace(/-->\s*\|[^|]+\|\s*/g, "--> ");
+          }
+          retryTimer = window.setTimeout(() => {
+            if (!cancelled) void tryRender(attempt + 1);
+          }, 80 * (attempt + 1));
+          return;
+        }
+
         setError(msg);
         onErrorRef.current?.(msg);
         if (hostRef.current) hostRef.current.innerHTML = "";
         svgRef.current = null;
         onReadyRef.current?.(null);
-        const stray =
-          document.getElementById("d" + renderId) ||
-          document.getElementById(renderId);
-        if (stray) stray.remove();
-      } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    })();
+    };
+
+    void tryRender(0);
     return () => {
       cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
     };
   }, [source, reactId]); // eslint-disable-line react-hooks/exhaustive-deps -- highlight applied below
 

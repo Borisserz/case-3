@@ -116,7 +116,7 @@ def load_diagrams_from_out(out_dir: Path) -> list[dict[str, Any]]:
         out.append(
             {
                 "id": did,
-                "title": str(item.get("title") or did).strip()[:80],
+                "title": str(item.get("title") or item.get("caption") or did).strip()[:80],
                 "type": str(item.get("type") or "").strip(),
                 "mermaid": mermaid,
             }

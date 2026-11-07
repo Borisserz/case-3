@@ -292,6 +292,7 @@ def get_slides(run_id: str) -> dict[str, Any]:
         "downloads": downloads,
         "deck_pdf_mode": deck_pdf_mode,
         "charts": _chart_index(out_dir),
+        "diagrams": run_store.load_diagrams_from_out(out_dir),
     }
 
 

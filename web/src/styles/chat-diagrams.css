@@ -2228,7 +2228,7 @@
 }
 
 /* Hide stray Mermaid error elements injected into body on failed parse */
-body > [id^="dmmd_"],
-body > [id^="mmd_"] {
+body > [id^="dmmd"],
+body > [id^="mmd"] {
   display: none !important;
 }

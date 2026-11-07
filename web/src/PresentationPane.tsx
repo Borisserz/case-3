@@ -199,11 +199,19 @@ export function PresentationPane({
     let cancelled = false;
     void fetch(`/api/runs/${encodeURIComponent(runId)}/slides`)
       .then((r) => r.json())
-      .then((body: { charts?: Record<string, { type?: string; palette?: string }> }) => {
-        if (!cancelled && body?.charts && typeof body.charts === "object") {
-          setChartIndex(body.charts);
-        }
-      })
+      .then(
+        (body: {
+          charts?: Record<string, { type?: string; palette?: string }>;
+          diagrams?: DiagramResult[];
+        }) => {
+          if (!cancelled && body?.charts && typeof body.charts === "object") {
+            setChartIndex(body.charts);
+          }
+          if (!cancelled && Array.isArray(body?.diagrams) && body.diagrams.length > 0) {
+            setDiagrams(body.diagrams);
+          }
+        },
+      )
       .catch(() => {
         /* sheet falls back to the default palette */
       });
