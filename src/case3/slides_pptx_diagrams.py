@@ -10,6 +10,8 @@ from typing import Any
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml import parse_xml
+from pptx.oxml.ns import nsdecls, qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
@@ -52,10 +54,18 @@ class DiagramEdge:
 
 
 @dataclass
+class DiagramSubgraph:
+    id: str
+    title: str
+    node_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class DiagramGraph:
     direction: str  # "TD" | "LR"
     nodes: dict[str, DiagramNode] = field(default_factory=dict)
     edges: list[DiagramEdge] = field(default_factory=list)
+    subgraphs: list[DiagramSubgraph] = field(default_factory=list)
 
 
 @dataclass
@@ -215,6 +225,29 @@ def compute_diagram_layout(
 
 
 
+def _parse_subgraph_header(line: str) -> tuple[str, str] | None:
+    """Parse subgraph declaration like 'subgraph id [Title]' or 'subgraph Title'."""
+    stripped = line.strip()
+    if not stripped.lower().startswith("subgraph"):
+        return None
+    rest = stripped[8:].strip()
+    if not rest:
+        return None
+    # Check id [title] or id ["title"]
+    m = re.match(r'^([A-Za-z0-9_]+)\s*(?:\[\s*(?:\"(.*?)\"|(.*?))\s*\]|\"\s*(.*?)\s*\")?$', rest)
+    if m:
+        sg_id = m.group(1)
+        title = m.group(2) or m.group(3) or m.group(4) or sg_id
+        return sg_id, title.strip()
+    # Check [title] or "title" or raw title
+    m = re.match(r'^(?:\[\s*(?:\"(.*?)\"|(.*?))\s*\]|\"\s*(.*?)\s*\"|(.*))$', rest)
+    if m:
+        title = (m.group(1) or m.group(2) or m.group(3) or m.group(4) or "").strip()
+        sg_id = re.sub(r"[^A-Za-z0-9_]", "_", title) or "subgraph"
+        return sg_id, title
+    return None
+
+
 def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
     """Parse a Mermaid flowchart string into a structured DiagramGraph.
 
@@ -288,11 +321,26 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
 
         nodes[nid] = DiagramNode(id=nid, label=label, shape=shape, role=role)
 
-    # Second pass: parse edges and find any implicit nodes
+    # Second pass: parse edges, implicit nodes, and subgraphs
+    subgraphs: list[DiagramSubgraph] = []
+    current_subgraph: DiagramSubgraph | None = None
+
     for line in raw.splitlines():
         line = line.strip()
-        if not line or line.startswith("%%") or line.startswith("class") or line.startswith("subgraph"):
+        if not line or line.startswith("%%") or line.startswith("class"):
             continue
+
+        sg_header = _parse_subgraph_header(line)
+        if sg_header:
+            sg_id, sg_title = sg_header
+            current_subgraph = DiagramSubgraph(id=sg_id, title=sg_title, node_ids=[])
+            subgraphs.append(current_subgraph)
+            continue
+
+        if re.match(r"^end\b", line, re.IGNORECASE):
+            current_subgraph = None
+            continue
+
         # Split chained edges or find matches
         # A simple scanner for X --> Y
         edge_matches = list(_RE_EDGE.finditer(line))
@@ -306,10 +354,28 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
             if dst not in nodes:
                 nodes[dst] = DiagramNode(id=dst, label=dst, shape="rect", role=node_roles.get(dst, "process"))
 
+        if current_subgraph is not None:
+            # Collect node IDs mentioned in this line inside the subgraph
+            for nm in _RE_NODE_DEF.finditer(line):
+                nid = nm.group(1)
+                if nid not in current_subgraph.node_ids:
+                    current_subgraph.node_ids.append(nid)
+            for em in edge_matches:
+                for nid in (em.group(1), em.group(4)):
+                    if nid not in current_subgraph.node_ids:
+                        current_subgraph.node_ids.append(nid)
+            m_simple = re.match(r"^([A-Za-z0-9_]+)$", line)
+            if m_simple:
+                nid = m_simple.group(1)
+                if nid not in current_subgraph.node_ids:
+                    current_subgraph.node_ids.append(nid)
+                if nid not in nodes:
+                    nodes[nid] = DiagramNode(id=nid, label=nid, shape="rect", role=node_roles.get(nid, "process"))
+
     if not nodes:
         return None
 
-    return DiagramGraph(direction=direction, nodes=nodes, edges=edges)
+    return DiagramGraph(direction=direction, nodes=nodes, edges=edges, subgraphs=subgraphs)
 
 
 def _to_inches(val: Any) -> float:
@@ -337,6 +403,24 @@ def _set_arrowhead(connector: Any) -> None:
         tailEnd.set("w", "med")
         tailEnd.set("len", "med")
         ln.append(tailEnd)
+    except Exception:
+        pass
+
+
+def _set_shape_alpha(shape: Any, alpha: float) -> None:
+    """Set solid fill transparency (0=opaque, 1=invisible)."""
+    try:
+        solid = shape.fill._xPr.solidFill
+        srgb = solid.find(qn("a:srgbClr"))
+        if srgb is None:
+            return
+        for child in list(srgb):
+            if "alpha" in child.tag:
+                srgb.remove(child)
+        alpha_el = parse_xml(
+            f'<a:alpha {nsdecls("a")} val="{int(max(0, min(1, alpha)) * 100000)}"/>'
+        )
+        srgb.append(alpha_el)
     except Exception:
         pass
 
@@ -397,6 +481,54 @@ def add_native_diagram(
     shapes_by_id: dict[str, Any] = {}
 
     try:
+        # 0. Place subgraph container frames (behind nodes)
+        for sg in graph.subgraphs:
+            sg_boxes = [layout.boxes[nid] for nid in sg.node_ids if nid in layout.boxes]
+            if not sg_boxes:
+                continue
+
+            min_x = min(b.x for b in sg_boxes)
+            min_y = min(b.y for b in sg_boxes)
+            max_x = max(b.x + b.w for b in sg_boxes)
+            max_y = max(b.y + b.h for b in sg_boxes)
+
+            pad_x = 0.12
+            pad_top = 0.28
+            pad_bottom = 0.10
+
+            box_x = max(l_in, min_x - pad_x)
+            box_y = max(t_in, min_y - pad_top)
+            box_w = min(l_in + w_in - box_x, (max_x - min_x) + 2 * pad_x)
+            box_h = min(t_in + h_in - box_y, (max_y - min_y) + pad_top + pad_bottom)
+
+            sg_shape = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Inches(box_x),
+                Inches(box_y),
+                Inches(box_w),
+                Inches(box_h),
+            )
+            sg_shape.fill.solid()
+            sg_fill_rgb = _hex_to_rgb(str(colors.get("card") or "#f7f9f8"))
+            sg_shape.fill.fore_color.rgb = sg_fill_rgb
+            sg_shape.line.color.rgb = line_rgb
+            sg_shape.line.width = Pt(1.0)
+            _set_shape_alpha(sg_shape, 0.45)
+
+            # Header text
+            tf = sg_shape.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.TOP
+            tf.margin_top = Inches(0.06)
+            tf.margin_left = Inches(0.08)
+            p = tf.paragraphs[0]
+            p.text = sg.title.upper() if sg.title else sg.id
+            p.alignment = PP_ALIGN.LEFT
+            p.font.name = deck_font
+            p.font.size = Pt(8.5)
+            p.font.bold = True
+            p.font.color.rgb = line_rgb
+
         # 1. Place nodes as shapes
         for nid, box in layout.boxes.items():
             shape_type = MSO_SHAPE.DIAMOND if box.node.shape == "diamond" else MSO_SHAPE.ROUNDED_RECTANGLE

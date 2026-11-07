@@ -351,6 +351,56 @@ def test_mixed_deck_has_native_and_raster_slides(tmp_path):
     assert len(s2_pics) == 1
 
 
+def test_parse_mermaid_with_subgraphs():
+    from case3.slides_pptx_diagrams import parse_mermaid_flowchart
+    mermaid = """flowchart TD
+    subgraph TeamA [Команда Аналитики]
+        A[Сбор данных] --> B[Анализ]
+    end
+    subgraph TeamB [Команда Разработки]
+        C[Разработка] --> D[Релиз]
+    end
+    B --> C
+    """
+    g = parse_mermaid_flowchart(mermaid)
+    assert g is not None
+    assert len(g.subgraphs) == 2
+    assert g.subgraphs[0].title == "Команда Аналитики"
+    assert g.subgraphs[0].node_ids == ["A", "B"]
+    assert g.subgraphs[1].title == "Команда Разработки"
+    assert g.subgraphs[1].node_ids == ["C", "D"]
+
+
+def test_add_native_diagram_renders_subgraph_frames():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from case3.slides_pptx_diagrams import add_native_diagram
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    spec = {
+        "id": "dia_sub",
+        "type": "flowchart",
+        "title": "Процесс с командами",
+        "mermaid": """flowchart TD
+        subgraph Alpha [Отдел Маркетинга]
+            A[Лид] --> B[Квалификация]
+        end
+        subgraph Beta [Отдел Продаж]
+            C[Звонок] --> D[Сделка]
+        end
+        B --> C
+        """,
+    }
+    placed = add_native_diagram(
+        slide, spec, left=Inches(1), top=Inches(1), width=Inches(8), height=Inches(5), colors={"muted": "#687564"}
+    )
+    assert placed is True
+    # In addition to 4 nodes + 3 connectors, there should be 2 subgraph container shapes
+    assert len(slide.shapes) >= 9
+
+
+
 
 
 
