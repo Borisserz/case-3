@@ -209,7 +209,6 @@ type Props = {
   focusNodeId?: string | null;
   onCancel: () => void;
   onSave: (mermaid: string, title: string) => void;
-  onSwitchToCode?: () => void;
 };
 
 function FitOnFocus({
@@ -250,7 +249,6 @@ function EditorInner({
   focusNodeId = null,
   onCancel,
   onSave,
-  onSwitchToCode,
 }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open });
@@ -693,16 +691,6 @@ function EditorInner({
             />
           </div>
           <div className="diagram-visual-head-actions">
-            {onSwitchToCode ? (
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={onSwitchToCode}
-                title="Перейти в текстовый редактор Mermaid"
-              >
-                Код
-              </button>
-            ) : null}
             <button
               type="button"
               className="btn ghost"

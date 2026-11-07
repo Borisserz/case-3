@@ -80,7 +80,6 @@ export function MermaidView({
   const reactId = useId().replace(/:/g, "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rawOpen, setRawOpen] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -173,14 +172,6 @@ export function MermaidView({
           {error !== "Пустая схема" ? (
             <p className="mermaid-view-error-detail">{error}</p>
           ) : null}
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setRawOpen((v) => !v)}
-          >
-            {rawOpen ? "Скрыть исходник" : "Показать Mermaid"}
-          </button>
-          {rawOpen ? <pre className="mermaid-view-raw">{source}</pre> : null}
         </div>
       ) : null}
       <div

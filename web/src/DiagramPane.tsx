@@ -5,7 +5,6 @@ import {
   DiagramFullscreen,
   type DiagramInfo,
 } from "./DiagramFullscreen";
-import { DiagramEditSheet } from "./DiagramEditSheet";
 import { DiagramZoomView } from "./DiagramZoomView";
 
 const DiagramVisualEditor = lazy(() =>
@@ -53,7 +52,6 @@ export function DiagramPane({
   const [fullscreen, setFullscreen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [forceCodeEditor, setForceCodeEditor] = useState(false);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -313,7 +311,8 @@ export function DiagramPane({
           <button
             type="button"
             className="btn ghost"
-            disabled={busy}
+            disabled={busy || !visualOk}
+            title={visualOk ? "Редактировать схему" : "Редактирование доступно для блок-схем"}
             onClick={() => openEditor(null)}
           >
             Изменить
@@ -438,7 +437,7 @@ export function DiagramPane({
         />
       ) : null}
 
-      {visualOk && !forceCodeEditor && editOpen ? (
+      {visualOk && editOpen ? (
         <Suspense fallback={null}>
           <DiagramVisualEditor
             open={editOpen}
@@ -450,33 +449,12 @@ export function DiagramPane({
             focusNodeId={focusNodeId}
             onCancel={() => {
               setEditOpen(false);
-              setForceCodeEditor(false);
               setFocusNodeId(null);
               setErr(null);
             }}
             onSave={(m, t) => void doApplyEdit(m, t)}
-            onSwitchToCode={() => setForceCodeEditor(true)}
           />
         </Suspense>
-      ) : null}
-      {(!visualOk || forceCodeEditor) && editOpen ? (
-        <DiagramEditSheet
-          open={editOpen}
-          title={diagram.title}
-          mermaid={diagram.mermaid}
-          busy={editBusy}
-          error={err}
-          onCancel={() => {
-            setEditOpen(false);
-            setForceCodeEditor(false);
-            setFocusNodeId(null);
-            setErr(null);
-          }}
-          onApply={(m, t) => {
-            setForceCodeEditor(false);
-            void doApplyEdit(m, t);
-          }}
-        />
       ) : null}
     </div>
   );
