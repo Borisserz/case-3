@@ -226,6 +226,47 @@ export function DiagramPane({
     }
   }, [onDiagramsUpdated, runId]);
 
+  const [copilotPrompt, setCopilotPrompt] = useState("");
+  const [copilotBusy, setCopilotBusy] = useState(false);
+
+  const doRefine = useCallback(async () => {
+    const text = copilotPrompt.trim();
+    if (!text || !runId || !diagram) return;
+    setCopilotBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/diagrams/${encodeURIComponent(diagram.id)}/refine`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instruction: text }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : data.error || res.statusText,
+        );
+      }
+      const next = Array.isArray(data.diagrams) ? data.diagrams : [];
+      if (!next.length) {
+        throw new Error("Модель не вернула обновлённую схему");
+      }
+      setCopilotPrompt("");
+      onDiagramsUpdated?.(next, {
+        undo: data.undo ?? null,
+        toast: "Схема изменена через ИИ",
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCopilotBusy(false);
+    }
+  }, [copilotPrompt, diagram, onDiagramsUpdated, runId]);
+
   if (emptyMode || !diagram) {
     return (
       <div className="diagram-pane is-premium is-empty">
@@ -342,6 +383,45 @@ export function DiagramPane({
           </button>
         </div>
       </header>
+
+      <form
+        className="diagram-copilot-bar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void doRefine();
+        }}
+      >
+        <div className="diagram-copilot-input-wrap">
+          <svg
+            className="diagram-copilot-icon"
+            viewBox="0 0 16 16"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden
+          >
+            <path d="M8 1v3M8 12v3M1 8h3M12 8h3M3.05 3.05l2.12 2.12M10.83 10.83l2.12 2.12M3.05 12.95l2.12-2.12M10.83 5.17l2.12-2.12" />
+          </svg>
+          <input
+            type="text"
+            className="diagram-copilot-input"
+            value={copilotPrompt}
+            onChange={(e) => setCopilotPrompt(e.target.value)}
+            placeholder="Что изменить через ИИ? (например: добавь этап согласования с юристами)"
+            disabled={copilotBusy || busy}
+          />
+        </div>
+        <button
+          type="submit"
+          className="btn ghost diagram-copilot-btn"
+          disabled={copilotBusy || busy || !copilotPrompt.trim()}
+          title="Применить точечные правки схемы через ИИ"
+        >
+          {copilotBusy ? "ИИ думает…" : "Изменить через ИИ"}
+        </button>
+      </form>
 
       {err ? (
         <p className="diagram-pane-err" role="alert">

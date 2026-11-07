@@ -1115,6 +1115,77 @@
   font-size: 0.88rem;
 }
 
+/* AI Copilot compact bar */
+.diagram-copilot-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.35rem 0.5rem;
+  background: color-mix(in srgb, var(--sheet, #f5f6f4) 85%, #fff);
+  border: 1px solid color-mix(in srgb, var(--border, #dfe3e0) 75%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink, #1a2e22) 3%, transparent);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.diagram-copilot-bar:focus-within {
+  border-color: color-mix(in srgb, var(--primary, #5a7a64) 50%, var(--border, #dfe3e0));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #5a7a64) 15%, transparent);
+}
+
+.diagram-copilot-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.diagram-copilot-icon {
+  color: var(--primary, #5a7a64);
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.diagram-copilot-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.82rem;
+  color: var(--ink, #1a2e22);
+  outline: none;
+  padding: 0.2rem 0;
+}
+
+.diagram-copilot-input::placeholder {
+  color: color-mix(in srgb, var(--muted, #6f7d74) 80%, transparent);
+  font-size: 0.8rem;
+}
+
+.diagram-copilot-btn {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary, #5a7a64) 12%, transparent);
+  color: var(--ink, #1a2e22);
+  border: 1px solid color-mix(in srgb, var(--primary, #5a7a64) 30%, transparent);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.diagram-copilot-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary, #5a7a64) 22%, transparent);
+  border-color: var(--primary, #5a7a64);
+}
+
+.diagram-copilot-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .diagram-pane-canvas {
   flex: 1;
   min-height: 240px;

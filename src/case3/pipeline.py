@@ -509,7 +509,7 @@ def _pipeline_materialize_media(
             specs = {d["id"]: d for d in diagram_targets}
             rendered = ensure_diagram_pngs(
                 specs,
-                figs_dir,
+                dest_dir=figs_dir,
                 palette=palette_for_diags,
                 theme_pack=palette_for_diags,
             )

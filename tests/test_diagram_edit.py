@@ -171,3 +171,57 @@ def test_edit_diagram_re_renders_png_and_updates_status(tmp_path: Path) -> None:
     assert meta.get("media_status", {}).get("dia_01", {}).get("ok") is True
     assert "version" in result
 
+
+def test_refine_diagram_in_run_applies_targeted_instruction(tmp_path: Path) -> None:
+    from unittest.mock import patch
+    from case3.diagram_edit import refine_diagram_in_run
+
+    out = _seed_run(tmp_path)
+    payload = {
+        "diagram": {
+            "id": "dia_01",
+            "title": "Заявка с юристами",
+            "type": "flowchart",
+            "mermaid": (
+                "flowchart TD\n"
+                "  A[Заявка]:::start --> B{КИН}:::decision\n"
+                "  B -->|ок| L[Юристы]:::process\n"
+                "  L --> C[Договор]:::ok\n"
+                "  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n"
+                "  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22\n"
+                "  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22\n"
+                "  classDef ok fill:#cfe6d4,stroke:#3d7a4a,color:#1a2e22\n"
+            ),
+        }
+    }
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.last_user = ""
+
+        def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
+            self.last_user = user_text
+            return "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+
+    fake = FakeClient()
+
+    def fake_render(mermaid, dest, **kwargs):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x89PNG\r\n\x1a\nrendered_refine")
+        return dest
+
+    with patch("case3.slides_media.render_mermaid_png", side_effect=fake_render):
+        result = refine_diagram_in_run(
+            out,
+            "dia_01",
+            instruction="добавь этап согласования с юристами",
+            client=fake,
+        )
+
+    assert result["title"] == "Заявка с юристами"
+    assert "Юристы" in result["mermaid"]
+    assert "добавь этап согласования с юристами" in fake.last_user
+    assert result.get("undo") and result["undo"].get("kind") == "diagram_refine"
+    assert (out / "figures" / "dia_01.png").is_file()
+
+

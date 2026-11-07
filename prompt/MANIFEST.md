@@ -12,6 +12,7 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 | `system_slides` | `system_slides.md` | `slides_job.load_slides_system_prompt` | `PALETTE` `THEME_OVERLAY` `STRUCTURE_OVERLAY` `CHART_IDS` `FIGURE_IDS` `DIAGRAM_IDS` `MEDIA_CATALOG` `INTENT` `SOURCE` |
 | `diagram_generate` | `diagram_generate.md` | `diagram_edit` regenerate | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |
 | `diagram_repair` | `diagram_repair.md` | pipeline `diagram_repair` stage | color table appended in code |
+| `diagram_refine` | `diagram_refine.md` | `diagram_edit` refine (AI Copilot) | `DIAGRAM_COLOR_TABLE` |
 
 ## `system_tex` parts (edit these)
 

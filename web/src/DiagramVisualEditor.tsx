@@ -250,6 +250,7 @@ function EditorInner({
   onCancel,
   onSave,
 }: Props) {
+  const { fitView } = useReactFlow();
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open });
 
@@ -593,6 +594,9 @@ function EditorInner({
         })),
       );
     });
+    window.setTimeout(() => {
+      void fitView({ padding: 0.2, duration: 320 });
+    }, 40);
   };
 
   const deleteSelected = () => {
@@ -815,6 +819,28 @@ function EditorInner({
                 disabled={!selectedNodeId && !selectedEdgeId}
               >
                 Удалить
+              </button>
+              <button
+                type="button"
+                className="btn ghost diagram-visual-layout-btn"
+                onClick={() => relayout(direction)}
+                title="Выровнять блоки схемы в 1 клик"
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden
+                >
+                  <rect x="2" y="2" width="5" height="5" rx="1" />
+                  <rect x="9" y="2" width="5" height="5" rx="1" />
+                  <rect x="2" y="9" width="5" height="5" rx="1" />
+                  <rect x="9" y="9" width="5" height="5" rx="1" />
+                </svg>
+                Выровнять
               </button>
               <label className="diagram-visual-dir">
                 Направление

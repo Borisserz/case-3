@@ -18,6 +18,7 @@ PROMPT_FILES: dict[str, str] = {
     "summary_system": "summary_system.md",
     "diagram_generate": "diagram_generate.md",
     "diagram_repair": "diagram_repair.md",
+    "diagram_refine": "diagram_refine.md",
 }
 
 # Multi-part prompts (joined with blank line). Edit parts under prompt/parts/.

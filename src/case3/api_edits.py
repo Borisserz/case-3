@@ -20,6 +20,7 @@ from case3.chart_style import normalize_palette_id
 from case3.diagram_edit import (
     DiagramEditError,
     edit_diagram_in_run,
+    refine_diagram_in_run,
     regenerate_diagrams_in_run,
 )
 from case3.figure_edit import FigureEditError, edit_figure_in_run
@@ -69,6 +70,15 @@ class DiagramEditBody(BaseModel):
 
 class DiagramRegenBody(BaseModel):
     palette: str | None = Field(default="atelier")
+
+
+class DiagramRefineBody(BaseModel):
+    instruction: str = Field(default="")
+    palette: str | None = Field(default=None)
+    formats: list[str] | None = Field(
+        default=None,
+        description="Print formats to rebuild (e.g. ['pdf', 'docx']); empty/None skips rebuild",
+    )
 
 
 class FigureEditBody(BaseModel):
@@ -176,6 +186,50 @@ async def edit_run_diagram(
         )
     except DiagramEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    undo = None
+    artifacts = None
+    if isinstance(diagram, dict):
+        undo = diagram.pop("undo", None)
+        artifacts = diagram.pop("artifacts", None)
+    res: dict[str, Any] = {
+        "diagram": diagram,
+        "diagrams": load_diagrams_from_out(out_dir),
+        "undo": undo,
+    }
+    if artifacts:
+        res["artifacts"] = artifacts
+    return res
+
+
+@router.post("/api/runs/{run_id}/diagrams/{diagram_id}/refine")
+async def refine_run_diagram(
+    run_id: str, diagram_id: str, body: DiagramRefineBody
+) -> dict[str, Any]:
+    """Targeted differential LLM refine for one Liber diagram (AI Copilot)."""
+    if not FILE_OK.match(diagram_id):
+        raise HTTPException(400, detail="invalid diagram_id")
+    instr = (body.instruction or "").strip()
+    if not instr:
+        raise HTTPException(400, detail="укажите, что изменить в схеме")
+    out_dir = resolve_run_dir(run_id)
+    palette = normalize_palette_id(body.palette or "atelier")
+    fmt_set = formats_from_edit_body(body.formats)
+    try:
+        diagram = await asyncio.to_thread(
+            partial(
+                refine_diagram_in_run,
+                out_dir,
+                diagram_id,
+                instruction=instr,
+                client=LLMClient(LLMConfig.from_env()),
+                palette=palette,
+                formats=fmt_set,
+            )
+        )
+    except DiagramEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except (LLMError, LLMConfigError) as exc:
+        raise HTTPException(502, detail=str(exc)) from exc
     undo = None
     artifacts = None
     if isinstance(diagram, dict):
