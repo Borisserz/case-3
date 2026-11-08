@@ -369,9 +369,58 @@ def _pipeline_active_run() -> str | None:
         return _PIPELINE_ACTIVE_ID
 
 
+def _is_pipeline_thread_alive(run_id: str | None) -> bool:
+    if not run_id or run_id == "pending":
+        return False
+    names = {t.name for t in threading.enumerate()}
+    return f"case3-pipeline-{run_id}" in names or f"case3-resume-{run_id}" in names
+
+
+def _reclaim_stale_slot_if_dead() -> bool:
+    """If slot is locked but the run is already finished/cancelled, or the thread died, auto-recover."""
+    if not _PIPELINE_SLOT.locked():
+        return False
+    active_id = _pipeline_active_run()
+    if not active_id:
+        _release_pipeline_slot()
+        return True
+    if active_id == "pending":
+        return False
+
+    out_dir = run_store.ROOT / "runs" / "out" / active_id
+    logs_dir = run_store.ROOT / "runs" / "logs" / active_id
+    meta_path = out_dir / "meta.json"
+    if not meta_path.is_file():
+        meta_path = logs_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            m = json.loads(meta_path.read_text(encoding="utf-8"))
+            if m.get("status") in {"ok", "error", "cancelled"}:
+                log.warning(
+                    "Pipeline slot held by terminal run %s (%s); releasing slot",
+                    active_id,
+                    m.get("status"),
+                )
+                _release_pipeline_slot(active_id)
+                return True
+            if not _is_pipeline_thread_alive(active_id):
+                log.warning(
+                    "Pipeline slot held by run %s with dead thread; releasing slot",
+                    active_id,
+                )
+                _release_pipeline_slot(active_id)
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 def _claim_pipeline_slot(run_id: str) -> str | None:
     """Return None if claimed; else the run_id that still holds the slot."""
     global _PIPELINE_ACTIVE_ID
+    if _PIPELINE_SLOT.locked():
+        _reclaim_stale_slot_if_dead()
     if not _PIPELINE_SLOT.acquire(blocking=False):
         return _pipeline_active_run() or "busy"
     with _PIPELINE_ACTIVE_GUARD:
@@ -1048,6 +1097,8 @@ def resume_run(run_id: str) -> dict[str, Any]:
             detail="run is not eligible to resume (need error after LLM on media/render)",
         )
     if _PIPELINE_SLOT.locked():
+        _reclaim_stale_slot_if_dead()
+    if _PIPELINE_SLOT.locked():
         busy = _pipeline_active_run() or "busy"
         raise HTTPException(
             409,
@@ -1086,6 +1137,9 @@ def cancel_run(run_id: str) -> dict[str, Any]:
 
     with _slides_patch_lock:
         _slides_patch_pending.pop(run_id, None)
+    if _pipeline_active_run() == run_id:
+        if not _is_pipeline_thread_alive(run_id):
+            _release_pipeline_slot(run_id)
     return {
         "run_id": run_id,
         "status": "cancelling",
@@ -1093,6 +1147,14 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         "pipeline_status": meta.get("status"),
         "slides_status": meta.get("slides_status"),
     }
+
+
+@app.post("/api/pipeline/slot/reset")
+def reset_pipeline_slot() -> dict[str, Any]:
+    """Force release pipeline lock if stuck."""
+    old = _pipeline_active_run()
+    _release_pipeline_slot()
+    return {"ok": True, "reset_from": old}
 
 
 @app.get("/api/runs/{run_id}/figures/{name}")
