@@ -32,7 +32,7 @@ def build_intent_from_ui(
     chart_palette / chart_style → color preset + optional look notes.
     doc_title → forced \\title (also applied post-LLM).
     max_* are ceilings, not quotas.
-    max_diagrams → Liber Mermaid schemas (UI-only); independent of charts.
+    max_diagrams → Liber Mermaid schemas; independent of charts.
     output_mode → report|diagram|presentation|auto (Liber composer pills).
     """
     parts: list[str] = []
@@ -135,7 +135,7 @@ def build_intent_from_ui(
         req.append("- без Mermaid-схем (diagrams: []) — CASE3_MAX_DIAGRAMS=0")
     else:
         req.append(
-            f"- до {md} Mermaid-схем (JSON diagrams[], Liber UI only, не в PDF); "
+            f"- до {md} Mermaid-схем (JSON diagrams[] + слот %CASE3_DIAG:dia_NN% в LaTeX); "
             "DEFAULT-ON: если в Source есть шаги/роли/ветвления/структура/≥3 раздела — "
             "сделай ≥1 схему; пустой diagrams[] только при «без схем» в Intent "
             "или чисто числовом Source без структуры"

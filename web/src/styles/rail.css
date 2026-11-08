@@ -642,6 +642,28 @@
   cursor: default;
 }
 
+.artifact-rail-edit-recolor {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 0.28rem 0.52rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  background: color-mix(in srgb, var(--sheet) 92%, var(--secondary));
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.artifact-rail-edit-recolor:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 8%, var(--sheet));
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.artifact-rail-edit-recolor:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .artifact-rail-dl {
   font-size: 0.72rem;
   font-weight: 600;

@@ -92,9 +92,10 @@ export function PdfFirstPage({
         const pdfPage = await doc.getPage(n);
         if (gen !== renderGen.current) return;
         const base = pdfPage.getViewport({ scale: 1 });
-        const maxW = Math.min(720, canvas.parentElement?.clientWidth || 720);
+        const parentW = canvas.parentElement?.clientWidth || 0;
+        const maxW = Math.min(840, Math.max(480, parentW || 680));
         const scale = maxW / base.width;
-        const viewport = pdfPage.getViewport({ scale: Math.max(0.8, scale) });
+        const viewport = pdfPage.getViewport({ scale: Math.max(0.75, scale) });
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("no canvas");
         canvas.width = Math.floor(viewport.width);
@@ -319,11 +320,17 @@ export function PdfFirstPage({
         )}
       </div>
       <figcaption className="report-pdf-cap">
-        {err
-          ? "Превью PDF недоступно — скачайте файл"
-          : pageCount
-            ? `Стр. ${page} / ${pageCount} · как в PDF`
-            : "Загрузка PDF…"}
+        {err ? (
+          "Превью PDF недоступно — скачайте файл"
+        ) : pageCount ? (
+          <div className="report-pdf-toolbar">
+            <span className="report-pdf-counter">
+              Стр. {page} / {pageCount} · как в PDF
+            </span>
+          </div>
+        ) : (
+          "Загрузка PDF…"
+        )}
       </figcaption>
     </figure>
   );

@@ -20,7 +20,7 @@ def test_inject_diagram_slot_replaces_with_figure_env() -> None:
     diagrams = [{"id": "dia_01", "title": "Путь сделки · KPI"}]
     out = inject_media(tex, [], [], status, diagrams=diagrams)
 
-    assert r"\includegraphics[width=0.92\linewidth]{figures/dia_01.png}" in out
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in out
     assert r"\caption{Путь сделки \cdot KPI}" in out or r"\caption{Путь сделки · KPI}" in out
     assert r"\label{dia:dia_01}" in out
     assert r"\begin{figure}" in out
@@ -42,7 +42,7 @@ def test_inject_diagram_slot_inside_figure() -> None:
     out = inject_media(tex, [], [], status, diagrams=diagrams)
 
     assert out.count(r"\begin{figure}") == 1
-    assert r"\includegraphics[width=0.92\linewidth]{figures/dia_01.png}" in out
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in out
     assert r"\caption{Существующая подпись}" in out
 
 
@@ -60,7 +60,7 @@ def test_inject_diagram_fallback_before_conclusion() -> None:
     diagrams = [{"id": "dia_01", "title": "Архитектура процесса"}]
     out = inject_media(tex, [], [], status, diagrams=diagrams)
 
-    assert r"\includegraphics[width=0.92\linewidth]{figures/dia_01.png}" in out
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in out
     # Must appear before \section{Заключение}
     diag_pos = out.find(r"figures/dia_01.png")
     conclusion_pos = out.find(r"\section{Заключение}")
@@ -99,6 +99,6 @@ def test_rewrites_bare_dia_path_when_ok() -> None:
     status = {"dia_01": {"ok": True}}
     diagrams = [{"id": "dia_01", "title": "Diagram"}]
     out = inject_media(tex, [], [], status, diagrams=diagrams)
-    assert r"\includegraphics[width=\linewidth]{figures/dia_01.png}" in out
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in out
     assert "{dia_01.png}" not in out
 

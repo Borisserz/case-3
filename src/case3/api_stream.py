@@ -22,7 +22,7 @@ def _sse_pack(event: str, data: dict[str, Any]) -> str:
 
 
 @router.get("/api/runs/{run_id}/events")
-def stream_run_events(run_id: str) -> StreamingResponse:
+async def stream_run_events(run_id: str) -> StreamingResponse:
     """SSE: stage / artifact / done|error|cancelled (no model thoughts)."""
     if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
@@ -34,7 +34,7 @@ def stream_run_events(run_id: str) -> StreamingResponse:
     if not out_dir.is_dir() and not work.is_dir():
         raise HTTPException(404, detail="run not found")
 
-    def gen():
+    async def gen():
         import time as _time
 
         # Late join: seed bus from meta if empty (API restart / missed start).
@@ -124,7 +124,7 @@ def stream_run_events(run_id: str) -> StreamingResponse:
                     yield _sse_pack(kind, payload)
                     return
 
-        for ev in EVENTS.subscribe(run_id, timeout_s=1200.0, keepalive_s=15.0):
+        async for ev in EVENTS.subscribe_async(run_id, timeout_s=1200.0, keepalive_s=15.0):
             kind = str(ev.get("event") or "stage")
             # SSE comment — keeps Vite proxy / TCP alive during long llm waits
             if kind == "ping":
@@ -147,7 +147,7 @@ def stream_run_events(run_id: str) -> StreamingResponse:
 
 
 @router.get("/api/runs/{run_id}/summary/stream")
-def stream_run_summary(run_id: str) -> StreamingResponse:
+async def stream_run_summary(run_id: str) -> StreamingResponse:
     """SSE: chat summary deltas while PDF renders (replay-safe)."""
     if not RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
@@ -160,7 +160,7 @@ def stream_run_summary(run_id: str) -> StreamingResponse:
     if not out_dir.is_dir() and not work.is_dir():
         raise HTTPException(404, detail="run not found")
 
-    def gen():
+    async def gen():
         # If bus already finished, subscribe still replays.
         # If meta already has final summary and bus never started (restart), emit once.
         snap = BUS.snapshot(run_id)
@@ -178,7 +178,7 @@ def stream_run_summary(run_id: str) -> StreamingResponse:
                 yield _sse_pack("done", {"text": final, "status": st or "ok"})
                 return
 
-        for ev in BUS.subscribe(run_id, timeout_s=180.0):
+        async for ev in BUS.subscribe_async(run_id, timeout_s=180.0):
             kind = ev.get("event") or "delta"
             if kind == "delta":
                 yield _sse_pack("delta", {"text": ev.get("text") or ""})

@@ -3,9 +3,12 @@ import { describe, it, beforeEach } from "node:test";
 import {
   createFolder,
   deleteFolder,
+  hydrateHistoryResult,
   loadFolders,
   loadHistory,
   loadUserTurn,
+  mergeServerFolders,
+  mergeServerHistory,
   moveHistoryToFolder,
   pushHistory,
   saveUserTurn,
@@ -91,4 +94,81 @@ describe("reportHistory folders + pin", () => {
     ]);
     assert.deepEqual(thumbs, [{ url: "/u.png", name: "usr_01" }]);
   });
+
+  it("merges server history with local history", () => {
+    const local = [
+      { id: "run_1", runId: "run_1", title: "Local 1", savedAt: 100, pinned: false },
+    ];
+    const server = [
+      { id: "run_1", runId: "run_1", title: "Server 1", savedAt: 100, pinned: true, folderId: "f_1" },
+      { id: "run_2", runId: "run_2", title: "Server 2", savedAt: 200, pinned: false },
+    ];
+    const merged = mergeServerHistory(local, server);
+    assert.equal(merged.length, 2);
+    // Pinned should float to top
+    assert.equal(merged[0].runId, "run_1");
+    assert.equal(merged[0].pinned, true);
+    assert.equal(merged[0].folderId, "f_1");
+    assert.equal(merged[1].runId, "run_2");
+  });
+
+  it("merges server folders without duplicates", () => {
+    const local = [{ id: "f_1", name: "Финансы", createdAt: 100 }];
+    const server = [
+      { id: "f_1", name: "Финансы", createdAt: 100 },
+      { id: "f_2", name: "Маркетинг", createdAt: 200 },
+    ];
+    const merged = mergeServerFolders(local, server);
+    assert.equal(merged.length, 2);
+    assert.deepEqual(merged.map((f) => f.id).sort(), ["f_1", "f_2"]);
+  });
+
+  it("hydrates presentation deck IR and slide_pngs when opening history with cold sessionStorage", () => {
+    const remote = {
+      run_id: "pres_1",
+      status: "ok",
+      output_mode: "presentation",
+      slides_status: "ok",
+      downloads: { pptx: "/api/runs/pres_1/files/deck.pptx" },
+    };
+    const slidesPayload = {
+      slides_status: "ok",
+      slide_pngs: ["/api/runs/pres_1/slides/png/slide_01.png"],
+      deck: {
+        title: "Обзор Q3",
+        slides: [{ id: "s1", layout: "title_slide", title: "Обзор Q3" }],
+      },
+    };
+    const hydrated = hydrateHistoryResult(null, remote, slidesPayload);
+    assert.ok(hydrated);
+    assert.equal(hydrated?.deck?.slides?.length, 1);
+    assert.deepEqual(hydrated?.slide_pngs, [
+      "/api/runs/pres_1/slides/png/slide_01.png",
+    ]);
+  });
+
+  it("persists merged server history and folders so togglePinHistory in a fresh tab does not wipe items", () => {
+    // Fresh tab: sessionStorage starts empty, server returns 2 items and 1 folder
+    const serverItems = [
+      { id: "run_1", runId: "run_1", title: "Отчёт Q1", savedAt: 100, pinned: false },
+      { id: "run_2", runId: "run_2", title: "Отчёт Q2", savedAt: 200, pinned: false },
+    ];
+    const serverFolders = [{ id: "f_1", name: "Стратегия", createdAt: 100 }];
+
+    const mergedItems = mergeServerHistory(loadHistory(), serverItems);
+    const mergedFolders = mergeServerFolders(loadFolders(), serverFolders);
+    assert.equal(mergedItems.length, 2);
+    assert.equal(mergedFolders.length, 1);
+
+    // Pinning an item right after server hydration must NOT wipe the list to []
+    const afterPin = togglePinHistory("run_1");
+    assert.equal(afterPin.length, 2);
+    assert.equal(afterPin[0].runId, "run_1");
+    assert.equal(afterPin[0].pinned, true);
+
+    const afterMove = moveHistoryToFolder("run_2", "f_1");
+    assert.equal(afterMove.length, 2);
+    assert.equal(afterMove.find((h) => h.runId === "run_2")?.folderId, "f_1");
+  });
 });
+

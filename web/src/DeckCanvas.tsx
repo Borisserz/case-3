@@ -1562,6 +1562,9 @@ export function DeckCanvas({
     }
   }, [onPatch]);
 
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+
   const onField = useCallback(
     (patch: Partial<DeckSlide>) => {
       if (!slide) return;
@@ -1575,11 +1578,11 @@ export function DeckCanvas({
         id: slide.id,
       };
       if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => {
-        void flush();
-      }, 700);
+      // Editable/TableCell commit on blur; flush immediately on next microtask so
+      // clicking «Готово» or switching slides never drops the committed edit.
+      void Promise.resolve().then(() => flushRef.current());
     },
-    [deck, flush, onDeckChange, slide, slides],
+    [deck, onDeckChange, slide, slides],
   );
 
   const onFocusField = useCallback((el: HTMLElement, label: string) => {
@@ -1620,8 +1623,9 @@ export function DeckCanvas({
   useEffect(
     () => () => {
       if (timer.current) window.clearTimeout(timer.current);
+      void flushRef.current();
     },
-    [],
+    [editing, slide?.id],
   );
 
   const vars = useMemo(

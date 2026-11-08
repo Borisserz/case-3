@@ -516,7 +516,10 @@ def generate_all_figures(
     cfg: ImageApiConfig | None = None,
     on_progress: Any | None = None,
     pack_id: str | None = None,
+    cancel_check: Any | None = None,
 ) -> dict[str, Any]:
+    if cancel_check:
+        cancel_check()
     cfg = cfg or ImageApiConfig.from_env()
     figures_dir.mkdir(parents=True, exist_ok=True)
     status: dict[str, Any] = {}
@@ -549,6 +552,8 @@ def generate_all_figures(
         return status
 
     for fig in api_figs:
+        if cancel_check:
+            cancel_check()
         fid = fig["id"]
         dest = figures_dir / f"{fid}.png"
         log.info("image generate start %s → %s", fid, cfg.generate_url)
@@ -561,6 +566,8 @@ def generate_all_figures(
             )
             status[fid] = {"ok": True, "path": str(dest), "kind": "figure"}
             log.info("image ok %s → %s", fid, dest)
+            if cancel_check:
+                cancel_check()
             if on_progress:
                 on_progress(fid)
         except (

@@ -174,3 +174,43 @@ def test_slides_ir_rebuild_false_skips_worker(
     assert started == []
     saved = json.loads((slides / "deck.json").read_text(encoding="utf-8"))
     assert saved["slides"][0]["title"] == "B"
+
+
+def test_figure_delete_accepts_formats_body(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = "edit_fig_del_20260101T000000Z"
+    out = _seed_run(repo_root, run_id)
+    (out / "figures.json").write_text(
+        json.dumps({"figures": [{"id": "fig_01", "caption": "Demo"}]}),
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def _fake_delete(out_dir, figure_id, *, formats=None):
+        seen["formats"] = formats
+        return {
+            "figure_id": figure_id,
+            "mode": "delete",
+            "media_status": {},
+            "artifacts": {},
+            "undo": None,
+        }
+
+    import case3.figure_edit as fig_mod
+
+    monkeypatch.setattr(fig_mod, "delete_figure_in_run", _fake_delete)
+    r = client.post(
+        f"/api/runs/{run_id}/figures/fig_01/delete",
+        json={"formats": "none"},
+    )
+    assert r.status_code == 200, r.text
+    assert seen.get("formats") == set()
+
+    r_bad = client.post(
+        f"/api/runs/{run_id}/figures/fig_01/delete",
+        json={"formats": "pptx"},
+    )
+    assert r_bad.status_code == 400
+
+

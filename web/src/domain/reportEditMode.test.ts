@@ -3,12 +3,17 @@ import { describe, it } from "node:test";
 import {
   blockEditVisible,
   collapseSetForEditMode,
+  copyMarkdownButtonVisible,
   docsNeedRebuild,
   parseEditHistory,
+  recolorChartsButtonVisible,
   reportEditModeHint,
   reportEditToggleVisible,
+  shouldIgnoreDeckHotkey,
+  slidesFilmTabLabel,
   toastUndoVisible,
 } from "./reportEditMode";
+import { wrapChartScriptIife } from "../LiveChart";
 
 describe("reportEditMode", () => {
   it("hides block edits when mode is off", () => {
@@ -29,6 +34,10 @@ describe("reportEditMode", () => {
     );
     assert.equal(
       reportEditToggleVisible({ onEditHeading: () => true }),
+      true,
+    );
+    assert.equal(
+      reportEditToggleVisible({ onEditTitle: () => true }),
       true,
     );
     assert.equal(
@@ -106,4 +115,41 @@ describe("reportEditMode", () => {
     );
     assert.equal(toastUndoVisible(false, { canUndo: false, canRedo: true, depth: 0 }), false);
   });
+
+  it("shows recolor charts button only in edit mode and copy MD only in read-only mode", () => {
+    assert.equal(recolorChartsButtonVisible(false, true, true), false);
+    assert.equal(recolorChartsButtonVisible(true, true, true), true);
+    assert.equal(recolorChartsButtonVisible(true, false, true), false);
+    assert.equal(recolorChartsButtonVisible(true, true, false), false);
+
+    assert.equal(copyMarkdownButtonVisible(false, true), true);
+    assert.equal(copyMarkdownButtonVisible(true, true), false);
+    assert.equal(copyMarkdownButtonVisible(false, false), false);
+  });
+
+  it("gives slides film tab a distinct label from report PDF tab", () => {
+    assert.equal(slidesFilmTabLabel(), "Слайды (PDF)");
+    assert.notEqual(slidesFilmTabLabel(), "PDF");
+  });
+
+  it("ignores deck hotkeys when typing in INPUT, TEXTAREA, SELECT, contentEditable, or modal", () => {
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "TEXTAREA" }), true);
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "INPUT" }), true);
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "SELECT" }), true);
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "DIV", isContentEditable: true }), true);
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "DIV" }, true), true);
+    assert.equal(shouldIgnoreDeckHotkey({ tagName: "DIV" }, false), false);
+    assert.equal(shouldIgnoreDeckHotkey(null, false), false);
+  });
+
+  it("wraps LiveChart script in an IIFE so top-level const declarations do not collide", () => {
+    const s1 = wrapChartScriptIife("const ctx = 1; globalThis.__c1 = ctx;");
+    const s2 = wrapChartScriptIife("const ctx = 2; globalThis.__c2 = ctx;");
+    // Executing both in the same scope would throw SyntaxError without IIFE wrapping
+    const fn = new Function(`${s1}\n${s2}`);
+    fn();
+    assert.equal((globalThis as { __c1?: number }).__c1, 1);
+    assert.equal((globalThis as { __c2?: number }).__c2, 2);
+  });
 });
+

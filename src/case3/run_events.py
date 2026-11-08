@@ -6,17 +6,19 @@ Durable craft log: meta["steps"] (stage/step/terminal only; no film/sound).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 STEPS_CAP = 200
-_meta_file_lock = threading.Lock()
+DEFAULT_BUS_TTL_S = 1800.0
+_meta_file_lock = threading.RLock()
 
 
 @dataclass
@@ -28,6 +30,7 @@ class _RunEvents:
     artifacts_seen: set[str] = field(default_factory=set)
     film_seen: set[str] = field(default_factory=set)
     started_at: float = field(default_factory=time.time)
+    finished_at: float | None = None
     out_dir: Path | None = None
     cond: threading.Condition = field(default_factory=threading.Condition)
 
@@ -111,27 +114,28 @@ def write_meta_atomic(
 ) -> None:
     """Write meta.json via tmp+replace (Windows-safe vs readers/AV)."""
     meta_path = Path(meta_path)
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = meta_path.with_suffix(".json.tmp")
-    last_err: OSError | None = None
-    for attempt in range(6):
-        try:
-            tmp.write_text(payload, encoding="utf-8")
-            os.replace(tmp, meta_path)
-            last_err = None
-            break
-        except OSError as exc:
-            last_err = exc
-            time.sleep(0.04 * (attempt + 1))
-    if last_err is not None:
-        # Last resort — may still race with status poll on Win
-        meta_path.write_text(payload, encoding="utf-8")
-    if logs_meta is not None:
-        try:
-            logs_meta.parent.mkdir(parents=True, exist_ok=True)
-            logs_meta.write_text(payload, encoding="utf-8")
-        except OSError:
-            pass
+    with _meta_file_lock:
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = meta_path.with_suffix(".json.tmp")
+        last_err: OSError | None = None
+        for attempt in range(6):
+            try:
+                tmp.write_text(payload, encoding="utf-8")
+                os.replace(tmp, meta_path)
+                last_err = None
+                break
+            except OSError as exc:
+                last_err = exc
+                time.sleep(0.04 * (attempt + 1))
+        if last_err is not None:
+            # Last resort — may still race with status poll on Win
+            meta_path.write_text(payload, encoding="utf-8")
+        if logs_meta is not None:
+            try:
+                logs_meta.parent.mkdir(parents=True, exist_ok=True)
+                logs_meta.write_text(payload, encoding="utf-8")
+            except OSError:
+                pass
 
 
 def seed_events_from_steps(
@@ -179,8 +183,24 @@ class RunEventBus:
                 self._runs[run_id] = st
             return st
 
+    def evict_stale(self, *, max_age_s: float = DEFAULT_BUS_TTL_S) -> int:
+        """Remove completed runs older than ``max_age_s`` from memory."""
+        cutoff = time.time() - max(1.0, float(max_age_s))
+        removed = 0
+        with self._lock:
+            stale_ids = [
+                rid
+                for rid, st in self._runs.items()
+                if st.done and float(st.finished_at or st.started_at or 0.0) < cutoff
+            ]
+            for rid in stale_ids:
+                self._runs.pop(rid, None)
+                removed += 1
+        return removed
+
     def start(self, run_id: str) -> None:
         """Reset bus for a new run (clears history)."""
+        self.evict_stale()
         st = self._state(run_id)
         with st.cond:
             st.events.clear()
@@ -190,6 +210,7 @@ class RunEventBus:
             st.film_seen.clear()
             st.out_dir = None
             st.started_at = time.time()
+            st.finished_at = None
             st.cond.notify_all()
 
     def bind_out(self, run_id: str, out_dir: Path) -> None:
@@ -204,10 +225,11 @@ class RunEventBus:
         with st.cond:
             st.done = False
             st.terminal = None
+            st.finished_at = None
             st.cond.notify_all()
 
     def reopen(self, run_id: str) -> None:
-        """Allow more events after pipeline done (e.g. on-demand slides job)."""
+        """Allow more events after pipeline terminal (e.g. on-demand slides job)."""
         self.ensure(run_id)
 
     def seed_from_steps(self, run_id: str, steps: list[Any]) -> int:
@@ -230,6 +252,7 @@ class RunEventBus:
                 if kind in {"done", "error", "cancelled"}:
                     st.done = True
                     st.terminal = kind
+                    st.finished_at = float(ev.get("t") or time.time())
                 n += 1
             st.cond.notify_all()
         return n
@@ -253,6 +276,7 @@ class RunEventBus:
             if kind in {"done", "error", "cancelled"}:
                 st.done = True
                 st.terminal = kind
+                st.finished_at = time.time()
             st.cond.notify_all()
         # Do NOT persist meta.steps here — pipeline/slides write steps once per
         # stage id. Double RMW on every publish hammered Windows meta.json (AV).
@@ -516,6 +540,58 @@ class RunEventBus:
                 yield ev
             if finished:
                 return
+
+    async def subscribe_async(
+        self,
+        run_id: str,
+        *,
+        timeout_s: float = 1200.0,
+        keepalive_s: float = 15.0,
+        poll_s: float = 0.04,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Non-blocking async generator yielding event dicts until terminal or timeout."""
+        st = self._state(run_id)
+        sent = 0
+        deadline = time.monotonic() + max(0.1, timeout_s)
+        last_out = time.monotonic()
+        keep_every = max(1.0, float(keepalive_s))
+        while True:
+            batch: list[dict[str, Any]] = []
+            finished = False
+            with st.cond:
+                while sent < len(st.events):
+                    batch.append(dict(st.events[sent]))
+                    sent += 1
+                finished = st.done and sent >= len(st.events)
+
+            if batch:
+                for ev in batch:
+                    last_out = time.monotonic()
+                    yield ev
+                if finished:
+                    return
+                continue
+
+            if finished:
+                return
+
+            now = time.monotonic()
+            remaining = deadline - now
+            if remaining <= 0:
+                yield {
+                    "event": "error",
+                    "status": "error",
+                    "error": "events timeout",
+                    "t": time.time(),
+                }
+                return
+
+            if now - last_out >= keep_every:
+                last_out = now
+                yield {"event": "ping", "t": time.time()}
+                continue
+
+            await asyncio.sleep(min(poll_s, max(0.005, remaining)))
 
 
 # Process-wide bus used by pipeline + slides + API

@@ -48,6 +48,46 @@ def patch_figure_caption_in_tex(tex: str, figure_id: str, caption: str) -> str:
     return tex
 
 
+def delete_figure_in_tex(tex: str, figure_id: str) -> str:
+    """Remove a figure environment, includegraphics line, or slot matching figure_id."""
+    if not tex or not figure_id:
+        return tex
+    fid = re.escape(figure_id)
+
+    # 1. Enclosing \begin{figure}...\end{figure} containing figure_id
+    pos = 0
+    while True:
+        idx = tex.find(figure_id, pos)
+        if idx == -1:
+            break
+        begin = tex.rfind(r"\begin{figure}", 0, idx)
+        end_before = tex.rfind(r"\end{figure}", 0, idx)
+        if begin != -1 and begin >= end_before:
+            end = tex.find(r"\end{figure}", idx)
+            if end != -1:
+                end_pos = end + len(r"\end{figure}")
+                while end_pos < len(tex) and tex[end_pos] in " \t\r\n":
+                    end_pos += 1
+                tex = tex[:begin] + tex[end_pos:]
+                return tex
+        pos = idx + len(figure_id)
+
+    # 2. Standalone slot: %CASE3_(FIG|CHART|DIAG):figure_id%
+    slot_pat = re.compile(rf"[ \t]*%CASE3_(?:FIG|CHART|DIAG):{fid}%\n?", re.I)
+    if slot_pat.search(tex):
+        return slot_pat.sub("", tex, count=1)
+
+    # 3. Standalone \includegraphics line
+    inc_pat = re.compile(
+        rf"[ \t]*\\includegraphics(?:\[[^\]]*\])?\{{(?:figures/)?{fid}\.png\}}\n?",
+        re.I,
+    )
+    if inc_pat.search(tex):
+        return inc_pat.sub("", tex, count=1)
+
+    return tex
+
+
 def edit_figure_in_run(
     out_dir: Path,
     figure_id: str,
@@ -156,23 +196,23 @@ def edit_figure_in_run(
         )
         texs[0].write_text(patched, encoding="utf-8")
 
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {}
+    from case3.run_events import write_meta_atomic
+    from case3.run_meta import update_meta
+
+    def _mut_fig_edit(m: dict[str, Any]) -> None:
+        med = dict(m.get("media_status") or {})
+        med[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
+        m["media_status"] = med
+        m["last_figure_edit"] = {
+            "id": figure_id,
+            "mode": mode,
+            "prompt": prompt[:500],
+            "caption": (caption_new or "")[:300] or None,
+            "ts": int(time.time()),
+        }
+
+    meta = update_meta(out_dir, _mut_fig_edit)
     media = dict(meta.get("media_status") or {})
-    media[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
-    meta["media_status"] = media
-    meta["last_figure_edit"] = {
-        "id": figure_id,
-        "mode": mode,
-        "prompt": prompt[:500],
-        "caption": (caption_new or "")[:300] or None,
-        "ts": int(time.time()),
-    }
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     try:
         artifacts = rebuild_run_docs(out_dir, formats=formats)
@@ -184,7 +224,7 @@ def edit_figure_in_run(
         if fj_bak is not None:
             fj_path.write_text(fj_bak, encoding="utf-8")
         if meta_bak is not None:
-            meta_path.write_text(meta_bak, encoding="utf-8")
+            write_meta_atomic(meta_path, meta_bak)
         if tex_bak is not None:
             texs[0].write_text(tex_bak, encoding="utf-8")
         from case3.run_undo import clear_undo
@@ -208,5 +248,90 @@ def edit_figure_in_run(
         "media_status": media,
         "artifacts": {k: str(p) for k, p in artifacts.items()},
         "version": v,
+        "undo": undo_meta(out_dir),
+    }
+
+
+def delete_figure_in_run(
+    out_dir: Path,
+    figure_id: str,
+    *,
+    formats: set[str] | None = None,
+) -> dict[str, Any]:
+    """Delete a figure/chart from LaTeX, figures.json, and meta.json."""
+    out_dir = out_dir.resolve()
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="figure_delete", target=figure_id)
+
+    # 1. Patch TeX file
+    tex_path = None
+    for cand in ("report.tex", "main.tex", f"{out_dir.name}.tex"):
+        p = out_dir / cand
+        if p.is_file():
+            tex_path = p
+            break
+    if not tex_path:
+        tex_files = list(out_dir.glob("*.tex"))
+        if tex_files:
+            tex_path = tex_files[0]
+
+    if tex_path and tex_path.is_file():
+        old_tex = tex_path.read_text(encoding="utf-8")
+        new_tex = delete_figure_in_tex(old_tex, figure_id)
+        if new_tex != old_tex:
+            tex_path.write_text(new_tex, encoding="utf-8")
+
+    # 2. Update figures.json
+    fj_path = out_dir / "figures.json"
+    if fj_path.is_file():
+        try:
+            fj = json.loads(fj_path.read_text(encoding="utf-8"))
+            for key in ("figures", "charts", "diagrams"):
+                if key in fj and isinstance(fj[key], list):
+                    fj[key] = [
+                        item
+                        for item in fj[key]
+                        if not (isinstance(item, dict) and item.get("id") == figure_id)
+                    ]
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    # 3. Update meta.json
+    from case3.run_meta import update_meta
+
+    media: dict[str, Any] = {}
+
+    def _mut_del(m: dict[str, Any]) -> None:
+        nonlocal media
+        media = dict(m.get("media_status") or {})
+        media[figure_id] = {"ok": False, "deleted": True}
+        m["media_status"] = media
+        m["last_figure_delete"] = {"id": figure_id, "ts": int(time.time())}
+
+    update_meta(out_dir, _mut_del)
+
+    # 4. Rebuild documents (soft-fail)
+    fmts = formats if formats is not None else {"none"}
+    artifacts: dict[str, Any] = {}
+    try:
+        artifacts = rebuild_run_docs(out_dir, formats=fmts)
+    except Exception as exc:
+        log.warning("delete_figure_in_run rebuild failed: %s", exc)
+
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
+
+    from case3.run_undo import undo_meta
+
+    return {
+        "figure_id": figure_id,
+        "mode": "delete",
+        "media_status": media,
+        "artifacts": {k: str(p) for k, p in artifacts.items()},
         "undo": undo_meta(out_dir),
     }

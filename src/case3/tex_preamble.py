@@ -864,12 +864,13 @@ def ensure_document_preamble(tex: str) -> str:
     out = strip_orphan_table_markup(out)
     out = strip_invented_cites(out, allowed_keys=set())
     from case3.tex_prose import (
+        brace_schema_item_labels,
         fix_markdown_bold_leaks,
         fix_unclosed_caption_args,
         fix_unclosed_float_envs,
-        brace_schema_item_labels,
         fix_unclosed_heading_args,
         harden_prose_lists,
+        harden_russian_typography,
         normalize_includegraphics_aspect,
         scrub_emoji_from_headings,
         unstar_headings,
@@ -885,6 +886,7 @@ def ensure_document_preamble(tex: str) -> str:
     out = harden_prose_lists(out)
     out = brace_schema_item_labels(out)
     out = normalize_includegraphics_aspect(out)
+    out = harden_russian_typography(out)
     return harden_table_rules(out)
 
 
@@ -897,11 +899,23 @@ def strip_orphan_slots(tex: str) -> str:
     """Remove leftover CASE3 media slots (FIG/CHART/DIAG) before latexmk.
 
     DIAG is Liber UI-only — models still leak ``%CASE3_DIAG:…%`` into TeX figures.
+    Also handles escaped `\\%CASE3_...\\%` and inline leftover mentions.
     """
-    return re.sub(
-        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART|DIAG):[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
+    if not tex:
+        return tex
+    # Full lines with slot markers (escaped or unescaped)
+    tex = re.sub(
+        r"(?m)^[ \t]*\\?%?CASE3_(?:FIG|CHART|DIAG):[a-z0-9_]{0,31}\\?%?[^\n]*\r?\n?",
         "",
         tex,
+        flags=re.I,
+    )
+    # Inline leftover slot markers anywhere in text
+    return re.sub(
+        r"\\?%?CASE3_(?:FIG|CHART|DIAG):[a-z0-9_]{0,31}\\?%?",
+        "",
+        tex,
+        flags=re.I,
     )
 
 

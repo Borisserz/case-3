@@ -14,7 +14,12 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from case3.chart_edit import ChartEditError, edit_chart_in_run, preview_chart_html
+from case3.chart_edit import (
+    ChartEditError,
+    edit_chart_in_run,
+    preview_chart_html,
+    recolor_all_charts_in_run,
+)
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import normalize_palette_id
 from case3.diagram_edit import (
@@ -25,9 +30,13 @@ from case3.diagram_edit import (
 )
 from case3.figure_edit import FigureEditError, edit_figure_in_run
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
-from case3.heading_edit import HeadingEditError, edit_heading_in_run
+from case3.heading_edit import HeadingEditError, edit_heading_in_run, edit_title_in_run
 from case3.list_edit import ListEditError, edit_list_in_run
-from case3.paragraph_edit import ParagraphEditError, edit_paragraph_in_run
+from case3.paragraph_edit import (
+    ParagraphEditError,
+    edit_paragraph_in_run,
+    insert_paragraph_in_run,
+)
 from case3.render import RenderError
 from case3.table_edit import TableEditError, edit_table_in_run
 from case3.run_store import (
@@ -90,6 +99,13 @@ class FigureEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
+class FigureEditFormatsBody(BaseModel):
+    """Optional formats payload for figure delete (default: rebuild both or none)."""
+
+    formats: str | None = Field(default=None)
+
+
+
 class TableEditBody(BaseModel):
     """Structured table replace → patch TeX → rebuild PDF/DOCX."""
 
@@ -106,11 +122,28 @@ class ParagraphEditBody(BaseModel):
     formats: str = Field(default="both")
 
 
+class ParagraphInsertBody(BaseModel):
+    """Insert new prose → patch TeX → rebuild PDF/DOCX."""
+
+    text: str = Field(default="")
+    after_paragraph_index: int | None = Field(default=None)
+    after_heading_index: int | None = Field(default=None)
+    formats: str = Field(default="both")
+
+
 class HeadingEditBody(BaseModel):
     """Plain title replace → patch TeX section/subsection → rebuild."""
 
     text: str = Field(default="")
     formats: str = Field(default="both")
+
+
+class TitleEditBody(BaseModel):
+    """Plain title replace → patch TeX \\title → rebuild PDF/DOCX."""
+
+    text: str = Field(default="")
+    formats: str = Field(default="both")
+
 
 
 class ListEditBody(BaseModel):
@@ -366,6 +399,40 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
     )
 
 
+class BatchRecolorBody(BaseModel):
+    palette: str = Field(default="atelier")
+    formats: str = Field(default="none")
+
+
+@router.post("/api/runs/{run_id}/charts/recolor")
+async def batch_recolor_charts(run_id: str, body: BatchRecolorBody) -> dict[str, Any]:
+    """Recolor all charts in the run to a given palette without LLM re-run."""
+    out_dir = resolve_run_dir(run_id)
+    fmt_set = formats_from_edit_body(body.formats)
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                recolor_all_charts_in_run,
+                out_dir,
+                palette=body.palette,
+                formats=fmt_set,
+            )
+        )
+    except ChartEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        bust_needles=("cht_",),
+        extra={
+            "palette": result.get("palette"),
+            "charts_recolored": result.get("charts_recolored"),
+        },
+    )
+
+
 @router.post("/api/runs/{run_id}/figures/{figure_id}/edit")
 async def edit_run_figure(run_id: str, figure_id: str, body: FigureEditBody) -> dict[str, Any]:
     """Regenerate (generate) or img2img-edit one photo; rebuild PDF/DOCX."""
@@ -443,101 +510,147 @@ async def upload_run_figure(
     raw = await upload.read()
     if not raw:
         raise HTTPException(400, detail="uploaded file is empty")
+    from case3.user_photos import _MAX_BYTES
+
+    if len(raw) > _MAX_BYTES:
+        raise HTTPException(
+            400,
+            detail=(
+                f"файл слишком большой ({len(raw) // 1024} КБ, "
+                f"лимит {_MAX_BYTES // (1024 * 1024)} МБ)"
+            ),
+        )
 
     from io import BytesIO
     from PIL import Image
+    from starlette.concurrency import run_in_threadpool
 
-    try:
-        im = Image.open(BytesIO(raw))
-        im.load()
-    except Exception as exc:
-        raise HTTPException(400, detail=f"invalid image file: {exc}") from exc
-
-    figs_dir = out_dir / "figures"
-    figs_dir.mkdir(parents=True, exist_ok=True)
-    dest = figs_dir / f"{figure_id}.png"
-
-    from case3.run_undo import capture_before_edit
-    capture_before_edit(out_dir, kind="figure", target=figure_id)
-
-    if im.mode not in ("RGB", "RGBA"):
-        im = im.convert("RGBA" if "transparency" in im.info else "RGB")
-    im.save(dest, format="PNG")
-
-    caption_clean = caption.strip() or None
-    fj_path = out_dir / "figures.json"
-    if fj_path.is_file():
+    def _process_upload() -> dict[str, Any]:
         try:
-            fj = json.loads(fj_path.read_text(encoding="utf-8"))
-            figures = list(fj.get("figures") or [])
-            idx = next(
-                (i for i, f in enumerate(figures) if isinstance(f, dict) and f.get("id") == figure_id),
-                -1,
-            )
-            if idx >= 0:
-                fig = dict(figures[idx])
-                if caption_clean:
-                    fig["caption"] = caption_clean
-                figures[idx] = fig
-                fj["figures"] = figures
-                fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+            Image.MAX_IMAGE_PIXELS = 36_000_000
+            im = Image.open(BytesIO(raw))
+            im.load()
+        except Exception as exc:
+            raise HTTPException(400, detail=f"invalid image file: {exc}") from exc
 
-    meta_path = out_dir / "meta.json"
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
+        figs_dir = out_dir / "figures"
+        figs_dir.mkdir(parents=True, exist_ok=True)
+        dest = figs_dir / f"{figure_id}.png"
+
+        from case3.run_undo import capture_before_edit
+
+        capture_before_edit(out_dir, kind="figure", target=figure_id)
+
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA" if "transparency" in im.info else "RGB")
+        im.save(dest, format="PNG")
+
+        caption_clean = caption.strip() or None
+        fj_path = out_dir / "figures.json"
+        if fj_path.is_file():
+            try:
+                fj = json.loads(fj_path.read_text(encoding="utf-8"))
+                figures = list(fj.get("figures") or [])
+                idx = next(
+                    (
+                        i
+                        for i, f in enumerate(figures)
+                        if isinstance(f, dict) and f.get("id") == figure_id
+                    ),
+                    -1,
+                )
+                if idx >= 0:
+                    fig = dict(figures[idx])
+                    if caption_clean:
+                        fig["caption"] = caption_clean
+                    figures[idx] = fig
+                    fj["figures"] = figures
+                    fj_path.write_text(
+                        json.dumps(fj, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+            except Exception:
+                pass
+
+        from case3.run_meta import update_meta
+
+        def _mut_upload(m: dict[str, Any]) -> None:
+            med = dict(m.get("media_status") or {})
+            med[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
+            m["media_status"] = med
+            m["last_figure_edit"] = {
+                "id": figure_id,
+                "mode": "upload",
+                "caption": caption_clean,
+                "ts": int(time.time()),
+            }
+
+        meta = update_meta(out_dir, _mut_upload)
+
+        from case3.run_rebuild import rebuild_run_docs
+
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            artifacts = rebuild_run_docs(out_dir, formats={"none"})
         except Exception:
-            meta = {}
-    media = dict(meta.get("media_status") or {})
-    media[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
-    meta["media_status"] = media
-    meta["last_figure_edit"] = {
-        "id": figure_id,
-        "mode": "upload",
-        "caption": caption_clean,
-        "ts": int(time.time()),
-    }
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            artifacts = {}
 
-    from case3.run_rebuild import rebuild_run_docs
-    try:
-        artifacts = rebuild_run_docs(out_dir, formats={"none"})
-    except Exception:
-        artifacts = {}
+        from case3.deck_refresh import refresh_deck_from_ir
 
-    from case3.deck_refresh import refresh_deck_from_ir
-    refresh_deck_from_ir(out_dir)
+        refresh_deck_from_ir(out_dir)
 
-    v = int(dest.stat().st_mtime)
-    from case3.run_undo import undo_meta
-    result = {
-        "figure_id": figure_id,
-        "mode": "upload",
-        "caption": caption_clean,
-        "media_status": media,
-        "artifacts": {k: str(p) for k, p in artifacts.items()},
-        "version": v,
-        "undo": undo_meta(out_dir),
-    }
+        v = int(dest.stat().st_mtime)
+        from case3.run_undo import undo_meta
 
+        result = {
+            "figure_id": figure_id,
+            "mode": "upload",
+            "caption": caption_clean,
+            "media_status": meta.get("media_status") or {},
+            "artifacts": {k: str(p) for k, p in artifacts.items()},
+            "version": v,
+            "undo": undo_meta(out_dir),
+        }
+
+        return edit_response_envelope(
+            run_id=run_id,
+            out_dir=out_dir,
+            result=result,
+            bust_needles=(figure_id,),
+            extra={
+                "figure_id": figure_id,
+                "mode": "upload",
+                "caption": caption_clean,
+                "preview_figure": {
+                    "id": figure_id,
+                    "kind": "figure",
+                    "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
+                },
+            },
+        )
+
+    return await run_in_threadpool(_process_upload)
+
+
+@router.post("/api/runs/{run_id}/figures/{figure_id}/delete")
+def delete_run_figure(
+    run_id: str,
+    figure_id: str,
+    body: Optional[FigureEditFormatsBody] = None,
+) -> dict[str, Any]:
+    """Delete a figure/chart/diagram from LaTeX, figures.json, and meta.json."""
+    if not FILE_OK.match(figure_id):
+        raise HTTPException(400, detail="invalid figure_id")
+    out_dir = resolve_run_dir(run_id)
+    formats = formats_from_edit_body(body.formats if body else None)
+    from case3.figure_edit import delete_figure_in_run
+
+    result = delete_figure_in_run(out_dir, figure_id, formats=formats)
     return edit_response_envelope(
         run_id=run_id,
         out_dir=out_dir,
         result=result,
         bust_needles=(figure_id,),
-        extra={
-            "figure_id": figure_id,
-            "mode": "upload",
-            "caption": caption_clean,
-            "preview_figure": {
-                "id": figure_id,
-                "kind": "figure",
-                "url": f"/api/runs/{run_id}/figures/{figure_id}.png?v={v}",
-            },
-        },
+        extra={"figure_id": figure_id, "deleted": True},
     )
 
 
@@ -620,6 +733,42 @@ async def edit_run_paragraph(
     )
 
 
+@router.post("/api/runs/{run_id}/paragraphs/insert")
+async def insert_run_paragraph(
+    run_id: str, body: ParagraphInsertBody
+) -> dict[str, Any]:
+    """Insert a new paragraph into TeX and rebuild PDF/DOCX."""
+    out_dir = resolve_run_dir(run_id)
+    fmt_set = formats_from_edit_body(body.formats)
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                insert_paragraph_in_run,
+                out_dir,
+                text=str(body.text or ""),
+                after_paragraph_index=body.after_paragraph_index,
+                after_heading_index=body.after_heading_index,
+                formats=fmt_set,
+            )
+        )
+    except ParagraphEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "after_paragraph_index": body.after_paragraph_index,
+            "after_heading_index": body.after_heading_index,
+            "text": result.get("text"),
+        },
+    )
+
+
 
 @router.post("/api/runs/{run_id}/headings/{heading_index}/edit")
 async def edit_run_heading(
@@ -656,6 +805,39 @@ async def edit_run_heading(
             "text": result.get("text"),
         },
     )
+
+
+@router.post("/api/runs/{run_id}/title/edit")
+async def edit_run_title(
+    run_id: str, body: TitleEditBody
+) -> dict[str, Any]:
+    """Replace document \\title and rebuild PDF/DOCX."""
+    out_dir = resolve_run_dir(run_id)
+    fmt_set = formats_from_edit_body(body.formats)
+
+    try:
+        result = await asyncio.to_thread(
+            partial(
+                edit_title_in_run,
+                out_dir,
+                text=str(body.text or ""),
+                formats=fmt_set,
+            )
+        )
+    except HeadingEditError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
+
+    return edit_response_envelope(
+        run_id=run_id,
+        out_dir=out_dir,
+        result=result,
+        extra={
+            "title": result.get("title"),
+        },
+    )
+
 
 
 @router.post("/api/runs/{run_id}/lists/{list_index}/edit")

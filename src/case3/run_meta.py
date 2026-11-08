@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from case3.run_cancel import read_meta as _read_meta_cancel
-from case3.run_events import write_meta_atomic
+from case3.run_events import _meta_file_lock, write_meta_atomic
 
 
 def read_meta(out_dir: Path) -> dict[str, Any]:
     """Load ``out_dir/meta.json`` (empty dict if missing/corrupt)."""
-    return _read_meta_cancel(out_dir)
+    with _meta_file_lock:
+        path = Path(out_dir) / "meta.json"
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
 
 def write_meta(
@@ -42,3 +49,19 @@ def write_meta(
             except OSError:
                 pass
     return payload
+
+
+def update_meta(
+    out_dir: Path,
+    mutator: Callable[[dict[str, Any]], None],
+    *,
+    logs_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Atomically read-modify-write ``out_dir/meta.json`` under ``_meta_file_lock``."""
+    out_dir = Path(out_dir)
+    with _meta_file_lock:
+        meta = read_meta(out_dir) or {}
+        mutator(meta)
+        write_meta(out_dir, meta, logs_dir=logs_dir, atomic=True)
+        return meta
+

@@ -177,3 +177,62 @@ def test_resume_pipeline_skips_ok_charts(
     assert called["figures"] == ["fig_01"]
     # ok PNG kept
     assert (tmp_path / "runs" / "work" / run_id / "figures" / "cht_01.png").is_file()
+
+
+def test_resume_reinjects_slots_erased_by_prior_write_injected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When write_injected already ran before latex failed, resume must still inject recovered media."""
+    from case3.inject import write_injected
+
+    run_id = _seed_failed_run(tmp_path, failed_stage="latex")
+    work = tmp_path / "runs" / "work" / run_id
+    out = tmp_path / "runs" / "out" / run_id
+    tex = work / "brief.tex"
+    raw_tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Раздел 1.\n\n%CASE3_CHART:cht_01%\n\n%CASE3_CHART:cht_02%\n"
+        "\\end{document}\n"
+    )
+    tex.write_text(raw_tex, encoding="utf-8")
+    fj = json.loads((work / "figures.json").read_text(encoding="utf-8"))
+    media = json.loads((work / "status.json").read_text(encoding="utf-8"))
+
+    # Simulate initial run's write_injected which strips failed cht_02 slot in-place
+    write_injected(
+        tex,
+        fj["figures"],
+        media,
+        charts=fj["charts"],
+        diagrams=fj["diagrams"],
+    )
+    assert "%CASE3_CHART:cht_02%" not in tex.read_text(encoding="utf-8")
+
+    def fake_charts(charts, figures_dir, **kwargs):  # noqa: ANN001
+        status = {}
+        for c in charts:
+            cid = c["id"]
+            dest = figures_dir / f"{cid}.png"
+            dest.write_bytes(b"\x89PNG\r\n\x1a\nok")
+            status[cid] = {"ok": True, "path": str(dest), "kind": "chart"}
+        return status
+
+    def fake_render(tex_path, **kwargs):  # noqa: ANN001
+        out_dir = kwargs["out_dir"]
+        pdf = out_dir / f"{tex_path.stem}.pdf"
+        pdf.write_bytes(b"%PDF")
+        return {"pdf": pdf}
+
+    monkeypatch.setattr("case3.pipeline.generate_all_charts", fake_charts)
+    monkeypatch.setattr("case3.pipeline.generate_all_figures", lambda *a, **k: {})
+    monkeypatch.setattr("case3.pipeline.render_tex", fake_render)
+    monkeypatch.setattr("case3.pipeline.materialize_user_figures", lambda *a, **k: {})
+    monkeypatch.setattr(
+        "case3.pipeline.try_generate_chat_summary",
+        lambda *a, **k: ("ok", "ok"),
+    )
+
+    resume_pipeline(run_id, project_root=tmp_path)
+    final_tex = (out / "brief.tex").read_text(encoding="utf-8")
+    assert "figures/cht_02.png" in final_tex
+

@@ -1,4 +1,4 @@
-"""Sparse-fill must not dump meta-skeleton Source as the report body."""
+"""Sparse-fill must not dump meta-skeleton Source or prompt commands as the report body."""
 
 from case3.generate import _source_lines_to_tex, fill_sparse_tex_with_source
 
@@ -31,6 +31,21 @@ def test_source_lines_drops_meta_framing_and_emoji_headings() -> None:
     assert r"\begin{tabularx}" in blob
 
 
+def test_source_lines_strips_imperative_prompt_instructions() -> None:
+    """192348Z regression: do not print 'Сгенерируй фото...' or 'Сделай полный отчёт...' in prose."""
+    src = (
+        "Отчёт по итогам года нашего IT-стартапа по автоматизации бухгалтерии.\n"
+        "Ключевые метрики: 850 платящих компаний, регулярная выручка ARR 45 млн руб.\n"
+        "Сгенерируй фото современного open-space офиса с молодыми программистами.\n"
+        "Сделай полный отчёт с таблицами метрик, графиками долей и роста.\n"
+    )
+    lines = _source_lines_to_tex(src)
+    blob = "\n".join(lines)
+    assert "850 платящих компаний" in blob
+    assert "Сгенерируй фото" not in blob
+    assert "Сделай полный отчёт" not in blob
+
+
 def test_fill_sparse_keeps_tables_not_meta_instructions() -> None:
     preamble = (
         r"\documentclass{article}"
@@ -49,9 +64,10 @@ def test_fill_sparse_keeps_tables_not_meta_instructions() -> None:
         "| 2024 | 30 |\n"
     )
     out = fill_sparse_tex_with_source(
-        preamble, src, chart_ids=["cht_01"], figure_ids=[]
+        preamble, src, chart_ids=["cht_01"], figure_ids=[], diagram_ids=["dia_01"]
     )
     assert "полный комплект" not in out
     assert "скелет" not in out
     assert r"\begin{tabularx}" in out
     assert "%CASE3_CHART:cht_01%" in out
+    assert "%CASE3_DIAG:dia_01%" in out

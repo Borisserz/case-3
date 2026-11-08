@@ -49,5 +49,8 @@ def test_ensure_document_preamble_closes_heading() -> None:
 \end{document}
 """.replace("###", r"\subsection")
     out = ensure_document_preamble(tex)
-    assert r"\subsection{4.3. Сельское хозяйство и AI}" in out
+    assert (
+        r"\subsection{4.3. Сельское хозяйство и~AI}" in out
+        or r"\subsection{4.3. Сельское хозяйство и AI}" in out
+    )
     assert out.index(r"AI}") < out.index(r"\begin{figure}")

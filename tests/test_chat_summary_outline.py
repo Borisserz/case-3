@@ -59,6 +59,29 @@ def test_build_outline_marks_chart_vs_figure() -> None:
     assert "CHART:" in outline or "FIGURE:" in outline
 
 
+def test_is_clean_chat_summary_rejects_reasoning_leak() -> None:
+    from case3.chat_summary import is_clean_chat_summary
+
+    leaked = (
+        "The user wants me to write a short chat message (like Cursor/DeepSeek) summarizing what was prepared.\n"
+        "Let me check the constraints:\n"
+        "1. Write in Russian\n"
+        "Let me draft:\n"
+        "Отчёт готов."
+    )
+    assert not is_clean_chat_summary(leaked)
+
+    english_only = "The report is ready with 5 charts and 1 figure."
+    assert not is_clean_chat_summary(english_only)
+
+    valid_russian = (
+        "Отчёт о сети кофеен «Бодрый день» за прошлый месяц готов. "
+        "Внутри — разделов: 5, таблиц: 1, графиков: 5, иллюстраций: 1. "
+        "Подробности — в превью и PDF."
+    )
+    assert is_clean_chat_summary(valid_russian)
+
+
 def test_local_summary_blurb_uses_title_and_counts() -> None:
     tex = FIXTURE.read_text(encoding="utf-8")
     blurb = local_summary_blurb(

@@ -6,6 +6,7 @@ import {
   type DiagramInfo,
 } from "./DiagramFullscreen";
 import { DiagramZoomView } from "./DiagramZoomView";
+import { DiagramCodeModal } from "./DiagramCodeModal";
 
 const DiagramVisualEditor = lazy(() =>
   import("./DiagramVisualEditor").then((m) => ({
@@ -52,6 +53,7 @@ export function DiagramPane({
   const [fullscreen, setFullscreen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -177,6 +179,7 @@ export function DiagramPane({
           toast: "Схема сохранена",
         });
         setEditOpen(false);
+        setCodeOpen(false);
         setFocusNodeId(null);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -258,7 +261,7 @@ export function DiagramPane({
       setCopilotPrompt("");
       onDiagramsUpdated?.(next, {
         undo: data.undo ?? null,
-        toast: "Схема изменена через ИИ",
+        toast: "Изменения применены",
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -349,14 +352,41 @@ export function DiagramPane({
           >
             {busy ? "…" : "Ещё вариант"}
           </button>
+          {visualOk ? (
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy}
+              title="Визуальный редактор блок-схемы"
+              onClick={() => openEditor(null)}
+            >
+              Изменить
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy}
+              title="Редактировать код схемы"
+              onClick={() => {
+                setCodeOpen(true);
+                setErr(null);
+              }}
+            >
+              Изменить
+            </button>
+          )}
           <button
             type="button"
             className="btn ghost"
-            disabled={busy || !visualOk}
-            title={visualOk ? "Редактировать схему" : "Редактирование доступно для блок-схем"}
-            onClick={() => openEditor(null)}
+            disabled={busy}
+            title="Редактировать исходный код Mermaid"
+            onClick={() => {
+              setCodeOpen(true);
+              setErr(null);
+            }}
           >
-            Изменить
+            Код
           </button>
           <button
             type="button"
@@ -409,7 +439,7 @@ export function DiagramPane({
             className="diagram-copilot-input"
             value={copilotPrompt}
             onChange={(e) => setCopilotPrompt(e.target.value)}
-            placeholder="Что изменить через ИИ? (например: добавь этап согласования с юристами)"
+            placeholder="Напишите, что изменить"
             disabled={copilotBusy || busy}
           />
         </div>
@@ -417,9 +447,9 @@ export function DiagramPane({
           type="submit"
           className="btn ghost diagram-copilot-btn"
           disabled={copilotBusy || busy || !copilotPrompt.trim()}
-          title="Применить точечные правки схемы через ИИ"
+          title="Отправить изменения"
         >
-          {copilotBusy ? "ИИ думает…" : "Изменить через ИИ"}
+          {copilotBusy ? "Идёт редактирование…" : "Отправить изменения"}
         </button>
       </form>
 
@@ -436,7 +466,8 @@ export function DiagramPane({
         <DiagramZoomView
           source={mermaidSrc}
           onSvgReady={onPaneSvg}
-          className="is-premium"
+          className="is-premium is-centered"
+          fitViewport
           highlightNodeIds={highlightNodeIds}
           onNodeDblClick={(id) => openEditor(id)}
         />
@@ -535,6 +566,22 @@ export function DiagramPane({
             onSave={(m, t) => void doApplyEdit(m, t)}
           />
         </Suspense>
+      ) : null}
+
+      {codeOpen && diagram ? (
+        <DiagramCodeModal
+          open={codeOpen}
+          diagramId={diagram.id}
+          title={diagram.title}
+          mermaid={diagram.mermaid}
+          busy={editBusy}
+          error={err}
+          onCancel={() => {
+            setCodeOpen(false);
+            setErr(null);
+          }}
+          onSave={(m, t) => void doApplyEdit(m, t)}
+        />
       ) : null}
     </div>
   );

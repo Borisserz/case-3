@@ -164,15 +164,15 @@ def edit_diagram_in_run(
         log.warning("failed to re-render PNG for diagram %s", did, exc_info=True)
 
     meta_path = out_dir / "meta.json"
-    if meta_path.is_file():
-        media = dict(meta.get("media_status") or {})
-        if png_rendered:
-            media[did] = {"ok": True, "path": str(dest_png), "kind": "diagram"}
-            meta["media_status"] = media
-            meta_path.write_text(
-                json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+    if meta_path.is_file() and png_rendered:
+        from case3.run_meta import update_meta
+
+        def _mut_dia_edit(m: dict[str, Any]) -> None:
+            med = dict(m.get("media_status") or {})
+            med[did] = {"ok": True, "path": str(dest_png), "kind": "diagram"}
+            m["media_status"] = med
+
+        update_meta(out_dir, _mut_dia_edit)
 
     artifacts: dict[str, str] = {}
     if formats:
@@ -264,13 +264,14 @@ def regenerate_diagrams_in_run(
 
     meta_path = out_dir / "meta.json"
     if meta_path.is_file():
-        meta["diagrams_planned"] = [d["id"] for d in diagrams]
-        meta["diagrams_ok"] = len(diagrams)
-        meta["diagrams_repaired"] = repaired
-        meta_path.write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        from case3.run_meta import update_meta
+
+        def _mut_dia_regen(m: dict[str, Any]) -> None:
+            m["diagrams_planned"] = [d["id"] for d in diagrams]
+            m["diagrams_ok"] = len(diagrams)
+            m["diagrams_repaired"] = repaired
+
+        update_meta(out_dir, _mut_dia_regen)
 
     return {
         "diagrams": diagrams,
@@ -434,15 +435,15 @@ def refine_diagram_in_run(
         log.warning("failed to re-render PNG for diagram %s", did, exc_info=True)
 
     meta_path = out_dir / "meta.json"
-    if meta_path.is_file():
-        media = dict(meta.get("media_status") or {})
-        if png_rendered:
-            media[did] = {"ok": True, "path": str(dest_png), "kind": "diagram"}
-            meta["media_status"] = media
-            meta_path.write_text(
-                json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+    if meta_path.is_file() and png_rendered:
+        from case3.run_meta import update_meta
+
+        def _mut_dia_edit(m: dict[str, Any]) -> None:
+            med = dict(m.get("media_status") or {})
+            med[did] = {"ok": True, "path": str(dest_png), "kind": "diagram"}
+            m["media_status"] = med
+
+        update_meta(out_dir, _mut_dia_edit)
 
     artifacts: dict[str, str] = {}
     if formats:

@@ -1,7 +1,7 @@
 /** Liber deck viewer: Julius-like live twin + filmstrip + fullscreen. */
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartEditSheet,
   type ChartEditRequest,
@@ -12,13 +12,18 @@ import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 import {
   parseEditHistory,
+  shouldIgnoreDeckHotkey,
   type EditHistoryDesc,
 } from "./domain/reportEditMode";
 import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
-import { DiagramVisualEditor } from "./DiagramVisualEditor";
+const DiagramVisualEditor = lazy(() =>
+  import("./DiagramVisualEditor").then((m) => ({
+    default: m.DiagramVisualEditor,
+  })),
+);
 import { DiagramFullscreen, type DiagramInfo } from "./DiagramFullscreen";
 import type { DiagramResult } from "./domain/liberTypes";
 import { PresentationFullscreen } from "./PresentationFullscreen";
@@ -345,6 +350,9 @@ export function PresentationPane({
     onDocsDirtyChange?.(true);
   }, [onDocsDirtyChange]);
 
+  const inFlightPatchRef = useRef<Promise<void> | null>(null);
+  const dirtyRef = useRef(false);
+
   const flushDeckRebuild = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
@@ -360,6 +368,7 @@ export function PresentationPane({
         );
       }
       await waitPatchRebuild(body.deck as DeckIR | undefined);
+      dirtyRef.current = false;
       setDocsDirty(false);
       onDocsDirtyChange?.(false);
     } catch (err) {
@@ -372,7 +381,18 @@ export function PresentationPane({
 
   const leaveEdit = useCallback(async () => {
     try {
-      if (docsDirty) await flushDeckRebuild();
+      if (
+        typeof document !== "undefined" &&
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.classList.contains("deck-ed")
+      ) {
+        document.activeElement.blur();
+      }
+      await Promise.resolve();
+      if (inFlightPatchRef.current) {
+        await inFlightPatchRef.current;
+      }
+      if (docsDirty || dirtyRef.current) await flushDeckRebuild();
       void onClearEditHistory?.();
       setOpenMediaId(null);
       setOpenMediaKind(null);
@@ -386,8 +406,10 @@ export function PresentationPane({
   useEffect(() => {
     if (full) return;
     const onKey = (e: KeyboardEvent) => {
-      if (editing && e.target instanceof HTMLElement && e.target.isContentEditable)
-        return;
+      const hasModal =
+        typeof document !== "undefined" &&
+        Boolean(document.querySelector(".modal-backdrop, [role='dialog']"));
+      if (shouldIgnoreDeckHotkey(e.target, hasModal)) return;
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === "ArrowRight") {
         e.preventDefault();
@@ -404,8 +426,10 @@ export function PresentationPane({
         if (editing) void leaveEdit();
         return;
       }
-      if (e.key === "f" || e.key === "F") setFull(true);
-      if (e.key === "e" || e.key === "E") {
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "f" || e.key === "F")) {
+        setFull(true);
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "e" || e.key === "E")) {
         setView("slide");
         if (editing) void leaveEdit();
         else setEditing(true);
@@ -422,36 +446,44 @@ export function PresentationPane({
 
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
+      dirtyRef.current = true;
       setSaving(true);
       setSaveError(null);
-      try {
-        const r = await fetch(
-          `/api/runs/${encodeURIComponent(runId)}/slides/ir?rebuild=0`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ slides }),
-          },
-        );
-        const body = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          throw new Error(
-            typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
+      const task = (async () => {
+        try {
+          const r = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/slides/ir?rebuild=0`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ slides }),
+            },
           );
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            throw new Error(
+              typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
+            );
+          }
+          if (body.deck) setDeck(body.deck as DeckIR);
+          if (body.undo) {
+            onEditHistory?.(
+              parseEditHistory(
+                body.undo as Parameters<typeof parseEditHistory>[0],
+              ),
+            );
+          }
+          markDirty();
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setSaving(false);
         }
-        if (body.deck) setDeck(body.deck as DeckIR);
-        if (body.undo) {
-          onEditHistory?.(
-            parseEditHistory(
-              body.undo as Parameters<typeof parseEditHistory>[0],
-            ),
-          );
-        }
-        markDirty();
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setSaving(false);
+      })();
+      inFlightPatchRef.current = task;
+      await task;
+      if (inFlightPatchRef.current === task) {
+        inFlightPatchRef.current = null;
       }
     },
     [markDirty, onEditHistory, runId],
@@ -1454,16 +1486,18 @@ export function PresentationPane({
       openMediaId &&
       openMediaKind === "diagram" &&
       openDiagram ? (
-        <DiagramVisualEditor
-          open
-          diagramId={openDiagram.id}
-          title={openDiagram.title}
-          mermaid={openDiagram.mermaid}
-          busy={saving}
-          error={diagramError}
-          onCancel={closeMediaSheet}
-          onSave={(mermaid, title) => void saveDiagram(mermaid, title)}
-        />
+        <Suspense fallback={null}>
+          <DiagramVisualEditor
+            open
+            diagramId={openDiagram.id}
+            title={openDiagram.title}
+            mermaid={openDiagram.mermaid}
+            busy={saving}
+            error={diagramError}
+            onCancel={closeMediaSheet}
+            onSave={(mermaid, title) => void saveDiagram(mermaid, title)}
+          />
+        </Suspense>
       ) : null}
       {editing &&
       view === "slide" &&

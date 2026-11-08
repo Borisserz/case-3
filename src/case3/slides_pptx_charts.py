@@ -34,7 +34,6 @@ def _is_line_like(chart_type) -> bool:
     return chart_type in (
         XL_CHART_TYPE.LINE_MARKERS,
         XL_CHART_TYPE.LINE,
-        XL_CHART_TYPE.AREA,
     )
 
 
@@ -100,7 +99,12 @@ def _color_series(
     for i, ser in enumerate(series_list):
         color = series_colors[i % len(series_colors)]
         try:
-            if _is_line_like(chart_type):
+            if chart_type == XL_CHART_TYPE.AREA:
+                ser.format.fill.solid()
+                ser.format.fill.fore_color.rgb = color
+                ser.format.line.color.rgb = color
+                ser.format.line.width = Pt(1.5)
+            elif _is_line_like(chart_type):
                 ser.format.line.color.rgb = color
                 ser.format.line.width = Pt(2.25)
             else:

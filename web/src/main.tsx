@@ -13,6 +13,7 @@ import "./styles/deck.css";
 import "./styles/rail.css";
 import "./styles/presentation.css";
 import "./styles/modals.css";
+import "katex/dist/katex.min.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

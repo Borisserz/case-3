@@ -970,6 +970,7 @@ def _layout_media(
             )
         pic_left = rail_w + Inches(0.15)
         pic_w = _SLIDE_W - rail_w - Inches(0.35)
+        pic_h = Inches(5.8) if is_dia else Inches(4.6)
         placed = False
         if is_dia and diagram_spec:
             from case3.slides_pptx_diagrams import add_native_diagram

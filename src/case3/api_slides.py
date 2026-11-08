@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from case3.deck_theme import list_public_packs, normalize_pack_id
-from case3.run_meta import read_meta, write_meta
+from case3.run_events import _meta_file_lock
+from case3.run_meta import read_meta, update_meta, write_meta
 from case3 import run_store
 from case3.run_store import FILE_OK, RUN_ID_OK, safe_run_file
 
@@ -24,6 +25,12 @@ router = APIRouter(tags=["slides"])
 _slides_patch_lock = threading.Lock()
 _slides_patch_pending: dict[str, dict[str, Any]] = {}
 _slides_patch_busy: set[str] = set()
+
+
+def is_slides_patch_active(run_id: str) -> bool:
+    """Return True if a coalesced IR patch worker is queued or running for ``run_id``."""
+    with _slides_patch_lock:
+        return run_id in _slides_patch_busy or run_id in _slides_patch_pending
 
 
 def _write_slides_crash(run_id: str, message: str) -> None:
@@ -69,12 +76,9 @@ def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: P
         meta["slides_error"] = meta.get("slides_error") or "slides job interrupted"
     else:
         meta["slides_error"] = None
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
     logs = run_store.ROOT / "runs" / "logs" / run_id
     try:
-        logs.mkdir(parents=True, exist_ok=True)
-        (logs / "meta.json").write_text(payload, encoding="utf-8")
+        write_meta(out_dir, meta, logs_dir=logs)
     except OSError:
         pass
     return True
@@ -114,6 +118,94 @@ def deck_themes() -> dict[str, Any]:
     return {"packs": list_public_packs(), "structures": list_structures()}
 
 
+def try_claim_slides_start(
+    run_id: str,
+    *,
+    out_dir: Path,
+    logs_dir: Path | None = None,
+    theme_pack: str | None = None,
+    structure_id: str | None = None,
+    style_settings: dict[str, Any] | None = None,
+    kick_source: str | None = None,
+    only_if_unbuilt: bool = False,
+) -> tuple[bool, dict[str, Any]]:
+    """Atomically transition ``slides_status`` to ``running`` under ``_meta_file_lock``.
+
+    Returns ``(claimed, meta)``. Only the thread receiving ``claimed=True`` may
+    spawn ``_kick_slides_thread(run_id)``.
+    """
+    from case3.deck_structure import normalize_structure_id
+
+    with _meta_file_lock:
+        try:
+            meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("corrupt meta.json") from exc
+        if not isinstance(meta, dict):
+            raise ValueError("corrupt meta.json")
+        if meta.get("status") != "ok":
+            return False, meta
+        st_slides = str(meta.get("slides_status") or "idle")
+        if st_slides == "running":
+            return False, meta
+        if only_if_unbuilt and st_slides not in {"idle", "", "error"}:
+            return False, meta
+
+        prev_style = meta.get("slides_style")
+        if not isinstance(prev_style, dict):
+            prev_style = {}
+
+        norm_struct = normalize_structure_id(structure_id)
+        if norm_struct is None:
+            norm_struct = normalize_structure_id(
+                prev_style.get("structure_id")
+                if prev_style.get("structure_id") is not None
+                else meta.get("slides_structure_id")
+            )
+
+        prev_pack = normalize_pack_id(
+            meta.get("slides_theme_pack")
+            or prev_style.get("theme_pack")
+            or meta.get("deck_pack")
+            or "atelier"
+        )
+        restored_desk_pack = False
+        if theme_pack:
+            pack = normalize_pack_id(theme_pack)
+            if (
+                structure_id is None
+                and norm_struct
+                and pack == "atelier"
+                and prev_pack != "atelier"
+            ):
+                pack = prev_pack
+                restored_desk_pack = True
+        else:
+            pack = prev_pack
+
+        settings = style_settings if isinstance(style_settings, dict) else None
+        if (settings is None or restored_desk_pack) and isinstance(
+            prev_style.get("style_settings"), dict
+        ):
+            settings = prev_style.get("style_settings")
+
+        meta["slides_style"] = {
+            "theme_pack": pack,
+            "structure_id": norm_struct,
+            "style_settings": settings,
+        }
+        meta["slides_theme_pack"] = pack
+        meta["slides_structure_id"] = norm_struct
+        meta["slides_status"] = "running"
+        meta["slides_stage"] = "starting"
+        meta["slides_error"] = None
+        if kick_source:
+            meta["slides_kick_source"] = kick_source
+        meta.pop("cancel_requested", None)
+        write_meta(out_dir, meta, logs_dir=logs_dir)
+        return True, meta
+
+
 @router.post("/api/runs/{run_id}/slides")
 async def start_slides(
     run_id: str,
@@ -125,14 +217,21 @@ async def start_slides(
     out_root = (run_store.ROOT / "runs" / "out").resolve()
     if not str(out_dir).startswith(str(out_root)) or not (out_dir / "meta.json").is_file():
         raise HTTPException(404, detail="run not found")
+    logs = run_store.ROOT / "runs" / "logs" / run_id
     try:
-        meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        claimed, meta = try_claim_slides_start(
+            run_id,
+            out_dir=out_dir,
+            logs_dir=logs,
+            theme_pack=body.theme_pack if body else None,
+            structure_id=body.structure_id if body else None,
+            style_settings=body.style_settings if body else None,
+        )
+    except ValueError as exc:
         raise HTTPException(500, detail="corrupt meta.json") from exc
     if meta.get("status") != "ok":
         raise HTTPException(409, detail="report run is not ok")
-    # Live worker — do not start a second thread. Stuck "queued" (old bug) is retriable.
-    if meta.get("slides_status") == "running":
+    if not claimed:
         return JSONResponse(
             {
                 "run_id": run_id,
@@ -142,71 +241,9 @@ async def start_slides(
             },
             status_code=202,
         )
-    from case3.deck_structure import normalize_structure_id
-
-    # Merge with desk-stamped style: Liber UI kick often omits structure_id
-    # (stale deckStyle / race with auto-kick) and would freeform-collapse the deck.
-    prev_style = meta.get("slides_style")
-    if not isinstance(prev_style, dict):
-        prev_style = {}
-    body_structure = body.structure_id if body else None
-    body_pack = body.theme_pack if body else None
-    body_settings = body.style_settings if body else None
-
-    structure_id = normalize_structure_id(body_structure)
-    if structure_id is None:
-        structure_id = normalize_structure_id(
-            prev_style.get("structure_id")
-            if prev_style.get("structure_id") is not None
-            else meta.get("slides_structure_id")
-        )
-
-    prev_pack = normalize_pack_id(
-        meta.get("slides_theme_pack") or prev_style.get("theme_pack") or "atelier"
-    )
-    restored_desk_pack = False
-    if body_pack:
-        pack = normalize_pack_id(body_pack)
-        # Default atelier in the body without an explicit structure change must
-        # not clobber a non-atelier pack already stamped for this run.
-        if (
-            body_structure is None
-            and structure_id
-            and pack == "atelier"
-            and prev_pack != "atelier"
-        ):
-            pack = prev_pack
-            restored_desk_pack = True
-    else:
-        pack = prev_pack
-
-    settings = body_settings if isinstance(body_settings, dict) else None
-    if (settings is None or restored_desk_pack) and isinstance(
-        prev_style.get("style_settings"), dict
-    ):
-        settings = prev_style.get("style_settings")
-
-    meta["slides_style"] = {
-        "theme_pack": pack,
-        "structure_id": structure_id,
-        "style_settings": settings,
-    }
-    meta["slides_theme_pack"] = pack
-    meta["slides_structure_id"] = structure_id
-    # Mark running before kick so a dead BackgroundTask cannot leave meta at queued.
-    meta["slides_status"] = "running"
-    meta["slides_stage"] = "starting"
-    meta["slides_error"] = None
-    meta.pop("cancel_requested", None)
-    # Write meta first, then SSE stage (persist appends into meta.steps).
     with _slides_patch_lock:
         _slides_patch_pending.pop(run_id, None)
         _slides_patch_busy.discard(run_id)
-    payload = json.dumps(meta, ensure_ascii=False, indent=2)
-    (out_dir / "meta.json").write_text(payload, encoding="utf-8")
-    logs = run_store.ROOT / "runs" / "logs" / run_id
-    logs.mkdir(parents=True, exist_ok=True)
-    (logs / "meta.json").write_text(payload, encoding="utf-8")
     from case3.run_events import EVENTS
 
     EVENTS.reopen(run_id)
@@ -277,10 +314,11 @@ def get_slides(run_id: str) -> dict[str, Any]:
         mode = art.get("deck_pdf_mode")
         if isinstance(mode, str) and mode.strip():
             deck_pdf_mode = mode.strip()
+    patch_active = is_slides_patch_active(run_id)
     return {
         "run_id": run_id,
-        "slides_status": meta.get("slides_status") or "idle",
-        "slides_stage": meta.get("slides_stage"),
+        "slides_status": "running" if patch_active else (meta.get("slides_status") or "idle"),
+        "slides_stage": "patch" if patch_active else meta.get("slides_stage"),
         "slides_error": meta.get("slides_error"),
         "deck": deck,
         "slide_pngs": [
@@ -325,17 +363,16 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             deck = pending["deck"]
             _slides_patch_busy.add(run_id)
 
+        def _mark_patch(m: dict[str, Any]) -> None:
+            if not m:
+                m.update({"run_id": run_id, "status": "ok"})
+            m["slides_status"] = "running"
+            m["slides_stage"] = "patch"
+            m["slides_error"] = None
+            m.pop("cancel_requested", None)
+
         try:
-            meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {"run_id": run_id, "status": "ok"}
-        meta["slides_status"] = "running"
-        meta["slides_stage"] = "patch"
-        meta["slides_error"] = None
-        meta.pop("cancel_requested", None)
-        payload = json.dumps(meta, ensure_ascii=False, indent=2)
-        try:
-            (out_dir / "meta.json").write_text(payload, encoding="utf-8")
+            update_meta(out_dir, _mark_patch, logs_dir=run_store.ROOT / "runs" / "logs" / run_id)
         except OSError:
             log.exception("slides patch meta write failed run_id=%s", run_id)
 
@@ -350,13 +387,12 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
         except Exception:
             log.exception("slides IR patch rebuild failed run_id=%s", run_id)
             try:
-                m = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
-                m["slides_status"] = "error"
-                m["slides_stage"] = "error"
-                m["slides_error"] = "rebuild after edit failed"
-                (out_dir / "meta.json").write_text(
-                    json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
+                def _mark_patch_err(m: dict[str, Any]) -> None:
+                    m["slides_status"] = "error"
+                    m["slides_stage"] = "error"
+                    m["slides_error"] = "rebuild after edit failed"
+
+                update_meta(out_dir, _mark_patch_err, logs_dir=run_store.ROOT / "runs" / "logs" / run_id)
             except Exception:
                 pass
 

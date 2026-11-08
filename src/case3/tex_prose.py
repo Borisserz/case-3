@@ -300,6 +300,9 @@ def normalize_includegraphics_aspect(tex: str) -> str:
         path = m.group("path")
         if not opts or "height" not in opts:
             return m.group(0)
+        if "keepaspectratio" in opts:
+            # Bounding box width+height+keepaspectratio is intentional for tall figures/diagrams.
+            return m.group(0)
         parts = [
             p.strip()
             for p in opts.split(",")
@@ -403,3 +406,83 @@ def harden_prose_lists(tex: str) -> str:
         out.extend(block)
 
     return "".join(out)
+
+
+_RU_PREP_WORDS = (
+    "в", "во", "на", "с", "со", "к", "ко", "о", "об", "обо", "по", "из",
+    "изо", "до", "не", "ни", "и", "а", "но", "за", "от", "ото", "у", "под",
+    "подо", "над", "надо", "при", "без", "безо", "для", "сквозь", "через"
+)
+
+_RU_PREP_REGEX = re.compile(
+    rf"(?<![a-zA-Zа-яА-ЯёЁ\\])"
+    rf"(\b(?:{'|'.join(_RU_PREP_WORDS)}|{'|'.join(w.capitalize() for w in _RU_PREP_WORDS)}))"
+    rf"[ \t]+"
+    rf"(?=[а-яА-ЯёЁa-zA-Z0-9«\"\(])",
+)
+
+_RU_UNITS_INNER = (
+    r"(?:млн(?:\s+руб\.?)?|млрд(?:\s+руб\.?)?|тыс\.?(?:\s+руб\.?)?|руб\.?|коп\.?|"
+    r"долл\.?|евро|шт\.?|чел\.?|экз\.?|г\.|гг\.|года|годов|лет|мес\.?|дн\.?|ч\.?|"
+    r"мин\.?|сек\.?|кв\.\s*м|м²|м³|см|мм|км|кг|т|%)"
+)
+
+_RU_UNITS_REGEX = re.compile(
+    rf"(\b\d+(?:[.,]\d+)?)[ \t]+({_RU_UNITS_INNER})(?![a-zA-Zа-яА-ЯёЁ])",
+    re.I,
+)
+
+_STRUCTURAL_MACROS = re.compile(
+    r"\\(?:label|ref|pageref|cite|citep|citet|includegraphics|documentclass|usepackage|begin|end|input|include|url|href|hypersetup|definecolor|color|setlength|geometry|bibliographystyle|bibliography)\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?",
+    re.I,
+)
+
+
+def harden_russian_typography(tex: str) -> str:
+    """Bind short Russian prepositions/conjunctions and numeric units with ~."""
+    if not tex:
+        return tex
+
+    # Only process body between \begin{document} and \end{document} if present
+    begin_doc = tex.find(r"\begin{document}")
+    end_doc = tex.rfind(r"\end{document}")
+    if begin_doc != -1 and end_doc != -1 and end_doc > begin_doc:
+        prefix = tex[: begin_doc + len(r"\begin{document}")]
+        body = tex[begin_doc + len(r"\begin{document}") : end_doc]
+        suffix = tex[end_doc:]
+    else:
+        prefix = ""
+        body = tex
+        suffix = ""
+
+    stashed: list[str] = []
+
+    def _stash(m: re.Match[str]) -> str:
+        stashed.append(m.group(0))
+        return f"\x00TYPO{len(stashed) - 1}\x00"
+
+    # 1. Stash display math \[ ... \]
+    body = re.sub(r"\\\[[\s\S]*?\\\]", _stash, body)
+    # 2. Stash inline/display math $ ... $
+    body = re.sub(r"(?<!\\)\${1,2}[\s\S]*?(?<!\\)\${1,2}", _stash, body)
+    # 3. Stash TeX comments
+    body = re.sub(r"%.*$", _stash, body, flags=re.M)
+    # 4. Stash structural TeX macros whose content must not change
+    body = _STRUCTURAL_MACROS.sub(_stash, body)
+    # 5. Stash other macro heads (e.g. \centering, \section, \item, \textbf)
+    body = re.sub(r"\\[a-zA-Z]+\*?", _stash, body)
+
+    def _repl_units(m: re.Match[str]) -> str:
+        num = m.group(1)
+        unit = re.sub(r"[ \t]+", "~", m.group(2))
+        return f"{num}~{unit}"
+
+    # Apply typography substitutions
+    body = _RU_PREP_REGEX.sub(r"\1~", body)
+    body = _RU_UNITS_REGEX.sub(_repl_units, body)
+
+    # Restore stashed tokens in reverse
+    for idx in range(len(stashed) - 1, -1, -1):
+        body = body.replace(f"\x00TYPO{idx}\x00", stashed[idx])
+
+    return prefix + body + suffix

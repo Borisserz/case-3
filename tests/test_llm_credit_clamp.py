@@ -83,6 +83,36 @@ def test_complete_raises_when_afford_not_lower() -> None:
                 client.complete(system="s", user_text="u")
 
 
+def test_complete_raises_helpful_error_on_openrouter_free_rate_limit() -> None:
+    cfg = LLMConfig(
+        base_url="https://openrouter.ai/api",
+        api_key="k",
+        model="m",
+        max_retries=3,
+        max_tokens=2048,
+    )
+    client = LLMClient(cfg)
+    import urllib.error
+
+    body = json.dumps({
+        "error": {
+            "message": "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day",
+            "code": 429
+        }
+    }).encode("utf-8")
+    err = urllib.error.HTTPError(
+        url="https://openrouter.ai/api/v1/chat/completions",
+        code=429,
+        msg="Too Many Requests",
+        hdrs=None,  # type: ignore[arg-type]
+        fp=BytesIO(body),
+    )
+
+    with patch("case3.llm_client.urllib.request.urlopen", side_effect=err):
+        with pytest.raises(LLMError, match="Исчерпан суточный лимит бесплатных запросов OpenRouter"):
+            client.complete(system="s", user_text="u")
+
+
 def _http_402(message: str) -> Exception:
     body = json.dumps({"error": {"message": message, "code": 402}}).encode("utf-8")
     exc = Exception("402")

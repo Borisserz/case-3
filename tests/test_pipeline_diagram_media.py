@@ -199,7 +199,7 @@ def test_pipeline_e2e_renders_and_injects_diagram(tmp_path: Path, monkeypatch) -
 
     # Injected TeX contains diagram figure and includegraphics
     injected = (out / f"{src.stem}.tex").read_text(encoding="utf-8")
-    assert r"\includegraphics[width=0.92\linewidth]{figures/dia_01.png}" in injected
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in injected
     assert r"\label{dia:dia_01}" in injected
     assert "%CASE3_DIAG" not in injected
 
@@ -270,7 +270,7 @@ def test_pipeline_e2e_diagram_fallback_before_conclusion(tmp_path: Path, monkeyp
 
     # Injected TeX placed diagram before \section{Заключение}
     injected = (out / f"{src.stem}.tex").read_text(encoding="utf-8")
-    assert r"\includegraphics[width=0.92\linewidth]{figures/dia_01.png}" in injected
+    assert r"\includegraphics[width=\linewidth,height=0.38\textheight,keepaspectratio]{figures/dia_01.png}" in injected
     diag_pos = injected.find(r"figures/dia_01.png")
     concl_pos = injected.find(r"\section{Заключение}")
     assert diag_pos != -1 and concl_pos != -1

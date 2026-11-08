@@ -110,13 +110,12 @@ def _sync_meta_undo(out_dir: Path, index: dict[str, Any] | None = None) -> dict[
     redo = index.get("redo") or []
     can_undo = len(stack) > 0
     can_redo = len(redo) > 0
+    from case3.run_meta import update_meta
+
     if not can_undo and not can_redo:
         meta_path = out / "meta.json"
         if meta_path.is_file():
-            meta = _read_json(meta_path)
-            if "undo" in meta:
-                meta.pop("undo", None)
-                _write_json(meta_path, meta)
+            update_meta(out, lambda m: m.pop("undo", None))
         return None
     top = stack[-1] if can_undo else {}
     desc = {
@@ -128,10 +127,7 @@ def _sync_meta_undo(out_dir: Path, index: dict[str, Any] | None = None) -> dict[
         "can_redo": can_redo,
         "depth": len(stack),
     }
-    meta_path = out / "meta.json"
-    meta = _read_json(meta_path) if meta_path.is_file() else {}
-    meta["undo"] = desc
-    _write_json(meta_path, meta)
+    update_meta(out, lambda m: m.__setitem__("undo", desc))
     return desc
 
 

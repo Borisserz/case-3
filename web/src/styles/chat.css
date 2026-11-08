@@ -1189,6 +1189,106 @@
   text-align: center;
 }
 
+.report-pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.report-pdf-counter {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.report-pdf-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--rule, #ddd) 40%, transparent);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.report-pdf-mode-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.report-pdf-mode-btn:hover {
+  color: var(--ink);
+}
+
+.report-pdf-mode-btn.is-active {
+  background: var(--sheet, #fff);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.report-pdf-continuous {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 0.5rem 0.35rem;
+  scroll-behavior: smooth;
+}
+
+.report-pdf-page-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.07);
+  background: #fff;
+  overflow: hidden;
+  min-height: 320px;
+}
+
+.report-pdf-page-item canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.report-pdf-page-badge {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  background: rgba(28, 25, 23, 0.6);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pdf-page-skeleton {
+  width: 100%;
+  height: 480px;
+}
+
 .report-fig-frame {
   position: relative;
 }
@@ -2464,6 +2564,51 @@
   font-size: 0.7rem;
 }
 
+.inline-block-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.inline-block-delete-link {
+  border: 0;
+  background: transparent;
+  color: #c92a2a;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  opacity: 0.8;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.inline-block-delete-link:hover {
+  opacity: 1;
+  background: rgba(201, 42, 42, 0.08);
+}
+
+.inline-block-delete {
+  border: 0;
+  background: transparent;
+  color: #c92a2a;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  opacity: 0.85;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.inline-block-delete:hover {
+  opacity: 1;
+  background: rgba(201, 42, 42, 0.08);
+}
+
 .inline-block-hint {
   font-size: 0.75rem;
   opacity: 0.55;
@@ -2479,3 +2624,247 @@
 .report-list-wrap {
   margin: 0.75rem 0 1rem;
 }
+
+.report-insert-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0 0.2rem;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+.report-insert-slot:hover,
+.report-insert-slot:focus-within,
+.report-insert-slot.is-active {
+  opacity: 1;
+}
+
+.report-insert-btn {
+  border: 1px dashed color-mix(in srgb, var(--ink, #1c1917) 25%, transparent);
+  background: color-mix(in srgb, var(--sheet, #fff) 85%, transparent);
+  color: var(--muted, #666);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  padding: 0.22rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.report-insert-btn:hover {
+  border-color: var(--primary, #3d5a45);
+  color: var(--primary, #3d5a45);
+  background: color-mix(in srgb, var(--primary, #3d5a45) 8%, transparent);
+}
+
+/* ——— Copy Markdown button ——— */
+.report-copy-md-btn {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--ink, #1c1917) 14%, transparent);
+  background: var(--sheet, #fff);
+  color: var(--ink-2, var(--ink, #1c1917));
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.report-copy-md-btn:hover {
+  background: color-mix(in srgb, var(--secondary, #809671) 55%, var(--sheet, #fff));
+  border-color: color-mix(in srgb, var(--primary, #3d5a45) 28%, transparent);
+}
+
+.report-actions .report-copy-md-btn {
+  margin-top: 0;
+}
+
+.report-recolor-charts-btn {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--ink, #1c1917) 14%, transparent);
+  background: var(--sheet, #fff);
+  color: var(--ink-2, var(--ink, #1c1917));
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.report-recolor-charts-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--secondary, #809671) 55%, var(--sheet, #fff));
+  border-color: color-mix(in srgb, var(--primary, #3d5a45) 28%, transparent);
+}
+
+.report-recolor-charts-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ——— Clean Browser Print (@media print) ——— */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 18mm 15mm 20mm 15mm;
+  }
+
+  html,
+  body,
+  #root,
+  .app-shell,
+  .chat-thread-outer,
+  .chat-thread-inner,
+  .artifact-rail-outer,
+  .artifact-rail-content {
+    background: #fff !important;
+    color: #111 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide app chrome, navigations, sidebars, interactive controls */
+  .rail-toc,
+  .rail-toc-btn,
+  .report-rail,
+  .report-edit-bar,
+  .report-actions,
+  .report-insert-slot,
+  .report-block-actions,
+  .report-media-edit-btn,
+  .report-lightbox,
+  .report-inline-editor,
+  .artifact-rail-tabs,
+  .artifact-rail-header,
+  .chat-composer,
+  .composer-wrap,
+  .sidebar,
+  .app-sidebar,
+  .app-header,
+  .nav-header,
+  .chat-bubble-user,
+  .chat-turn:not(:has(.report)),
+  .chat-turn-assistant-meta,
+  .chat-thinking,
+  .settings-modal,
+  .modal-backdrop,
+  .pdf-viewer-wrap,
+  .report-pdf-gallery,
+  .pdf-first-page-wrap {
+    display: none !important;
+  }
+
+  /* Make report container full page width and clean */
+  .report {
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 1.2rem !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .report-title {
+    font-size: 24pt !important;
+    line-height: 1.25 !important;
+    color: #000 !important;
+    margin-bottom: 1.5rem !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .report-h1,
+  .report-h2,
+  .report-h3 {
+    color: #000 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .report-h1 {
+    font-size: 18pt !important;
+    margin-top: 2rem !important;
+    margin-bottom: 0.8rem !important;
+  }
+
+  .report-h2 {
+    font-size: 14pt !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.6rem !important;
+  }
+
+  .report-p,
+  .report-list-wrap,
+  li {
+    font-size: 10.5pt !important;
+    line-height: 1.55 !important;
+    color: #1a1a1a !important;
+    orphans: 3;
+    widows: 3;
+  }
+
+  .report-table-wrap,
+  .report-fig,
+  .report-card,
+  figure {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 1.2rem 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .report-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9.5pt !important;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .report-table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .report-table th,
+  .report-table td {
+    border-top: 0.5pt solid #ccc !important;
+    border-bottom: 0.5pt solid #ccc !important;
+    padding: 5pt 6pt !important;
+  }
+
+  .report-table th {
+    border-top: 1pt solid #000 !important;
+    border-bottom: 1pt solid #000 !important;
+    font-weight: bold !important;
+  }
+
+  .report-caption {
+    font-size: 9pt !important;
+    font-style: italic !important;
+    color: #444 !important;
+    margin-top: 0.4rem !important;
+  }
+
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+

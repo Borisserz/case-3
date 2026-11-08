@@ -59,6 +59,17 @@ _CLASS_AS_CLASSDEF = re.compile(
 # Spaces inside edge labels: `B -- |Да| C` → `B -->|Да| C`.
 _EDGE_LABEL_SPACES = re.compile(r"([-=.~]{2,})\s+\|([^|]+)\|\s+")
 
+# Sequence diagram alias repair (LLM emits `Actor as Label` missing participant keyword)
+_SEQ_KEYWORDS = re.compile(
+    r"^(participant|actor|note|box|create|destroy|activate|deactivate|rect|loop|alt|opt|par|critical|break|end|autonumber|links?|title|accTitle|accDescr)\b",
+    re.I,
+)
+_SEQ_ARROW = re.compile(r"->|-->|->>|-->>|-x|--x|-\)|--\)")
+_SEQ_KEYWORD_AS = re.compile(
+    r"^([ \t]*)(participant|actor)\s+(.+?)\s+as\s+(.+)$", re.I
+)
+_AS_LINE = re.compile(r"^([ \t]*)(.+?\s+as\s+.+)$", re.I)
+
 # Liber soft-premium fallbacks (atelier) — never purple neon.
 _SAFE_FILL = "#dce8df"
 _SAFE_STROKE = "#6b8f76"
@@ -115,7 +126,7 @@ def _repair_class_assign_lines(mermaid: str) -> str:
             out.append(line)
             continue
         indent, rest = m.group(1), m.group(2).strip()
-        tokens = rest.split()
+        tokens = [t.lstrip(":") for t in rest.split()]
         if len(tokens) < 2:
             out.append(line)
             continue
@@ -125,7 +136,7 @@ def _repair_class_assign_lines(mermaid: str) -> str:
             names = tokens[1:]
             if len(names) <= 1:
                 # `class A,B,C process` — valid Mermaid (one class, many nodes)
-                out.append(line)
+                out.append(f"{indent}class {','.join(nodes)} {names[0]}")
                 continue
             if len(names) == len(nodes) and all(
                 re.match(r"^[A-Za-z][\w-]*$", n) for n in names
@@ -141,17 +152,13 @@ def _repair_class_assign_lines(mermaid: str) -> str:
             )
             continue
         # Space-separated: `class A B C process` or `class A start`
-        if len(tokens) == 2 and re.match(r"^[A-Za-z][\w-]*$", tokens[0]):
-            out.append(line)  # valid: class Node className
+        if len(tokens) == 2 and re.match(r"^[A-Za-z][\w-]*$", tokens[0]) and re.match(r"^[A-Za-z][\w-]*$", tokens[1]):
+            out.append(f"{indent}class {tokens[0]} {tokens[1]}")
             continue
         if len(tokens) >= 3 and all(
             re.match(r"^[A-Za-z][\w-]*$", t) for t in tokens
         ):
-            # Last token = className, earlier = nodes (same class), OR zip if counts match roles.
-            # Prefer same-class join when last looks like a role and len>2.
             nodes, cls = tokens[:-1], tokens[-1]
-            # Heuristic: if every middle token looks like a node id (short) and last is role —
-            # emit one class line with commas (Mermaid-valid).
             out.append(f"{indent}class {','.join(nodes)} {cls}")
             continue
         log.warning(
@@ -164,6 +171,47 @@ def _repair_class_assign_lines(mermaid: str) -> str:
 def _normalize_edge_label_spaces(mermaid: str) -> str:
     """``B -- |Да| C`` → ``B -->|Да| C`` (tolerant of LLM spacing)."""
     return _EDGE_LABEL_SPACES.sub(r"\1|\2| ", mermaid or "")
+
+
+def _repair_sequence_diagram_lines(mermaid: str) -> str:
+    """Prepends ``participant `` to ``Alias as Label`` lines and quotes multi-word IDs."""
+    lines = (mermaid or "").splitlines()
+    if not any(re.match(r"^\s*sequenceDiagram\b", l, re.I) for l in lines):
+        return mermaid
+    out: list[str] = []
+    for line in lines:
+        trimmed = line.strip()
+        if (
+            not trimmed
+            or trimmed.startswith("%%")
+            or _SEQ_ARROW.search(trimmed)
+        ):
+            out.append(line)
+            continue
+        kw_m = _SEQ_KEYWORD_AS.match(line)
+        if kw_m:
+            indent, kw, ident, alias = kw_m.group(1), kw_m.group(2), kw_m.group(3).strip(), kw_m.group(4).strip()
+            if " " in ident and not (ident.startswith('"') and ident.endswith('"')):
+                ident = f'"{ident}"'
+            out.append(f"{indent}{kw} {ident} as {alias}")
+            continue
+        if _SEQ_KEYWORDS.match(trimmed):
+            out.append(line)
+            continue
+        m = _AS_LINE.match(line)
+        if m:
+            indent, rest = m.group(1), m.group(2).strip()
+            parts = re.split(r"\s+as\s+", rest, maxsplit=1, flags=re.I)
+            if len(parts) == 2:
+                ident, alias = parts[0].strip(), parts[1].strip()
+                if " " in ident and not (ident.startswith('"') and ident.endswith('"')):
+                    ident = f'"{ident}"'
+                out.append(f"{indent}participant {ident} as {alias}")
+            else:
+                out.append(f"{indent}participant {rest}")
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def sanitize_mermaid(text: str) -> str:
@@ -191,6 +239,7 @@ def sanitize_mermaid(text: str) -> str:
     raw = re.sub(r"(?i)^graph(\s+)", r"flowchart\1", raw, count=1)
     raw = _CLICK_LINE.sub("", raw)
     raw = _repair_class_assign_lines(raw)
+    raw = _repair_sequence_diagram_lines(raw)
     raw = _normalize_edge_label_spaces(raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
     raw = _rewrite_unsafe_colors(raw)

@@ -3,6 +3,7 @@
 /* premium-home-bust */
 import {
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -64,7 +65,13 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   // Chart type/style/title: model + ChartEditSheet (not Settings).
-  const chartPalette = "atelier";
+  const [chartPalette, setChartPalette] = useState<string>(() => {
+    try {
+      return localStorage.getItem("liber.chartPalette.v1") || "atelier";
+    } catch {
+      return "atelier";
+    }
+  });
   const [maxCharts, setMaxCharts] = useState(2);
   const [maxDiagrams, setMaxDiagrams] = useState(5);
   const [maxDiagramsCap, setMaxDiagramsCap] = useState(5);
@@ -166,6 +173,13 @@ export default function App() {
     selectDiagram,
   } = useArtifactHost({ msgs, activeRunIdRef });
 
+  const resetSurfaceForHistory = useCallback(() => {
+    setReportEditMode(false);
+    setActiveArtifact(null);
+    setRailCollapsed(false);
+    setRailExiting(false);
+  }, [setActiveArtifact, setRailCollapsed, setRailExiting]);
+
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -183,6 +197,8 @@ export default function App() {
     setMsgs,
     setChatTitle,
     showToast,
+    openReportArtifact,
+    onResetSurface: resetSurfaceForHistory,
   });
 
   const catalog = useMemo(() => {
@@ -227,10 +243,15 @@ export default function App() {
 
   const {
     editFigure,
+    recolorCharts,
+    uploadFigure,
+    deleteFigure,
     editImage,
     editTable,
     editParagraph,
+    insertParagraph,
     editHeading,
+    editTitle,
     editList,
     undoLastEdit,
     undoEdit,
@@ -332,6 +353,7 @@ export default function App() {
       dryRun,
       workMode,
       deckStyle,
+      chartPalette,
       chatRef,
       setChat,
       setChatTitle,
@@ -555,7 +577,6 @@ export default function App() {
                     workMode === "presentation"
                   }
                   showDeckStyleBtn={
-                    msgs.length === 0 &&
                     !busy &&
                     workMode === "presentation"
                   }
@@ -734,6 +755,16 @@ export default function App() {
                         )
                     : undefined
                 }
+                onRecolorCharts={
+                  railArtifact.kind === "report" && activeReport
+                    ? (palette) =>
+                        recolorCharts(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          palette,
+                        )
+                    : undefined
+                }
                 onEditImage={
                   railArtifact.kind === "report" && activeReport
                     ? (req) =>
@@ -741,6 +772,32 @@ export default function App() {
                           railArtifact.msgId,
                           activeReport.run_id,
                           req,
+                        )
+                    : undefined
+                }
+                onUploadFigure={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (figureId, file, caption) =>
+                        uploadFigure(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          figureId,
+                          file,
+                          caption,
+                        )
+                    : undefined
+                }
+                onDeleteFigure={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (figureId) =>
+                        deleteFigure(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          figureId,
                         )
                     : undefined
                 }
@@ -768,6 +825,18 @@ export default function App() {
                         )
                     : undefined
                 }
+                onInsertParagraph={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (req) =>
+                        insertParagraph(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          req,
+                        )
+                    : undefined
+                }
                 onEditHeading={
                   railArtifact.kind === "report" &&
                   activeReport &&
@@ -777,6 +846,18 @@ export default function App() {
                           railArtifact.msgId,
                           activeReport.run_id,
                           req,
+                        )
+                    : undefined
+                }
+                onEditTitle={
+                  railArtifact.kind === "report" &&
+                  activeReport &&
+                  activeReport.run_id
+                    ? (text) =>
+                        editTitle(
+                          railArtifact.msgId,
+                          activeReport.run_id,
+                          text,
                         )
                     : undefined
                 }
@@ -903,6 +984,15 @@ export default function App() {
         onForbidCharts={setForbidCharts}
         forbidImages={forbidImages}
         onForbidImages={setForbidImages}
+        chartPalette={chartPalette}
+        onChartPalette={(p) => {
+          setChartPalette(p);
+          try {
+            localStorage.setItem("liber.chartPalette.v1", p);
+          } catch {
+            /* ignore */
+          }
+        }}
         dryRun={dryRun}
         onDryRun={setDryRun}
         health={health}

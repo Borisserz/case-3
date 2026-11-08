@@ -297,6 +297,44 @@ export function useLiberEdits({
     }
   }
 
+  async function recolorCharts(
+    msgId: string,
+    runId: string,
+    palette: string,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: "charts_all" });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(runId)}/charts/recolor`,
+        {
+          palette,
+          formats: EDIT_FORMATS,
+        },
+        "recolor charts failed",
+      );
+      applyEditPayload(
+        msgId,
+        runId,
+        data,
+        `Все графики перекрашены (${palette}) · Готово обновит PDF/DOCX`,
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: "charts_all",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
   async function editImage(
     msgId: string,
     runId: string,
@@ -330,6 +368,93 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: req.figureId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function uploadFigure(
+    msgId: string,
+    runId: string,
+    figureId: string,
+    file: File,
+    caption?: string,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId });
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (caption) fd.append("caption", caption);
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/figures/${encodeURIComponent(figureId)}/upload`,
+        {
+          method: "POST",
+          body: fd,
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : typeof data.error === "string"
+              ? data.error
+              : "upload figure failed",
+        );
+      }
+      applyEditPayload(
+        msgId,
+        runId,
+        data,
+        "Фото загружено · Готово обновит PDF/DOCX",
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function deleteFigure(
+    msgId: string,
+    runId: string,
+    figureId: string,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(runId)}/figures/${encodeURIComponent(figureId)}/delete`,
+        { formats: EDIT_FORMATS },
+        "delete figure failed",
+      );
+      applyEditPayload(
+        msgId,
+        runId,
+        data,
+        "Элемент удалён · Готово обновит PDF/DOCX",
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId,
         message: err instanceof Error ? err.message : String(err),
       });
       return false;
@@ -452,6 +577,72 @@ export function useLiberEdits({
     }
   }
 
+  async function insertParagraph(
+    msgId: string,
+    runId: string,
+    req: {
+      text: string;
+      afterParagraphIndex?: number;
+      afterHeadingIndex?: number;
+    },
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: "para:insert",
+        message: "Нет run_id — открой отчёт из свежего запуска",
+      });
+      return false;
+    }
+    editLock.current = true;
+    const insertKey = req.afterParagraphIndex
+      ? `para:after-${req.afterParagraphIndex}`
+      : req.afterHeadingIndex
+        ? `head:after-${req.afterHeadingIndex}`
+        : "para:insert";
+    setEditError(null);
+    setEditBusy({ msgId, figureId: insertKey });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(rid)}/paragraphs/insert`,
+        {
+          text: req.text,
+          after_paragraph_index: req.afterParagraphIndex,
+          after_heading_index: req.afterHeadingIndex,
+          formats: EDIT_FORMATS,
+        },
+        "paragraph insert failed",
+      );
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        "Абзац добавлен",
+        { pulseDownloads: false },
+      );
+      return true;
+    } catch (e) {
+      setEditError({
+        msgId,
+        figureId: insertKey,
+        message: e instanceof Error ? e.message : "Не удалось добавить абзац",
+      });
+      return false;
+    } finally {
+      editLock.current = false;
+      setEditBusy(null);
+    }
+  }
 
   async function editHeading(
     msgId: string,
@@ -497,6 +688,58 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: headId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    } finally {
+      setEditBusy(null);
+      editLock.current = false;
+    }
+  }
+
+  async function editTitle(
+    msgId: string,
+    runId: string,
+    text: string,
+  ): Promise<boolean> {
+    if (editLock.current) return false;
+    const rid = (runId || "").trim();
+    if (!rid) {
+      setEditError({
+        msgId,
+        figureId: "doc_title",
+        message: "Нет run_id — открой отчёт из свежего запуска",
+      });
+      return false;
+    }
+    editLock.current = true;
+    setEditError(null);
+    setEditBusy({ msgId, figureId: "doc_title" });
+    try {
+      const data = await postJsonEdit(
+        `/api/runs/${encodeURIComponent(rid)}/title/edit`,
+        { text, formats: EDIT_FORMATS },
+        "title edit failed",
+      );
+      applyEditPayload(
+        msgId,
+        rid,
+        {
+          preview: data.preview as RunResult["preview"],
+          downloads: asDownloads(data.downloads, {}),
+          warnings: Array.isArray(data.warnings)
+            ? data.warnings.filter((w): w is string => typeof w === "string")
+            : undefined,
+          media_status: data.media_status as RunResult["media_status"],
+          undo: data.undo as { kind?: string; target?: string } | null,
+        },
+        PREVIEW_EDIT_TOAST,
+      );
+      return true;
+    } catch (err) {
+      setEditError({
+        msgId,
+        figureId: "doc_title",
         message: err instanceof Error ? err.message : String(err),
       });
       return false;
@@ -565,10 +808,15 @@ export function useLiberEdits({
 
   return {
     editFigure,
+    recolorCharts,
+    uploadFigure,
+    deleteFigure,
     editImage,
     editTable,
     editParagraph,
+    insertParagraph,
     editHeading,
+    editTitle,
     editList,
     undoLastEdit,
     undoEdit,

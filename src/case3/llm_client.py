@@ -44,6 +44,18 @@ def _number(name: str, default: Any, kind: Callable[[str], Any]) -> Any:
         raise LLMConfigError(f"{name}={raw!r} is not a number") from exc
 
 
+def _parse_api_keys(*sources: str | None) -> tuple[str, ...]:
+    keys: list[str] = []
+    for src in sources:
+        if not src:
+            continue
+        for part in re.split(r"[,;\s]+", src.strip()):
+            p = part.strip()
+            if p and p not in keys:
+                keys.append(p)
+    return tuple(keys)
+
+
 _REASONING = ("off", "low", "medium", "high")
 
 
@@ -51,12 +63,20 @@ _REASONING = ("off", "low", "medium", "high")
 class LLMConfig:
     base_url: str
     api_key: str | None = None
+    api_keys: tuple[str, ...] = ()
     model: str | None = None
     timeout_s: float = 300.0
     max_retries: int = 2
     temperature: float = 0.2
     reasoning: str = "off"
     max_tokens: int = 16384
+
+    def __post_init__(self) -> None:
+        if not self.api_keys and self.api_key:
+            parsed = _parse_api_keys(self.api_key)
+            object.__setattr__(self, "api_keys", parsed)
+        elif self.api_keys and not self.api_key:
+            object.__setattr__(self, "api_key", self.api_keys[0])
 
     @property
     def endpoint(self) -> str:
@@ -75,9 +95,17 @@ class LLMConfig:
         reasoning = (_env("VISION_REASONING", "CASE3_REASONING") or "off").lower()
         if reasoning not in _REASONING:
             raise LLMConfigError(f"reasoning={reasoning!r}: expected {', '.join(_REASONING)}")
+        primary = _env("VISION_API_KEY", "CASE3_API_KEY", "INGEST_VISION_API_KEY")
+        fallbacks = _env(
+            "VISION_FALLBACK_API_KEYS",
+            "VISION_FALLBACK_API_KEY",
+            "CASE3_FALLBACK_API_KEYS",
+        )
+        keys = _parse_api_keys(primary, fallbacks)
         return cls(
             base_url=base,
-            api_key=_env("VISION_API_KEY", "CASE3_API_KEY", "INGEST_VISION_API_KEY"),
+            api_key=keys[0] if keys else None,
+            api_keys=keys,
             model=_env("VISION_MODEL", "CASE3_MODEL", "INGEST_VISION_MODEL"),
             timeout_s=_number("VISION_TIMEOUT_S", 300, float),
             max_retries=_number("VISION_MAX_RETRIES", 2, int),
@@ -270,16 +298,51 @@ def build_body(
     return body
 
 
+_ACTIVE_KEY_INDEX: int = 0
+
+
 class LLMClient:
     def __init__(self, config: LLMConfig, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self.config = config
         self._sleep = sleep
         self.last_finish_reason: str = ""
+        global _ACTIVE_KEY_INDEX
+        self.api_keys: list[str] = list(
+            config.api_keys or ([config.api_key] if config.api_key else [])
+        )
+        if self.api_keys:
+            self._key_index: int = min(_ACTIVE_KEY_INDEX, len(self.api_keys) - 1)
+        else:
+            self._key_index = 0
 
-    def _headers(self) -> dict[str, str]:
+    @property
+    def current_api_key(self) -> str | None:
+        if not self.api_keys:
+            return self.config.api_key
+        return self.api_keys[self._key_index]
+
+    def rotate_key(self) -> str | None:
+        """Switch to next fallback key; returns new key or None if pool exhausted."""
+        global _ACTIVE_KEY_INDEX
+        if self._key_index + 1 < len(self.api_keys):
+            self._key_index += 1
+            _ACTIVE_KEY_INDEX = self._key_index
+            k = self.api_keys[self._key_index]
+            masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
+            log.warning(
+                "Switched LLM API key to fallback [%d/%d]: %s",
+                self._key_index + 1,
+                len(self.api_keys),
+                masked,
+            )
+            return k
+        return None
+
+    def _headers(self, key: str | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        k = key or self.current_api_key
+        if k:
+            headers["Authorization"] = f"Bearer {k}"
         if "openrouter.ai" in (self.config.base_url or "").lower():
             headers.setdefault("HTTP-Referer", "https://github.com/Borisserz/case-3")
             headers.setdefault("X-Title", "case-3")
@@ -346,6 +409,28 @@ class LLMClient:
                     return text
             except urllib.error.HTTPError as exc:
                 body_txt = _http_body(exc)
+                # Check for rate limit / quota / auth errors that warrant falling back to another key
+                is_quota_or_auth_err = (
+                    exc.code in (401, 403)
+                    or (exc.code == 429)
+                    or (exc.code == 402 and "afford" not in body_txt.lower())
+                    or ("free-models-per-day" in body_txt.lower())
+                    or ("rate-limited upstream" in body_txt.lower())
+                )
+                if is_quota_or_auth_err:
+                    next_key = self.rotate_key()
+                    if next_key is not None:
+                        headers = self._headers(next_key)
+                        log.warning(
+                            "HTTP %d from %s (%s) — retrying with fallback API key",
+                            exc.code,
+                            self.config.endpoint,
+                            body_txt[:100],
+                        )
+                        credit_shrinks = 0
+                        attempt += 1
+                        continue
+
                 # Re-clamp every 402 where afford drops — do not stop after first shrink.
                 if exc.code == 402 and "afford" in body_txt.lower():
                     afford = parse_openrouter_afford(body_txt)
@@ -383,6 +468,16 @@ class LLMClient:
                         "укороти Source, фото/графики=0, перезапусти api.cmd. "
                         f"Ответ сервера: {body_txt}"
                     ) from exc
+                if exc.code == 429:
+                    if "free-models-per-day" in body_txt or "rate-limited upstream" in body_txt:
+                        keys_count = len(self.api_keys) or 1
+                        raise LLMError(
+                            f"HTTP 429: Исчерпан суточный лимит бесплатных запросов OpenRouter "
+                            f"(все ключи исчерпаны: {keys_count}/{keys_count}). "
+                            "Для продолжения: 1) пополните баланс на $1–5 на openrouter.ai (это снимет лимит и даст 1000 запросов/день), "
+                            "2) создайте новый бесплатный API-ключ OpenRouter и добавьте в .env (можно через запятую в VISION_API_KEY), "
+                            "либо 3) переключитесь на Google AI Studio (Gemini) или локальный Qwen."
+                        ) from exc
                 error = LLMError(
                     f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
                 )
@@ -425,48 +520,60 @@ class LLMClient:
             stream=True,
         )
         data = json.dumps(body).encode("utf-8")
-        headers = self._headers()
-        req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
-                # Prefer line iteration for true streaming; fall back to full read.
-                line_iter: Any
-                if hasattr(resp, "__iter__") and not isinstance(resp, (bytes, str)):
-                    line_iter = resp
-                else:
-                    line_iter = io.BytesIO(resp.read())
+            while True:
+                headers = self._headers()
+                req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
+                try:
+                    with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
+                        # Prefer line iteration for true streaming; fall back to full read.
+                        line_iter: Any
+                        if hasattr(resp, "__iter__") and not isinstance(resp, (bytes, str)):
+                            line_iter = resp
+                        else:
+                            line_iter = io.BytesIO(resp.read())
 
-                for raw_line in line_iter:
-                    if isinstance(raw_line, bytes):
-                        line = raw_line.decode("utf-8", "replace")
-                    else:
-                        line = str(raw_line)
-                    line = line.strip()
-                    if not line or line.startswith(":"):
+                        for raw_line in line_iter:
+                            if isinstance(raw_line, bytes):
+                                line = raw_line.decode("utf-8", "replace")
+                            else:
+                                line = str(raw_line)
+                            line = line.strip()
+                            if not line or line.startswith(":"):
+                                continue
+                            if not line.startswith("data:"):
+                                continue
+                            payload = line[5:].strip()
+                            if payload == "[DONE]":
+                                break
+                            try:
+                                obj = json.loads(payload)
+                            except json.JSONDecodeError:
+                                continue
+                            choices = obj.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta") or {}
+                            piece = _as_text(delta.get("content"))
+                            if piece:
+                                yield piece
+                            fr = choices[0].get("finish_reason")
+                            if fr:
+                                self.last_finish_reason = str(fr)
+                    break
+                except urllib.error.HTTPError as exc:
+                    body_txt = _http_body(exc)
+                    if exc.code in (401, 403, 429) and self.rotate_key() is not None:
+                        log.warning(
+                            "Stream HTTP %d from %s (%s) — retrying with fallback API key",
+                            exc.code,
+                            self.config.endpoint,
+                            body_txt[:100],
+                        )
                         continue
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[5:].strip()
-                    if payload == "[DONE]":
-                        break
-                    try:
-                        obj = json.loads(payload)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = obj.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    piece = _as_text(delta.get("content"))
-                    if piece:
-                        yield piece
-                    fr = choices[0].get("finish_reason")
-                    if fr:
-                        self.last_finish_reason = str(fr)
-        except urllib.error.HTTPError as exc:
-            raise LLMError(
-                f"HTTP {exc.code} from {self.config.endpoint}: {_http_body(exc)}"
-            ) from exc
+                    raise LLMError(
+                        f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
+                    ) from exc
         except TimeoutError as exc:
             raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
         except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:

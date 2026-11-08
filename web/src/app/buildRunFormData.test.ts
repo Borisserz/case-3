@@ -70,4 +70,56 @@ describe("buildRunFormData", () => {
     assert.equal(fd.get("forbid_charts"), "true");
     assert.equal(fd.get("formats"), "none");
   });
+
+  it("passes dynamic chart_palette when provided", () => {
+    const fd = buildRunFormData({
+      file: null,
+      draftSnap: null,
+      chatTrim: "hello",
+      intentText: "hello",
+      photosSnapshot: [],
+      forbidCharts: false,
+      forbidImages: false,
+      maxCharts: 2,
+      maxImages: 2,
+      maxDiagrams: 2,
+      dryRun: true,
+      workMode: "report",
+      deckStyle: DEFAULT_DECK_STYLE,
+      chartPalette: "sunset",
+    });
+    assert.equal(fd.get("chart_palette"), "sunset");
+  });
+
+  it("prefers edited draftSnap.text over stale attached .txt File", async () => {
+    const staleFile = new File(["Старый текст до правки"], "brief.txt", {
+      type: "text/plain",
+    });
+    const fd = buildRunFormData({
+      file: staleFile,
+      draftSnap: {
+        title: "brief.txt",
+        text: "Отредактированный текст в SourcePane",
+        fileName: "brief.txt",
+      },
+      chatTrim: "Собери отчёт",
+      intentText: "Собери отчёт",
+      photosSnapshot: [],
+      forbidCharts: false,
+      forbidImages: false,
+      maxCharts: 2,
+      maxImages: 2,
+      maxDiagrams: 2,
+      dryRun: true,
+      workMode: "report",
+      deckStyle: DEFAULT_DECK_STYLE,
+    });
+    const uploaded = fd.get("source");
+    if (uploaded instanceof File) {
+      assert.equal(await uploaded.text(), "Отредактированный текст в SourcePane");
+    } else {
+      assert.equal(fd.get("source_text"), "Отредактированный текст в SourcePane");
+    }
+  });
 });
+

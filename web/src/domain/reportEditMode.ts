@@ -23,6 +23,7 @@ export function reportEditToggleVisible(opts: {
   onEditTable?: unknown;
   onEditParagraph?: unknown;
   onEditHeading?: unknown;
+  onEditTitle?: unknown;
   onEditList?: unknown;
 }): boolean {
   return Boolean(
@@ -31,6 +32,7 @@ export function reportEditToggleVisible(opts: {
       opts.onEditTable ||
       opts.onEditParagraph ||
       opts.onEditHeading ||
+      opts.onEditTitle ||
       opts.onEditList,
   );
 }
@@ -96,3 +98,51 @@ export function toastUndoVisible(
   if (editMode) return false;
   return Boolean(history?.canUndo);
 }
+
+/** Batch «Перекрасить графики» button is shown only inside active report edit mode. */
+export function recolorChartsButtonVisible(
+  editMode: boolean,
+  hasCharts: boolean,
+  hasHandler: boolean,
+): boolean {
+  return Boolean(editMode && hasCharts && hasHandler);
+}
+
+/** «Копировать MD» button is shown in read-only mode when preview blocks exist. */
+export function copyMarkdownButtonVisible(
+  editMode: boolean,
+  hasPreview: boolean,
+): boolean {
+  return Boolean(!editMode && hasPreview);
+}
+
+/** Distinct label for presentation slides PDF film tab (avoids two "PDF" tabs). */
+export function slidesFilmTabLabel(): string {
+  return "Слайды (PDF)";
+}
+
+/** Ignore deck window keydown when user is typing in inputs, contentEditable, or modals. */
+export function shouldIgnoreDeckHotkey(
+  target: unknown,
+  hasOpenModal?: boolean,
+): boolean {
+  if (hasOpenModal) return true;
+  if (!target || typeof target !== "object") return false;
+  const el = target as {
+    isContentEditable?: boolean;
+    tagName?: string;
+    closest?: (sel: string) => unknown;
+  };
+  if (el.isContentEditable) return true;
+  const tag = (el.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (
+    typeof el.closest === "function" &&
+    el.closest(".modal-backdrop, [role='dialog']")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+

@@ -43,3 +43,22 @@ def test_run_id_filter_blocks_foreign() -> None:
         assert f.filter(rec) is False
     finally:
         _PIPELINE_RUN_ID.reset(tok)
+
+
+def test_run_sync_playwright_preserves_pipeline_run_id(tmp_path: Path) -> None:
+    from case3.charts import _run_sync_playwright
+
+    h = _attach_pipeline_log_handler(tmp_path, "run_pw")
+    root = logging.getLogger("case3")
+    tok = _PIPELINE_RUN_ID.set("run_pw")
+    try:
+        _run_sync_playwright(
+            lambda: logging.getLogger("case3.charts").info("inside-pw-worker")
+        )
+    finally:
+        _PIPELINE_RUN_ID.reset(tok)
+        root.removeHandler(h)
+        h.close()
+
+    assert "inside-pw-worker" in (tmp_path / "pipeline.log").read_text(encoding="utf-8")
+

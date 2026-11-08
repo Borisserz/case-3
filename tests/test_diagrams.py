@@ -74,6 +74,40 @@ def test_sanitize_repairs_space_separated_class_nodes() -> None:
     )
 
 
+def test_sanitize_repairs_class_with_leading_colons() -> None:
+    """LLM emits ``class A :::start`` — invalid style separator; fix to ``class A start``."""
+    raw = (
+        "flowchart TD\n"
+        "  A-->B\n"
+        "  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n"
+        "  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22\n"
+        "  class A :::start\n"
+        "  class B :::process\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "class A :::start" not in out
+    assert "class A start" in out
+    assert "class B process" in out
+
+
+def test_sanitize_repairs_sequence_diagram_participant_alias() -> None:
+    """LLM emits ``Alias as Label`` without participant keyword in sequence diagrams."""
+    raw = (
+        "sequenceDiagram\n"
+        "  АОН as Оператор\n"
+        "  Менеджер по продажам as Менеджер\n"
+        "  Менеджер по логистике as Логист\n"
+        "  АОН->>Менеджер: заявка на продажу\n"
+        "  Менеджер->>Логист: отгрузка\n"
+        "  Логист-->>АОН: подтверждение отгрузки\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "participant АОН as Оператор" in out
+    assert 'participant "Менеджер по продажам" as Менеджер' in out
+    assert 'participant "Менеджер по логистике" as Логист' in out
+    assert "АОН->>Менеджер: заявка на продажу" in out
+
+
 def test_sanitize_rewrites_class_style_as_classdef() -> None:
     """LLM writes ``class start fill:#…`` instead of classDef — rewrite."""
     raw = (
@@ -309,7 +343,7 @@ Hello.
     assert charts == []
     assert len(diagrams) == 1
     assert diagrams[0]["id"] == "dia_01"
-    assert "%CASE3_DIAG" not in tex
+    assert "%CASE3_DIAG:dia_01%" in tex
     assert r"\documentclass" in tex
 
 
@@ -346,3 +380,16 @@ def test_parse_model_output_diagram_id_collision_with_chart() -> None:
 
     with pytest.raises(ParseError, match="collision"):
         parse_model_output(raw, max_images=0, max_charts=1, max_diagrams=2)
+
+
+def test_sanitize_mermaid_sequence_diagram_quotes_spaced_participants() -> None:
+    raw = """sequenceDiagram
+  АОН as Оператор
+  Менеджер по продажам as Менеджер
+  participant Менеджер по логистике as Логист
+  АОН->>Менеджер: заявка на продажу"""
+    out = sanitize_mermaid(raw)
+    assert 'participant "Менеджер по продажам" as Менеджер' in out
+    assert 'participant "Менеджер по логистике" as Логист' in out
+    assert 'participant АОН as Оператор' in out
+

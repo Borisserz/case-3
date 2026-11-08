@@ -307,3 +307,38 @@ def test_status_includes_slide_pngs_when_twins_exist(
     assert len(pngs) == 2
     assert pngs[0].endswith("/slides/png/slide_01.png")
     assert pngs[1].endswith("/slides/png/slide_02.png")
+
+
+def test_try_claim_slides_start_is_single_winner_under_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    from case3.api_slides import try_claim_slides_start
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = "run_race_claim"
+    out = _seed_ok_run(tmp_path, run_id)
+    logs = tmp_path / "runs" / "logs" / run_id
+    barrier = threading.Barrier(2)
+    results: list[bool] = []
+
+    def worker() -> None:
+        barrier.wait()
+        claimed, _ = try_claim_slides_start(
+            run_id,
+            out_dir=out,
+            logs_dir=logs,
+            theme_pack="atelier",
+            structure_id=None,
+            style_settings=None,
+        )
+        results.append(claimed)
+
+    t1 = threading.Thread(target=worker)
+    t2 = threading.Thread(target=worker)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    assert sorted(results) == [False, True]
+

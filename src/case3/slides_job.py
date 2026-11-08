@@ -16,7 +16,7 @@ from case3.chart_style import (
     apply_pack_category_colors_to_html,
     normalize_palette_id,
 )
-from case3.charts import render_chart_png
+from case3.charts import _DEFAULT_RENDER_CHART_PNG, render_chart_png, render_charts_batch
 from case3.deck_theme import normalize_pack_id, resolve_deck_theme
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.run_cancel import RunCancelled, raise_if_cancelled
@@ -244,8 +244,9 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
 
 
 def _read_meta(out_dir: Path) -> dict[str, Any]:
-    path = out_dir / "meta.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    from case3.run_meta import read_meta
+
+    return read_meta(out_dir) or {}
 
 
 def _write_meta(out_dir: Path, meta: dict[str, Any], logs_dir: Path | None = None) -> None:
@@ -835,6 +836,7 @@ def _recolor_deck_charts(
     work_root = slides_dir / "chart_work"
     work_root.mkdir(parents=True, exist_ok=True)
     out_map: dict[str, Path] = {}
+    batch_items: list[tuple[str, dict[str, Any], Path, Path]] = []
     for cid, html in html_by_id.items():
         try:
             use = user_series.get(cid) or series
@@ -887,16 +889,26 @@ def _recolor_deck_charts(
                     + remapped
                 )
             dest = dest_dir / f"{cid}.png"
-            render_chart_png(
-                {"html": remapped},
-                dest,
-                work_dir=work_root / cid,
-            )
-            if dest.is_file():
-                out_map[cid] = dest
-                log.info("deck chart recolor ok %s → %s", cid, dest.name)
+            batch_items.append((cid, {"html": remapped}, dest, work_root / cid))
         except (OSError, RuntimeError, ValueError) as exc:
             log.warning("deck chart recolor skipped %s: %s", cid, exc)
+
+    if batch_items:
+        if render_chart_png is not _DEFAULT_RENDER_CHART_PNG:
+            for cid, chart_obj, dest, cdir in batch_items:
+                try:
+                    render_chart_png(chart_obj, dest, work_dir=cdir)
+                    if dest.is_file():
+                        out_map[cid] = dest
+                        log.info("deck chart recolor ok %s → %s", cid, dest.name)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    log.warning("deck chart recolor skipped %s: %s", cid, exc)
+        else:
+            batch_res = render_charts_batch(batch_items)
+            for cid, _chart_obj, dest, _cdir in batch_items:
+                if batch_res.get(cid, {}).get("ok") and dest.is_file():
+                    out_map[cid] = dest
+                    log.info("deck chart recolor ok %s → %s", cid, dest.name)
     return out_map
 
 

@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -126,6 +127,38 @@ def ensure_image() -> None:
     raise RenderError(
         f"Docker image {IMAGE!r} missing. Run: scripts\\setup.cmd{detail}"
     )
+
+
+_DOCKER_WARMED = False
+
+
+def warmup_docker(*, background: bool = True) -> bool:
+    """Warm up the Docker container (docker run --rm case-3:tex true) to prevent cold start."""
+    global _DOCKER_WARMED
+
+    def _do_warmup() -> bool:
+        global _DOCKER_WARMED
+        try:
+            ensure_image()
+            r = run_captured(["docker", "run", "--rm", IMAGE, "true"], timeout=45.0)
+            if r.returncode == 0:
+                _DOCKER_WARMED = True
+                log.info("Docker container %s warmed up successfully", IMAGE)
+                return True
+            log.warning("Docker warmup non-zero exit %d: %s", r.returncode, r.stderr)
+            return False
+        except Exception as exc:  # noqa: BLE001
+            log.info("Docker warmup skipped/failed: %s", exc)
+            return False
+
+    if background:
+        threading.Thread(target=_do_warmup, name="case3-docker-warmup", daemon=True).start()
+        return True
+    return _do_warmup()
+
+
+def is_docker_warmed() -> bool:
+    return _DOCKER_WARMED
 
 
 def _save_tex_logs(work: Path, stem: str, log_dir: Path | None) -> Path | None:
@@ -358,13 +391,15 @@ def render_tex(
                     # Stamp meta so Liber/status can show native vs PNG honestly.
                     if meta_p.is_file() and native_ids:
                         try:
-                            meta = _json.loads(meta_p.read_text(encoding="utf-8"))
-                            if isinstance(meta, dict):
-                                meta["docx_native_charts"] = list(native_ids)
-                                meta_p.write_text(
-                                    _json.dumps(meta, ensure_ascii=False, indent=2),
-                                    encoding="utf-8",
-                                )
+                            from case3.run_meta import update_meta
+
+                            update_meta(
+                                out_dir,
+                                lambda m: m.__setitem__(
+                                    "docx_native_charts", list(native_ids)
+                                ),
+                                logs_dir=log_dir,
+                            )
                         except (OSError, _json.JSONDecodeError, TypeError):
                             pass
                 except Exception as exc:  # noqa: BLE001 — never break DOCX

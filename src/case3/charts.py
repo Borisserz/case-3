@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import urllib.parse
+from contextvars import copy_context
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -43,7 +44,7 @@ def _run_sync_playwright(fn: Callable[[], _T]) -> _T:
     Windows). A dedicated thread has no running loop → Sync API is safe.
     """
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(fn).result()
+        return pool.submit(copy_context().run, fn).result()
 
 _MAX_PNG = 12 * 1024 * 1024
 # Single env knob for chart budget (used by generate / parse / pipeline / render).
@@ -157,9 +158,127 @@ def _assert_chart_visible(page) -> None:  # noqa: ANN001
         raise RuntimeError(f"blank chart screenshot: {stats}")
 
 
-def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -> None:
-    html = sanitize_chart_html(str(chart.get("html") or ""))
+def _render_chart_in_browser(
+    browser: Any,
+    html: str,
+    dest_png: Path,
+    *,
+    work_dir: Path,
+    timeout_ms: int,
+) -> None:
     index = _write_frame(work_dir)
+    dest_png.parent.mkdir(parents=True, exist_ok=True)
+    work_dir = work_dir.resolve()
+    index = index.resolve()
+    allowed = {
+        index.resolve(),
+        (work_dir / "chart.umd.min.js").resolve(),
+    }
+    context = browser.new_context(
+        viewport={"width": 1200, "height": 680},
+        device_scale_factor=2,
+    )
+    try:
+
+        def _route(route, request):  # noqa: ANN001
+            url = request.url
+            if url.startswith("data:"):
+                route.continue_()
+                return
+            if url.startswith("file:"):
+                try:
+                    resolved = file_url_to_path(url)
+                except (ValueError, OSError):
+                    route.abort()
+                    return
+                if any(paths_equal(resolved, a) for a in allowed):
+                    route.continue_()
+                else:
+                    route.abort()
+                return
+            route.abort()
+
+        context.route("**/*", _route)
+        page = context.new_page()
+        page.goto(index.as_uri(), wait_until="load", timeout=timeout_ms)
+        # Inject via DOM (stray </div> cannot break #mount). Re-exec <script>
+        # because browsers do not run scripts inserted with innerHTML.
+        page.evaluate(
+            """(html) => {
+              const mount = document.getElementById('mount');
+              window.__CASE3_CHART_READY = false;
+              window.__CASE3_CHART_ERROR = null;
+              mount.innerHTML = html;
+              for (const old of Array.from(mount.querySelectorAll('script'))) {
+                const src = old.textContent || '';
+                old.remove();
+                try {
+                  // eval so Chart ctor throws are catchable (replaceWith is not).
+                  (0, eval)(src);
+                } catch (err) {
+                  window.__CASE3_CHART_ERROR = String(err && err.message || err);
+                  window.__CASE3_CHART_READY = true;
+                }
+              }
+            }""",
+            html,
+        )
+        page.wait_for_function(
+            "() => window.__CASE3_CHART_READY === true",
+            timeout=timeout_ms,
+        )
+        js_err = page.evaluate("() => window.__CASE3_CHART_ERROR")
+        if js_err:
+            raise RuntimeError(f"chart JS error: {js_err}")
+        _force_chart_paint(page)
+        # Poll until canvas has ink — READY can still beat first paint.
+        # Under matrix load 2.5s was too short (grouped_bar → painted=0).
+        deadline = timeout_ms
+        step = 50
+        last_err: Exception | None = None
+        waited = 0
+        while waited <= deadline:
+            try:
+                _assert_chart_visible(page)
+                last_err = None
+                break
+            except RuntimeError as exc:
+                last_err = exc
+                if waited > 0 and waited % 500 < step:
+                    _force_chart_paint(page)
+                page.wait_for_timeout(step)
+                waited += step
+        if last_err is not None:
+            raise last_err
+        page.locator("#mount").screenshot(path=str(dest_png), type="png")
+    finally:
+        context.close()
+
+
+def _validate_chart_png(dest_png: Path) -> None:
+    data = dest_png.read_bytes()
+    if len(data) > _MAX_PNG:
+        dest_png.unlink(missing_ok=True)
+        raise RuntimeError(f"chart png too large: {len(data)} bytes")
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        dest_png.unlink(missing_ok=True)
+        raise RuntimeError("chart screenshot is not PNG")
+    if len(data) < 800:
+        dest_png.unlink(missing_ok=True)
+        raise RuntimeError(f"chart png suspiciously small: {len(data)} bytes")
+
+
+def render_chart_png(
+    chart: dict[str, Any] | str,
+    dest_png: Path,
+    *,
+    work_dir: Path | None = None,
+) -> None:
+    raw_html = chart if isinstance(chart, str) else str(chart.get("html") or "")
+    html = sanitize_chart_html(raw_html)
+    dest_png = Path(dest_png)
+    if work_dir is None:
+        work_dir = dest_png.parent.parent / "chart_work" / dest_png.stem
     timeout_ms = int(chart_timeout_s() * 1000)
 
     try:
@@ -169,96 +288,18 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
             "playwright not installed — run: pip install playwright && playwright install chromium"
         ) from exc
 
-    dest_png.parent.mkdir(parents=True, exist_ok=True)
-    work_dir = work_dir.resolve()
-    index = index.resolve()
-    allowed = {
-        index.resolve(),
-        (work_dir / "chart.umd.min.js").resolve(),
-    }
-
     def _render() -> None:
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                context = browser.new_context(
-                    viewport={"width": 1200, "height": 680},
-                    device_scale_factor=2,
-                )
-
-                def _route(route, request):  # noqa: ANN001
-                    url = request.url
-                    if url.startswith("data:"):
-                        route.continue_()
-                        return
-                    if url.startswith("file:"):
-                        try:
-                            resolved = file_url_to_path(url)
-                        except (ValueError, OSError):
-                            route.abort()
-                            return
-                        if any(paths_equal(resolved, a) for a in allowed):
-                            route.continue_()
-                        else:
-                            route.abort()
-                        return
-                    route.abort()
-
-                context.route("**/*", _route)
-                page = context.new_page()
-                page.goto(index.as_uri(), wait_until="load", timeout=timeout_ms)
-                # Inject via DOM (stray </div> cannot break #mount). Re-exec <script>
-                # because browsers do not run scripts inserted with innerHTML.
-                page.evaluate(
-                    """(html) => {
-                      const mount = document.getElementById('mount');
-                      window.__CASE3_CHART_READY = false;
-                      window.__CASE3_CHART_ERROR = null;
-                      mount.innerHTML = html;
-                      for (const old of Array.from(mount.querySelectorAll('script'))) {
-                        const src = old.textContent || '';
-                        old.remove();
-                        try {
-                          // eval so Chart ctor throws are catchable (replaceWith is not).
-                          (0, eval)(src);
-                        } catch (err) {
-                          window.__CASE3_CHART_ERROR = String(err && err.message || err);
-                          window.__CASE3_CHART_READY = true;
-                        }
-                      }
-                    }""",
+                _render_chart_in_browser(
+                    browser,
                     html,
+                    dest_png,
+                    work_dir=work_dir,
+                    timeout_ms=timeout_ms,
                 )
-                page.wait_for_function(
-                    "() => window.__CASE3_CHART_READY === true",
-                    timeout=timeout_ms,
-                )
-                js_err = page.evaluate("() => window.__CASE3_CHART_ERROR")
-                if js_err:
-                    raise RuntimeError(f"chart JS error: {js_err}")
-                _force_chart_paint(page)
-                # Poll until canvas has ink — READY can still beat first paint.
-                # Under matrix load 2.5s was too short (grouped_bar → painted=0).
-                deadline = timeout_ms
-                step = 50
-                last_err: Exception | None = None
-                waited = 0
-                while waited <= deadline:
-                    try:
-                        _assert_chart_visible(page)
-                        last_err = None
-                        break
-                    except RuntimeError as exc:
-                        last_err = exc
-                        if waited > 0 and waited % 500 < step:
-                            _force_chart_paint(page)
-                        page.wait_for_timeout(step)
-                        waited += step
-                if last_err is not None:
-                    raise last_err
-                page.locator("#mount").screenshot(path=str(dest_png), type="png")
-                context.close()
             finally:
                 browser.close()
 
@@ -272,16 +313,164 @@ def render_chart_png(chart: dict[str, Any], dest_png: Path, *, work_dir: Path) -
         log.warning("blank chart — retrying once with fresh browser: %s", exc)
         _run_sync_playwright(_render)
 
-    data = dest_png.read_bytes()
-    if len(data) > _MAX_PNG:
-        dest_png.unlink(missing_ok=True)
-        raise RuntimeError(f"chart png too large: {len(data)} bytes")
-    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        dest_png.unlink(missing_ok=True)
-        raise RuntimeError("chart screenshot is not PNG")
-    if len(data) < 800:
-        dest_png.unlink(missing_ok=True)
-        raise RuntimeError(f"chart png suspiciously small: {len(data)} bytes")
+    _validate_chart_png(dest_png)
+
+
+_DEFAULT_RENDER_CHART_PNG = render_chart_png
+
+
+def probe_playwright_chromium(*, deep: bool = False) -> tuple[bool, str | None]:
+    """Check Playwright + Chromium availability without cold-launching headless browser by default."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        return False, str(exc)[:200]
+
+    _prefer_stable_playwright_browsers()
+    if not deep:
+        env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        roots = [Path(env_path)] if env_path else []
+        roots.extend(
+            [
+                Path.home() / "Library" / "Caches" / "ms-playwright",
+                Path.home() / ".cache" / "ms-playwright",
+                Path.home() / "AppData" / "Local" / "ms-playwright",
+            ]
+        )
+        for r in roots:
+            if r.is_dir() and any(r.glob("chromium*")):
+                return True, None
+
+    try:
+
+        def _probe() -> None:
+            with sync_playwright() as p:
+                if deep:
+                    browser = p.chromium.launch(headless=True)
+                    browser.close()
+                else:
+                    exe = Path(p.chromium.executable_path)
+                    if not exe.is_file():
+                        raise RuntimeError(f"chromium executable missing: {exe}")
+
+        _run_sync_playwright(_probe)
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        log.info("playwright check failed: %s", exc)
+        return False, str(exc)[:200]
+
+
+def render_charts_batch(
+    items: list[tuple[str, dict[str, Any], Path, Path]],
+    *,
+    on_progress: Callable[[str], None] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Render multiple charts sharing one Chromium browser instance across the batch."""
+    from case3.run_cancel import RunCancelled
+
+    status: dict[str, dict[str, Any]] = {}
+    if not items:
+        return status
+
+    # If a test monkeypatched charts.render_chart_png, honor it per item.
+    if render_chart_png is not _DEFAULT_RENDER_CHART_PNG:
+        for cid, chart, dest, cdir in items:
+            if cancel_check:
+                cancel_check()
+            if on_progress:
+                on_progress(cid)
+            try:
+                render_chart_png(chart, dest, work_dir=cdir)
+                status[cid] = {"ok": True, "path": str(dest), "kind": "chart"}
+                log.info("chart ok %s → %s", cid, dest)
+            except RunCancelled:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                status[cid] = {"ok": False, "error": str(exc)[:400], "kind": "chart"}
+                log.warning("chart failed %s: %s", cid, exc)
+                if dest.exists():
+                    dest.unlink()
+        return status
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        err = f"playwright not installed — run: pip install playwright && playwright install chromium ({exc})"
+        for cid, _chart, dest, _cdir in items:
+            if cancel_check:
+                cancel_check()
+            if on_progress:
+                on_progress(cid)
+            status[cid] = {"ok": False, "error": err[:400], "kind": "chart"}
+        return status
+
+    timeout_ms = int(chart_timeout_s() * 1000)
+
+    def _batch_worker() -> None:
+        _prefer_stable_playwright_browsers()
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                for cid, chart, dest, cdir in items:
+                    if cancel_check:
+                        cancel_check()
+                    if on_progress:
+                        on_progress(cid)
+                    html = sanitize_chart_html(
+                        chart if isinstance(chart, str) else str(chart.get("html") or "")
+                    )
+                    try:
+                        try:
+                            _render_chart_in_browser(
+                                browser,
+                                html,
+                                dest,
+                                work_dir=cdir,
+                                timeout_ms=timeout_ms,
+                            )
+                        except RuntimeError as exc:
+                            if not is_blank_chart_error(exc):
+                                raise
+                            log.warning(
+                                "blank chart %s — retrying once with fresh browser: %s",
+                                cid,
+                                exc,
+                            )
+                            try:
+                                browser.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            browser = p.chromium.launch(headless=True)
+                            _render_chart_in_browser(
+                                browser,
+                                html,
+                                dest,
+                                work_dir=cdir,
+                                timeout_ms=timeout_ms,
+                            )
+                        _validate_chart_png(dest)
+                        status[cid] = {"ok": True, "path": str(dest), "kind": "chart"}
+                        log.info("chart ok %s → %s", cid, dest)
+                    except RunCancelled:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 — soft-fail per chart
+                        status[cid] = {
+                            "ok": False,
+                            "error": str(exc)[:400],
+                            "kind": "chart",
+                        }
+                        log.warning("chart failed %s: %s", cid, exc)
+                        if dest.exists():
+                            dest.unlink()
+            finally:
+                try:
+                    browser.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    _run_sync_playwright(_batch_worker)
+    return status
 
 
 def generate_all_charts(
@@ -291,27 +480,24 @@ def generate_all_charts(
     work_root: Path | None = None,
     max_charts: int | None = None,
     on_progress: Callable[[str], None] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Render charts into figures_dir/<id>.png. Soft-fail per chart."""
-    status: dict[str, Any] = {}
+    if cancel_check:
+        cancel_check()
     limit = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
     if limit <= 0:
-        return status
+        return {}
     figures_dir.mkdir(parents=True, exist_ok=True)
     root = work_root or (figures_dir.parent / "chart_work")
+    items: list[tuple[str, dict[str, Any], Path, Path]] = []
     for chart in charts[:limit]:
         cid = chart["id"]
-        if on_progress:
-            on_progress(cid)
         dest = figures_dir / f"{cid}.png"
         cdir = root / cid
-        try:
-            render_chart_png(chart, dest, work_dir=cdir)
-            status[cid] = {"ok": True, "path": str(dest), "kind": "chart"}
-            log.info("chart ok %s → %s", cid, dest)
-        except Exception as exc:  # noqa: BLE001 — soft-fail per chart
-            status[cid] = {"ok": False, "error": str(exc)[:400], "kind": "chart"}
-            log.warning("chart failed %s: %s", cid, exc)
-            if dest.exists():
-                dest.unlink()
-    return status
+        items.append((cid, chart, dest, cdir))
+    return render_charts_batch(
+        items,
+        on_progress=on_progress,
+        cancel_check=cancel_check,
+    )

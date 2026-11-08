@@ -373,6 +373,60 @@
   margin-top: 0.55rem;
 }
 
+.settings-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.settings-palette-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--rule, #ddd) 85%, transparent);
+  background: var(--sheet, #fff);
+  color: var(--ink, #1c1917);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-palette-chip:hover {
+  border-color: color-mix(in srgb, var(--primary, #3d5a45) 45%, transparent);
+  background: color-mix(in srgb, var(--primary, #3d5a45) 6%, var(--sheet, #fff));
+}
+
+.settings-palette-chip.is-selected {
+  border-color: var(--primary, #3d5a45);
+  background: color-mix(in srgb, var(--primary, #3d5a45) 12%, var(--sheet, #fff));
+  box-shadow: 0 0 0 1px var(--primary, #3d5a45);
+  font-weight: 600;
+}
+
+.settings-palette-swatches {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.settings-palette-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.settings-palette-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+}
+
 .settings-modal-foot {
   padding: 0.7rem 1.15rem 0.95rem;
   border-top: 1px solid color-mix(in srgb, var(--rule) 85%, transparent);
@@ -533,4 +587,142 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+/* Recolor Charts Modal */
+.recolor-charts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(18, 22, 20, 0.52);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.recolor-charts-modal {
+  width: min(92vw, 480px);
+  background: var(--sheet, #fff);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.recolor-charts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.recolor-charts-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.recolor-charts-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.recolor-charts-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.recolor-charts-close {
+  width: 1.8rem;
+  height: 1.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.recolor-charts-body {
+  padding: 1rem 1.25rem;
+}
+
+.recolor-charts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recolor-palette-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font: inherit;
+  color: inherit;
+}
+
+.recolor-palette-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: color-mix(in srgb, var(--primary) 4%, var(--paper));
+}
+
+.recolor-palette-card.is-selected {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--sheet));
+}
+
+.recolor-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recolor-palette-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.recolor-palette-check {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.recolor-palette-swatches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.recolor-palette-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.recolor-charts-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--paper) 40%, var(--sheet));
 }

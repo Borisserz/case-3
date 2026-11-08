@@ -30,6 +30,10 @@ _CHART_SLOT = re.compile(
     r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
 )
 _CHART_SLOT_LINE = _CHART_SLOT
+_DIAG_SLOT = re.compile(
+    r"(?m)^[ \t]*%CASE3_DIAG:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
+_DIAG_SLOT_LINE = _DIAG_SLOT
 
 
 class ParseError(ValueError):
@@ -52,15 +56,24 @@ def _strip_chart_slots(tex: str, keep: set[str]) -> str:
     return _CHART_SLOT_LINE.sub(repl, tex)
 
 
+def _strip_diag_slots(tex: str, keep: set[str]) -> str:
+    def repl(m: re.Match[str]) -> str:
+        return m.group(0) if m.group(1) in keep else ""
+
+    return _DIAG_SLOT_LINE.sub(repl, tex)
+
+
 def _append_missing_slots(
     tex: str,
     *,
     chart_ids: list[str],
     figure_ids: list[str],
+    diagram_ids: list[str] | None = None,
 ) -> str:
     """If JSON has media but the LaTeX forgot slots, append them before \\end{document}."""
     have_c = set(_ids(_CHART_SLOT, tex))
     have_f = set(_ids(_FIG_SLOT, tex))
+    have_d = set(_ids(_DIAG_SLOT, tex))
     lines: list[str] = []
     for fid in figure_ids:
         if fid and fid not in have_f:
@@ -68,6 +81,9 @@ def _append_missing_slots(
     for cid in chart_ids:
         if cid and cid not in have_c:
             lines.append(f"%CASE3_CHART:{cid}%")
+    for did in diagram_ids or []:
+        if did and did not in have_d:
+            lines.append(f"%CASE3_DIAG:{did}%")
     if not lines:
         return tex
     block = "\n" + "\n".join(lines) + "\n"
@@ -499,14 +515,16 @@ def parse_model_output(
             ):
                 log.warning(
                     "LaTeX fence is preamble-only — synthesizing \\begin{document} "
-                    "with slots for charts=%s figures=%s",
+                    "with slots for charts=%s figures=%s diagrams=%s",
                     early_charts,
                     early_figs,
+                    early_dias,
                 )
                 tex_body = finish_preamble_only_tex(
                     tex_body,
                     chart_ids=early_charts,
                     figure_ids=early_figs,
+                    diagram_ids=early_dias,
                 )
             tex = extract_tex("```latex\n" + tex_body + "\n```")
     except ValueError as exc:
@@ -527,35 +545,44 @@ def parse_model_output(
                 _MIN_PREAMBLE.rstrip() + "\n",
                 chart_ids=early_charts,
                 figure_ids=early_figs,
+                diagram_ids=early_dias,
             )
         else:
             raise ParseError(str(exc)) from exc
 
     fig_slots = _ids(_FIG_SLOT, tex) if max_images > 0 else []
     chart_slots = _ids(_CHART_SLOT, tex) if max_charts > 0 else []
+    diag_slots = _ids(_DIAG_SLOT, tex) if max_diagrams > 0 else []
     # If caps are 0, ignore leftover slots (inject will strip unknown? we strip via empty status)
     if max_images <= 0:
         fig_slots = []
     if max_charts <= 0:
         chart_slots = []
+    if max_diagrams <= 0:
+        diag_slots = []
 
-    need_json = bool(fig_slots or chart_slots)
+    need_json = bool(
+        [s for s in fig_slots if not s.startswith("usr_")] or chart_slots or diag_slots
+    )
     if need_json and not data:
         # Truncated model output often has slots but no ```json — drop slots and
-        # still return TeX so PDF can build (charts/figures empty this run).
+        # still return TeX so PDF can build (charts/figures/diagrams empty this run).
         log.warning(
-            "missing ```json with slots figures=%s charts=%s — stripping slots",
+            "missing ```json with slots figures=%s charts=%s diagrams=%s — stripping slots",
             fig_slots,
             chart_slots,
+            diag_slots,
         )
         tex = re.sub(
-            r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
+            r"(?m)^[ \t]*%CASE3_FIG:(?!usr_)[a-z][a-z0-9_]{0,31}%[ \t]*\r?\n?",
             "",
             tex,
         )
         tex = _CHART_SLOT_LINE.sub("", tex)
-        fig_slots = []
+        tex = _DIAG_SLOT_LINE.sub("", tex)
+        fig_slots = [s for s in fig_slots if s.startswith("usr_")]
         chart_slots = []
+        diag_slots = []
 
     figures: list[dict[str, Any]] = []
     charts: list[dict[str, Any]] = []
@@ -579,7 +606,8 @@ def parse_model_output(
         )
 
     if max_images > 0 and figures:
-        if not fig_slots:
+        non_user_fig_slots = [s for s in fig_slots if not s.startswith("usr_")]
+        if not non_user_fig_slots:
             log.warning(
                 "JSON figures without slots — appending %s",
                 [f["id"] for f in figures],
@@ -592,7 +620,9 @@ def parse_model_output(
             fig_slots = _ids(_FIG_SLOT, tex)
         by_fig = {f["id"]: f for f in figures}
         aligned_figs = [by_fig[s] for s in fig_slots if s in by_fig][:max_images]
-        missing_figs = [s for s in fig_slots if s not in by_fig]
+        missing_figs = [
+            s for s in fig_slots if s not in by_fig and not s.startswith("usr_")
+        ]
         if missing_figs:
             log.warning("stripping figure slots without valid JSON: %s", missing_figs)
             tex = re.sub(
@@ -604,9 +634,9 @@ def parse_model_output(
             )
         figures = aligned_figs
     else:
-        if fig_slots:
+        if _ids(_FIG_SLOT, tex):
             tex = re.sub(
-                r"(?m)^[ \t]*%CASE3_FIG:[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
+                r"(?m)^[ \t]*%CASE3_FIG:(?!usr_)[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
                 "",
                 tex,
             )
@@ -639,8 +669,32 @@ def parse_model_output(
             tex = _strip_chart_slots(tex, set())
         charts = []
 
-    # Diagrams are Liber UI-only — never TeX slots / inject.
-    if max_diagrams <= 0:
+    # Diagrams: soft-fail — drop invalid slots from TeX instead of aborting the run.
+    # If JSON has diagrams but LaTeX forgot slots, append slots.
+    if max_diagrams > 0 and diagrams:
+        if not diag_slots:
+            log.warning(
+                "JSON diagrams without slots — appending %s",
+                [d["id"] for d in diagrams],
+            )
+            tex = _append_missing_slots(
+                tex,
+                chart_ids=[],
+                figure_ids=[],
+                diagram_ids=[d["id"] for d in diagrams[:max_diagrams]],
+            )
+            diag_slots = _ids(_DIAG_SLOT, tex)
+        by_did = {d["id"]: d for d in diagrams}
+        aligned_diags = [by_did[s] for s in diag_slots if s in by_did][:max_diagrams]
+        missing_diags = [s for s in diag_slots if s not in by_did]
+        if missing_diags:
+            log.warning("stripping diagram slots without valid JSON/mermaid: %s", missing_diags)
+        keep_diags = {d["id"] for d in aligned_diags}
+        tex = _strip_diag_slots(tex, keep_diags)
+        diagrams = aligned_diags
+    else:
+        if diag_slots or _ids(_DIAG_SLOT, tex):
+            tex = _strip_diag_slots(tex, set())
         diagrams = []
         diagram_drops = []
 

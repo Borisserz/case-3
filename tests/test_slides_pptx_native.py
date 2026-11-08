@@ -348,3 +348,38 @@ def test_missing_chart_png_does_not_crash(tmp_path: Path) -> None:
     out = build_native_pptx(deck, tmp_path / "thin.pptx", media_by_id={})
     prs = Presentation(str(out))
     assert len(prs.slides) == 4
+
+
+def test_chart_hero_with_native_kpi_series_does_not_crash(tmp_path: Path) -> None:
+    """Full-width chart_hero with KPI chart series must not raise UnboundLocalError on pic_h."""
+    deck = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Итоги"},
+            {
+                "id": "s02",
+                "layout": "chart_hero",
+                "title": "Ключевой эффект",
+                "chart_id": "cht_01",
+            },
+        ],
+    }
+    chart_series = {
+        "cht_01": {
+            "type": "kpi",
+            "title": "Рентабельность",
+            "labels": ["EBITDA", "Чистая маржа"],
+            "datasets": [{"label": "2025", "data": [34.0, 18.5]}],
+            "unit": "%",
+        }
+    }
+    out = build_native_pptx(
+        deck,
+        tmp_path / "kpi_hero.pptx",
+        media_by_id={},
+        chart_series_by_id=chart_series,
+    )
+    prs = Presentation(str(out))
+    assert len(prs.slides) == 2
+

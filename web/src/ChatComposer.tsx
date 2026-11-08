@@ -189,6 +189,21 @@ export function ChatComposer({
             disabled={busy}
             onChange={(e) => onChatChange(e.target.value)}
             onPaste={(e) => {
+              const files = e.clipboardData.files;
+              if (files && files.length > 0) {
+                const hasMediaOrDoc = Array.from(files).some(
+                  (f) =>
+                    /^image\//.test(f.type) ||
+                    /\.(txt|md|png|jpe?g)$/i.test(f.name) ||
+                    f.type === "text/plain" ||
+                    f.type === "text/markdown",
+                );
+                if (hasMediaOrDoc) {
+                  e.preventDefault();
+                  onIngestFiles(files);
+                  return;
+                }
+              }
               const pasted = e.clipboardData.getData("text/plain");
               if (onPasteCapture(pasted)) {
                 e.preventDefault();
@@ -225,7 +240,7 @@ export function ChatComposer({
                 <IconPalette size={18} />
               </button>
             ) : null}
-            {showModes ? (
+            {!busy ? (
               <div className="composer-modes" role="group" aria-label="Режим">
                 {LIBER_MODE_PILLS.map((p) => {
                   const on = workMode === p.id;

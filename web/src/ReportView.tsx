@@ -5,6 +5,8 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -17,15 +19,18 @@ import {
   type ImageEditRequest,
 } from "./ImageEditModal";
 import {
-  type TableEditDraft,
+  TableEditDraft,
   type TableEditRequest,
 } from "./TableEditSheet";
 import { type ParagraphEditRequest } from "./ParagraphEditSheet";
 import type { HeadingEditRequest } from "./HeadingEditTypes";
 import type { ListEditRequest } from "./ListEditTypes";
+import { InlineBlockEditor } from "./InlineBlockEditor";
+import { RecolorChartsModal } from "./RecolorChartsModal";
 import {
   blockEditVisible,
   collapseSetForEditMode,
+  recolorChartsButtonVisible,
   reportEditModeHint,
   reportEditToggleVisible,
   type EditHistoryDesc,
@@ -35,11 +40,14 @@ import {
   saveCollapsedIds,
 } from "./reportSections";
 import { ReportBody } from "./ReportBody";
+import { RailToc, buildToc } from "./RailToc";
+import type { DiagramInfo } from "./DiagramFullscreen";
 export { ReportPending } from "./ReportPending";
 
 import { PdfFirstPage } from "./lazyPdfFirstPage";
 
 import type { ReportPreview } from "./domain/reportPreview";
+import { reportToMarkdown } from "./domain/reportMarkdown";
 export type { PreviewBlock, ReportPreview } from "./domain/reportPreview";
 
 type Downloads = Record<string, string>;
@@ -48,6 +56,7 @@ type Props = {
   preview: ReportPreview;
   downloads?: Downloads;
   runId?: string;
+  diagrams?: DiagramInfo[];
   warnings?: string[];
   palettes?: PaletteInfo[];
   catalogTypes?: string[];
@@ -69,14 +78,28 @@ type Props = {
     pdfPage?: number;
     caption?: string;
   }) => void;
+  onJumpToDiagram?: (diagramId: string) => void;
   /** C3: open PDF tab when preview body is empty. */
   onOpenPdf?: () => void;
   /** Resolve true on success so the sheet can close. */
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
+  onRecolorCharts?: (palette: string) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onUploadFigure?: (
+    figureId: string,
+    file: File,
+    caption?: string,
+  ) => Promise<boolean> | boolean;
+  onDeleteFigure?: (figureId: string) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
+  onInsertParagraph?: (req: {
+    text: string;
+    afterParagraphIndex?: number;
+    afterHeadingIndex?: number;
+  }) => Promise<boolean> | boolean;
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
+  onEditTitle?: (text: string) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   /** Session undo/redo while edit mode is on. */
@@ -98,6 +121,7 @@ export function ReportView({
   preview,
   downloads,
   runId,
+  diagrams,
   warnings,
   palettes = [],
   catalogTypes = [],
@@ -109,12 +133,18 @@ export function ReportView({
   showPdf = true,
   showDownloads = true,
   onJumpToPdf,
+  onJumpToDiagram,
   onOpenPdf,
   onEditFigure,
+  onRecolorCharts,
   onEditImage,
+  onUploadFigure,
+  onDeleteFigure,
   onEditTable,
   onEditParagraph,
+  onInsertParagraph,
   onEditHeading,
+  onEditTitle,
   onEditList,
   onEditCancel,
   editHistory = null,
@@ -127,6 +157,11 @@ export function ReportView({
   onRequestFinishEdit,
 }: Props) {
   const blocks = preview.blocks || [];
+  const hasCharts = useMemo(
+    () => blocks.some((b) => b.type === "figure" && b.kind === "chart"),
+    [blocks],
+  );
+  const [recolorOpen, setRecolorOpen] = useState(false);
   const [lightbox, setLightbox] = useState<{
     url: string;
     caption: string;
@@ -154,14 +189,32 @@ export function ReportView({
     onEditTable,
     onEditParagraph,
     onEditHeading,
+    onEditTitle,
     onEditList,
   });
+  const canEditTitle = blockEditVisible(editMode, Boolean(onEditTitle));
   const canEditPara = blockEditVisible(editMode, Boolean(onEditParagraph));
   const canEditHeading = blockEditVisible(editMode, Boolean(onEditHeading));
   const canEditList = blockEditVisible(editMode, Boolean(onEditList));
   const canEditTable = blockEditVisible(editMode, Boolean(onEditTable));
   const canEditFigure = blockEditVisible(editMode, Boolean(onEditFigure));
   const canEditImage = blockEditVisible(editMode, Boolean(onEditImage));
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyMarkdown = useCallback(async () => {
+    const title = preview.title?.trim() || "Отчёт";
+    const md = reportToMarkdown({
+      title,
+      blocks: preview.blocks,
+    });
+    try {
+      await navigator.clipboard.writeText(md);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  }, [preview]);
 
   const resetLocalEditUi = useCallback(() => {
     setActiveBlockId(null);
@@ -171,11 +224,15 @@ export function ReportView({
     setTableDraftByN({});
   }, []);
 
+  const prevRunIdRef = useRef(runId);
   useEffect(() => {
     setCollapsed(loadCollapsedIds(runId || ""));
-    if (!controlled) setEditModeLocal(false);
     resetLocalEditUi();
-    onEditModeChange?.(false);
+    if (prevRunIdRef.current !== runId) {
+      prevRunIdRef.current = runId;
+      if (!controlled) setEditModeLocal(false);
+      onEditModeChange?.(false);
+    }
   }, [runId, onEditModeChange, controlled, resetLocalEditUi]);
 
   useEffect(() => {
@@ -190,6 +247,14 @@ export function ReportView({
     }
   }, [editMode, runId, resetLocalEditUi]);
 
+  const tocItems = useMemo(() => buildToc(blocks), [blocks]);
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
+  const handleTocJump = useCallback((id: string) => {
+    setActiveTocId(id);
+    const target = document.getElementById(id);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   const leaveEditMode = useCallback(async () => {
     if (finishing) return;
     setFinishing(true);
@@ -199,12 +264,14 @@ export function ReportView({
       } else {
         void onClearEditHistory?.();
       }
-    } finally {
-      setFinishing(false);
       resetLocalEditUi();
       if (!controlled) setEditModeLocal(false);
       onEditModeChange?.(false);
       onEditCancel?.();
+    } catch {
+      // Rebuild failed: do not exit edit mode or clear history so user can inspect and fix
+    } finally {
+      setFinishing(false);
     }
   }, [
     finishing,
@@ -280,6 +347,15 @@ export function ReportView({
     <article className={`report${editMode ? " is-editing-mode" : ""}`}>
       <div className="report-rail" aria-hidden />
 
+      {tocItems.length >= 2 ? (
+        <RailToc
+          items={tocItems}
+          activeId={activeTocId}
+          onJump={handleTocJump}
+          onActiveChange={setActiveTocId}
+        />
+      ) : null}
+
       {showEditToggle && showEditChrome ? (
         <div className="report-edit-bar">
           <p className="report-edit-bar-hint">
@@ -310,6 +386,31 @@ export function ReportView({
                 </button>
               </>
             ) : null}
+            {!editMode ? (
+              <button
+                type="button"
+                className="report-copy-md-btn secondary"
+                title="Скопировать отчёт в формате Markdown"
+                onClick={handleCopyMarkdown}
+              >
+                {copied ? "Скопировано" : "Копировать MD"}
+              </button>
+            ) : null}
+            {recolorChartsButtonVisible(
+              editMode,
+              hasCharts,
+              Boolean(onRecolorCharts),
+            ) ? (
+              <button
+                type="button"
+                className="report-recolor-charts-btn secondary"
+                title="Перекрасить все графики отчёта"
+                disabled={finishing || editingFigureId === "charts_all"}
+                onClick={() => setRecolorOpen(true)}
+              >
+                Перекрасить графики
+              </button>
+            ) : null}
             <button
               type="button"
               className={`report-edit-toggle${editMode ? " is-on" : ""}`}
@@ -332,16 +433,57 @@ export function ReportView({
         </header>
       ) : null}
 
-      {preview.title ? (
-        <h1 className="report-title">{preview.title}</h1>
+      {canEditTitle && activeBlockId === "doc_title" ? (
+        <div className="report-title-editor inline-block-wrap">
+          <InlineBlockEditor
+            hideActions
+            kind="heading"
+            initialText={preview.title || "Отчёт"}
+            busy={editingFigureId === "doc_title"}
+            error={editErrorFigureId === "doc_title" ? editError : null}
+            onCancel={() => setActiveBlockId(null)}
+            onSave={(text) => {
+              void (async () => {
+                const ok = await onEditTitle?.(text);
+                if (ok !== false) setActiveBlockId(null);
+              })();
+            }}
+          />
+        </div>
       ) : (
-        <h1 className="report-title muted">Отчёт</h1>
+        <h1
+          className={`report-title${!preview.title ? " muted" : ""}${canEditTitle ? " is-click-edit" : ""}`}
+          role={canEditTitle ? "button" : undefined}
+          tabIndex={canEditTitle ? 0 : undefined}
+          onClick={
+            canEditTitle
+              ? () => {
+                  setOpenMediaId(null);
+                  setActiveBlockId("doc_title");
+                }
+              : undefined
+          }
+          onKeyDown={
+            canEditTitle
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOpenMediaId(null);
+                    setActiveBlockId("doc_title");
+                  }
+                }
+              : undefined
+          }
+        >
+          {preview.title || "Отчёт"}
+        </h1>
       )}
 
       <ReportBody
         blocks={blocks}
         downloads={downloads}
         runId={runId}
+        diagrams={diagrams}
         palettes={palettes}
         catalogTypes={catalogTypes}
         defaultPalette={defaultPalette}
@@ -365,11 +507,15 @@ export function ReportView({
         setLightbox={setLightbox}
         toggleSection={toggleSection}
         onJumpToPdf={onJumpToPdf}
+        onJumpToDiagram={onJumpToDiagram}
         onOpenPdf={onOpenPdf}
         onEditFigure={onEditFigure}
         onEditImage={onEditImage}
+        onUploadFigure={onUploadFigure}
+        onDeleteFigure={onDeleteFigure}
         onEditTable={onEditTable}
         onEditParagraph={onEditParagraph}
+        onInsertParagraph={onInsertParagraph}
         onEditHeading={onEditHeading}
         onEditList={onEditList}
         activeBlockId={activeBlockId}
@@ -384,22 +530,28 @@ export function ReportView({
         </Suspense>
       ) : null}
 
-      {showDownloads &&
-        downloads &&
-        (downloads.pdf || downloads.docx) && (
+      {showDownloads && (
         <footer
           className={`report-actions downloads${downloadsPulse ? " is-pulse" : ""}`}
         >
-          {downloads.pdf && (
+          {downloads?.pdf && (
             <a href={downloads.pdf} download>
               Скачать PDF
             </a>
           )}
-          {downloads.docx && (
+          {downloads?.docx && (
             <a className="secondary" href={downloads.docx} download>
               Скачать DOCX
             </a>
           )}
+          <button
+            type="button"
+            className="report-copy-md-btn secondary"
+            title="Скопировать текст отчёта в формате Markdown"
+            onClick={handleCopyMarkdown}
+          >
+            {copied ? "Скопировано в MD" : "Копировать Markdown"}
+          </button>
         </footer>
       )}
 
@@ -432,6 +584,24 @@ export function ReportView({
           </div>,
           document.body,
         )}
+      {showEditChrome && hasCharts && onRecolorCharts ? (
+        <RecolorChartsModal
+          open={recolorOpen}
+          currentPalette={defaultPalette}
+          palettes={palettes}
+          busy={editingFigureId === "charts_all"}
+          onCancel={() => setRecolorOpen(false)}
+          onApply={(pal) => {
+            void (async () => {
+              const ok = await onRecolorCharts?.(pal);
+              if (ok !== false) {
+                setRecolorOpen(false);
+                if (!editMode) enterEditMode();
+              }
+            })();
+          }}
+        />
+      ) : null}
     </article>
   );
 }

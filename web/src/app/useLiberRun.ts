@@ -69,6 +69,7 @@ export type LiberSendDeps = {
     dryRun: boolean;
     workMode: LiberWorkMode;
     deckStyle: DeckStyle;
+    chartPalette?: string;
     chatRef: RefObject<HTMLTextAreaElement | null>;
     setChat: Dispatch<SetStateAction<string>>;
     setChatTitle: Dispatch<SetStateAction<string | null>>;
@@ -124,6 +125,7 @@ export function useLiberRun(deps: LiberSendDeps) {
       dryRun,
       workMode,
       deckStyle,
+      chartPalette,
       chatRef,
       setChat,
       setChatTitle,
@@ -297,6 +299,7 @@ async () => {
     dryRun,
     workMode,
     deckStyle,
+    chartPalette,
   });
 
   try {

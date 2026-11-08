@@ -1,0 +1,86 @@
+import json
+from pathlib import Path
+from fastapi.testclient import TestClient
+
+from case3.api import app
+from case3 import run_store
+
+
+def test_api_history_empty(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(run_store, "ROOT", tmp_path)
+    (tmp_path / "runs" / "out").mkdir(parents=True, exist_ok=True)
+    client = TestClient(app)
+
+    res = client.get("/api/history")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["items"] == []
+    assert data["folders"] == []
+
+
+def test_api_history_scan_and_sync(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(run_store, "ROOT", tmp_path)
+    out_dir = tmp_path / "runs" / "out"
+    run1 = out_dir / "run_20261107T120000Z"
+    run1.mkdir(parents=True, exist_ok=True)
+    (run1 / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run_20261107T120000Z",
+                "started_at": "20261107T120000Z",
+                "status": "ok",
+                "preview": {"title": "Финансовый отчёт Q3"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(app)
+
+    # 1. Get history: should pick up run1
+    res = client.get("/api/history")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["runId"] == "run_20261107T120000Z"
+    assert items[0]["title"] == "Финансовый отчёт Q3"
+    assert items[0]["pinned"] is False
+
+    # 2. Sync history: pin run1 and add a folder
+    sync_payload = {
+        "items": [
+            {
+                "runId": "run_20261107T120000Z",
+                "pinned": True,
+                "folderId": "fld_1",
+            }
+        ],
+        "folders": [{"id": "fld_1", "name": "Финансы", "createdAt": 1731000000000}],
+    }
+    res_sync = client.post("/api/history/sync", json=sync_payload)
+    assert res_sync.status_code == 200
+    assert res_sync.json()["ok"] is True
+
+    # 3. Get history again: should reflect pinned status and folder
+    res2 = client.get("/api/history")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert len(data2["folders"]) == 1
+    assert data2["folders"][0]["name"] == "Финансы"
+    assert len(data2["items"]) == 1
+    assert data2["items"][0]["pinned"] is True
+    assert data2["items"][0]["folderId"] == "fld_1"
+
+    # 4. Sync history: delete all folders (folders=[])
+    res_delete = client.post("/api/history/sync", json={"items": [], "folders": []})
+    assert res_delete.status_code == 200
+
+    # 5. Get history again: should have empty folders and folderId cleared
+    res3 = client.get("/api/history")
+    assert res3.status_code == 200
+    data3 = res3.json()
+    assert data3["folders"] == []
+    assert len(data3["items"]) == 1
+    assert data3["items"][0]["pinned"] is True
+    assert data3["items"][0]["folderId"] is None

@@ -27,6 +27,8 @@ export type BuildRunFormDataArgs = {
   dryRun: boolean;
   workMode: LiberWorkMode;
   deckStyle: DeckStyle;
+  /** Palette preset for generated charts (atelier, editorial, ocean, sunset, mono). */
+  chartPalette?: string;
   /** Wish for deck length (6–24). Model may emit fewer if Source is thin. */
   targetSlides?: number;
 };
@@ -46,6 +48,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     dryRun,
     workMode,
     deckStyle,
+    chartPalette,
     targetSlides,
   } = args;
   const outMode = modeToOutputMode(workMode);
@@ -55,7 +58,19 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   // Standalone img2img remains POST /api/photo/edit.
   fd.append("photo_mode", "document");
   for (const p of photosSnapshot) fd.append("photos", p);
-  if (file) {
+  if (
+    file &&
+    draftSnap?.text &&
+    (Boolean(draftSnap.fileName) || /\.(txt|md)$/i.test(file.name || ""))
+  ) {
+    fd.append(
+      "source",
+      new File([draftSnap.text], file.name || draftSnap.fileName || "source.txt", {
+        type: file.type || "text/plain",
+      }),
+    );
+    fd.append("intent", intentText);
+  } else if (file) {
     fd.append("source", file);
     fd.append("intent", intentText);
   } else if (draftSnap?.text) {
@@ -79,7 +94,10 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   fd.append("chart_types", CHART_AUTO ? "" : CHART_TYPES.join(","));
   fd.append("chart_hints", CHART_HINTS.trim());
   fd.append("chart_auto", String(CHART_AUTO));
-  fd.append("chart_palette", CHART_PALETTE);
+  fd.append(
+    "chart_palette",
+    (chartPalette || "").trim() ? (chartPalette || "").trim() : CHART_PALETTE,
+  );
   fd.append("chart_style", CHART_STYLE.trim());
   fd.append("doc_title", DOC_TITLE.trim().slice(0, 200));
   fd.append("forbid_charts", String(forbidCharts));

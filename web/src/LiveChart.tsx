@@ -192,6 +192,13 @@ function liveDpr(): number {
   return Math.max(2, Math.ceil(dpr));
 }
 
+/** Wrap inline Chart.js script in an IIFE so top-level `const ctx` never collides. */
+export function wrapChartScriptIife(code: string): string {
+  const body = (code || "").trim();
+  if (!body) return "";
+  return `(() => {\n${body}\n})();`;
+}
+
 function prepareLiveFragment(fragment: string, uid: string): string {
   const low = (fragment || "").toLowerCase();
   let kind: "hbar" | "donut" | "plain" = "plain";
@@ -542,7 +549,7 @@ export function LiveChart({
 
         for (const old of pending) {
           const s = document.createElement("script");
-          s.text = old.textContent || "";
+          s.text = wrapChartScriptIife(old.textContent || "");
           mount.appendChild(s);
         }
 

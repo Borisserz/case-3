@@ -33,9 +33,38 @@ export function applyDiagramsUpdate(opts: {
   setMsgs((list) =>
     list.map((msg) => {
       if (msg.id !== msgId || msg.role !== "bot" || !msg.result) return msg;
+      const prevPreview = msg.result.preview;
+      let nextPreview = prevPreview;
+      if (prevPreview?.blocks) {
+        const now = Date.now();
+        const nextBlocks = prevPreview.blocks.map((b) => {
+          if (
+            b.type === "figure" &&
+            (b.kind === "diagram" || b.id.startsWith("dia_"))
+          ) {
+            const updated = diagrams.find((d) => d.id === b.id);
+            if (updated) {
+              const base = (
+                b.url || `/api/runs/${runId || msg.result?.run_id}/figures/${b.id}.png`
+              ).split("?")[0];
+              return {
+                ...b,
+                caption: updated.title || b.caption,
+                url: `${base}?v=${now}`,
+              };
+            }
+          }
+          return b;
+        });
+        nextPreview = { ...prevPreview, blocks: nextBlocks };
+      }
       const next = {
         ...msg,
-        result: { ...msg.result, diagrams },
+        result: {
+          ...msg.result,
+          diagrams,
+          preview: nextPreview,
+        },
       };
       if (next.result) rememberRun(next.result);
       return next;

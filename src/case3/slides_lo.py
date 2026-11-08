@@ -35,20 +35,27 @@ class LibreOfficeError(RuntimeError):
     """soffice missing or conversion failed."""
 
 
+def _safe_is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def find_soffice() -> Path | None:
     """Resolve LibreOffice binary: env → PATH → known install paths."""
     for key in ("CASE3_SOFFICE", "LIBREOFFICE_PATH"):
         raw = (os.environ.get(key) or "").strip()
         if raw:
             p = Path(raw).expanduser()
-            if p.is_file():
+            if _safe_is_file(p):
                 return p.resolve()
     for name in ("soffice", "libreoffice"):
         which = shutil.which(name)
         if which:
             return Path(which).resolve()
     for cand in (_MAC_SOFFICE, *_LINUX_SOFFICES, *_WIN_SOFFICES):
-        if cand.is_file():
+        if _safe_is_file(cand):
             return cand.resolve()
     return None
 

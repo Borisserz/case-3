@@ -11,12 +11,14 @@ _END_DOC = re.compile(r"\\end\{document\}", re.I)
 _TITLE = re.compile(r"\\title\{([^{}]*)\}")
 _SECTION = re.compile(r"\\(sub)*section\*?\{([^{}]*)\}")
 _TABLE_ENV = re.compile(
-    r"\\begin\{table\}.*?\\end\{table\}",
+    r"\\begin\{table\*?\}.*?\\end\{table\*?\}"
+    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}",
     re.S,
 )
 _TABULAR = re.compile(
     r"\\begin\{tabularx\}\{[^}]+\}\{[^}]+\}([\s\S]*?)\\end\{tabularx\}"
     r"|\\begin\{tabular\}\{[^}]+\}([\s\S]*?)\\end\{tabular\}"
+    r"|\\begin\{longtable\*?\}\{[^}]+\}([\s\S]*?)\\end\{longtable\*?\}"
 )
 _CAPTION = re.compile(r"\\caption\{([^{}]*)\}")
 _FIGURE_ENV = re.compile(
@@ -83,6 +85,7 @@ def _plain_unescape(text: str) -> str:
     t = t.replace(r"\}", "}")
     t = t.replace(r"\,", " ")
     t = t.replace(r"\ ", " ")
+    t = t.replace("~", " ")
     t = t.replace("---", "—")
     t = t.replace("--", "–")
     t = re.sub(r"\{\s*,\s*\}", ",", t)
@@ -94,24 +97,37 @@ def _plain_unescape(text: str) -> str:
 
 
 def _inline_to_html(tex_fragment: str) -> str:
-    """Convert a TeX prose fragment to safe HTML with strong/em/code."""
+    """Convert a TeX prose fragment to safe HTML with strong/em/code and math spans."""
     t = tex_fragment or ""
     t = t.replace(r"\%", "%")
     t = t.replace(r"\&", "&")
-    t = t.replace(r"\$", "$")
+    t = t.replace(r"\$", "@@ESC_DOLLAR@@")
     t = t.replace(r"\#", "#")
     t = t.replace(r"\_", "_")
     t = t.replace(r"\{", "{")
     t = t.replace(r"\}", "}")
     t = t.replace(r"\,", " ")
     t = t.replace(r"\ ", " ")
+    t = t.replace("~", " ")
     t = t.replace("---", "—")
     t = t.replace("--", "–")
     t = re.sub(r"\{\s*,\s*\}", ",", t)
-    t = re.sub(r"\$([^$]*)\$", r"\1", t)
 
-    # Protect emphasis spans, escape the rest, then restore tags.
+    # Protect math spans and emphasis spans, escape the rest, then restore tags.
     slots: list[tuple[str, str]] = []
+
+    def _stash_math(m: re.Match[str]) -> str:
+        inner = m.group(1).strip()
+        if not inner:
+            return ""
+        esc_attr = html_lib.escape(inner, quote=True)
+        esc_text = html_lib.escape(inner)
+        tag = f'<span class="tex-math" data-math="{esc_attr}">{esc_text}</span>'
+        key = f"@@M{len(slots)}@@"
+        slots.append((key, tag))
+        return key
+
+    t = re.sub(r"\$([^$]+)\$", _stash_math, t)
 
     def _stash(m: re.Match[str]) -> str:
         cmd, inner = m.group(1), m.group(2)
@@ -131,6 +147,7 @@ def _inline_to_html(tex_fragment: str) -> str:
     t = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?", "", t)
     t = re.sub(r"\s+", " ", t).strip()
     out = html_lib.escape(t)
+    out = out.replace("@@ESC_DOLLAR@@", "$")
     for key, tag in slots:
         out = out.replace(key, tag)
     return out
@@ -155,12 +172,17 @@ def _body(tex: str) -> str:
 
 def _split_rows(tabular_body: str) -> list[list[str]]:
     raw = tabular_body or ""
-    raw = re.sub(r"\\(?:toprule|midrule|bottomrule|hline)\s*", "", raw)
+    raw = re.sub(r"\\(?:caption|label)\*?(?:\[[^\]]*\])?\{[^{}]*\}", "", raw)
+    raw = re.sub(
+        r"\\(?:toprule|midrule|bottomrule|hline|endfirsthead|endhead|endfoot|endlastfoot)\s*",
+        "",
+        raw,
+    )
     chunks = re.split(r"\\\\", raw)
     rows: list[list[str]] = []
     for chunk in chunks:
         s = chunk.strip()
-        if not s or "&" not in s and not s:
+        if not s or ("&" not in s and not s):
             continue
         if "&" not in s and not re.search(r"[A-Za-zА-Яа-я0-9]", s):
             continue
@@ -183,7 +205,7 @@ def _parse_table_block(block: str) -> dict[str, Any] | None:
     tab_m = _TABULAR.search(block)
     if not tab_m:
         return None
-    body = tab_m.group(1) if tab_m.group(1) is not None else tab_m.group(2)
+    body = tab_m.group(1) or tab_m.group(2) or tab_m.group(3)
     rows = _split_rows(body or "")
     if not rows:
         return None
@@ -204,7 +226,12 @@ def _parse_figure_block(block: str) -> dict[str, Any] | None:
     fid = img.group(1)
     cap_m = _CAPTION.search(block)
     caption = _plain_unescape(cap_m.group(1)) if cap_m else ""
-    kind = "chart" if fid.startswith("cht_") else "image"
+    if fid.startswith("cht_"):
+        kind = "chart"
+    elif fid.startswith("dia_"):
+        kind = "diagram"
+    else:
+        kind = "image"
     return {
         "type": "figure",
         "id": fid,
@@ -241,6 +268,7 @@ _STRUCT_TOKEN = re.compile(
     r"\\section\*?\{[^{}]*\}|"
     r"\\subsection\*?\{[^{}]*\}|"
     r"\\begin\{table\*?\}|"
+    r"\\begin\{longtable\*?\}|"
     r"\\begin\{figure\}|"
     r"\\begin\{landscape\}|"
     r"\\begin\{itemize\}|"
@@ -301,8 +329,9 @@ def find_paragraph_spans(tex: str) -> list[tuple[int, int]]:
             for a, b, _t, _h in _paragraph_parts_in_range(body, pos, m.start()):
                 spans.append((body_off + a, body_off + b))
         tok = m.group(1)
-        if tok.startswith(r"\begin{table}"):
-            em = re.search(r"\\end\{table\*?\}", body[m.start() :], re.S)
+        if tok.startswith(r"\begin{table}") or tok.startswith(r"\begin{longtable}"):
+            env = "longtable" if "longtable" in tok else "table"
+            em = re.search(rf"\\end\{{{env}\*?\}}", body[m.start() :], re.S)
             pos = m.start() + em.end() if em else m.end()
             continue
         if tok.startswith(r"\begin{figure}"):
@@ -427,8 +456,9 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             pos = m.end()
             continue
 
-        if tok.startswith(r"\begin{table}"):
-            em = re.search(r"\\end\{table\*?\}", body[m.start() :], re.S)
+        if tok.startswith(r"\begin{table}") or tok.startswith(r"\begin{longtable}"):
+            env = "longtable" if "longtable" in tok else "table"
+            em = re.search(rf"\\end\{{{env}\*?\}}", body[m.start() :], re.S)
             if not em:
                 pos = m.end()
                 continue
@@ -521,6 +551,11 @@ def build_report_preview(
             cap = str(item.get("caption") or "").strip()
             if cap:
                 cap_by_id[str(item["id"])] = cap
+    for item in fj.get("diagrams") or []:
+        if isinstance(item, dict) and item.get("id"):
+            cap = str(item.get("title") or item.get("caption") or "").strip()
+            if cap:
+                cap_by_id[str(item["id"])] = cap
 
     data = tex_to_preview_blocks(tex)
     page_hints = estimate_figure_pdf_pages(tex)
@@ -535,10 +570,16 @@ def build_report_preview(
         if kind == "figure":
             kind = "image"
         caption = str(b.get("caption") or "").strip() or cap_by_id.get(fid, "")
+        if kind == "chart" or fid.startswith("cht_"):
+            fig_kind = "chart"
+        elif kind == "diagram" or fid.startswith("dia_"):
+            fig_kind = "diagram"
+        else:
+            fig_kind = "image"
         entry: dict[str, Any] = {
             "type": "figure",
             "id": fid,
-            "kind": "chart" if kind == "chart" or fid.startswith("cht_") else "image",
+            "kind": fig_kind,
             "caption": caption,
         }
         if fid in page_hints:

@@ -64,6 +64,17 @@ def test_patch_paragraph_replaces_nth() -> None:
     assert "Rewritten" in p1["text"]
 
 
+def test_format_prose_preserves_inline_math() -> None:
+    from case3.paragraph_edit import format_prose_to_tex
+
+    text = "Формула $E = mc^2$ и **важно**: результат $R^2 = 0.95$, а цена $100."
+    tex = format_prose_to_tex(text)
+    assert "$E = mc^2$" in tex
+    assert "$R^2 = 0.95$" in tex
+    assert r"\textbf{важно}" in tex
+    assert r"\$100" in tex
+
+
 def test_patch_bad_index_raises() -> None:
     with pytest.raises(ParagraphEditError):
         patch_paragraph_in_tex(_SAMPLE, 99, "x")

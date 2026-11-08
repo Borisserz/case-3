@@ -72,11 +72,13 @@ def rewrite_inline_slot_includegraphics(tex: str, *, rel_dir: str = "figures") -
 
 
 def rewrite_media_includegraphics_paths(tex: str, *, rel_dir: str = "figures") -> str:
-    """Force media PNG paths under ``rel_dir/`` (bare fig_02.png → figures/fig_02.png)."""
+    """Force media PNG paths under ``rel_dir/`` and constrain diagram sizes."""
 
     def _repl(m: re.Match[str]) -> str:
         opts = m.group(1) or ""
         mid = m.group(2)
+        if mid.startswith("dia_"):
+            opts = r"[width=\linewidth,height=0.38\textheight,keepaspectratio]"
         return f"\\includegraphics{opts}{{{rel_dir}/{mid}.png}}"
 
     return _MEDIA_INCLUDEGRAPHICS.sub(_repl, tex or "")
@@ -168,10 +170,12 @@ def _includegraphics_line(
     rel_dir: str,
     label_prefix: str = "fig",
 ) -> str:
-    default_w = r"0.92\linewidth" if label_prefix == "dia" else r"0.85\linewidth"
-    width = sanitize_width(meta.get("width")) if meta.get("width") else default_w
     path = f"{rel_dir}/{fid}.png"
-    return f"  \\includegraphics[width={width}]{{{path}}}\n"
+    if label_prefix == "dia" or fid.startswith("dia_"):
+        return f"  \\includegraphics[width=\\linewidth,height=0.38\\textheight,keepaspectratio]{{{path}}}\n"
+    default_w = r"0.85\linewidth"
+    width = sanitize_width(meta.get("width")) if meta.get("width") else default_w
+    return f"  \\includegraphics[width={width},height=0.45\\textheight,keepaspectratio]{{{path}}}\n"
 
 
 def _figure_env(
@@ -334,7 +338,12 @@ def write_injected(
     charts: list[dict[str, Any]] | None = None,
     diagrams: list[dict[str, Any]] | None = None,
 ) -> Path:
-    raw = tex_path.read_text(encoding="utf-8")
+    backup_path = tex_path.with_name(f"{tex_path.stem}.uninjected.tex")
+    if backup_path.is_file():
+        raw = backup_path.read_text(encoding="utf-8")
+    else:
+        raw = tex_path.read_text(encoding="utf-8")
+        backup_path.write_text(raw, encoding="utf-8")
     new = inject_media(raw, figures, charts or [], status, diagrams=diagrams)
     tex_path.write_text(new, encoding="utf-8")
     return tex_path

@@ -16,6 +16,12 @@ def test_truncated_slots_without_json() -> None:
     assert output_looks_truncated(raw)
 
 
+def test_truncated_json_only_without_latex() -> None:
+    """192348Z regression: JSON fence finished, but model stopped before ```latex."""
+    raw = '```json\n{"charts":[{"id":"cht_01","type":"bar","caption":"X","html":"<canvas></canvas>"}],"diagrams":[],"figures":[]}\n```\n'
+    assert output_looks_truncated(raw)
+
+
 def test_complete_dual_fence_not_truncated() -> None:
     raw = (
         "```json\n{\"figures\":[],\"charts\":[]}\n```\n"
@@ -30,6 +36,24 @@ def test_merge_appends_json() -> None:
     merged = merge_continuation(partial, cont)
     assert "```json" in merged
     assert merged.count("```") >= 4 or "charts" in merged
+
+
+def test_merge_json_first_plus_latex_continuation() -> None:
+    """192348Z regression: first pass returned ```json, continuation returned ```latex."""
+    partial = '```json\n{"charts":[],"diagrams":[],"figures":[]}\n```'
+    cont = (
+        "```latex\n"
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\section{Итоги}\n"
+        "Текст отчёта.\n"
+        "\\end{document}\n"
+        "```"
+    )
+    merged = merge_continuation(partial, cont)
+    assert "```json" in merged
+    assert "\\documentclass" in merged
+    assert "\\section{Итоги}" in merged
 
 
 def test_soft_close_drops_incomplete_table() -> None:

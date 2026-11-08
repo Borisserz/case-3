@@ -19,9 +19,10 @@ from case3.chart_style import (
 from case3.chart_coerce import apply_type_to_chart
 from case3.chart_donut import enhance_donut_html
 from case3.chart_harden import harden_chart_html
-from case3.charts import render_chart_png
+from case3.charts import _DEFAULT_RENDER_CHART_PNG, render_chart_png, render_charts_batch
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.render import RenderError
+from case3.run_meta import update_meta
 from case3.run_rebuild import rebuild_run_docs
 
 log = logging.getLogger("case3.chart_edit")
@@ -391,25 +392,21 @@ def edit_chart_in_run(
     fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # meta media_status
-    meta_path = out_dir / "meta.json"
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {}
+    def _mut_chart_edit(m: dict[str, Any]) -> None:
+        med = dict(m.get("media_status") or {})
+        med[chart_id] = {"ok": True, "path": str(dest), "kind": "chart"}
+        m["media_status"] = med
+        m["chart_edit_last"] = {
+            "id": chart_id,
+            "palette": palette_id,
+            "style": style_notes,
+            "chart_type": want_type,
+            "modes": modes,
+            "ts": int(time.time()),
+        }
+
+    meta = update_meta(out_dir, _mut_chart_edit)
     media = dict(meta.get("media_status") or {})
-    media[chart_id] = {"ok": True, "path": str(dest), "kind": "chart"}
-    meta["media_status"] = media
-    meta["chart_edit_last"] = {
-        "id": chart_id,
-        "palette": palette_id,
-        "style": style_notes,
-        "chart_type": want_type,
-        "modes": modes,
-        "ts": int(time.time()),
-    }
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     try:
         artifacts = rebuild_run_docs(out_dir, formats=formats)
@@ -433,5 +430,119 @@ def edit_chart_in_run(
         "version": v,
         "palette": palette_id,
         "style": style_notes,
+        "undo": undo_meta(out_dir),
+    }
+
+
+def recolor_all_charts_in_run(
+    out_dir: Path,
+    palette: str,
+    *,
+    formats: set[str] | None = None,
+) -> dict[str, Any]:
+    """Batch recolor all charts in an existing run to a new palette without LLM re-run."""
+    out_dir = out_dir.resolve()
+    fj_path = out_dir / "figures.json"
+    if not fj_path.is_file():
+        fj_path = out_dir.parent.parent / "work" / out_dir.name / "figures.json"
+    if not fj_path.is_file():
+        raise ChartEditError("figures.json not found")
+
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartEditError(f"could not read figures.json: {exc}") from exc
+
+    charts = list(fj.get("charts") or [])
+    if not charts:
+        raise ChartEditError("нет графиков для перекрашивания")
+
+    palette_id = normalize_palette_id(palette or "atelier")
+    if palette_id in ("", "auto"):
+        palette_id = "atelier"
+
+    from case3.run_undo import capture_before_edit, undo_meta
+
+    capture_before_edit(out_dir, kind="batch_recolor", target=palette_id)
+
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    work_root = out_dir / "chart_recolor_work"
+
+    recolored = 0
+    recolored_paths: dict[str, Path] = {}
+    batch_items: list[tuple[str, dict[str, Any], Path, Path]] = []
+    for chart in charts:
+        cid = str(chart.get("id") or "").strip()
+        html = str(chart.get("html") or "").strip()
+        if not html:
+            continue
+        ctype = str(chart.get("type") or "").strip()
+        if ctype == "kpi" or 'class="kpi"' in html:
+            new_html = apply_kpi_palette_vars(html, palette_id)
+        else:
+            new_html = sanitize_chart_html(apply_palette_to_html(html, palette_id))
+
+        if ctype == "donut" and new_html:
+            new_html = enhance_donut_html(new_html)
+        if new_html:
+            new_html = apply_kpi_palette_vars(new_html, palette_id)
+            new_html = harden_chart_html(new_html, ctype or "bar")
+
+        chart["palette"] = palette_id
+        chart["html"] = new_html
+        chart["style_user"] = True
+
+        png_path = figs_dir / f"{cid}.png"
+        if render_chart_png is not _DEFAULT_RENDER_CHART_PNG:
+            render_chart_png(new_html, png_path)
+            recolored_paths[cid] = png_path
+            recolored += 1
+        else:
+            batch_items.append((cid, chart, png_path, work_root / cid))
+
+    if batch_items:
+        batch_res = render_charts_batch(batch_items)
+        for cid, _chart, png_path, _cdir in batch_items:
+            if batch_res.get(cid, {}).get("ok"):
+                recolored_paths[cid] = png_path
+                recolored += 1
+
+    from case3.slides_chart_data import attach_series_ir_to_charts
+
+    attach_series_ir_to_charts(charts)
+    fj["charts"] = charts
+    fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _mut_recolor(m: dict[str, Any]) -> None:
+        med = dict(m.get("media_status") or {})
+        for cid, png_path in recolored_paths.items():
+            med[cid] = {"ok": True, "path": str(png_path), "kind": "chart"}
+        m["chart_palette"] = palette_id
+        m["media_status"] = med
+
+    meta = update_meta(out_dir, _mut_recolor)
+    media = dict(meta.get("media_status") or {})
+
+    artifacts = None
+    if formats:
+        from case3.run_rebuild import rebuild_run_docs
+        try:
+            artifacts = rebuild_run_docs(out_dir, formats=formats)
+        except Exception as exc:
+            log.warning("rebuild_run_docs failed during batch recolor: %s", exc)
+
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
+
+    v = int(time.time())
+    return {
+        "ok": True,
+        "palette": palette_id,
+        "charts_recolored": recolored,
+        "version": v,
+        "media_status": media,
+        "artifacts": {k: str(p) for k, p in (artifacts or {}).items()},
         "undo": undo_meta(out_dir),
     }

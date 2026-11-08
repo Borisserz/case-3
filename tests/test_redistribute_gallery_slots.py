@@ -183,3 +183,32 @@ def test_eof_media_pile_force_redistribute() -> None:
     tail = body[-200:]
     assert tail.count("%CASE3_") < 4
     assert "%CASE3_CHART:cht_01%" in body
+
+
+def test_schedule_section_with_grafik_title_preserves_prose_and_following_sections() -> None:
+    """Section 'График реализации проекта' (schedule) must not wipe prose or later sections."""
+    tex = r"""\documentclass{article}
+\begin{document}
+\section{Введение}
+Обзор инвестпроекта модернизации линии.
+
+\section{График реализации проекта и платежей}
+Проект разделён на три этапа: проектирование в Q1, поставка оборудования в Q2 и пусконаладка в Q3.
+Общий бюджет этапа составляет 120 млн руб.
+%CASE3_CHART:cht_01%
+
+\section{Заключение и ключевые выводы}
+Итоговый срок окупаемости составляет 2,4 года при сохранении текущей загрузки.
+\end{document}
+"""
+    out = redistribute_gallery_slots(
+        tex,
+        figures=[],
+        charts=[{"id": "cht_01", "caption": "План-график финансирования по кварталам"}],
+    )
+    assert "Проект разделён на три этапа" in out
+    assert "Общий бюджет этапа составляет 120 млн руб." in out
+    assert r"\section{Заключение и ключевые выводы}" in out
+    assert "Итоговый срок окупаемости составляет 2,4 года" in out
+    assert "%CASE3_CHART:cht_01%" in out
+

@@ -263,3 +263,86 @@ def test_upload_figure_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert data["figure_id"] == "usr_01"
     assert data["mode"] == "upload"
     assert (out / "figures" / "usr_01.png").is_file()
+
+
+def test_upload_figure_endpoint_rejects_oversized_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi.testclient import TestClient
+    from case3.api import app
+
+    out = _seed_run(tmp_path, with_deck=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    monkeypatch.setattr("case3.user_photos._MAX_BYTES", 512)
+
+    client = TestClient(app)
+    run_id = out.name
+    resp = client.post(
+        f"/api/runs/{run_id}/figures/usr_01/upload",
+        files={"image": ("huge.png", b"x" * 1024, "image/png")},
+    )
+    assert resp.status_code == 400
+    assert "слишком большой" in str(resp.json().get("detail") or "").lower() or "too large" in str(resp.json().get("detail") or "").lower()
+
+
+
+def test_delete_figure_in_tex() -> None:
+    from case3.figure_edit import delete_figure_in_tex
+
+    tex = (
+        r"\section{Введение}" "\n"
+        r"Текст до." "\n\n"
+        r"\begin{figure}[H]" "\n"
+        r"  \centering" "\n"
+        r"  \includegraphics{figures/fig_01.png}" "\n"
+        r"  \caption{Фото}" "\n"
+        r"\end{figure}" "\n\n"
+        r"Текст после."
+    )
+    res = delete_figure_in_tex(tex, "fig_01")
+    assert "fig_01" not in res
+    assert r"\begin{figure}" not in res
+    assert "Текст до." in res
+    assert "Текст после." in res
+
+    # Standalone slot
+    tex2 = "Параграф 1.\n\n%CASE3_CHART:cht_01%\n\nПараграф 2."
+    res2 = delete_figure_in_tex(tex2, "cht_01")
+    assert "cht_01" not in res2
+    assert "Параграф 1." in res2
+    assert "Параграф 2." in res2
+
+
+def test_delete_figure_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+    from case3.api import app
+
+    out = _seed_run(tmp_path, with_deck=True)
+    tex_path = out / "report.tex"
+    tex_path.write_text(
+        r"\documentclass{article}" "\n"
+        r"\begin{document}" "\n"
+        r"\begin{figure}[H]" "\n"
+        r"\includegraphics{figures/fig_01.png}" "\n"
+        r"\caption{Старое}" "\n"
+        r"\end{figure}" "\n"
+        r"\end{document}",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+
+    client = TestClient(app)
+    run_id = out.name
+    with patch("case3.deck_refresh.refresh_deck_from_ir"):
+        resp = client.post(
+            f"/api/runs/{run_id}/figures/fig_01/delete",
+            json={"formats": "none"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "fig_01" not in tex_path.read_text(encoding="utf-8")
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert not any(f.get("id") == "fig_01" for f in fj.get("figures", []))

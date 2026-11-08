@@ -2,6 +2,18 @@
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
+import { openRunEvents } from "../api/runEvents";
+import { openSummaryStream } from "../api/summaryStream";
+import {
+  attachSlidesPayload,
+  needsSlidesHydrate,
+  type SlidesPayload,
+} from "../domain/attachSlidesPayload";
+import {
+  craftParentId,
+  upsertCraftFilm,
+  upsertCraftSubstep,
+} from "../domain/craftSteps";
 import {
   appendBotThinking,
   formatRunStatusError,
@@ -79,86 +91,182 @@ async (botMsgId: string, runId: string) => {
           : data.error || res.statusText || "resume failed",
       );
     }
-    const pollDeadlineMs = 20 * 60 * 1000;
-    const pollStarted = Date.now();
-    let result: RunResult | null = null;
-    for (;;) {
-      if (cancelRequestedRef.current) {
-        setBusy(false);
-        return;
-      }
-      if (Date.now() - pollStarted > pollDeadlineMs) {
-        throw new Error(
-          `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
+    let streamedSummary = "";
+    const stopSummaryStream = openSummaryStream(
+      runId,
+      (full) => {
+        streamedSummary = full;
+        setMsgs((m) =>
+          m.map((msg) =>
+            msg.id === botMsgId && msg.role === "bot"
+              ? { ...msg, text: full, pending: true, streamingSummary: true }
+              : msg,
+          ),
         );
-      }
-      await new Promise((r) => setTimeout(r, 400));
-      const st = await fetch(
-        `/api/runs/${encodeURIComponent(runId)}/status`,
-      );
-      const body = await st.json().catch(() => ({}));
-      if (!st.ok) {
-        throw new Error(
-          typeof body.detail === "string"
-            ? body.detail
-            : body.error || st.statusText,
-        );
-      }
-      if (body.status === "running" || body.status === "started") {
-        const stage = body.stage as string | undefined;
-        const detail = (body.stage_detail as string | null) || null;
+      },
+      (full) => {
+        if (full && full.trim()) {
+          streamedSummary = full;
+        }
+      },
+    );
+    const stopRunEvents = openRunEvents(runId, {
+      onStage: (stage, detail) => {
+        const stg = stage || "queued";
+        const det = detail ?? null;
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== botMsgId || msg.role !== "bot") return msg;
             return appendBotThinking(
               {
                 ...msg,
-                text: stageLabel(
-                  stage,
-                  detail,
-                  msg.thinkingMode || "report",
-                ),
+                text: stageLabel(stg, det, msg.thinkingMode || "report"),
                 pending: true,
-                pendingStage: stage,
-                pendingDetail: detail,
+                pendingStage: stg,
+                pendingDetail: det,
               },
-              stage,
-              detail,
+              stg,
+              det,
             );
           }),
         );
-        continue;
-      }
-      if (body.status === "cancelled") {
-        setBusy(false);
-        return;
-      }
-      if (body.status === "error") {
-        throw new RunFailedError(
-          formatRunStatusError(body as Record<string, unknown>, runId),
-          {
-            runId,
-            canResume: Boolean(body.can_resume),
-            failedStage:
-              typeof body.failed_stage === "string"
-                ? body.failed_stage
-                : null,
-          },
+      },
+      onStep: (ev) => {
+        const parent = craftParentId(ev.parent);
+        const stepId = ev.id || "";
+        if (!parent || !stepId) return;
+        const st =
+          ev.status === "done" || ev.status === "skipped"
+            ? ev.status
+            : "active";
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== botMsgId || msg.role !== "bot") return msg;
+            return {
+              ...msg,
+              craftSubsteps: upsertCraftSubstep(msg.craftSubsteps || [], {
+                id: stepId,
+                parent,
+                status: st,
+                reason: ev.reason ?? null,
+                label: ev.label ?? null,
+              }),
+            };
+          }),
         );
+      },
+      onFilm: (frame) => {
+        if (!frame.id || !frame.url) return;
+        setMsgs((m) =>
+          m.map((msg) => {
+            if (msg.id !== botMsgId || msg.role !== "bot") return msg;
+            return {
+              ...msg,
+              craftFilm: upsertCraftFilm(msg.craftFilm || [], frame),
+            };
+          }),
+        );
+      },
+    });
+    const pollDeadlineMs = 20 * 60 * 1000;
+    const pollStarted = Date.now();
+    let result: RunResult | null = null;
+    try {
+      for (;;) {
+        if (cancelRequestedRef.current) {
+          setBusy(false);
+          return;
+        }
+        if (Date.now() - pollStarted > pollDeadlineMs) {
+          throw new Error(
+            `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
+          );
+        }
+        await new Promise((r) => setTimeout(r, 400));
+        const st = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/status`,
+        );
+        const body = await st.json().catch(() => ({}));
+        if (!st.ok) {
+          throw new Error(
+            typeof body.detail === "string"
+              ? body.detail
+              : body.error || st.statusText,
+          );
+        }
+        if (body.status === "running" || body.status === "started") {
+          const stage = body.stage as string | undefined;
+          const detail = (body.stage_detail as string | null) || null;
+          setMsgs((m) =>
+            m.map((msg) => {
+              if (msg.id !== botMsgId || msg.role !== "bot") return msg;
+              return appendBotThinking(
+                {
+                  ...msg,
+                  text: stageLabel(
+                    stage,
+                    detail,
+                    msg.thinkingMode || "report",
+                  ),
+                  pending: true,
+                  pendingStage: stage,
+                  pendingDetail: detail,
+                },
+                stage,
+                detail,
+              );
+            }),
+          );
+          continue;
+        }
+        if (body.status === "cancelled") {
+          setBusy(false);
+          return;
+        }
+        if (body.status === "error") {
+          throw new RunFailedError(
+            formatRunStatusError(body as Record<string, unknown>, runId),
+            {
+              runId,
+              canResume: Boolean(body.can_resume),
+              failedStage:
+                typeof body.failed_stage === "string"
+                  ? body.failed_stage
+                  : null,
+            },
+          );
+        }
+        result = body as RunResult;
+        break;
       }
-      result = body as RunResult;
-      break;
+    } finally {
+      stopRunEvents();
+      stopSummaryStream();
     }
     if (!result) {
       setBusy(false);
       return;
+    }
+    if (needsSlidesHydrate(result) || result.output_mode === "presentation") {
+      try {
+        const sr = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/slides`,
+        );
+        if (sr.ok) {
+          const sp = (await sr.json()) as SlidesPayload;
+          result = attachSlidesPayload(result, sp);
+        }
+      } catch {
+        /* status payload is enough */
+      }
     }
     try {
       setChatTitle(reportTitle(result));
       if (
         result.preview?.blocks?.length ||
         result.downloads?.pdf ||
-        result.downloads?.pptx
+        result.downloads?.pptx ||
+        result.diagrams?.length
       ) {
         rememberRun(result);
         setHasStoredReport(true);
@@ -166,17 +274,20 @@ async (botMsgId: string, runId: string) => {
     } catch {
       /* quota */
     }
+    const finalResult = result;
     setMsgs((m) =>
       m.map((msg) => {
         if (msg.id !== botMsgId || msg.role !== "bot") return msg;
         return {
           id: botMsgId,
           role: "bot" as const,
-          text: reportReadyText(result),
-          result,
+          text: reportReadyText(finalResult, streamedSummary),
+          result: finalResult,
           thinking: msg.thinking,
           thinkingStartedAt: msg.thinkingStartedAt,
           thinkingMode: msg.thinkingMode,
+          craftSubsteps: msg.craftSubsteps,
+          craftFilm: msg.craftFilm,
           thinkingElapsedSec: msg.thinkingStartedAt
             ? Math.max(
                 0,
@@ -188,13 +299,7 @@ async (botMsgId: string, runId: string) => {
     );
     activeRunIdRef.current = null;
     setBusy(false);
-    if (
-      result.output_mode === "report" ||
-      result.output_mode === "auto" ||
-      !result.output_mode
-    ) {
-      openReportArtifact(botMsgId, result);
-    }
+    openReportArtifact(botMsgId, finalResult);
   } catch (err) {
     if (!cancelRequestedRef.current) {
       const message = err instanceof Error ? err.message : String(err);

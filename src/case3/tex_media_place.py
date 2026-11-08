@@ -12,7 +12,7 @@ _HEADING = re.compile(
 _GALLERY_TITLE = re.compile(
     r"(?i)("
     r"визуализац|иллюстрац|"
-    r"(?:^|[\s\d.:]*)график|(?:^|[\s\d.:]*)рисунк|"
+    r"(?:^|[\s\d.:]*)графики(?:\b|$)|(?:^|[\s\d.:]*)рисунки(?:\b|$)|"
     r"\bfigures?\b|\bcharts?\b|visuali[sz]ation|"
     r"приложение.{0,80}визуал|детализированн.{0,60}визуал"
     r")"
@@ -33,10 +33,10 @@ def _find_gallery_heading(body: str) -> re.Match[str] | None:
             return m
     return None
 _SLOT = re.compile(
-    r"(?m)^[ \t]*%CASE3_(FIG|CHART):([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+    r"(?m)^[ \t]*%CASE3_(FIG|CHART|DIAG):([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
 )
 _SLOT_ANY = re.compile(
-    r"%CASE3_(FIG|CHART):([a-z][a-z0-9_]{0,31})%"
+    r"%CASE3_(FIG|CHART|DIAG):([a-z][a-z0-9_]{0,31})%"
 )
 _FIGURE_ENV = re.compile(
     r"\\begin\{figure\*?\}.*?\\end\{figure\*?\}",
@@ -258,6 +258,7 @@ def redistribute_gallery_slots(
     *,
     figures: list[dict[str, Any]] | None = None,
     charts: list[dict[str, Any]] | None = None,
+    diagrams: list[dict[str, Any]] | None = None,
 ) -> str:
     """Move slots out of trailing gallery / EOF piles into matching prose sections.
 
@@ -283,6 +284,9 @@ def redistribute_gallery_slots(
     for c in charts or []:
         if isinstance(c, dict) and c.get("id"):
             cap_by_id[str(c["id"])] = str(c.get("caption") or "")
+    for d in diagrams or []:
+        if isinstance(d, dict) and d.get("id"):
+            cap_by_id[str(d["id"])] = str(d.get("title") or d.get("caption") or "")
 
     gm = _find_gallery_heading(body)
     eof_pile = media_slots_pile_at_eof(tex)
@@ -293,9 +297,17 @@ def redistribute_gallery_slots(
     if gm:
         prose = body[: gm.start()]
         gallery = body[gm.start() :]
-        slots, _ = _extract_slots_from_region(gallery)
+        slots, kept_tail = _extract_slots_from_region(gallery)
         if not slots:
             return tex
+        # Strip empty gallery section/subsection shells; keep any real prose/sections.
+        cleaned_tail = re.sub(
+            r"\\(?:sub)*section\*?\{[^{}]*\}[ \t]*\r?\n?",
+            "",
+            kept_tail,
+        ).strip()
+        if cleaned_tail:
+            prose = prose + kept_tail
     else:
         # EOF pile: relocate only slots in the last 20% of the body.
         cut = int(len(body) * 0.80)

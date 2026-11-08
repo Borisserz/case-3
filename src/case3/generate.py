@@ -223,6 +223,12 @@ def output_looks_truncated(raw: str) -> bool:
     has_slots = ("%CASE3_CHART:" in text) or ("%CASE3_FIG:" in text)
     if has_slots and "```json" not in text and '"charts"' not in text:
         return True
+    # Dual-fence contract: JSON fence emitted first, but LaTeX document never started/finished.
+    if (
+        ("```json" in text or '"charts"' in text or '"diagrams"' in text or '"figures"' in text)
+        and (r"\documentclass" not in text or r"\end{document}" not in text)
+    ):
+        return True
     # Closed ```json fence whose body does not json.loads → cut mid-object.
     if "```json" in text or '"charts"' in text:
         from case3.parse_output import _pick_fences
@@ -264,7 +270,7 @@ def _extract_loose_latex(raw: str) -> str | None:
 
 
 def merge_continuation(raw: str, cont: str) -> str:
-    """Attach a continuation (often ```json only) to a truncated first reply."""
+    """Attach a continuation (often ```json only or ```latex) to a truncated first reply."""
     from case3.parse_output import _pick_fences
 
     base = (raw or "").rstrip()
@@ -276,6 +282,8 @@ def merge_continuation(raw: str, cont: str) -> str:
     e_tex, e_json = _pick_fences(extra)
     if not b_tex:
         b_tex = _extract_loose_latex(base)
+    if not e_tex:
+        e_tex = _extract_loose_latex(extra)
 
     # Prefer continuation only when its LaTeX is a real document with prose
     # richer than the truncated base (avoid wiping a longer first reply).
@@ -292,7 +300,9 @@ def merge_continuation(raw: str, cont: str) -> str:
     json_part = e_json or b_json
     if e_json and b_json and len(b_json) > len(e_json) * 1.2:
         json_part = b_json
-    if b_tex and r"\begin{document}" in b_tex:
+    if e_tex and r"\begin{document}" in e_tex and (not b_tex or len(e_tex) >= len(b_tex)):
+        tex_part = e_tex
+    elif b_tex and r"\begin{document}" in b_tex:
         tex_part = b_tex
     elif e_tex and r"\begin{document}" in e_tex:
         tex_part = e_tex
@@ -339,7 +349,7 @@ def _tex_body_prose_stats(tex: str) -> tuple[int, int, int]:
     body = m.group(1)
     media = len(
         re.findall(
-            r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%",
+            r"(?m)^[ \t]*%CASE3_(?:FIG|CHART|DIAG):[a-z][a-z0-9_]{0,31}%",
             body,
         )
     )
@@ -352,7 +362,7 @@ def _tex_body_prose_stats(tex: str) -> tuple[int, int, int]:
     )
     prose = re.sub(r"\\maketitle", "", body)
     prose = re.sub(
-        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART):[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
+        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART|DIAG):[a-z][a-z0-9_]{0,31}%[^\n]*\r?\n?",
         "",
         prose,
     )
@@ -445,11 +455,14 @@ _EMOJI_CHARS = re.compile(
     "]+"
 )
 _MD_BULLET = re.compile(r"^([-*•]|\d+\.)\s+(\S.*)$")
-# Meta-skeleton kits (Win desk 070133): instruction wrappers, not report prose.
+# Meta-skeleton kits (Win desk 070133) + imperative prompt lines: not report prose.
 _DROP_SOURCE_LINE = re.compile(
     r"(?i)^("
     r"понял вас|ниже представлен|вот текст|конечно[,.]?|"
     r"ниже данны|скопируй|для построения график|"
+    r"сгенерируй\s+фото|сделай\s+(?:полный\s+)?отч[её]т|"
+    r"добавь\s+(?:фото|иллюстрац|график|схем)|вставь\s+(?:вот\s+)?это\s+фото|"
+    r"нарисуй\s+схем|построй\s+график|"
     r".*полный комплект.*|"
     r".*\bскелет\b.*|"
     r".*вы можете взять.*|"
@@ -459,6 +472,14 @@ _DROP_SOURCE_LINE = re.compile(
     r"^я добавил\b.*|"
     r".*готовом? к копированию.*"
     r").*"
+)
+_INLINE_PROMPT_SENTENCE = re.compile(
+    r"(?i)(?:^|(?<=[.!?]\s))("
+    r"сгенерируй\s+фото[^.!?]*[.!?]?|"
+    r"сделай\s+(?:полный\s+)?отч[её]т[^.!?]*[.!?]?|"
+    r"добавь\s+(?:фото|иллюстрац|график|схем)[^.!?]*[.!?]?|"
+    r"вставь\s+(?:вот\s+)?это\s+фото[^.!?]*[.!?]?"
+    r")"
 )
 
 
@@ -587,6 +608,7 @@ def _source_lines_to_tex(source: str) -> list[str]:
                 or nxt.startswith("|")
                 or nxt.startswith(">")
                 or _MD_BULLET.match(nxt)
+                or _DROP_SOURCE_LINE.match(nxt)
                 or nxt in {
                     "***",
                     "---",
@@ -596,9 +618,10 @@ def _source_lines_to_tex(source: str) -> list[str]:
             chunk.append(nxt)
             i += 1
         para = " ".join(chunk)
+        para = _INLINE_PROMPT_SENTENCE.sub("", para).strip()
         para = re.sub(r"\*\*(.+?)\*\*", r"«\1»", para)
         para = re.sub(r"(?<!\*)\*(.+?)\*(?!\*)", r"«\1»", para)
-        if _DROP_SOURCE_LINE.match(para):
+        if not para or _DROP_SOURCE_LINE.match(para):
             continue
         lines_out.append(escape_tex_text(para))
         lines_out.append("")
@@ -618,6 +641,7 @@ def fill_sparse_tex_with_source(
     *,
     chart_ids: list[str],
     figure_ids: list[str],
+    diagram_ids: list[str] | None = None,
 ) -> str:
     """Replace an empty body with Source prose + media slots (keeps preamble)."""
     body_lines = _source_lines_to_tex(source)
@@ -655,9 +679,11 @@ def fill_sparse_tex_with_source(
         "",
     ]
     # Interleave slots after section headings — never dump \\section{Иллюстрации}.
-    media_slots = [f"%CASE3_FIG:{fid}%" for fid in figure_ids] + [
-        f"%CASE3_CHART:{cid}%" for cid in chart_ids
-    ]
+    media_slots = (
+        [f"%CASE3_FIG:{fid}%" for fid in figure_ids]
+        + [f"%CASE3_CHART:{cid}%" for cid in chart_ids]
+        + [f"%CASE3_DIAG:{did}%" for did in (diagram_ids or [])]
+    )
     section_idxs = [
         i for i, ln in enumerate(body_lines) if ln.startswith(r"\section{")
     ]
@@ -728,6 +754,44 @@ def build_continuation_prompt(*, partial: str, source: str, max_charts: int) -> 
         PARTIAL_TAIL=tail,
         SOURCE=safe,
     ).rstrip() + "\n"
+
+
+def _build_latex_recovery_prompt(
+    *,
+    raw_json_reply: str,
+    intent: str,
+    source: str,
+) -> str:
+    """Build a focused prompt when JSON media was generated but LaTeX was omitted."""
+    from case3.parse_output import salvage_json_object
+
+    salvaged = salvage_json_object(raw_json_reply) or {}
+    slot_lines: list[str] = []
+    for c in salvaged.get("charts") or []:
+        if isinstance(c, dict) and c.get("id"):
+            slot_lines.append(f"- %CASE3_CHART:{c['id']}% ({c.get('caption') or c['id']})")
+    for d in salvaged.get("diagrams") or []:
+        if isinstance(d, dict) and d.get("id"):
+            slot_lines.append(f"- %CASE3_DIAG:{d['id']}% ({d.get('title') or d['id']})")
+    for f in salvaged.get("figures") or []:
+        if isinstance(f, dict) and f.get("id"):
+            slot_lines.append(f"- %CASE3_FIG:{f['id']}% ({f.get('caption') or f['id']})")
+    slots_block = "\n".join(slot_lines) if slot_lines else "(no media slots)"
+    safe = neutralize_source((source or "").strip())
+    return (
+        "The JSON block with charts/diagrams/figures is already complete, "
+        "but the ```latex document block is missing.\n"
+        "Return ONLY ONE ```latex fence (`\\documentclass[a4paper,12pt]{article}` … `\\end{document}`).\n"
+        "Do NOT output JSON and do NOT output commentary outside the fence.\n"
+        "Requirements:\n"
+        "- Invent a specific topical Russian `\\title{…}` from Source (never generic «Отчёт»).\n"
+        "- Include numbered `\\section{…}` sections, analytical prose, and `booktabs`/`tabularx` tables for the metrics in Source.\n"
+        "- Never copy imperative user instructions («Сгенерируй фото…», «Сделай отчёт…») verbatim into the document.\n"
+        "- Place each of these media slots alone on its own line inside the appropriate section:\n"
+        f"{slots_block}\n\n"
+        f"## Intent\n{intent.strip()}\n\n"
+        f"## Source\n{SOURCE_BEGIN}\n{safe}\n{SOURCE_END}\n"
+    )
 
 
 def generate_document(
@@ -893,6 +957,24 @@ def generate_document(
             )
         raw = merge_continuation(raw or "", cont or "")
         log.info("continuation merged → %d chars", len(raw or ""))
+        if r"\documentclass" not in (raw or "") and (
+            "```json" in (raw or "").lower() or '"charts"' in (raw or "")
+        ):
+            log.warning(
+                "still no \\documentclass after continuation — running LaTeX recovery pass"
+            )
+            tex_recovery_user = _build_latex_recovery_prompt(
+                raw_json_reply=raw or "",
+                intent=intent_text,
+                source=source_text,
+            )
+            tex_cont = llm.complete(
+                system=system,
+                user_text=tex_recovery_user,
+                cancel_check=cancel_check,
+            )
+            raw = merge_continuation(raw or "", tex_cont or "")
+            log.info("LaTeX recovery merged → %d chars", len(raw or ""))
     else:
         hard_trunc = False
 
@@ -924,7 +1006,9 @@ def generate_document(
     from case3.tex_media_place import redistribute_gallery_slots
 
     before = tex
-    tex = redistribute_gallery_slots(tex, figures=figures, charts=charts)
+    tex = redistribute_gallery_slots(
+        tex, figures=figures, charts=charts, diagrams=diagrams
+    )
     if tex != before:
         log.warning(
             "redistributed trailing gallery slots into prose sections "
@@ -960,6 +1044,7 @@ def generate_document(
             source_text,
             chart_ids=[c["id"] for c in charts],
             figure_ids=[f["id"] for f in figures],
+            diagram_ids=[d["id"] for d in diagrams],
         )
         if forced_title:
             tex = apply_doc_title(tex, forced_title)

@@ -40,6 +40,17 @@ def test_openrouter_off_minimax_keeps_low_exclude() -> None:
     assert body["reasoning"] == {"effort": "low", "exclude": True}
 
 
+def test_openrouter_free_off_omits_reasoning() -> None:
+    body = build_body(
+        system="s",
+        user_text="u",
+        model="openrouter/free",
+        reasoning="off",
+        base_url="https://openrouter.ai/api",
+    )
+    assert "reasoning" not in body
+
+
 def test_images_become_qwen_vision_parts() -> None:
     body = build_body(
         system="s",

@@ -2228,7 +2228,254 @@
 }
 
 /* Hide stray Mermaid error elements injected into body on failed parse */
-body > [id^="dmmd"],
-body > [id^="mmd"] {
+body > [id^="dmmd"][aria-roledescription="error"],
+body > [id^="mmd"][aria-roledescription="error"],
+body > .mermaidError {
   display: none !important;
+}
+
+/* Universal Mermaid Code Editor Modal */
+.diagram-code-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(18, 22, 20, 0.58);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.diagram-code-modal {
+  width: min(94vw, 1100px);
+  height: min(88vh, 820px);
+  background: var(--sheet, #fff);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.diagram-code-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--paper) 45%, var(--sheet));
+}
+
+.diagram-code-modal-titles {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.diagram-code-modal-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.diagram-code-modal-title-input {
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  width: 100%;
+  max-width: 480px;
+}
+
+.diagram-code-modal-title-input:hover,
+.diagram-code-modal-title-input:focus {
+  background: var(--paper);
+  border-color: var(--border);
+  outline: none;
+}
+
+.diagram-code-modal-close {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.diagram-code-modal-alert {
+  padding: 0.55rem 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.diagram-code-modal-alert.is-error {
+  background: #fdf2f2;
+  color: #c53030;
+  border-bottom: 1px solid #fed7d7;
+}
+
+.diagram-code-modal-alert.is-warn {
+  background: #fffaf0;
+  color: #c05621;
+  border-bottom: 1px solid #feebc8;
+}
+
+.diagram-code-modal-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+  gap: 1px;
+  background: var(--border);
+}
+
+.diagram-code-modal-pane {
+  background: var(--sheet);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.25rem;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.diagram-code-modal-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.diagram-code-modal-textarea {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  outline: none;
+  tab-size: 2;
+}
+
+.diagram-code-modal-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.diagram-code-modal-hint {
+  font-size: 0.74rem;
+  margin: 0;
+}
+
+.diagram-code-modal-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagram-code-modal-syntax-ok {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #276749;
+}
+
+.diagram-code-modal-syntax-err {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #c53030;
+}
+
+.diagram-code-modal-preview-canvas {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper) 30%, var(--sheet));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.diagram-code-modal-preview-placeholder {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.diagram-code-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--paper) 45%, var(--sheet));
+}
+
+.diagram-code-modal-hotkey-hint {
+  font-size: 0.75rem;
+}
+
+.diagram-code-modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+@media (max-width: 860px) {
+  .diagram-code-modal-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+/* Document preview diagram embed */
+.report-fig-link .mermaid-view.is-report-diagram-preview {
+  background: #fff;
+  padding: 1.25rem 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 140px;
+  max-height: 440px;
+  overflow: hidden;
+}
+
+.report-fig-link .mermaid-view.is-report-diagram-preview .mermaid-view-svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-height: 420px;
+  overflow: hidden;
+}
+
+.report-fig-link .mermaid-view.is-report-diagram-preview .mermaid-view-svg svg {
+  display: block;
+  max-width: 100% !important;
+  max-height: 420px !important;
+  height: auto !important;
+  margin: 0 auto;
 }

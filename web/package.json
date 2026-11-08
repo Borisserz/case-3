@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:helpers": "tsx --test src/liberRunHelpers.test.ts src/app/postJsonEdit.test.ts src/app/buildRunFormData.test.ts src/PipelineFlow.test.ts src/domain/slidesKick.test.ts src/domain/attachSlidesPayload.test.ts src/domain/craftSteps.test.ts src/diagramIr.test.ts src/diagramLayout.test.ts src/diagramLegend.test.ts src/diagramMetrics.test.ts src/diagramSlideSync.test.ts src/downloadDiagramPng.test.ts src/mermaidSvgInteract.test.ts src/softenMermaidSvg.test.ts src/reportHistory.test.ts src/domain/reportDownloads.test.ts src/domain/reportEditMode.test.ts src/domain/sourceDraftEdit.test.ts src/domain/tableSlideEdit.test.ts src/pdfFindPage.test.ts"
+    "test:helpers": "tsx --test src/liberRunHelpers.test.ts src/app/postJsonEdit.test.ts src/app/buildRunFormData.test.ts src/PipelineFlow.test.ts src/domain/slidesKick.test.ts src/domain/attachSlidesPayload.test.ts src/domain/craftSteps.test.ts src/diagramIr.test.ts src/diagramLayout.test.ts src/diagramLegend.test.ts src/diagramMetrics.test.ts src/diagramSlideSync.test.ts src/downloadDiagramPng.test.ts src/mermaidSvgInteract.test.ts src/softenMermaidSvg.test.ts src/reportHistory.test.ts src/domain/reportDownloads.test.ts src/domain/deckDownloads.test.ts src/domain/reportEditMode.test.ts src/domain/sourceDraftEdit.test.ts src/domain/tableSlideEdit.test.ts src/pdfFindPage.test.ts src/domain/renderMath.test.ts src/domain/reportMarkdown.test.ts src/domain/diagramCodeModal.test.ts src/repairMermaidSource.test.ts src/app/applyDiagramsUpdate.test.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",
     "framer-motion": "^12.43.0",
+    "katex": "^0.16.47",
     "mermaid": "^11.17.2",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",

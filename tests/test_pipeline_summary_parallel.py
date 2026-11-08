@@ -179,3 +179,113 @@ def test_dry_run_skips_summary(tmp_path: Path, monkeypatch) -> None:
     summ.assert_not_called()
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
     assert meta["summary_status"] == "skipped"
+
+
+def test_parallel_render_and_summary_logs_reach_pipeline_log(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import logging
+
+    root, src = _setup(tmp_path)
+    monkeypatch.setenv("IMAGE_API_BASE_URL", "")
+    monkeypatch.setenv("CASE3_MAX_CHARTS", "0")
+    monkeypatch.setenv("IMAGE_MAX_IMAGES", "0")
+
+    def fake_render_logging(tex_path, **kwargs):
+        logging.getLogger("case3.render").info("render-worker-marker-123")
+        return _fake_render(tex_path, **kwargs)
+
+    def fake_summary_logging(tex, *, intent=None, media=None, client=None, on_delta=None):
+        logging.getLogger("case3.chat_summary").info("summary-worker-marker-456")
+        return "ok summary", "ok"
+
+    with (
+        patch("case3.pipeline.generate_document", side_effect=_fake_generate),
+        patch("case3.pipeline.render_tex", side_effect=fake_render_logging),
+        patch("case3.pipeline.try_generate_chat_summary", side_effect=fake_summary_logging),
+    ):
+        run_pipeline(
+            src,
+            project_root=root,
+            formats={"pdf"},
+            max_images=0,
+            max_charts=0,
+            run_id="sum_log_ctx_1",
+        )
+
+    log_text = (root / "runs" / "logs" / "sum_log_ctx_1" / "pipeline.log").read_text(
+        encoding="utf-8"
+    )
+    assert "render-worker-marker-123" in log_text
+    assert "summary-worker-marker-456" in log_text
+
+
+def test_pipeline_preserves_docx_native_charts_written_by_render(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, src = _setup(tmp_path)
+    monkeypatch.setenv("IMAGE_API_BASE_URL", "")
+    monkeypatch.setenv("CASE3_MAX_CHARTS", "0")
+    monkeypatch.setenv("IMAGE_MAX_IMAGES", "0")
+
+    def fake_render_with_native_charts(tex_path, **kwargs):
+        out_dir = Path(kwargs.get("out_dir") or tex_path.parent)
+        meta_p = out_dir / "meta.json"
+        if meta_p.is_file():
+            m = json.loads(meta_p.read_text(encoding="utf-8"))
+            m["docx_native_charts"] = ["cht_01"]
+            meta_p.write_text(json.dumps(m), encoding="utf-8")
+        return _fake_render(tex_path, **kwargs)
+
+    with (
+        patch("case3.pipeline.generate_document", side_effect=_fake_generate),
+        patch("case3.pipeline.render_tex", side_effect=fake_render_with_native_charts),
+        patch("case3.pipeline.try_generate_chat_summary", return_value=("ok", "ok")),
+    ):
+        out = run_pipeline(
+            src,
+            project_root=root,
+            formats={"pdf", "docx"},
+            max_images=0,
+            max_charts=0,
+            run_id="sum_native_charts_1",
+        )
+
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta.get("docx_native_charts") == ["cht_01"]
+
+
+def test_pipeline_presentation_writes_meta_ok_before_pipeline_ok_event(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from case3.run_events import EVENTS
+
+    root, src = _setup(tmp_path)
+    monkeypatch.setenv("IMAGE_API_BASE_URL", "")
+    monkeypatch.setenv("CASE3_MAX_CHARTS", "0")
+    monkeypatch.setenv("IMAGE_MAX_IMAGES", "0")
+    observed_status_on_pipeline_ok: list[str] = []
+    orig_pub = EVENTS.publish_stage
+
+    def spy_publish_stage(run_id: str, stage: str, **kwargs):
+        if stage == "pipeline_ok":
+            meta_p = root / "runs" / "out" / run_id / "meta.json"
+            m = json.loads(meta_p.read_text(encoding="utf-8"))
+            observed_status_on_pipeline_ok.append(str(m.get("status")))
+        return orig_pub(run_id, stage, **kwargs)
+
+    monkeypatch.setattr(EVENTS, "publish_stage", spy_publish_stage)
+    with patch("case3.pipeline.generate_document", side_effect=_fake_generate):
+        run_pipeline(
+            src,
+            project_root=root,
+            formats=set(),
+            output_mode="presentation",
+            max_images=0,
+            max_charts=0,
+            run_id="pres_meta_order_1",
+        )
+
+    assert observed_status_on_pipeline_ok == ["ok"]
+
+

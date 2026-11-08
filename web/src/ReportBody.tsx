@@ -25,12 +25,16 @@ import type { ListEditRequest } from "./ListEditTypes";
 import { isBlockHiddenByCollapse } from "./reportSections";
 import { bustFromUrl, colIsNumeric } from "./reportTableNumeric";
 import type { PreviewBlock } from "./domain/reportPreview";
-import type { Dispatch, SetStateAction } from "react";
+import { renderKatexInHtml } from "./domain/renderMath";
+import { MermaidView } from "./MermaidView";
+import type { DiagramInfo } from "./DiagramFullscreen";
+import { Fragment, type Dispatch, type SetStateAction } from "react";
 
 export type ReportBodyProps = {
   blocks: PreviewBlock[];
   downloads?: Record<string, string>;
   runId?: string;
+  diagrams?: DiagramInfo[];
   palettes: PaletteInfo[];
   catalogTypes: string[];
   defaultPalette: string;
@@ -61,11 +65,23 @@ export type ReportBodyProps = {
     pdfPage?: number;
     caption?: string;
   }) => void;
+  onJumpToDiagram?: (diagramId: string) => void;
   onOpenPdf?: () => void;
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onUploadFigure?: (
+    figureId: string,
+    file: File,
+    caption?: string,
+  ) => Promise<boolean> | boolean;
+  onDeleteFigure?: (figureId: string) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
+  onInsertParagraph?: (req: {
+    text: string;
+    afterParagraphIndex?: number;
+    afterHeadingIndex?: number;
+  }) => Promise<boolean> | boolean;
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   /** Exactly one prose/list block open at a time (document click-to-edit). */
@@ -80,6 +96,7 @@ export function ReportBody({
   blocks,
   downloads,
   runId,
+  diagrams,
   palettes,
   catalogTypes,
   defaultPalette,
@@ -103,11 +120,15 @@ export function ReportBody({
   setLightbox,
   toggleSection,
   onJumpToPdf,
+  onJumpToDiagram,
   onOpenPdf,
   onEditFigure,
   onEditImage,
+  onUploadFigure,
+  onDeleteFigure,
   onEditTable,
   onEditParagraph,
+  onInsertParagraph,
   onEditHeading,
   onEditList,
   activeBlockId = null,
@@ -170,76 +191,133 @@ export function ReportBody({
               isEditingHead || editErrorFigureId === headEditId
                 ? editError
                 : null;
+            const insertHeadKey = `para:insert-head-${headingIndex}`;
+            const insertHeadActive = canEditPara && activeBlockId === insertHeadKey;
+            const isInsertingHead =
+              editingFigureId === `head:after-${headingIndex}` ||
+              editingFigureId === "para:insert";
+            const insertHeadError =
+              editErrorFigureId === `head:after-${headingIndex}` ||
+              editErrorFigureId === "para:insert"
+                ? editError
+                : null;
             return (
-              <div
-                key={i}
-                className={`report-h-row report-block${headActive || isEditingHead ? " is-editing" : ""}${canEditHeading && !headActive ? " is-editable-idle" : ""}`}
-                style={delayStyle}
-              >
-                <button
-                  type="button"
-                  className="report-h-toggle"
-                  aria-expanded={expanded}
-                  aria-label={
-                    expanded ? `Свернуть «${b.text}»` : `Развернуть «${b.text}»`
-                  }
-                  onClick={() => toggleSection(headingId)}
-                  disabled={editMode}
+              <Fragment key={i}>
+                <div
+                  className={`report-h-row report-block${headActive || isEditingHead ? " is-editing" : ""}${canEditHeading && !headActive ? " is-editable-idle" : ""}`}
+                  style={delayStyle}
                 >
-                  <span className="report-h-toggle-chevron" aria-hidden>
-                    ▸
-                  </span>
-                </button>
-                {headActive ? (
-                  <div className="report-h-edit" id={headingId}>
-                    <InlineBlockEditor
-                      hideActions
-                      kind="heading"
-                      initialText={b.text}
-                      busy={isEditingHead}
-                      error={headError}
-                      onCancel={() => onActiveBlockId?.(null)}
-                      onSave={(text) => {
-                        void (async () => {
-                          const ok = await onEditHeading?.({
-                            headingIndex,
-                            text,
-                          });
-                          if (ok !== false) onActiveBlockId?.(null);
-                        })();
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <Tag
-                    id={headingId}
-                    className={`report-h report-h${b.level}${canEditHeading ? " is-click-edit" : ""}`}
-                    role={canEditHeading ? "button" : undefined}
-                    tabIndex={canEditHeading ? 0 : undefined}
-                    onClick={
-                      canEditHeading
-                        ? () => {
-                            onOpenMediaId?.(null);
-                            onActiveBlockId?.(headEditId);
-                          }
-                        : undefined
+                  <button
+                    type="button"
+                    className="report-h-toggle"
+                    aria-expanded={expanded}
+                    aria-label={
+                      expanded ? `Свернуть «${b.text}»` : `Развернуть «${b.text}»`
                     }
-                    onKeyDown={
-                      canEditHeading
-                        ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
+                    onClick={() => toggleSection(headingId)}
+                    disabled={editMode}
+                  >
+                    <span className="report-h-toggle-chevron" aria-hidden>
+                      ▸
+                    </span>
+                  </button>
+                  {headActive ? (
+                    <div className="report-h-edit" id={headingId}>
+                      <InlineBlockEditor
+                        hideActions
+                        kind="heading"
+                        initialText={b.text}
+                        busy={isEditingHead}
+                        error={headError}
+                        onCancel={() => onActiveBlockId?.(null)}
+                        onDelete={() => {
+                          void (async () => {
+                            const ok = await onEditHeading?.({
+                              headingIndex,
+                              text: "",
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                        onSave={(text) => {
+                          void (async () => {
+                            const ok = await onEditHeading?.({
+                              headingIndex,
+                              text,
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <Tag
+                      id={headingId}
+                      className={`report-h report-h${b.level}${canEditHeading ? " is-click-edit" : ""}`}
+                      role={canEditHeading ? "button" : undefined}
+                      tabIndex={canEditHeading ? 0 : undefined}
+                      onClick={
+                        canEditHeading
+                          ? () => {
                               onOpenMediaId?.(null);
                               onActiveBlockId?.(headEditId);
                             }
-                          }
-                        : undefined
-                    }
+                          : undefined
+                      }
+                      onKeyDown={
+                        canEditHeading
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onOpenMediaId?.(null);
+                                onActiveBlockId?.(headEditId);
+                              }
+                            }
+                          : undefined
+                      }
+                    >
+                      {b.text}
+                    </Tag>
+                  )}
+                </div>
+                {canEditPara && onInsertParagraph && (
+                  <div
+                    className={`report-insert-slot${insertHeadActive ? " is-active" : ""}`}
                   >
-                    {b.text}
-                  </Tag>
+                    {insertHeadActive ? (
+                      <InlineBlockEditor
+                        kind="paragraph"
+                        initialText=""
+                        saveLabel="Добавить абзац"
+                        busy={isInsertingHead}
+                        error={insertHeadError}
+                        onCancel={() => onActiveBlockId?.(null)}
+                        onSave={(text) => {
+                          void (async () => {
+                            const ok = await onInsertParagraph?.({
+                              text,
+                              afterHeadingIndex: headingIndex,
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="report-insert-btn"
+                        title="Добавить абзац под заголовком"
+                        onClick={() => {
+                          onOpenMediaId?.(null);
+                          onActiveBlockId?.(insertHeadKey);
+                        }}
+                      >
+                        + Добавить абзац
+                      </button>
+                    )}
+                  </div>
                 )}
-              </div>
+              </Fragment>
             );
           }
 
@@ -266,92 +344,149 @@ export function ReportBody({
             const paraActive = canEditPara && activeBlockId === paraId;
             const sheetError =
               editErrorFigureId === paraId ? editError : null;
+            const insertKey = `para:insert-after-${n}`;
+            const insertActive = canEditPara && activeBlockId === insertKey;
+            const isInsertingParaAfter =
+              editingFigureId === `para:after-${n}` ||
+              editingFigureId === "para:insert";
+            const insertParaError =
+              editErrorFigureId === `para:after-${n}` ||
+              editErrorFigureId === "para:insert"
+                ? editError
+                : null;
             return (
-              <div
-                key={i}
-                className={`report-para-wrap report-block${paraActive || isEditingPara ? " is-editing" : ""}${canEditPara && !paraActive ? " is-editable-idle" : ""}`}
-                style={delayStyle}
-              >
-                <div className="report-para-frame">
-                  {paraActive ? (
-                    <InlineBlockEditor
-                      hideActions
-                      kind="paragraph"
-                      initialText={b.text}
-                      busy={isEditingPara}
-                      error={sheetError}
-                      onCancel={() => onActiveBlockId?.(null)}
-                      onSave={(text) => {
-                        void (async () => {
-                          const ok = await onEditParagraph?.({
-                            paragraphIndex: n,
-                            text,
-                          });
-                          if (ok !== false) onActiveBlockId?.(null);
-                        })();
-                      }}
-                    />
-                  ) : b.html ? (
-                    <p
-                      className={`report-p${canEditPara ? " is-click-edit" : ""}`}
-                      role={canEditPara ? "button" : undefined}
-                      tabIndex={canEditPara ? 0 : undefined}
-                      onClick={
-                        canEditPara
-                          ? () => {
-                              onOpenMediaId?.(null);
-                              onActiveBlockId?.(paraId);
-                            }
-                          : undefined
-                      }
-                      onKeyDown={
-                        canEditPara
-                          ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
+              <Fragment key={i}>
+                <div
+                  className={`report-para-wrap report-block${paraActive || isEditingPara ? " is-editing" : ""}${canEditPara && !paraActive ? " is-editable-idle" : ""}`}
+                  style={delayStyle}
+                >
+                  <div className="report-para-frame">
+                    {paraActive ? (
+                      <InlineBlockEditor
+                        hideActions
+                        kind="paragraph"
+                        initialText={b.text}
+                        busy={isEditingPara}
+                        error={sheetError}
+                        onCancel={() => onActiveBlockId?.(null)}
+                        onDelete={() => {
+                          void (async () => {
+                            const ok = await onEditParagraph?.({
+                              paragraphIndex: n,
+                              text: "",
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                        onSave={(text) => {
+                          void (async () => {
+                            const ok = await onEditParagraph?.({
+                              paragraphIndex: n,
+                              text,
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                      />
+                    ) : b.html ? (
+                      <p
+                        className={`report-p${canEditPara ? " is-click-edit" : ""}`}
+                        role={canEditPara ? "button" : undefined}
+                        tabIndex={canEditPara ? 0 : undefined}
+                        onClick={
+                          canEditPara
+                            ? () => {
                                 onOpenMediaId?.(null);
                                 onActiveBlockId?.(paraId);
                               }
-                            }
-                          : undefined
-                      }
-                      dangerouslySetInnerHTML={{ __html: b.html }}
-                    />
-                  ) : (
-                    <p
-                      className={`report-p${canEditPara ? " is-click-edit" : ""}`}
-                      role={canEditPara ? "button" : undefined}
-                      tabIndex={canEditPara ? 0 : undefined}
-                      onClick={
-                        canEditPara
-                          ? () => {
-                              onOpenMediaId?.(null);
-                              onActiveBlockId?.(paraId);
-                            }
-                          : undefined
-                      }
-                      onKeyDown={
-                        canEditPara
-                          ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
+                            : undefined
+                        }
+                        onKeyDown={
+                          canEditPara
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  onOpenMediaId?.(null);
+                                  onActiveBlockId?.(paraId);
+                                }
+                              }
+                            : undefined
+                        }
+                        dangerouslySetInnerHTML={{ __html: renderKatexInHtml(b.html) }}
+                      />
+                    ) : (
+                      <p
+                        className={`report-p${canEditPara ? " is-click-edit" : ""}`}
+                        role={canEditPara ? "button" : undefined}
+                        tabIndex={canEditPara ? 0 : undefined}
+                        onClick={
+                          canEditPara
+                            ? () => {
                                 onOpenMediaId?.(null);
                                 onActiveBlockId?.(paraId);
                               }
-                            }
-                          : undefined
-                      }
-                    >
-                      {b.text}
-                    </p>
-                  )}
-                  {isEditingPara && (
-                    <div className="report-fig-busy" aria-live="polite">
-                      <p className="fig-press-label">Пересобираю абзац…</p>
-                    </div>
-                  )}
+                            : undefined
+                        }
+                        onKeyDown={
+                          canEditPara
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  onOpenMediaId?.(null);
+                                  onActiveBlockId?.(paraId);
+                                }
+                              }
+                            : undefined
+                        }
+                      >
+                        {b.text}
+                      </p>
+                    )}
+                    {isEditingPara && (
+                      <div className="report-fig-busy" aria-live="polite">
+                        <p className="fig-press-label">Пересобираю абзац…</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+                {canEditPara && onInsertParagraph && (
+                  <div
+                    className={`report-insert-slot${insertActive ? " is-active" : ""}`}
+                  >
+                    {insertActive ? (
+                      <InlineBlockEditor
+                        kind="paragraph"
+                        initialText=""
+                        saveLabel="Добавить абзац"
+                        busy={isInsertingParaAfter}
+                        error={insertParaError}
+                        onCancel={() => onActiveBlockId?.(null)}
+                        onSave={(text) => {
+                          void (async () => {
+                            const ok = await onInsertParagraph?.({
+                              text,
+                              afterParagraphIndex: n,
+                            });
+                            if (ok !== false) onActiveBlockId?.(null);
+                          })();
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="report-insert-btn"
+                        title="Добавить абзац после этого"
+                        onClick={() => {
+                          onOpenMediaId?.(null);
+                          onActiveBlockId?.(insertKey);
+                        }}
+                      >
+                        + Добавить абзац
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Fragment>
             );
           }
           if (b.type === "list") {
@@ -380,6 +515,16 @@ export function ReportBody({
                     busy={isEditingList}
                     error={listError}
                     onCancel={() => onActiveBlockId?.(null)}
+                    onDelete={() => {
+                      void (async () => {
+                        const ok = await onEditList?.({
+                          listIndex: n,
+                          items: [],
+                          ordered: Boolean(b.ordered),
+                        });
+                        if (ok !== false) onActiveBlockId?.(null);
+                      })();
+                    }}
                     onSave={(items) => {
                       void (async () => {
                         const ok = await onEditList?.({
@@ -425,7 +570,7 @@ export function ReportBody({
                   it.html ? (
                     <li
                       key={j}
-                      dangerouslySetInnerHTML={{ __html: it.html }}
+                      dangerouslySetInnerHTML={{ __html: renderKatexInHtml(it.html) }}
                     />
                   ) : (
                     <li key={j}>{it.text}</li>
@@ -554,12 +699,17 @@ export function ReportBody({
           if (b.type === "figure") {
             figN += 1;
             const n = figN;
-            const label = b.kind === "chart" ? "Рис." : "Илл.";
+            const isChart = b.kind === "chart";
+            const isDiagram = b.kind === "diagram" || b.id.startsWith("dia_");
+            const dia =
+              isDiagram && diagrams
+                ? diagrams.find((d) => d.id === b.id)
+                : undefined;
+            const isPhoto = !isChart && !isDiagram;
+            const label = isChart ? "Рис." : isDiagram ? "Схема" : "Илл.";
             const caption = b.caption
               ? `${label} ${n}: ${b.caption}`
               : `${label} ${n}`;
-            const isChart = b.kind === "chart";
-            const isPhoto = !isChart;
             const isEditing = editingFigureId === b.id;
             const sheetOpen =
               isChart && canEditFigure && openMediaId === b.id;
@@ -581,6 +731,9 @@ export function ReportBody({
                 caption,
               });
             };
+            const jumpDiagram = () => {
+              onJumpToDiagram?.(b.id);
+            };
             const figInner = (
               <>
                 <div className="report-fig-frame">
@@ -597,18 +750,44 @@ export function ReportBody({
                       disabled={isEditing}
                       onJumpToPdf={onJumpToPdf ? jumpPdf : undefined}
                     />
+                  ) : isDiagram && dia?.mermaid ? (
+                    <button
+                      type="button"
+                      className="report-fig-link report-fig-diagram-link"
+                      onClick={() => {
+                        if (isDiagram && onJumpToDiagram) jumpDiagram();
+                        else if (onJumpToPdf) jumpPdf();
+                        else setLightbox({ url: b.url || "", caption });
+                      }}
+                      aria-label={
+                        isDiagram && onJumpToDiagram
+                          ? `Открыть схему ${caption}`
+                          : onJumpToPdf
+                            ? `Показать ${caption} в PDF`
+                            : `Открыть ${caption}`
+                      }
+                      disabled={isEditing}
+                    >
+                      <MermaidView
+                        source={dia.mermaid}
+                        className="is-report-diagram-preview"
+                      />
+                    </button>
                   ) : b.url ? (
                     <button
                       type="button"
                       className="report-fig-link"
                       onClick={() => {
-                        if (onJumpToPdf) jumpPdf();
+                        if (isDiagram && onJumpToDiagram) jumpDiagram();
+                        else if (onJumpToPdf) jumpPdf();
                         else setLightbox({ url: b.url!, caption });
                       }}
                       aria-label={
-                        onJumpToPdf
-                          ? `Показать ${caption} в PDF`
-                          : `Открыть ${caption}`
+                        isDiagram && onJumpToDiagram
+                          ? `Открыть схему ${caption}`
+                          : onJumpToPdf
+                            ? `Показать ${caption} в PDF`
+                            : `Открыть ${caption}`
                       }
                       disabled={isEditing}
                     >
@@ -616,7 +795,7 @@ export function ReportBody({
                     </button>
                   ) : (
                     <div className="report-fig-missing">
-                      {b.id} — изображение недоступно
+                      {b.id} — {isDiagram ? "схема" : "изображение"} недоступно
                     </div>
                   )}
                   {intent && (
@@ -643,7 +822,7 @@ export function ReportBody({
                       </span>
                     </div>
                   )}
-                  {isPhoto && b.url && !isEditing && (
+                  {b.url && !isEditing && (
                     <button
                       type="button"
                       className="report-fig-zoom"
@@ -692,10 +871,12 @@ export function ReportBody({
                       <p className="fig-press-label">
                         {isPhoto
                           ? "Генерирую фото на столе…"
-                          : "Пересобираю рисунок на столе…"}
+                          : isDiagram
+                            ? "Пересобираю схему на столе…"
+                            : "Пересобираю рисунок на столе…"}
                       </p>
                       <p className="fig-press-hint">
-                        {isPhoto ? "Image API · PDF" : "тип · палитра · PDF"}
+                        {isPhoto ? "Image API · PDF" : isDiagram ? "Mermaid · PDF" : "тип · палитра · PDF"}
                       </p>
                     </div>
                   )}
@@ -703,33 +884,35 @@ export function ReportBody({
 
                 <div className="report-fig-cap-row">
                   <figcaption
-                    className={`report-caption report-fig-cap${onJumpToPdf ? " is-jump" : ""}`}
+                    className={`report-caption report-fig-cap${(onJumpToPdf || (isDiagram && onJumpToDiagram)) ? " is-jump" : ""}`}
                     title={
-                      b.chartType
-                        ? `Тип: ${b.chartType}${onJumpToPdf ? " · клик → PDF" : ""}`
-                        : onJumpToPdf
-                          ? "Клик → страница PDF"
-                          : undefined
+                      isDiagram && onJumpToDiagram
+                        ? "Клик → перейти к схеме"
+                        : b.chartType
+                          ? `Тип: ${b.chartType}${onJumpToPdf ? " · клик → PDF" : ""}`
+                          : onJumpToPdf
+                            ? "Клик → страница PDF"
+                            : undefined
                     }
                     onClick={
-                      onJumpToPdf && !isEditing
+                      !isEditing
                         ? (e) => {
                             e.preventDefault();
-                            jumpPdf();
+                            if (isDiagram && onJumpToDiagram) jumpDiagram();
+                            else if (onJumpToPdf) jumpPdf();
                           }
                         : undefined
                     }
-                    role={onJumpToPdf ? "link" : undefined}
-                    tabIndex={onJumpToPdf ? 0 : undefined}
+                    role={onJumpToPdf || (isDiagram && onJumpToDiagram) ? "link" : undefined}
+                    tabIndex={onJumpToPdf || (isDiagram && onJumpToDiagram) ? 0 : undefined}
                     onKeyDown={
-                      onJumpToPdf
-                        ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              jumpPdf();
-                            }
-                          }
-                        : undefined
+                      (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          if (isDiagram && onJumpToDiagram) jumpDiagram();
+                          else if (onJumpToPdf) jumpPdf();
+                        }
+                      }
                     }
                   >
                     {caption}
@@ -746,6 +929,17 @@ export function ReportBody({
                       }}
                     >
                       Править
+                    </button>
+                  ) : isDiagram && onJumpToDiagram ? (
+                    <button
+                      type="button"
+                      className="report-media-edit-btn"
+                      title="Редактировать схему"
+                      onClick={() => {
+                        jumpDiagram();
+                      }}
+                    >
+                      Схема
                     </button>
                   ) : null}
                 </div>
@@ -792,6 +986,14 @@ export function ReportBody({
                     onSubmit={(req) => {
                       void onEditFigure(req);
                     }}
+                    onDelete={
+                      onDeleteFigure
+                        ? () => {
+                            void onDeleteFigure(b.id);
+                            onOpenMediaId?.(null);
+                          }
+                        : undefined
+                    }
                   />
                 )}
                 {imageOpen && onEditImage && (
@@ -807,14 +1009,31 @@ export function ReportBody({
                     onSubmit={(req) => {
                       void onEditImage(req);
                     }}
+                    onUpload={
+                      onUploadFigure
+                        ? (file, cap) => {
+                            void onUploadFigure(b.id, file, cap);
+                            onOpenMediaId?.(null);
+                          }
+                        : undefined
+                    }
+                    onDelete={
+                      onDeleteFigure
+                        ? () => {
+                            void onDeleteFigure(b.id);
+                            onOpenMediaId?.(null);
+                          }
+                        : undefined
+                    }
                   />
                 )}
               </>
             );
+            const canEditDiagram = Boolean(isDiagram && onJumpToDiagram);
             return (
               <figure
                 key={i}
-                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}${(canEditFigure || canEditImage) && !sheetOpen && !imageOpen ? " is-editable-idle" : ""}`}
+                className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}${(canEditFigure || canEditImage || canEditDiagram) && !sheetOpen && !imageOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 {isChart ? (

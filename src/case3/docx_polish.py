@@ -191,6 +191,8 @@ _MAX_CAPTION_CHARS = 300
 # A4 text width ≈ 6.54in with 2.2cm margins; keep drawings ≤ 0.92 of that.
 _EMU_PER_INCH = 914400
 _MAX_DRAWING_CX = int(6.54 * 0.92 * _EMU_PER_INCH)  # ≈ 5.50e6
+# Maximum drawing height in DOCX so tall diagrams don't overflow the page.
+_MAX_DRAWING_CY = int(4.6 * _EMU_PER_INCH)  # ≈ 4.20e6
 
 
 def _para_has_media(para) -> bool:  # noqa: ANN001
@@ -333,8 +335,10 @@ def polish_table_captions(doc) -> int:  # noqa: ANN001
     return touched
 
 
-def clamp_drawing_widths(doc, *, max_cx: int = _MAX_DRAWING_CX) -> int:  # noqa: ANN001
-    """Scale down oversized ``wp:extent`` / ``a:ext`` so media fits the text block."""
+def clamp_drawing_widths(
+    doc, *, max_cx: int = _MAX_DRAWING_CX, max_cy: int = _MAX_DRAWING_CY
+) -> int:  # noqa: ANN001
+    """Scale down oversized ``wp:extent`` / ``a:ext`` so media fits the text block (width & height)."""
     clamped = 0
     for para in doc.paragraphs:
         if not _para_has_media(para):
@@ -349,10 +353,14 @@ def clamp_drawing_widths(doc, *, max_cx: int = _MAX_DRAWING_CX) -> int:  # noqa:
                 cy = int(cy_raw) if cy_raw is not None else 0
             except ValueError:
                 continue
-            if cx <= max_cx or cx <= 0:
+            if cx <= 0:
                 continue
-            scale = max_cx / float(cx)
-            new_cx = max_cx
+            scale_x = max_cx / float(cx) if cx > max_cx else 1.0
+            scale_y = max_cy / float(cy) if (cy > 0 and cy > max_cy) else 1.0
+            scale = min(scale_x, scale_y)
+            if scale >= 1.0:
+                continue
+            new_cx = max(1, int(round(cx * scale)))
             new_cy = max(1, int(round(cy * scale))) if cy else cy
             ext.set("cx", str(new_cx))
             if cy_raw is not None:

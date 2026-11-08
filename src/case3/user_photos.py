@@ -183,11 +183,22 @@ def merge_user_figures(
     if budget <= 0:
         return []
     users = user_figures[:budget]
+    user_caps = {str(u.get("caption") or "").strip().lower() for u in users}
     rest = budget - len(users)
     llm = [f for f in llm_figures if str(f.get("source") or "") != "upload"]
     # avoid id clashes with usr_*
     llm = [f for f in llm if not str(f.get("id") or "").startswith("usr_")]
-    return users + llm[:rest]
+    cleaned_llm: list[dict[str, Any]] = []
+    for idx, f in enumerate(llm[:rest], start=1):
+        fc = dict(f)
+        cap = str(fc.get("caption") or "").strip()
+        if cap and (
+            re.fullmatch(r"(?i)фото\s*\d*", cap)
+            or (cap.lower() in user_caps and len(cap) <= 10)
+        ):
+            fc["caption"] = f"Иллюстрация {idx}"
+        cleaned_llm.append(fc)
+    return users + cleaned_llm
 
 
 def _insert_user_slot_block(tex: str, block: str) -> str:

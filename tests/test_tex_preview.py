@@ -118,3 +118,24 @@ def test_preview_extracts_itemize_and_enumerate() -> None:
     assert "<strong>" in (ul["items"][0].get("html") or "")
     assert len(ol["items"]) == 2
     assert "Шаг один" in ol["items"][0]["text"]
+
+
+def test_preview_preserves_math_formula() -> None:
+    """P3: math formulas $...$ wrapped in <span class="tex-math" data-math="...">."""
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Формула $E = mc^2$ и предел $\lim_{x \to 0} \frac{\sin x}{x} = 1$. Цена: \$100.
+\end{document}
+"""
+    data = tex_to_preview_blocks(tex)
+    paras = [b for b in data["blocks"] if b["type"] == "paragraph"]
+    assert paras, "expected a paragraph"
+    html = paras[0].get("html") or ""
+    assert 'class="tex-math"' in html
+    assert 'data-math="E = mc^2"' in html
+    assert 'data-math="\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1"' in html
+    # Escaped \$ is not converted to math
+    assert "$100" in html
+    # Plain text cleans up math delimiters
+    assert "E = mc^2" in paras[0]["text"]

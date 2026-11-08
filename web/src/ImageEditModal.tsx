@@ -24,6 +24,7 @@ type Props = {
   onCancel: () => void;
   onSubmit: (req: ImageEditRequest) => void;
   onUpload?: (file: File, caption?: string) => void;
+  onDelete?: () => void;
 };
 
 export function ImageEditModal({
@@ -37,6 +38,7 @@ export function ImageEditModal({
   onCancel,
   onSubmit,
   onUpload,
+  onDelete,
 }: Props) {
   const [mode, setMode] = useState<ImageEditMode>("generate");
   const [prompt, setPrompt] = useState("");
@@ -267,6 +269,30 @@ export function ImageEditModal({
             : "Запрос будет отправлен в Image API контура Liber."}
         </p>
         <div className="chart-edit-actions">
+          {onDelete && (
+            <button
+              type="button"
+              className="chart-edit-delete"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm("Удалить эту иллюстрацию из отчёта?")) {
+                  onDelete();
+                }
+              }}
+              style={{
+                background: "transparent",
+                border: "1px solid color-mix(in srgb, #c92a2a 40%, transparent)",
+                color: "#c92a2a",
+                borderRadius: "8px",
+                padding: "0.4rem 0.75rem",
+                cursor: "pointer",
+                marginRight: "auto",
+                fontSize: "0.82rem",
+              }}
+            >
+              Удалить фото
+            </button>
+          )}
           <button
             type="button"
             className="chart-edit-apply"

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import replace
 from typing import Any
 
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.prompts import load as load_prompt
 from case3.tex_preview import tex_to_preview_blocks
+
+log = logging.getLogger(__name__)
 
 # Chat blurb must not stall print UX for a full VISION_TIMEOUT_S (often 300s).
 _SUMMARY_TIMEOUT_S = 90.0
@@ -151,9 +155,43 @@ def _summary_client(client: LLMClient | None) -> LLMClient:
             cfg,
             timeout_s=min(float(cfg.timeout_s), _SUMMARY_TIMEOUT_S),
             max_retries=_SUMMARY_RETRIES,
-            max_tokens=min(int(cfg.max_tokens), 800),
+            max_tokens=min(int(cfg.max_tokens), 2048),
         )
     )
+
+
+_REASONING_LEAK_REGEX = re.compile(
+    r"(?i)\b("
+    r"the user wants|"
+    r"let me check|"
+    r"let me draft|"
+    r"let me write|"
+    r"thinking process|"
+    r"based on the outline|"
+    r"from the outline|"
+    r"from media_delivered|"
+    r"i need to write|"
+    r"i will write|"
+    r"first paragraph:|"
+    r"second paragraph:|"
+    r"structure:|"
+    r"constraints:"
+    r")\b"
+)
+
+
+def is_clean_chat_summary(text: str, *, intent: str | None = None) -> bool:
+    """Return False if text leaks English CoT / reasoning / meta-planning."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _REASONING_LEAK_REGEX.search(t):
+        return False
+    cyrillic_chars = len(re.findall(r"[\u0400-\u04FF]", t))
+    latin_chars = len(re.findall(r"[A-Za-z]", t))
+    if cyrillic_chars < 20 and latin_chars > 30:
+        return False
+    return True
 
 
 def generate_chat_summary(
@@ -168,26 +206,34 @@ def generate_chat_summary(
     outline = build_outline(tex)
     user = build_summary_user(outline, intent=intent, media=media)
     llm = _summary_client(client)
+    text = ""
     if on_delta is not None and hasattr(llm, "stream"):
         chunks: list[str] = []
         for piece in llm.stream(
             system=SUMMARY_SYSTEM,
             user_text=user,
             reasoning="off",
-            max_tokens=400,
+            max_tokens=2048,
         ):
             if piece:
                 chunks.append(piece)
                 on_delta(piece)
         text = "".join(chunks).strip()
-        if text:
-            return text
-    text = llm.complete(
-        system=SUMMARY_SYSTEM,
-        user_text=user,
-        reasoning="off",
-    )
-    return (text or "").strip()
+    else:
+        text = llm.complete(
+            system=SUMMARY_SYSTEM,
+            user_text=user,
+            reasoning="off",
+        )
+    text = (text or "").strip()
+    if hasattr(llm, "last_finish_reason") and llm.last_finish_reason == "length":
+        if len(text) < 80 or not text.endswith((".", "!", "?", "»", ")")):
+            log.warning("chat summary truncated by length — rejecting")
+            return ""
+    if not is_clean_chat_summary(text, intent=intent):
+        log.warning("chat summary failed clean check (leaked reasoning/English) — rejecting: %s", text[:80])
+        return ""
+    return text
 
 
 def try_generate_chat_summary(

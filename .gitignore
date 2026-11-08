@@ -63,6 +63,11 @@ runs/chart_*/
 runs/julius_*/
 runs/vivid_*/
 runs/*.json
+runs/*.png
+runs/*.svg
+runs/*.tex
+runs/*.txt
+runs/*.raw_model.txt
 
 # Old debug dumps
 debug-bundle/

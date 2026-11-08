@@ -24,6 +24,23 @@ type Props = {
 
 let mermaidReady = false;
 let mermaidMod: Mermaid | null = null;
+let renderQueue: Promise<unknown> = Promise.resolve();
+
+function renderMermaidSync(
+  id: string,
+  text: string,
+): Promise<{ svg: string; bindFunctions?: (el: Element) => void }> {
+  const run = async () => {
+    const mermaid = await loadMermaid();
+    return await mermaid.render(id, text);
+  };
+  const task = renderQueue.then(run, run);
+  renderQueue = task.then(
+    () => {},
+    () => {},
+  );
+  return task;
+}
 
 // Safeguard against Mermaid's internal btoa calls on Cyrillic / Unicode strings
 if (typeof window !== "undefined" && typeof window.btoa === "function") {
@@ -139,9 +156,8 @@ export function MermaidView({
       const rand = Math.random().toString(36).replace(/[^a-zA-Z0-9]/g, "").slice(0, 6);
       const renderId = `mmd${reactId}${rand}`;
       try {
-        const mermaid = await loadMermaid();
         if (cancelled || !hostRef.current) return;
-        const { svg } = await mermaid.render(renderId, fallbackSrc);
+        const { svg } = await renderMermaidSync(renderId, fallbackSrc);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
         setError(null);
@@ -150,6 +166,16 @@ export function MermaidView({
         svgRef.current = el;
         if (el) {
           softenMermaidSvg(el);
+          const vb = el.getAttribute("viewBox");
+          if (vb) {
+            const parts = vb.trim().split(/[\s,]+/).map(Number);
+            if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+              const [, , w, h] = parts;
+              el.setAttribute("width", String(w));
+              el.setAttribute("height", String(h));
+              el.style.aspectRatio = `${w} / ${h}`;
+            }
+          }
           el.querySelectorAll("g.node").forEach((g) => {
             (g as SVGElement).style.cursor = dblRef.current
               ? "pointer"

@@ -7,6 +7,7 @@ type Common = {
   error?: string | null;
   saveLabel?: string;
   onCancel?: () => void;
+  onDelete?: () => void;
   autoFocus?: boolean;
   /** Hide Save/Cancel row — blur / Enter / ⌘↵ still apply. */
   hideActions?: boolean;
@@ -44,6 +45,7 @@ function ProseInline({
   saveLabel = "Сохранить",
   onSave,
   onCancel,
+  onDelete,
   autoFocus = true,
   hideActions = false,
 }: ProseProps) {
@@ -64,7 +66,14 @@ function ProseInline({
 
   const commit = () => {
     const t = text.trim();
-    if (!t || !dirty || busy) return;
+    if (!dirty || busy) return;
+    if (!t) {
+      if (onDelete) {
+        skipBlurRef.current = true;
+        onDelete();
+      }
+      return;
+    }
     skipBlurRef.current = true;
     onSave(t);
   };
@@ -80,8 +89,13 @@ function ProseInline({
       skipBlurRef.current = false;
       return;
     }
-    if (dirty && !busy && text.trim()) commit();
-    else if (!busy) onCancel?.();
+    if (dirty && !busy) {
+      if (text.trim()) commit();
+      else if (onDelete) onDelete();
+      else onCancel?.();
+    } else if (!busy) {
+      onCancel?.();
+    }
   };
 
   return (
@@ -131,21 +145,40 @@ function ProseInline({
         />
       )}
       {hideActions ? (
-        <p className="inline-block-hint is-solo">
-          {kind === "paragraph" ? "⌘↵ · Esc · blur" : "Enter · Esc · blur"}
-        </p>
+        <div className="inline-block-hint-row">
+          <p className="inline-block-hint is-solo">
+            {kind === "paragraph" ? "⌘↵ · Esc · blur" : "Enter · Esc · blur"}
+          </p>
+          {onDelete && (
+            <button
+              type="button"
+              className="inline-block-delete-link"
+              title="Удалить блок"
+              disabled={busy}
+              onMouseDown={() => {
+                skipBlurRef.current = true;
+              }}
+              onClick={() => {
+                skipBlurRef.current = true;
+                onDelete();
+              }}
+            >
+              Удалить
+            </button>
+          )}
+        </div>
       ) : (
         <div className="inline-block-actions">
           <button
             type="button"
             className="inline-block-save"
-            disabled={busy || !dirty || !text.trim()}
+            disabled={busy || !dirty || (!text.trim() && !onDelete)}
             onMouseDown={() => {
               skipBlurRef.current = true;
             }}
             onClick={commit}
           >
-            {busy ? "Сохраняю…" : saveLabel}
+            {busy ? "Сохраняю…" : !text.trim() && onDelete ? "Удалить" : saveLabel}
           </button>
           <button
             type="button"
@@ -158,6 +191,22 @@ function ProseInline({
           >
             Отмена
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="inline-block-delete"
+              disabled={busy}
+              onMouseDown={() => {
+                skipBlurRef.current = true;
+              }}
+              onClick={() => {
+                skipBlurRef.current = true;
+                onDelete();
+              }}
+            >
+              Удалить
+            </button>
+          )}
           {kind === "paragraph" ? (
             <span className="inline-block-hint">⌘↵ · Esc</span>
           ) : (
@@ -178,6 +227,7 @@ function ListInline({
   saveLabel = "Сохранить",
   onSave,
   onCancel,
+  onDelete,
   autoFocus = true,
   hideActions = false,
 }: ListProps) {
@@ -199,7 +249,14 @@ function ListInline({
   const dirty = text.replace(/\s+$/, "") !== seed.replace(/\s+$/, "");
 
   const commit = () => {
-    if (!items.length || !dirty || busy) return;
+    if (!dirty || busy) return;
+    if (!items.length) {
+      if (onDelete) {
+        skipBlurRef.current = true;
+        onDelete();
+      }
+      return;
+    }
     skipBlurRef.current = true;
     onSave(items);
   };
@@ -215,8 +272,13 @@ function ListInline({
       skipBlurRef.current = false;
       return;
     }
-    if (dirty && !busy && items.length) commit();
-    else if (!busy) onCancel?.();
+    if (dirty && !busy) {
+      if (items.length) commit();
+      else if (onDelete) onDelete();
+      else onCancel?.();
+    } else if (!busy) {
+      onCancel?.();
+    }
   };
 
   return (
@@ -247,19 +309,38 @@ function ListInline({
         }}
       />
       {hideActions ? (
-        <p className="inline-block-hint is-solo">⌘↵ · Esc · blur</p>
+        <div className="inline-block-hint-row">
+          <p className="inline-block-hint is-solo">⌘↵ · Esc · blur</p>
+          {onDelete && (
+            <button
+              type="button"
+              className="inline-block-delete-link"
+              title="Удалить список"
+              disabled={busy}
+              onMouseDown={() => {
+                skipBlurRef.current = true;
+              }}
+              onClick={() => {
+                skipBlurRef.current = true;
+                onDelete();
+              }}
+            >
+              Удалить
+            </button>
+          )}
+        </div>
       ) : (
         <div className="inline-block-actions">
           <button
             type="button"
             className="inline-block-save"
-            disabled={busy || !dirty || items.length < 1}
+            disabled={busy || !dirty || (!items.length && !onDelete)}
             onMouseDown={() => {
               skipBlurRef.current = true;
             }}
             onClick={commit}
           >
-            {busy ? "Сохраняю…" : saveLabel}
+            {busy ? "Сохраняю…" : !items.length && onDelete ? "Удалить" : saveLabel}
           </button>
           <button
             type="button"
@@ -272,6 +353,22 @@ function ListInline({
           >
             Отмена
           </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="inline-block-delete"
+              disabled={busy}
+              onMouseDown={() => {
+                skipBlurRef.current = true;
+              }}
+              onClick={() => {
+                skipBlurRef.current = true;
+                onDelete();
+              }}
+            >
+              Удалить
+            </button>
+          )}
           <span className="inline-block-hint">⌘↵ · Esc</span>
         </div>
       )}

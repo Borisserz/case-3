@@ -158,3 +158,32 @@ def test_every_deck_chart_gets_native_part(tmp_path: Path) -> None:
     with zipfile.ZipFile(dest) as zf:
         charts = [n for n in zf.namelist() if n.startswith("ppt/charts/")]
     assert len(charts) >= 2, f"expected ≥2 native charts, got {charts}"
+
+
+def test_native_area_chart_colors_fill_and_line() -> None:
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    ok = add_native_chart(
+        slide,
+        {
+            "type": "area",
+            "categories": ["Q1", "Q2", "Q3"],
+            "series": [{"name": "Трафик", "values": [100.0, 150.0, 220.0]}],
+        },
+        left=Inches(1),
+        top=Inches(1),
+        width=Inches(6),
+        height=Inches(4),
+        series_colors=[RGBColor(0x3D, 0x5A, 0x45)],
+    )
+    assert ok is True
+    chart = slide.shapes[-1].chart
+    ser = chart.series[0]
+    # Area chart should have both fill and line colored
+    assert ser.format.fill.fore_color.rgb == RGBColor(0x3D, 0x5A, 0x45)
+    assert ser.format.line.color.rgb == RGBColor(0x3D, 0x5A, 0x45)

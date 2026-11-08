@@ -18,6 +18,7 @@ import type { TableEditRequest } from "./TableEditSheet";
 import type { ParagraphEditRequest } from "./ParagraphEditSheet";
 import type { HeadingEditRequest } from "./HeadingEditTypes";
 import type { ListEditRequest } from "./ListEditTypes";
+import { RecolorChartsModal } from "./RecolorChartsModal";
 import { DiagramPane } from "./DiagramPane";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { DeckSlidesFilm } from "./DeckSlidesFilm";
@@ -28,10 +29,14 @@ import { IconPanelRight } from "./icons";
 import { deckDownloadLinks } from "./domain/deckDownloads";
 import { reportDownloadLinks } from "./domain/reportDownloads";
 import {
+  copyMarkdownButtonVisible,
   docsNeedRebuild,
+  recolorChartsButtonVisible,
   reportEditModeHint,
   reportEditToggleVisible,
+  slidesFilmTabLabel,
 } from "./domain/reportEditMode";
+import { reportToMarkdown } from "./domain/reportMarkdown";
 import { modeSurfaces } from "./domain/liberModes";
 import { SourcePane } from "./SourcePane";
 import {
@@ -132,10 +137,23 @@ type Props = {
   closing?: boolean;
   onClosed?: () => void;
   onEditFigure?: (req: ChartEditRequest) => Promise<boolean> | boolean;
+  onRecolorCharts?: (palette: string) => Promise<boolean> | boolean;
   onEditImage?: (req: ImageEditRequest) => Promise<boolean> | boolean;
+  onUploadFigure?: (
+    figureId: string,
+    file: File,
+    caption?: string,
+  ) => Promise<boolean> | boolean;
+  onDeleteFigure?: (figureId: string) => Promise<boolean> | boolean;
   onEditTable?: (req: TableEditRequest) => Promise<boolean> | boolean;
   onEditParagraph?: (req: ParagraphEditRequest) => Promise<boolean> | boolean;
+  onInsertParagraph?: (req: {
+    text: string;
+    afterParagraphIndex?: number;
+    afterHeadingIndex?: number;
+  }) => Promise<boolean> | boolean;
   onEditHeading?: (req: HeadingEditRequest) => Promise<boolean> | boolean;
+  onEditTitle?: (text: string) => Promise<boolean> | boolean;
   onEditList?: (req: ListEditRequest) => Promise<boolean> | boolean;
   onEditCancel?: () => void;
   editHistory?: import("./domain/reportEditMode").EditHistoryDesc | null;
@@ -181,10 +199,15 @@ export function ArtifactRail({
   closing = false,
   onClosed,
   onEditFigure,
+  onRecolorCharts,
   onEditImage,
+  onUploadFigure,
+  onDeleteFigure,
   onEditTable,
   onEditParagraph,
+  onInsertParagraph,
   onEditHeading,
+  onEditTitle,
   onEditList,
   onEditCancel,
   editHistory = null,
@@ -221,6 +244,30 @@ export function ArtifactRail({
     (tab === "diagram" && Boolean(activeDiagram)) || showDiagramEmpty;
   const hasPreview =
     surfaces.showReportPreview && Boolean(report?.preview?.blocks?.length);
+  const hasCharts = useMemo(
+    () =>
+      Boolean(
+        report?.preview?.blocks?.some(
+          (b) => b.type === "figure" && b.kind === "chart",
+        ),
+      ),
+    [report?.preview?.blocks],
+  );
+  const [recolorOpen, setRecolorOpen] = useState(false);
+  const [copiedMd, setCopiedMd] = useState(false);
+  const handleCopyMarkdown = useCallback(async () => {
+    const blocks = report?.preview?.blocks;
+    if (!blocks?.length) return;
+    const title = report?.preview?.title?.trim() || "Отчёт";
+    const md = reportToMarkdown({ title, blocks });
+    try {
+      await navigator.clipboard.writeText(md);
+      setCopiedMd(true);
+      window.setTimeout(() => setCopiedMd(false), 2000);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  }, [report?.preview]);
   const hasPdf =
     surfaces.showReportPdf && Boolean(report?.downloads?.pdf);
   /** Diagram mode always keeps the tab — even when generation returned 0. */
@@ -295,7 +342,7 @@ export function ArtifactRail({
       },
       {
         id: "slides",
-        label: "PDF",
+        label: slidesFilmTabLabel(),
         show: Boolean(hasSlidesFilmTab),
       },
       { id: "source", label: "Source", show: hasSource },
@@ -577,7 +624,16 @@ export function ArtifactRail({
                 type="button"
                 className={`artifact-rail-tab${tab === t.id ? " is-active" : ""}`}
                 aria-selected={tab === t.id}
-                onClick={() => onTab(t.id)}
+                onClick={() => {
+                  if (
+                    t.id === "pdf" &&
+                    reportEditMode &&
+                    docsNeedRebuild(editHistory)
+                  ) {
+                    void onFinishReportEdit?.();
+                  }
+                  onTab(t.id);
+                }}
               >
                 {tab === t.id && !reduceMotion && (
                   <motion.span
@@ -603,6 +659,7 @@ export function ArtifactRail({
               onEditTable,
               onEditParagraph,
               onEditHeading,
+              onEditTitle,
               onEditList,
             }) ? (
               <div
@@ -631,7 +688,31 @@ export function ArtifactRail({
                     >
                       →
                     </button>
+                    {recolorChartsButtonVisible(
+                      reportEditMode,
+                      hasCharts,
+                      Boolean(onRecolorCharts),
+                    ) ? (
+                      <button
+                        type="button"
+                        className="artifact-rail-edit-recolor"
+                        title="Перекрасить все графики отчёта"
+                        disabled={finishReportEditBusy || editingFigureId === "charts_all"}
+                        onClick={() => setRecolorOpen(true)}
+                      >
+                        Перекрасить графики
+                      </button>
+                    ) : null}
                   </>
+                ) : copyMarkdownButtonVisible(reportEditMode, hasPreview) ? (
+                  <button
+                    type="button"
+                    className="artifact-rail-edit-recolor"
+                    title="Скопировать отчёт в формате Markdown"
+                    onClick={() => void handleCopyMarkdown()}
+                  >
+                    {copiedMd ? "Скопировано" : "Копировать MD"}
+                  </button>
                 ) : null}
                 <button
                   type="button"
@@ -654,8 +735,7 @@ export function ArtifactRail({
             {isReport && (tab === "preview" || tab === "pdf")
               ? reportDownloadLinks(report?.downloads, {
                   enabled: surfaces.showReportPdf,
-                  stale:
-                    reportEditMode && docsNeedRebuild(editHistory),
+                  stale: docsNeedRebuild(editHistory),
                 }).map((link) => (
                   <a
                     key={link.kind}
@@ -745,6 +825,7 @@ export function ArtifactRail({
                   preview={report.preview}
                   downloads={report.downloads}
                   runId={report.runId}
+                  diagrams={report.diagrams}
                   warnings={report.warnings}
                   palettes={palettes}
                   catalogTypes={catalogTypes}
@@ -758,12 +839,25 @@ export function ArtifactRail({
                   showEditChrome={false}
                   editMode={reportEditMode}
                   onJumpToPdf={hasPdf ? jumpFigureToPdf : undefined}
+                  onJumpToDiagram={
+                    hasDiagrams
+                      ? (diagramId: string) => {
+                          onSelectDiagram?.(diagramId);
+                          onTab("diagram");
+                        }
+                      : undefined
+                  }
                   onOpenPdf={hasPdf ? () => onTab("pdf") : undefined}
                   onEditFigure={onEditFigure}
+                  onRecolorCharts={onRecolorCharts}
                   onEditImage={onEditImage}
+                  onUploadFigure={onUploadFigure}
+                  onDeleteFigure={onDeleteFigure}
                   onEditTable={onEditTable}
                   onEditParagraph={onEditParagraph}
+                  onInsertParagraph={onInsertParagraph}
                   onEditHeading={onEditHeading}
+                  onEditTitle={onEditTitle}
                   onEditList={onEditList}
                   onEditCancel={onEditCancel}
                   editHistory={editHistory}
@@ -856,6 +950,22 @@ export function ArtifactRail({
           </AnimatePresence>
         </div>
       </div>
+      <RecolorChartsModal
+        open={recolorOpen}
+        currentPalette={defaultPalette}
+        palettes={palettes}
+        busy={editingFigureId === "charts_all"}
+        onCancel={() => setRecolorOpen(false)}
+        onApply={(pal) => {
+          void (async () => {
+            const ok = await onRecolorCharts?.(pal);
+            if (ok !== false) {
+              setRecolorOpen(false);
+              onReportEditModeChange?.(true);
+            }
+          })();
+        }}
+      />
     </motion.aside>
   );
 

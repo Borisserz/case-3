@@ -61,6 +61,7 @@
 ```
 %CASE3_FIG:fig_01%
 %CASE3_CHART:cht_01%
+%CASE3_DIAG:dia_01%
 ```
 
 In prose you may write «см. рисунок» without `\ref` to a chart label (labels are assigned at inject).
@@ -70,4 +71,4 @@ IDs: `^[a-z][a-z0-9_]*$`. Chart ids prefer `cht_NN`; diagram ids prefer `dia_NN`
 9. At most {{MAX_IMAGES}} figures, {{MAX_CHARTS}} charts (`CASE3_MAX_CHARTS`), {{MAX_DIAGRAMS}} diagrams (`CASE3_MAX_DIAGRAMS`).
 10. No Times New Roman, no `extreport`, no BSUIR STP-only packages.
 11. End with `\end{document}`.
-12. Diagrams stay in JSON only — never TeX slots / never print inject.
+12. Diagrams are defined in JSON (Mermaid) and placed via `%CASE3_DIAG:dia_NN%` slots (or auto-slotted by pipeline). Never write `\includegraphics` or paste Mermaid code directly into TeX.

@@ -138,12 +138,12 @@ export function ChatMessages({
                       className="msg-body msg-plaque-trigger"
                       onClick={() => onOpenIntent(m.text)}
                     >
-                      Intent · {m.text.length} символов — открыть
+                      Запрос · {m.text.length} символов — открыть
                     </button>
                   ) : userCollapseIntent ? (
                     <details className="msg-intent-fold">
                       <summary className="msg-intent-summary">
-                        <span className="msg-intent-label">Intent</span>
+                        <span className="msg-intent-label">Запрос</span>
                         <span className="msg-intent-preview">
                           {m.text.slice(0, 72).trim()}
                           {m.text.length > 72 ? "…" : ""}

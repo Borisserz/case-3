@@ -70,3 +70,87 @@ def test_status_error_includes_can_resume(tmp_path: Path, monkeypatch) -> None:
     assert body["status"] == "error"
     assert body["can_resume"] is True
     assert body["failed_stage"] == "charts"
+
+
+def test_resume_409_when_pipeline_slot_busy(tmp_path: Path, monkeypatch) -> None:
+    from case3.api import _claim_pipeline_slot, _release_pipeline_slot
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = _failed_run(tmp_path, failed_stage="latex")
+    kicked = MagicMock()
+    monkeypatch.setattr("case3.api._kick_resume_thread", kicked)
+    assert _claim_pipeline_slot("other_active_run") is None
+    try:
+        client = TestClient(app)
+        r = client.post(f"/api/runs/{run_id}/resume")
+        assert r.status_code == 409
+        assert "other_active_run" in str(r.json().get("detail") or "")
+        kicked.assert_not_called()
+    finally:
+        _release_pipeline_slot("other_active_run")
+
+
+def test_resume_200_real_background_pipeline_transitions_to_ok(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Real _bg_resume_pipeline must not fail eligibility after resume_run flips state."""
+    from case3.api import _bg_resume_pipeline, _claim_pipeline_slot
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = _failed_run(tmp_path, failed_stage="latex")
+
+    def fake_render(tex_path: Path, **kwargs):  # noqa: ANN001
+        out_dir = kwargs["out_dir"]
+        pdf = out_dir / f"{tex_path.stem}.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        return {"pdf": pdf}
+
+    monkeypatch.setattr("case3.pipeline.render_tex", fake_render)
+    monkeypatch.setattr(
+        "case3.pipeline.try_generate_chat_summary",
+        lambda *a, **k: ("ok", "summary"),
+    )
+
+    def sync_kick(rid: str) -> None:
+        assert _claim_pipeline_slot(rid) is None
+        _bg_resume_pipeline(rid)
+
+    monkeypatch.setattr("case3.api._kick_resume_thread", sync_kick)
+    client = TestClient(app)
+    r = client.post(f"/api/runs/{run_id}/resume")
+    assert r.status_code == 200
+    meta = json.loads(
+        (tmp_path / "runs" / "out" / run_id / "meta.json").read_text(encoding="utf-8")
+    )
+    assert meta["status"] == "ok"
+
+
+def test_datetime_stamp_unique_within_same_second() -> None:
+    from case3.api import datetime_stamp
+
+    s1 = datetime_stamp()
+    s2 = datetime_stamp()
+    assert s1 != s2
+
+
+def test_create_run_409_when_busy_does_not_write_uploads(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from case3.api import _claim_pipeline_slot, _release_pipeline_slot
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    assert _claim_pipeline_slot("busy_run_123") is None
+    try:
+        client = TestClient(app)
+        r = client.post(
+            "/api/run",
+            data={"source_text": "Конфиденциальный отчёт за Q4", "intent": "Отчёт"},
+        )
+        assert r.status_code == 409
+        uploads_root = tmp_path / "runs" / "uploads"
+        written = list(uploads_root.rglob("source.txt")) if uploads_root.exists() else []
+        assert written == []
+    finally:
+        _release_pipeline_slot("busy_run_123")
+
+

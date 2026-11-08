@@ -103,6 +103,7 @@ def finish_preamble_only_tex(
     *,
     chart_ids: list[str] | None = None,
     figure_ids: list[str] | None = None,
+    diagram_ids: list[str] | None = None,
     title: str = "Отчёт",
 ) -> str:
     """When the model truncates mid-preamble (has \\documentclass, no \\begin{document})."""
@@ -129,6 +130,9 @@ def finish_preamble_only_tex(
         body.append("")
     for cid in chart_ids or []:
         body.append(f"%CASE3_CHART:{cid}%")
+        body.append("")
+    for did in diagram_ids or []:
+        body.append(f"%CASE3_DIAG:{did}%")
         body.append("")
     body.append("\\end{document}")
     return t + "\n" + "\n".join(body) + "\n"

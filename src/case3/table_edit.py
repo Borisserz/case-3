@@ -18,13 +18,20 @@ log = logging.getLogger("case3.table_edit")
 _MAX_COLS = 40
 _MAX_ROWS = 20
 
-_TABLE_ENV = re.compile(r"\\begin\{table\*?\}.*?\\end\{table\*?\}", re.S)
+_TABLE_ENV = re.compile(
+    r"\\begin\{table\*?\}.*?\\end\{table\*?\}"
+    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}",
+    re.S,
+)
 _CAPTION = re.compile(r"(\\caption\{)([^{}]*)(\})")
 _TABULARX = re.compile(
     r"(\\begin\{tabularx\}\{[^}]+\}\{)([^}]+)(\})([\s\S]*?)(\\end\{tabularx\})"
 )
 _TABULAR = re.compile(
     r"(\\begin\{tabular\}\{)([^}]+)(\})([\s\S]*?)(\\end\{tabular\})"
+)
+_LONGTABLE = re.compile(
+    r"(\\begin\{longtable\*?\}\{)([^}]+)(\})([\s\S]*?)(\\end\{longtable\*?\})"
 )
 
 
@@ -104,8 +111,10 @@ def serialize_tabular_body(
     *,
     use_tabularx: bool,
     width_arg: str = r"\textwidth",
+    use_longtable: bool = False,
+    caption: str = "",
 ) -> str:
-    """Build begin…end tabular(x) with booktabs rules."""
+    """Build begin…end tabular(x) or longtable with booktabs rules."""
     ncols = len(headers)
     specs: list[str] = []
     for ci in range(ncols):
@@ -120,7 +129,11 @@ def serialize_tabular_body(
         specs[0] = "l"
     colspec = "".join(specs)
     lines: list[str] = []
-    if use_tabularx:
+    if use_longtable:
+        lines.append(rf"\begin{{longtable}}{{{colspec}}}")
+        if caption:
+            lines.append(rf"\caption{{{escape_tex_text(caption)}}} \\")
+    elif use_tabularx:
         lines.append(rf"\begin{{tabularx}}{{{width_arg}}}{{{colspec}}}")
     else:
         lines.append(rf"\begin{{tabular}}{{{colspec}}}")
@@ -130,7 +143,9 @@ def serialize_tabular_body(
     for row in rows:
         lines.append("  " + " & ".join(_cell_tex(c) for c in row) + r" \\")
     lines.append(r"  \bottomrule")
-    if use_tabularx:
+    if use_longtable:
+        lines.append(r"\end{longtable}")
+    elif use_tabularx:
         lines.append(r"\end{tabularx}")
     else:
         lines.append(r"\end{tabular}")
@@ -142,7 +157,7 @@ def _replace_caption(block: str, caption: str) -> str:
     if _CAPTION.search(block):
         return _CAPTION.sub(rf"\g<1>{esc}\g<3>", block, count=1)
     # insert caption after \centering if present, else after \begin{table}...
-    m = re.search(r"(\\begin\{table\*?\}(?:\[[^\]]*\])?\s*)", block)
+    m = re.search(r"(\\begin\{(?:table|longtable)\*?\}(?:\[[^\]]*\])?\s*(?:\{[^}]*\}\s*)?)", block)
     if not m:
         return block
     insert = m.end()
@@ -152,7 +167,15 @@ def _replace_caption(block: str, caption: str) -> str:
     return block[:insert] + rf"\caption{{{esc}}}" + "\n  " + block[insert:]
 
 
-def _replace_tabular(block: str, headers: list[str], rows: list[list[str]]) -> str:
+def _replace_tabular(
+    block: str, headers: list[str], rows: list[list[str]], caption: str = ""
+) -> str:
+    ml = _LONGTABLE.search(block)
+    if ml:
+        body = serialize_tabular_body(
+            headers, rows, use_tabularx=False, use_longtable=True, caption=caption
+        )
+        return block[: ml.start()] + body + block[ml.end() :]
     mx = _TABULARX.search(block)
     if mx:
         # recover width from full match prefix: \begin{tabularx}{WIDTH}{
@@ -167,7 +190,7 @@ def _replace_tabular(block: str, headers: list[str], rows: list[list[str]]) -> s
     if mt:
         body = serialize_tabular_body(headers, rows, use_tabularx=False)
         return block[: mt.start()] + body + block[mt.end() :]
-    raise TableEditError("в таблице нет tabular/tabularx")
+    raise TableEditError("в таблице нет tabular/tabularx/longtable")
 
 
 def patch_table_in_tex(
@@ -185,8 +208,9 @@ def patch_table_in_tex(
         raise TableEditError(f"таблица {table_index} не найдена (всего {len(spans)})")
     start, end = spans[table_index - 1]
     block = tex[start:end]
-    block = _replace_caption(block, caption)
-    block = _replace_tabular(block, headers, rows)
+    if not _LONGTABLE.search(block):
+        block = _replace_caption(block, caption)
+    block = _replace_tabular(block, headers, rows, caption=caption)
     return tex[:start] + block + tex[end:]
 
 
@@ -229,20 +253,19 @@ def edit_table_in_run(
     except Exception as exc:  # noqa: BLE001
         raise TableEditError(f"patch failed: {exc}") from exc
 
-    meta: dict[str, Any] = {}
-    if meta_path.is_file():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            meta = {}
-    meta["last_table_edit"] = {
-        "index": table_index,
-        "caption": (caption or "")[:300],
-        "cols": len(headers),
-        "rows": len(rows),
-        "ts": int(time.time()),
-    }
-    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    from case3.run_events import write_meta_atomic
+    from case3.run_meta import update_meta
+
+    def _mut_table_edit(m: dict[str, Any]) -> None:
+        m["last_table_edit"] = {
+            "index": table_index,
+            "caption": (caption or "")[:300],
+            "cols": len(headers),
+            "rows": len(rows),
+            "ts": int(time.time()),
+        }
+
+    meta = update_meta(out_dir, _mut_table_edit)
 
     try:
         artifacts = rebuild_run_docs(out_dir, formats=formats)
@@ -251,7 +274,7 @@ def edit_table_in_run(
     except RenderError as exc:
         tex_path.write_text(tex_bak, encoding="utf-8")
         if meta_bak is not None:
-            meta_path.write_text(meta_bak, encoding="utf-8")
+            write_meta_atomic(meta_path, meta_bak)
         from case3.run_undo import clear_undo
 
         clear_undo(out_dir)

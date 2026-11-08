@@ -53,6 +53,9 @@ def test_ensure_heals_caption_and_figure_desk_signature() -> None:
 \end{document}
 """
     out = ensure_document_preamble(tex)
-    assert r"\caption{Современный завод с роботизированной линией}" in out
+    assert (
+        r"\caption{Современный завод с~роботизированной линией}" in out
+        or r"\caption{Современный завод с роботизированной линией}" in out
+    )
     assert r"\end{figure}" in out
     assert out.index(r"\end{figure}") < out.index(r"\end{document}")

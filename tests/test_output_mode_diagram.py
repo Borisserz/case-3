@@ -50,3 +50,40 @@ def test_diagram_mode_intent_forces_schemas_no_charts() -> None:
     assert "режим схема" in low or "output_mode=diagram" in low or "только" in low
     assert "mermaid" in low or "схем" in low
     assert "без html-графиков" in low or "charts: []" in low
+
+
+def test_pipeline_diagram_mode_uses_fast_diagram_generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+    from pathlib import Path
+    from case3.pipeline import run_pipeline
+
+    src = tmp_path / "source.txt"
+    src.write_text("Процесс возврата товара клиентом", encoding="utf-8")
+
+    calls = []
+    class DummyLLM:
+        def __init__(self, cfg):
+            self.cfg = cfg
+        def complete(self, *, system, user_text, cancel_check=None):
+            calls.append((system, user_text, self.cfg.max_tokens))
+            return '```json\n{"diagrams": [{"id": "dia_01", "title": "Возврат", "type": "flowchart", "mermaid": "flowchart TD\\nA-->B"}]}\n```'
+
+    monkeypatch.setattr("case3.llm_client.LLMClient", DummyLLM)
+    monkeypatch.setattr("case3.generate.LLMClient", DummyLLM)
+    monkeypatch.setattr("case3.chat_summary.LLMClient", DummyLLM)
+    out = run_pipeline(
+        src,
+        project_root=tmp_path,
+        dry_run=False,
+        output_mode="diagram",
+        max_diagrams=2,
+        formats=set(),
+    )
+    assert len(calls) >= 1
+    system_prompt, _, max_tokens = calls[0]
+    assert len(system_prompt) < 5000
+    assert max_tokens >= 2048
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert len(fj["diagrams"]) == 1
+    assert fj["diagrams"][0]["id"] == "dia_01"
+

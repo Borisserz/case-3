@@ -1,5 +1,8 @@
 /** Local report history — sessionStorage only (no backend). */
 
+import { attachSlidesPayload, type SlidesPayload } from "./attachSlidesPayload";
+import type { RunResult } from "./liberTypes";
+
 const KEY = "liber-report-history";
 const FOLDERS_KEY = "liber-history-folders";
 const LAST = "liber-last-report";
@@ -47,7 +50,9 @@ function sortHistory(list: HistoryItem[]): HistoryItem[] {
 
 export function loadHistory(): HistoryItem[] {
   try {
-    const raw = sessionStorage.getItem(KEY);
+    const raw =
+      sessionStorage.getItem(KEY) ??
+      (typeof localStorage !== "undefined" ? localStorage.getItem(KEY) : null);
     if (!raw) return [];
     const list = JSON.parse(raw) as HistoryItem[];
     if (!Array.isArray(list)) return [];
@@ -65,8 +70,16 @@ export function loadHistory(): HistoryItem[] {
 
 function writeHistory(list: HistoryItem[]): HistoryItem[] {
   const next = sortHistory(list).slice(0, MAX);
+  const serialized = JSON.stringify(next);
   try {
-    sessionStorage.setItem(KEY, JSON.stringify(next));
+    sessionStorage.setItem(KEY, serialized);
+  } catch {
+    /* quota */
+  }
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(KEY, serialized);
+    }
   } catch {
     /* quota */
   }
@@ -111,9 +124,70 @@ export function moveHistoryToFolder(
   return updateHistoryItem(runId, { folderId });
 }
 
+export function mergeServerHistory(
+  local: HistoryItem[],
+  server: HistoryItem[],
+): HistoryItem[] {
+  const localMap = new Map(local.map((h) => [h.runId, h]));
+  const result: HistoryItem[] = [...local];
+
+  for (const s of server) {
+    const existing = localMap.get(s.runId);
+    if (!existing) {
+      result.push(s);
+    } else {
+      if (s.pinned && !existing.pinned) existing.pinned = true;
+      if (s.folderId && !existing.folderId) existing.folderId = s.folderId;
+    }
+  }
+
+  return writeHistory(result);
+}
+
+export function mergeServerFolders(
+  local: HistoryFolder[],
+  server: HistoryFolder[],
+): HistoryFolder[] {
+  const ids = new Set(local.map((f) => f.id));
+  const result = [...local];
+  for (const f of server) {
+    if (!ids.has(f.id)) {
+      result.push(f);
+      ids.add(f.id);
+    }
+  }
+  return writeFolders(result);
+}
+
+export async function syncServerHistory(
+  items: HistoryItem[],
+  folders: HistoryFolder[],
+): Promise<void> {
+  try {
+    await fetch("/api/history/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: items.map((it) => ({
+          runId: it.runId,
+          pinned: it.pinned,
+          folderId: it.folderId,
+        })),
+        folders,
+      }),
+    });
+  } catch {
+    /* ignore network / server unavailable */
+  }
+}
+
 export function loadFolders(): HistoryFolder[] {
   try {
-    const raw = sessionStorage.getItem(FOLDERS_KEY);
+    const raw =
+      sessionStorage.getItem(FOLDERS_KEY) ??
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem(FOLDERS_KEY)
+        : null);
     if (!raw) return [];
     const list = JSON.parse(raw) as HistoryFolder[];
     return Array.isArray(list)
@@ -126,8 +200,16 @@ export function loadFolders(): HistoryFolder[] {
 
 function writeFolders(list: HistoryFolder[]): HistoryFolder[] {
   const next = [...list].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const serialized = JSON.stringify(next);
   try {
-    sessionStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
+    sessionStorage.setItem(FOLDERS_KEY, serialized);
+  } catch {
+    /* quota */
+  }
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(FOLDERS_KEY, serialized);
+    }
   } catch {
     /* quota */
   }
@@ -237,3 +319,27 @@ export function saveRunPayload(result: StoredRun): void {
     /* quota */
   }
 }
+
+export function hydrateHistoryResult(
+  stored: StoredRun | RunResult | null | undefined,
+  remote: RunResult | null | undefined,
+  slidesPayload?: SlidesPayload | null,
+): RunResult | null {
+  const base = (stored || remote) as RunResult | null;
+  if (!base) return null;
+  const merged: RunResult = {
+    ...base,
+    ...(remote || {}),
+    downloads: {
+      ...(base.downloads || {}),
+      ...(remote?.downloads || {}),
+    },
+    preview: remote?.preview?.blocks?.length ? remote.preview : base.preview,
+    previews: remote?.previews?.length ? remote.previews : base.previews,
+    deck: remote?.deck?.slides?.length ? remote.deck : base.deck,
+    slide_pngs: remote?.slide_pngs?.length ? remote.slide_pngs : base.slide_pngs,
+    user_text: remote?.user_text || base.user_text || "",
+  };
+  return slidesPayload ? attachSlidesPayload(merged, slidesPayload) : merged;
+}
+

@@ -7,7 +7,7 @@ import logging
 import shutil
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,7 +74,9 @@ def _find_run_tex(work: Path, out: Path) -> Path | None:
         if not d.is_dir():
             continue
         cands = sorted(
-            p for p in d.glob("*.tex") if ".raw_model" not in p.name
+            p
+            for p in d.glob("*.tex")
+            if ".raw_model" not in p.name and not p.name.endswith(".uninjected.tex")
         )
         if cands:
             return cands[0]
@@ -430,6 +432,7 @@ def _pipeline_materialize_media(
             if publish_events or not meta.get("image_style_pack"):
                 meta["image_style_pack"] = pack_for_photos
             targets = figures if not only_missing else need_api
+            out_dir_for_cancel = work.parent.parent / "out" / run_id
             status.update(
                 generate_all_figures(
                     targets,
@@ -437,6 +440,7 @@ def _pipeline_materialize_media(
                     cfg=cfg,
                     on_progress=_img_progress,
                     pack_id=pack_for_photos,
+                    cancel_check=lambda: raise_if_cancelled(out_dir_for_cancel),
                 )
             )
 
@@ -465,6 +469,7 @@ def _pipeline_materialize_media(
 
         to_render = chart_targets if only_missing else charts
         if to_render:
+            out_dir_for_cancel = work.parent.parent / "out" / run_id
             status.update(
                 generate_all_charts(
                     to_render,
@@ -472,6 +477,7 @@ def _pipeline_materialize_media(
                     work_root=work / "chart_work",
                     max_charts=charts_budget,
                     on_progress=_chart_progress,
+                    cancel_check=lambda: raise_if_cancelled(out_dir_for_cancel),
                 )
             )
         from case3.slides_chart_data import attach_series_ir_to_charts
@@ -605,12 +611,23 @@ def _pipeline_print_and_summary(
             on_format=lambda fmt: bump("docx" if fmt == "docx" else "latex"),
         )
 
+    def _sync_render_meta_fields() -> None:
+        from case3.run_meta import read_meta
+
+        disk_meta = read_meta(out)
+        if "docx_native_charts" in disk_meta:
+            meta["docx_native_charts"] = disk_meta["docx_native_charts"]
+
     if dry_run:
         meta["chat_summary"] = ""
         meta["summary_status"] = "skipped"
         BUS.start(run_id)
         BUS.finish(run_id, "", "skipped")
-        return {} if skip_print else _do_render()
+        if skip_print:
+            return {}
+        res = _do_render()
+        _sync_render_meta_fields()
+        return res
 
     if skip_print:
         artifacts: dict[str, Path] = {}
@@ -640,9 +657,10 @@ def _pipeline_print_and_summary(
     _write_meta(meta, out, logs)
     BUS.start(run_id)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        fut_r = pool.submit(_do_render)
-        fut_s = pool.submit(_do_summary)
+        fut_r = pool.submit(copy_context().run, _do_render)
+        fut_s = pool.submit(copy_context().run, _do_summary)
         artifacts = fut_r.result()
+        _sync_render_meta_fields()
         bump("summary")
         summary_text, summary_status = fut_s.result()
     meta["chat_summary"] = summary_text or ""
@@ -695,7 +713,15 @@ def resume_pipeline(
     if not isinstance(meta, dict):
         meta = {"run_id": run_id}
 
-    if not can_resume_run(meta, work=work, out=out):
+    # POST /api/runs/{id}/resume pre-flips status="running" before kicking the background
+    # thread so UI polling leaves the error state immediately while failed_stage stays set.
+    check_meta = (
+        {**meta, "status": "error"}
+        if str(meta.get("status") or "") == "running"
+        and str(meta.get("failed_stage") or "") in RESUME_STAGES
+        else meta
+    )
+    if not can_resume_run(check_meta, work=work, out=out):
         raise PipelineError(
             "resume: run is not eligible",
             run_id=run_id,
@@ -820,7 +846,7 @@ def resume_pipeline(
                 bump=bump,
                 run_id=run_id,
                 only_missing=True,
-                publish_events=False,
+                publish_events=True,
             )
 
         # Keep prior ok entries for ids we skipped
@@ -871,6 +897,7 @@ def resume_pipeline(
         meta["stage"] = "ok"
         meta.pop("stage_detail", None)
         meta.pop("failed_stage", None)
+        _write_meta(meta, out, logs)
         EVENTS.scan_artifacts(run_id, out)
         if mode != "presentation":
             EVENTS.publish_terminal(
@@ -892,6 +919,7 @@ def resume_pipeline(
             )
         else:
             EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
+        log.info("resume done run_id=%s out=%s", run_id, out)
     except RunCancelled:
         meta["status"] = "cancelled"
         meta["stage"] = "cancelled"
@@ -933,8 +961,6 @@ def resume_pipeline(
             meta=meta,
         ) from exc
     finally:
-        if meta.get("status") not in {"error", "cancelled"}:
-            _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
         _PIPELINE_RUN_ID.reset(_run_token)
@@ -1034,40 +1060,79 @@ def run_pipeline(
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
-        _, figures, charts, diagrams = generate_document(
-            text_path,
-            out_tex=tex_path,
-            intent=intent,
-            gold_dir=root / "prompt" / "gold",
-            dry_run=dry_run,
-            max_images=llm_image_budget,
-            max_charts=charts_budget,
-            max_diagrams=diagrams_budget,
-            cancel_check=lambda: raise_if_cancelled(out),
-        )
-        figures = merge_user_figures(figures, user_figs, max_images=images_budget)
-        # Mode «Схема»: product is Mermaid in chat — never wait on Image API / charts
-        # (LLM often still emits figures[]; that was the 10min Win hang after diagrams ready).
         if mode == "diagram":
-            if figures or charts:
-                log.info(
-                    "diagram mode: dropping %d figures / %d charts (schema-only)",
-                    len(figures),
-                    len(charts),
+            from case3.chart_style import palette_from_intent
+            from case3.diagram_edit import _load_generate_system
+            from case3.diagram_repair import parse_repair_response
+            from case3.diagram_style import format_diagram_color_prompt
+            from case3.llm_client import LLMClient, LLMConfig
+
+            source_text = text_path.read_text(encoding="utf-8")
+            pal = palette_from_intent(intent or "")
+            system = _load_generate_system(max_diagrams=diagrams_budget, palette=pal)
+            user = (
+                f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
+                f"## Source\n{source_text[:12000]}\n\n"
+                f"{format_diagram_color_prompt(pal)}\n\n"
+                "Return ONLY one ```json fence with a diagrams array "
+                f"(1–{diagrams_budget} Mermaid). No prose before the fence."
+            )
+            cfg = LLMConfig.from_env()
+            diag_cfg = LLMConfig(
+                base_url=cfg.base_url,
+                api_key=cfg.api_key,
+                model=cfg.model,
+                timeout_s=min(cfg.timeout_s, 90.0),
+                max_retries=1,
+                temperature=cfg.temperature,
+                reasoning=cfg.reasoning,
+                max_tokens=max(cfg.max_tokens, 8192),
+            )
+            if dry_run:
+                diagrams = []
+            else:
+                raw_d = LLMClient(diag_cfg).complete(
+                    system=system, user_text=user, cancel_check=lambda: raise_if_cancelled(out)
                 )
+                diagrams = parse_repair_response(raw_d or "", max_diagrams=diagrams_budget)
             figures = []
             charts = []
-        raw_tex = tex_path.read_text(encoding="utf-8")
-        tex_path.write_text(ensure_user_slots_in_tex(raw_tex, user_figs), encoding="utf-8")
-        # Persist merged figures.json for Liber edit / preview
-        fj_path = work / "figures.json"
-        if fj_path.is_file():
-            try:
-                fj = json.loads(fj_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                fj = {}
+            title = (intent or "").split("\n", 1)[0][:60].strip() or "Схема"
+            stub = (
+                f"\\documentclass{{article}}\n\\title{{{title}}}\n\\begin{{document}}\n"
+                f"\\maketitle\n{source_text[:1000]}\n\\end{{document}}\n"
+            )
+            tex_path.write_text(stub, encoding="utf-8")
+            fj = {"figures": [], "charts": [], "diagrams": diagrams}
+            fj_path = work / "figures.json"
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         else:
-            fj = {}
+            _, figures, charts, diagrams = generate_document(
+                text_path,
+                out_tex=tex_path,
+                intent=intent,
+                gold_dir=root / "prompt" / "gold",
+                dry_run=dry_run,
+                max_images=llm_image_budget,
+                max_charts=charts_budget,
+                max_diagrams=diagrams_budget,
+                cancel_check=lambda: raise_if_cancelled(out),
+            )
+            figures = merge_user_figures(figures, user_figs, max_images=images_budget)
+            raw_tex = tex_path.read_text(encoding="utf-8")
+            tex_path.write_text(ensure_user_slots_in_tex(raw_tex, user_figs), encoding="utf-8")
+            # Persist merged figures.json for Liber edit / preview
+            fj_path = work / "figures.json"
+            if fj_path.is_file():
+                try:
+                    fj = json.loads(fj_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    fj = {}
+            else:
+                fj = {}
 
         # Mode «Схема»: if first LLM pass returned no diagrams (CoT / missing JSON),
         # dedicated regenerate via diagram_generate.md (same as Liber «Ещё вариант»).
@@ -1261,6 +1326,7 @@ def run_pipeline(
         meta["stage"] = "ok"
         meta.pop("stage_detail", None)
         meta.pop("cancel_requested", None)
+        _write_meta(meta, out, logs)
         EVENTS.scan_artifacts(run_id, out)
         # Presentation: slides job continues on the same bus — defer terminal.
         if mode != "presentation":
@@ -1289,6 +1355,7 @@ def run_pipeline(
             )
         else:
             EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
+        log.info("done run_id=%s out=%s", run_id, out)
     except RunCancelled:
         meta["status"] = "cancelled"
         meta["stage"] = "cancelled"
@@ -1331,8 +1398,6 @@ def run_pipeline(
             meta=meta,
         ) from exc
     finally:
-        if meta.get("status") not in {"error", "cancelled"}:
-            _write_meta(meta, out, logs)
         root_logger.removeHandler(handler)
         handler.close()
         _PIPELINE_RUN_ID.reset(_run_token)

@@ -46,6 +46,7 @@ type Props = {
   onDraftChange?: (draft: ChartEditDraft) => void;
   /** Live HTML for the figure above — do not render a second chart here. */
   onPreviewHtml?: (html: string | null) => void;
+  onDelete?: () => void;
 };
 
 export function ChartEditSheet({
@@ -64,6 +65,7 @@ export function ChartEditSheet({
   onSubmit,
   onDraftChange,
   onPreviewHtml,
+  onDelete,
 }: Props) {
   const DEFAULT_TYPES = [
     "bar",
@@ -299,6 +301,30 @@ export function ChartEditSheet({
           «Готово».
         </p>
         <div className="chart-edit-actions">
+          {onDelete && (
+            <button
+              type="button"
+              className="chart-edit-delete"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm("Удалить этот график из отчёта?")) {
+                  onDelete();
+                }
+              }}
+              style={{
+                background: "transparent",
+                border: "1px solid color-mix(in srgb, #c92a2a 40%, transparent)",
+                color: "#c92a2a",
+                borderRadius: "8px",
+                padding: "0.4rem 0.75rem",
+                cursor: "pointer",
+                marginRight: "auto",
+                fontSize: "0.82rem",
+              }}
+            >
+              Удалить график
+            </button>
+          )}
           <button
             type="button"
             className="chart-edit-apply"

@@ -32,6 +32,13 @@ function svgNaturalSize(svg: SVGSVGElement): { w: number; h: number } {
   if (vb && vb.width > 0 && vb.height > 0) {
     return { w: vb.width, h: vb.height };
   }
+  const rawVb = svg.getAttribute("viewBox");
+  if (rawVb) {
+    const parts = rawVb.trim().split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+      return { w: parts[2], h: parts[3] };
+    }
+  }
   try {
     const box = svg.getBBox();
     if (box.width > 0 && box.height > 0) return { w: box.width, h: box.height };
@@ -103,7 +110,7 @@ export function DiagramZoomView({
   const applyFit = useCallback(() => {
     const svg = svgRef.current;
     const vp = viewportRef.current;
-    if (!fitViewport || !svg || !vp) {
+    if (!svg || !vp) {
       setScale(1);
       setPan({ x: 0, y: 0 });
       return;
@@ -116,7 +123,7 @@ export function DiagramZoomView({
       vp.scrollTop = 0;
       vp.scrollLeft = Math.max(0, (vp.scrollWidth - vp.clientWidth) / 2);
     });
-  }, [fitViewport]);
+  }, []);
 
   useEffect(() => {
     setScale(1);
@@ -177,7 +184,7 @@ export function DiagramZoomView({
   const handleSvgReady = useCallback(
     (el: SVGSVGElement | null) => {
       svgRef.current = el;
-      if (el && fitViewport) {
+      if (el) {
         pinSvgPixelSize(el);
       }
       onReadyRef.current?.(el);
