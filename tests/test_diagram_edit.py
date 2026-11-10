@@ -225,3 +225,39 @@ def test_refine_diagram_in_run_applies_targeted_instruction(tmp_path: Path) -> N
     assert (out / "figures" / "dia_01.png").is_file()
 
 
+def test_regenerate_diagrams_rasterizes_png_and_updates_media_status(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    out = _seed_run(tmp_path)
+    payload = {
+        "diagrams": [
+            {
+                "id": "dia_01",
+                "title": "Новый процесс",
+                "type": "flowchart",
+                "mermaid": "flowchart LR\n  A --> B",
+            }
+        ]
+    }
+
+    class FakeClient:
+        def complete(self, *, system: str, user_text: str, reasoning: str | None = None) -> str:
+            return "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+
+    def fake_render(mermaid, dest, **kwargs):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x89PNG\r\n\x1a\nrendered_regen")
+        return dest
+
+    with patch("case3.slides_media.render_mermaid_png", side_effect=fake_render):
+        result = regenerate_diagrams_in_run(out, palette="ocean", client=FakeClient(), skip_repair=True)
+
+    assert len(result["diagrams"]) == 1
+    dest_png = out / "figures" / "dia_01.png"
+    assert dest_png.is_file()
+    assert dest_png.read_bytes() == b"\x89PNG\r\n\x1a\nrendered_regen"
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta.get("media_status", {}).get("dia_01", {}).get("ok") is True
+
+
+

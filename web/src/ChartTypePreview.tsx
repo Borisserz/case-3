@@ -36,7 +36,7 @@ const META: Record<
   auto: {
     title: "На усмотрение",
     chip: "авто",
-    blurb: "Модель сама подберёт тип под данные Source",
+    blurb: "Автоматический подбор под данные",
     Glyph: GlyphAuto,
   },
   area: {

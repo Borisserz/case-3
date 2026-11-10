@@ -41,7 +41,7 @@ export function reportEditToggleVisible(opts: {
 export function reportEditModeHint(editMode: boolean): string {
   return editMode
     ? "Клик · ⌘Z · PDF/DOCX на Готово"
-    : "Чтение · правки PDF/DOCX из того же Source";
+    : "Чтение · правки документов";
 }
 
 /** Session has Preview edits not yet flushed to print artifacts. */
@@ -138,7 +138,7 @@ export function shouldIgnoreDeckHotkey(
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
   if (
     typeof el.closest === "function" &&
-    el.closest(".modal-backdrop, [role='dialog']")
+    el.closest(".modal-backdrop, [role='dialog']:not(.artifact-rail-backdrop)")
   ) {
     return true;
   }

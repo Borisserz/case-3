@@ -342,3 +342,26 @@ def test_try_claim_slides_start_is_single_winner_under_race(
     t2.join()
     assert sorted(results) == [False, True]
 
+
+def test_download_slide_media_prefers_newer_figure(client: TestClient, tmp_path: Path) -> None:
+    import os
+    import time
+    run_id = "run_media_stale"
+    out = _seed_ok_run(tmp_path, run_id)
+    charts_dir = out / "slides" / "charts"
+    charts_dir.mkdir(parents=True)
+    old_png = charts_dir / "cht_01.png"
+    old_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"OLD")
+    os.utime(old_png, (time.time() - 100, time.time() - 100))
+
+    figs_dir = out / "figures"
+    figs_dir.mkdir(parents=True)
+    new_png = figs_dir / "cht_01.png"
+    new_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"NEW_EDITED")
+    os.utime(new_png, (time.time(), time.time()))
+
+    resp = client.get(f"/api/runs/{run_id}/slides/media/cht_01.png")
+    assert resp.status_code == 200
+    assert resp.content == b"\x89PNG\r\n\x1a\n" + b"NEW_EDITED"
+
+

@@ -90,12 +90,12 @@ export function softMediaFailToast(result?: {
   }
   if (!failedC.length && !failedF.length && !warns.length) return null;
   const parts: string[] = [];
-  if (failedC.length) parts.push(`график: ${failedC.slice(0, 3).join(", ")}`);
-  if (failedF.length) parts.push(`фото: ${failedF.slice(0, 3).join(", ")}`);
+  if (failedC.length) parts.push("график");
+  if (failedF.length) parts.push("фото");
   if (!parts.length && warns.length) {
-    return `Часть медиа не собралась: ${warns[0]}`;
+    return "Часть медиа не собралась. Документ может быть без них.";
   }
-  return `Часть медиа не собралась (${parts.join("; ")}). PDF может быть без них.`;
+  return `Часть медиа не собралась (${parts.join(", ")}). Документ может быть без них.`;
 }
 
 export function stageLabel(
@@ -106,7 +106,7 @@ export function stageLabel(
   if (mode !== "report") {
     return stageLabelForMode(stage, detail, mode);
   }
-  if (detail && stage === "charts") return `Рисую ${detail}…`;
+  if (detail && stage === "charts") return "Рисую график…";
   if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
   return "Генерирую документ…";
 }
@@ -314,7 +314,7 @@ export function imageChipFromHealth(health: {
   image_api_error?: string | null;
 } | null): { label: string; ok: boolean; hint: string } {
   if (!health) {
-    return { label: "Image · …", ok: false, hint: "проверка Image API…" };
+    return { label: "Image · …", ok: false, hint: "проверка сервиса изображений…" };
   }
   const configured =
     health.image_api_configured || health.kandinsky_configured;
@@ -322,17 +322,17 @@ export function imageChipFromHealth(health: {
     return {
       label: "Image · off",
       ok: false,
-      hint: "IMAGE_API_BASE_URL пуст — fig_* будут пропущены",
+      hint: "Генерация изображений отключена",
     };
   }
   if (health.image_api_ok) {
-    return { label: "Image · ok", ok: true, hint: "Image API отвечает" };
+    return { label: "Image · ok", ok: true, hint: "Сервис изображений отвечает" };
   }
   return {
     label: "Image · down",
     ok: false,
     hint:
       health.image_api_error ||
-      "Image API не отвечает — отчёт соберётся, фото могут пропуститься",
+      "Сервис изображений не отвечает — отчёт соберётся без фото",
   };
 }

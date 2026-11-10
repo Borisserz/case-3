@@ -22,7 +22,7 @@ export const FALLBACK_TYPES = [
 export const STAGE_LABELS: Record<string, string> = {
   queued: "В очереди…",
   llm: "Думаю над структурой…",
-  diagram_repair: "Уточняю схему по Source…",
+  diagram_repair: "Уточняю схему…",
   charts: "Рисую графики…",
   images: "Готовлю иллюстрации…",
   inject: "Вставляю рисунки в текст…",

@@ -148,7 +148,7 @@ def edit_diagram_in_run(
     figs_dir = out_dir / "figures"
     dest_png = figs_dir / f"{did}.png"
     meta = _load_meta(out_dir)
-    palette = str(meta.get("image_style_pack") or "atelier")
+    palette = str(meta.get("chart_palette") or meta.get("image_style_pack") or "atelier")
     png_rendered = False
     try:
         from case3.slides_media import render_mermaid_png
@@ -262,6 +262,30 @@ def regenerate_diagrams_in_run(
     fj["diagrams"] = diagrams
     _save_fj(out_dir, fj)
 
+    # Re-render PNGs in figures/ for PDF/DOCX and twin presentation
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    rendered_paths: dict[str, Path] = {}
+    for d in diagrams:
+        did = str(d.get("id") or "").strip()
+        mmd = str(d.get("mermaid") or "").strip()
+        if not did or not mmd:
+            continue
+        dest_png = figs_dir / f"{did}.png"
+        try:
+            from case3.slides_media import render_mermaid_png
+
+            render_mermaid_png(
+                mermaid=mmd,
+                dest=dest_png,
+                palette=palette,
+                theme_pack=palette,
+            )
+            if dest_png.is_file() and dest_png.stat().st_size > 0:
+                rendered_paths[did] = dest_png
+        except Exception:
+            log.warning("failed to re-render PNG for regenerated diagram %s", did, exc_info=True)
+
     meta_path = out_dir / "meta.json"
     if meta_path.is_file():
         from case3.run_meta import update_meta
@@ -270,8 +294,16 @@ def regenerate_diagrams_in_run(
             m["diagrams_planned"] = [d["id"] for d in diagrams]
             m["diagrams_ok"] = len(diagrams)
             m["diagrams_repaired"] = repaired
+            med = dict(m.get("media_status") or {})
+            for did, p in rendered_paths.items():
+                med[did] = {"ok": True, "path": str(p), "kind": "diagram"}
+            m["media_status"] = med
 
         update_meta(out_dir, _mut_dia_regen)
+
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
 
     return {
         "diagrams": diagrams,

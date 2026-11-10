@@ -174,8 +174,8 @@ async () => {
   if (wantsPhotos && health && !imageChip.ok) {
     setToast(
       health.image_api_configured || health.kandinsky_configured
-        ? "Image API не отвечает — отчёт соберу, фото fig_* могут пропуститься"
-        : "Image API не настроен — слоты fig_* будут пропущены",
+        ? "Сервис изображений не отвечает — соберу без фото"
+        : "Генерация изображений отключена",
     );
     window.setTimeout(() => setToast(null), 5200);
   }

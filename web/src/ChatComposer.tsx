@@ -97,12 +97,12 @@ export function ChatComposer({
   const galleryRef = useRef<HTMLDivElement>(null);
   const placeholder =
     workMode === "diagram"
-      ? "Опишите процесс или вставьте Source для схемы…"
+      ? "Опишите процесс или прикрепите текст для схемы…"
       : workMode === "presentation"
-        ? "Вставьте Source или коротко опишите задачу…"
+        ? "Прикрепите материал или коротко опишите задачу…"
         : sourceDraft || file
           ? "Спросить Liber…"
-          : "Опишите отчёт или вставьте Source…";
+          : "Опишите отчёт или прикрепите материал…";
 
   useEffect(() => {
     if (!showPackPresets) return;

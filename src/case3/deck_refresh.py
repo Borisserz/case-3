@@ -24,10 +24,21 @@ def refresh_deck_from_ir(out_dir: Path) -> bool:
     if not isinstance(deck, dict):
         return False
     try:
-        from case3.paths import repo_root
         from case3.slides_job import rebuild_slides_from_deck
 
-        rebuild_slides_from_deck(out_dir.name, deck, root=repo_root())
+        root = None
+        if out_dir.parent.name == "out" and out_dir.parent.parent.name == "runs":
+            root = out_dir.parent.parent.parent
+        else:
+            from case3.run_store import ROOT
+            root = ROOT
+
+        rebuild_slides_from_deck(
+            out_dir.name,
+            deck,
+            root=root,
+            preserve_structure=True,
+        )
         return True
     except Exception as exc:  # noqa: BLE001
         log.warning("deck refresh skipped: %s", exc)

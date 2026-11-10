@@ -152,7 +152,7 @@ export function ThinkingFold({
   const waitBit = llmWait
     ? " · жду модель"
     : repairWait
-      ? " · уточняю Mermaid"
+      ? " · уточняю схему"
       : "";
   const title = craftFrozen
     ? "Остановлено"
@@ -245,33 +245,30 @@ export function ThinkingFold({
                   </span>
                   <span className="thinking-fold-text">
                     {step.label}
-                    {step.state === "skipped" && step.reason
-                      ? ` — ${step.reason}`
-                      : ""}
                     {step.state === "active" &&
                     !craftFrozen &&
                     typeof shownSec === "number"
                       ? ` · ${formatMmSs(shownSec)}`
                       : ""}
                   </span>
-                  {step.substeps && step.substeps.length > 0 ? (
+                  {step.substeps &&
+                  step.substeps.filter((s) => s.status !== "skipped").length > 0 ? (
                     <ul className="thinking-fold-sublist">
-                      {step.substeps.map((sub) => (
-                        <li
-                          key={sub.id}
-                          className={`thinking-fold-sub is-${sub.status}`}
-                        >
-                          <span className="thinking-fold-mark" aria-hidden>
-                            {markFor(sub.status, { animate: !craftFrozen })}
-                          </span>
-                          <span className="thinking-fold-text">
-                            {sub.label}
-                            {sub.status === "skipped" && sub.reason
-                              ? ` — ${sub.reason}`
-                              : ""}
-                          </span>
-                        </li>
-                      ))}
+                      {step.substeps
+                        .filter((s) => s.status !== "skipped")
+                        .map((sub) => (
+                          <li
+                            key={sub.id}
+                            className={`thinking-fold-sub is-${sub.status}`}
+                          >
+                            <span className="thinking-fold-mark" aria-hidden>
+                              {markFor(sub.status, { animate: !craftFrozen })}
+                            </span>
+                            <span className="thinking-fold-text">
+                              {sub.label}
+                            </span>
+                          </li>
+                        ))}
                     </ul>
                   ) : null}
                 </li>

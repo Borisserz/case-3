@@ -225,6 +225,38 @@
   flex-shrink: 0;
   margin-left: auto;
 }
+.presentation-header-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px 4px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: color-mix(in srgb, var(--paper, var(--sheet)) 88%, var(--rule));
+}
+.presentation-hdr-arrow {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.presentation-hdr-arrow:not(:disabled):hover {
+  background: color-mix(in srgb, var(--primary) 14%, var(--sheet));
+}
+.presentation-hdr-arrow:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
 .presentation-chrome-tools {
   display: flex;
   align-items: center;

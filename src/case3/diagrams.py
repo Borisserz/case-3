@@ -236,7 +236,7 @@ def sanitize_mermaid(text: str) -> str:
     if len(raw) > _MAX_BODY:
         raise DiagramError(f"mermaid too long ({len(raw)} > {_MAX_BODY})")
     # Mermaid accepts `graph` as alias of flowchart — normalize for Liber + type gate.
-    raw = re.sub(r"(?i)^graph(\s+)", r"flowchart\1", raw, count=1)
+    raw = re.sub(r"(?im)^(\s*)graph(\s+)", r"\1flowchart\2", raw, count=1)
     raw = _CLICK_LINE.sub("", raw)
     raw = _repair_class_assign_lines(raw)
     raw = _repair_sequence_diagram_lines(raw)
@@ -246,9 +246,28 @@ def sanitize_mermaid(text: str) -> str:
     return raw
 
 
+def first_meaningful_line(mermaid: str) -> str:
+    """Return the first non-empty, non-comment line, skipping frontmatter blocks."""
+    lines = (mermaid or "").splitlines()
+    in_frontmatter = False
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if stripped == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if in_frontmatter:
+            continue
+        if stripped.startswith("%%"):
+            continue
+        return stripped
+    return ""
+
+
 def _first_keyword(mermaid: str) -> str:
-    line = (mermaid or "").lstrip().splitlines()[0] if mermaid else ""
-    m = _FIRST_TOKEN.match(line.strip())
+    line = first_meaningful_line(mermaid)
+    m = _FIRST_TOKEN.match(line)
     return (m.group(1) if m else "").lower()
 
 

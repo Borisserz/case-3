@@ -54,6 +54,33 @@ def test_parse_repair_response_accepts_json_fence() -> None:
     assert "{" in items[0]["mermaid"]
 
 
+def test_parse_repair_response_accepts_array_and_single_object() -> None:
+    # 1. Bare JSON array
+    raw_array = json.dumps([
+        {
+            "id": "dia_01",
+            "title": "Онбординг",
+            "type": "flowchart",
+            "mermaid": "flowchart TD\n  A[Заявка] --> B[Готово]",
+        }
+    ])
+    items = parse_repair_response(raw_array, max_diagrams=2)
+    assert len(items) == 1
+    assert items[0]["id"] == "dia_01"
+
+    # 2. Single diagram object
+    raw_single = json.dumps({
+        "id": "dia_02",
+        "title": "Схема",
+        "type": "flowchart",
+        "mermaid": "flowchart LR\n  X --> Y",
+    })
+    items2 = parse_repair_response(raw_single, max_diagrams=2)
+    assert len(items2) == 1
+    assert items2[0]["id"] == "dia_02"
+
+
+
 def test_repair_soft_fails_to_draft_on_empty_llm() -> None:
     draft = [
         {

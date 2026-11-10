@@ -207,6 +207,12 @@ def paint_deck_chart_html(out_dir: Path, html: str, chart_type: str | None) -> s
         apply_pack_category_colors_to_html,
     )
 
+    if chart_type == "kpi" or 'class="kpi"' in html:
+        foil = series[0]
+        muted = series[1] if len(series) > 1 else "#64748B"
+        res = re.sub(r'--kpi-value\s*:\s*[^;]+;', f'--kpi-value:{foil};', html)
+        return re.sub(r'--kpi-label\s*:\s*[^;]+;', f'--kpi-label:{muted};', res)
+
     painted = apply_hex_series_to_html(sanitize_chart_html(html), series)
     return apply_pack_category_colors_to_html(
         painted, series, chart_type=chart_type or None
@@ -225,15 +231,18 @@ def preview_chart_html(
     Style notes from the edit sheet are deferred until Apply — they need the LLM.
     """
     _fj, chart, _idx = _load_chart_from_run(out_dir, chart_id)
-    palette_id = normalize_palette_id(palette or "atelier")
+    stored = str(chart.get("palette") or "").strip()
+    effective_palette = (palette or "").strip() or stored or "editorial"
+    palette_id = normalize_palette_id(effective_palette)
     current_type = str(chart.get("type") or "").strip()
     want_type = (chart_type or "").strip() or current_type
     new_html, final_type, modes = _local_restyle_html(
         chart, palette_id=palette_id, want_type=want_type
     )
-    stored = str(chart.get("palette") or "")
-    chosen = palette_id not in ("", "auto") and palette_id != stored
-    if not chart.get("style_user") and not chosen:
+    user_style = bool(chart.get("style_user")) or (
+        bool(palette) and palette not in ("", "auto") and palette_id != stored
+    )
+    if not user_style:
         new_html = paint_deck_chart_html(out_dir, new_html, final_type)
     return {
         "chart_id": chart_id,
@@ -266,7 +275,9 @@ def edit_chart_in_run(
     charts = list(fj.get("charts") or [])
     html = str(chart.get("html") or "").strip()
 
-    palette_id = normalize_palette_id(palette or "editorial")
+    stored_palette = str(chart.get("palette") or "").strip()
+    effective_palette = (palette or "").strip() or stored_palette or "editorial"
+    palette_id = normalize_palette_id(effective_palette)
     style_notes = (style or "").strip()
     current_type = str(chart.get("type") or "").strip()
     want_type = (chart_type or "").strip() or current_type
@@ -356,19 +367,21 @@ def edit_chart_in_run(
         new_html = apply_kpi_palette_vars(new_html, palette_id)
     if new_html:
         new_html = harden_chart_html(new_html, final_type)
-    stored_palette = str(chart.get("palette") or "")
+    stored_palette = str(chart.get("palette") or "").strip()
     user_style = bool(chart.get("style_user")) or bool(style_notes) or (
-        palette_id not in ("", "auto") and palette_id != stored_palette
+        bool(palette) and palette not in ("", "auto") and palette_id != stored_palette
     )
     if new_html and not user_style:
         new_html = paint_deck_chart_html(out_dir, new_html, final_type)
     chart["html"] = new_html
     chart["type"] = final_type
     # G2: persist so Liber edit sheet seeds this figure's palette next open.
-    if palette_id and palette_id != "auto":
-        chart["palette"] = palette_id
     if user_style:
+        if palette_id and palette_id != "auto":
+            chart["palette"] = palette_id
         chart["style_user"] = True
+    elif stored_palette:
+        chart["palette"] = stored_palette
     from case3.slides_chart_data import attach_series_ir
 
     attach_series_ir(chart)
@@ -388,6 +401,15 @@ def edit_chart_in_run(
 
         clear_undo(out_dir)
         raise ChartEditError(f"chart render failed: {exc}") from exc
+
+    # Invalidate stale slide chart cache so download_slide_media serves fresh figure immediately
+    stale_slide_chart = out_dir / "slides" / "charts" / f"{chart_id}.png"
+    if stale_slide_chart.is_file():
+        try:
+            stale_slide_chart.unlink()
+        except OSError:
+            pass
+
     fj_path = out_dir / "figures.json"
     fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -492,6 +514,13 @@ def recolor_all_charts_in_run(
         chart["palette"] = palette_id
         chart["html"] = new_html
         chart["style_user"] = True
+
+        stale_slide_chart = out_dir / "slides" / "charts" / f"{cid}.png"
+        if stale_slide_chart.is_file():
+            try:
+                stale_slide_chart.unlink()
+            except OSError:
+                pass
 
         png_path = figs_dir / f"{cid}.png"
         if render_chart_png is not _DEFAULT_RENDER_CHART_PNG:

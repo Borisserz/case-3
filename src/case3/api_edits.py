@@ -55,7 +55,7 @@ router = APIRouter(tags=["edits"])
 
 
 class ChartEditBody(BaseModel):
-    palette: str | None = Field(default="atelier")
+    palette: str | None = Field(default=None)
     style: str | None = Field(default="")
     chart_type: str | None = Field(default="")
     formats: str = Field(default="both")
@@ -64,7 +64,7 @@ class ChartEditBody(BaseModel):
 class ChartPreviewBody(BaseModel):
     """Local live preview (palette + type coerce). Style notes deferred to Apply."""
 
-    palette: str | None = Field(default="atelier")
+    palette: str | None = Field(default=None)
     chart_type: str | None = Field(default="")
 
 
@@ -78,7 +78,7 @@ class DiagramEditBody(BaseModel):
 
 
 class DiagramRegenBody(BaseModel):
-    palette: str | None = Field(default="atelier")
+    palette: str | None = Field(default=None)
 
 
 class DiagramRefineBody(BaseModel):
@@ -245,7 +245,15 @@ async def refine_run_diagram(
     if not instr:
         raise HTTPException(400, detail="укажите, что изменить в схеме")
     out_dir = resolve_run_dir(run_id)
-    palette = normalize_palette_id(body.palette or "atelier")
+    meta_path = out_dir / "meta.json"
+    run_meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            run_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except OSError:
+            pass
+    default_palette = str(run_meta.get("chart_palette") or run_meta.get("image_style_pack") or "atelier")
+    palette = normalize_palette_id(body.palette or default_palette)
     fmt_set = formats_from_edit_body(body.formats)
     try:
         diagram = await asyncio.to_thread(
@@ -322,7 +330,15 @@ async def regenerate_run_diagrams(
 ) -> dict[str, Any]:
     """Full LLM regenerate of diagrams[] (+ repair). No TeX/PDF."""
     out_dir = resolve_run_dir(run_id)
-    palette = normalize_palette_id((body.palette if body else None) or "atelier")
+    meta_path = out_dir / "meta.json"
+    run_meta: dict[str, Any] = {}
+    if meta_path.is_file():
+        try:
+            run_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except OSError:
+            pass
+    default_palette = str(run_meta.get("chart_palette") or run_meta.get("image_style_pack") or "atelier")
+    palette = normalize_palette_id((body.palette if body else None) or default_palette)
     try:
         result = await asyncio.to_thread(
             partial(
@@ -352,12 +368,12 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
     out_dir = resolve_run_dir(run_id)
     fmt_set = formats_from_edit_body(body.formats)
 
-    palette = normalize_palette_id(body.palette)
+    palette = normalize_palette_id(body.palette) if body.palette else None
     style = (body.style or "").strip()
     chart_type = (body.chart_type or "").strip()
     if chart_type and chart_type not in CHART_TYPES:
         raise HTTPException(400, detail=f"unknown chart_type: {chart_type}")
-    if palette == "auto" and not style and not chart_type:
+    if (palette == "auto" or (not palette and not style and not chart_type)):
         raise HTTPException(400, detail="укажите палитру, тип или текст «как изменить»")
 
     try:

@@ -275,8 +275,10 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
     """
     if not mermaid or not isinstance(mermaid, str):
         return None
+    from case3.diagrams import first_meaningful_line
+
     raw = mermaid.strip()
-    first_line = raw.splitlines()[0].strip() if raw.splitlines() else ""
+    first_line = first_meaningful_line(raw)
     head_match = _RE_FLOWCHART.match(first_line)
     if not head_match:
         return None
@@ -402,9 +404,12 @@ def parse_mermaid_timeline(mermaid: str) -> TimelineSpec | None:
     """Parse Mermaid timeline diagram syntax into TimelineSpec."""
     if not mermaid or not isinstance(mermaid, str):
         return None
-    lines = [ln.strip() for ln in mermaid.strip().splitlines() if ln.strip()]
-    if not lines or not re.match(r"^timeline\b", lines[0], re.IGNORECASE):
+    from case3.diagrams import first_meaningful_line
+
+    first_line = first_meaningful_line(mermaid)
+    if not re.match(r"^timeline\b", first_line, re.IGNORECASE):
         return None
+    lines = [ln.strip() for ln in mermaid.strip().splitlines() if ln.strip()]
 
     spec = TimelineSpec()
     curr_period: TimelinePeriod | None = None

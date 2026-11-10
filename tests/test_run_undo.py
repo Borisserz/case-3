@@ -125,3 +125,74 @@ def test_stack_cap_drops_oldest(tmp_path: Path) -> None:
         (out / "report.tex").write_text(f"% v{i}\n", encoding="utf-8")
     meta = undo_meta(out)
     assert meta["depth"] == MAX_UNDO_DEPTH
+
+
+def test_presentation_chart_and_slide_undo_refreshes_deck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "out" / "run_deck_undo"
+    _seed_run(out)
+    slides_dir = out / "slides"
+    slides_dir.mkdir(parents=True)
+    deck_v0 = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "chart_hero", "title": "Chart V0", "chart_id": "cht_01"},
+        ],
+    }
+    (slides_dir / "deck.json").write_text(json.dumps(deck_v0), encoding="utf-8")
+    charts_dir = slides_dir / "charts"
+    charts_dir.mkdir(parents=True)
+    (charts_dir / "cht_01.png").write_bytes(b"SLIDE_CHART_V0")
+
+    refreshed_runs: list[Path] = []
+
+    def _fake_refresh(out_path: Path) -> bool:
+        refreshed_runs.append(Path(out_path))
+        return True
+
+    monkeypatch.setattr("case3.deck_refresh.refresh_deck_from_ir", _fake_refresh)
+
+    # 1. Capture before chart edit
+    capture_before_edit(out, kind="chart", target="cht_01")
+    assert undo_meta(out)["can_undo"] is True
+
+    # 2. Mutate chart in run
+    deck_v1 = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "ocean",
+        "slides": [
+            {"id": "s01", "layout": "chart_hero", "title": "Chart V1", "chart_id": "cht_01"},
+        ],
+    }
+    (slides_dir / "deck.json").write_text(json.dumps(deck_v1), encoding="utf-8")
+    (charts_dir / "cht_01.png").write_bytes(b"SLIDE_CHART_V1")
+    (out / "figures.json").write_text(json.dumps({"charts": [{"id": "cht_01", "palette": "ocean"}]}), encoding="utf-8")
+
+    # 3. Apply undo (even with rebuild=False!)
+    info = apply_undo(out, rebuild=False)
+    assert info.get("deck_refreshed") is True
+    assert len(refreshed_runs) == 1
+
+    # Verify files restored
+    restored_deck = json.loads((slides_dir / "deck.json").read_text(encoding="utf-8"))
+    assert restored_deck["palette"] == "atelier"
+    assert restored_deck["slides"][0]["title"] == "Chart V0"
+    assert (charts_dir / "cht_01.png").read_bytes() == b"SLIDE_CHART_V0"
+
+    meta = undo_meta(out)
+    assert meta["can_undo"] is False
+    assert meta["can_redo"] is True
+
+    # 4. Apply redo
+    info_redo = apply_redo(out, rebuild=False)
+    assert info_redo.get("deck_refreshed") is True
+    assert len(refreshed_runs) == 2
+
+    redone_deck = json.loads((slides_dir / "deck.json").read_text(encoding="utf-8"))
+    assert redone_deck["palette"] == "ocean"
+    assert redone_deck["slides"][0]["title"] == "Chart V1"
+

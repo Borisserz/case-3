@@ -68,10 +68,10 @@ function deckStageLabel(stage?: string | null): string {
     case "charts":
       return "Готовлю графики и медиа";
     case "render":
-      return "Рисую twin-превью";
+      return "Рисую слайды";
     case "pptx":
     case "pdf":
-      return "Собираю editable PPTX";
+      return "Собираю презентацию";
     case "patch":
       return "Сохраняю правки";
     default:
@@ -97,7 +97,7 @@ function deckStepIndex(stage?: string | null): number {
 }
 
 function DeckBuildCard({ stage }: { stage?: string | null }) {
-  const steps = ["Структура", "Медиа", "Twin", "PPTX"] as const;
+  const steps = ["Структура", "Медиа", "Слайды", "Презентация"] as const;
   const idx = deckStepIndex(stage);
   return (
     <div className="deck-build-card" aria-busy="true">

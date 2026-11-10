@@ -16,7 +16,6 @@ const DiagramVisualEditor = lazy(() =>
 import { isSupportedFlowchartSubset } from "./diagramIr";
 import { diagramTypeLabel } from "./diagramLabels";
 import { nodeIdsForRole, parseDiagramLegend } from "./diagramLegend";
-import { formatMetricChip, parseDiagramMetrics } from "./diagramMetrics";
 import {
   downloadDiagramPng,
   downloadDiagramSvg,
@@ -63,10 +62,6 @@ export function DiagramPane({
 
   const legend = useMemo(
     () => parseDiagramLegend(mermaidSrc),
-    [mermaidSrc],
-  );
-  const metrics = useMemo(
-    () => parseDiagramMetrics(mermaidSrc),
     [mermaidSrc],
   );
   const typeRu = diagramTypeLabel(diagram?.type);
@@ -278,8 +273,7 @@ export function DiagramPane({
             <p className="diagram-pane-eyebrow">Схема</p>
             <h3 className="diagram-pane-title">Схема не собралась</h3>
             <p className="diagram-pane-empty-hint muted">
-              Можно запросить новый вариант из того же Source — или отправить
-              запрос снова.
+              Можно запросить новый вариант или отправить запрос снова.
             </p>
           </div>
           <div className="diagram-pane-actions">
@@ -333,12 +327,6 @@ export function DiagramPane({
         <div className="diagram-pane-hero-text">
           <p className="diagram-pane-eyebrow">
             <span className="diagram-pane-type">{typeRu}</span>
-            <span className="diagram-pane-dot" aria-hidden>
-              ·
-            </span>
-            <span>
-              {metrics.length > 0 ? "с метриками · SVG/PNG" : "Liber · SVG/PNG"}
-            </span>
           </p>
           <h3 className="diagram-pane-title">{diagram.title}</h3>
         </div>
@@ -472,42 +460,6 @@ export function DiagramPane({
           onNodeDblClick={(id) => openEditor(id)}
         />
       </div>
-
-      {metrics.length > 0 ? (
-        <div className="diagram-metrics" aria-label="Метрики из Source">
-          <p className="diagram-metrics-eyebrow">Числа на схеме</p>
-          <p className="diagram-metrics-hint">
-            В блоке — сколько на этапе (шт). На стрелке — доля (%) или отвал
-            (шт). Только из Source.
-          </p>
-          <ul className="diagram-metrics-list">
-            {metrics.map((m) => {
-              const chip = formatMetricChip(m);
-              return (
-                <li key={`${m.entity}-${m.metric}-${m.fromEdge ? "e" : "n"}`}>
-                  <button
-                    type="button"
-                    className={`diagram-metrics-chip${m.fromEdge ? " is-edge" : ""}`}
-                    title={
-                      m.fromEdge
-                        ? "Метрика на стрелке"
-                        : m.nodeId
-                          ? "Открыть блок в редакторе"
-                          : undefined
-                    }
-                    onClick={() => {
-                      if (m.nodeId) openEditor(m.nodeId);
-                    }}
-                  >
-                    <span className="diagram-metrics-entity">{chip.entity}</span>
-                    <span className="diagram-metrics-value">{chip.metric}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : null}
 
       {legend.length > 0 ? (
         <ul className="diagram-legend is-interactive" aria-label="Легенда ролей">

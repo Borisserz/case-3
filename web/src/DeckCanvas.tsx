@@ -323,7 +323,7 @@ function MediaSlot({
   children?: ReactNode;
 }) {
   const img = mediaUrl(runId, mediaId, version);
-  const live = Boolean(previewHtml && mediaId?.startsWith("cht_"));
+  const live = Boolean(previewHtml && open && mediaId?.startsWith("cht_"));
   const diagram = Boolean(diagramMermaid && mediaId?.startsWith("dia_"));
   const effectiveId = mediaId || "usr_01";
   const kind = mediaKind(effectiveId);

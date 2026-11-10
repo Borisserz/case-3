@@ -393,3 +393,48 @@ def test_sanitize_mermaid_sequence_diagram_quotes_spaced_participants() -> None:
     assert 'participant "Менеджер по логистике" as Логист' in out
     assert 'participant АОН as Оператор' in out
 
+
+def test_parse_diagrams_preserves_diagram_with_leading_comment() -> None:
+    raw = "%% комментарий перед диаграммой\nflowchart TD\n  A[Начало] --> B[Конец]"
+    parsed = parse_diagrams([{"id": "dia_01", "type": "flowchart", "mermaid": raw}], max_diagrams=1)
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == "dia_01"
+
+
+def test_parse_diagrams_preserves_diagram_with_frontmatter() -> None:
+    raw = "---\ntitle: Тест\n---\nflowchart LR\n  A --> B"
+    parsed = parse_diagrams([{"id": "dia_01", "type": "flowchart", "mermaid": raw}], max_diagrams=1)
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == "dia_01"
+
+
+def test_parse_diagrams_preserves_diagram_with_init_directive() -> None:
+    raw = "%%{init: {'theme': 'base'}}%%\nsequenceDiagram\n  Alice->>Bob: Hello"
+    parsed = parse_diagrams([{"id": "dia_01", "type": "sequence", "mermaid": raw}], max_diagrams=1)
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == "dia_01"
+
+
+def test_ensure_role_classdefs_with_leading_comment() -> None:
+    from case3.diagram_style import ensure_role_classdefs
+
+    raw = "%% Comment\nflowchart TD\n  A[Старт]:::start --> B[Шаг]:::process"
+    out = ensure_role_classdefs(raw, palette="ocean")
+    assert "classDef start" in out
+    assert "classDef process" in out
+
+
+def test_pptx_parsers_support_leading_comments() -> None:
+    from case3.slides_pptx_diagrams import parse_mermaid_flowchart, parse_mermaid_timeline
+
+    fc = "%% comment\nflowchart TD\n  A[Заявка] --> B[Одобрено]"
+    graph = parse_mermaid_flowchart(fc)
+    assert graph is not None
+    assert "A" in graph.nodes
+
+    tl = "%% timeline comment\ntimeline\n  title Хронология\n  2024 : Старт : Релиз"
+    spec = parse_mermaid_timeline(tl)
+    assert spec is not None
+    assert len(spec.periods) >= 1
+
+

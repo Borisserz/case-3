@@ -19,6 +19,7 @@ import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
+import { IconUndo, IconRedo } from "./icons";
 const DiagramVisualEditor = lazy(() =>
   import("./DiagramVisualEditor").then((m) => ({
     default: m.DiagramVisualEditor,
@@ -246,17 +247,28 @@ export function PresentationPane({
         diagrams,
       });
     }
+    if (gBody.undo) {
+      onEditHistory?.(
+        parseEditHistory(
+          gBody.undo as Parameters<typeof parseEditHistory>[0],
+        ),
+      );
+    }
     setMediaVersion(Date.now());
-  }, [diagrams, onDeckUpdated, runId]);
+  }, [diagrams, onDeckUpdated, onEditHistory, runId]);
 
   const historyUndo = useCallback(async () => {
     await onHistoryUndo?.();
     await refreshSlidesNow();
+    setSaveFlash(true);
+    window.setTimeout(() => setSaveFlash(false), 1200);
   }, [onHistoryUndo, refreshSlidesNow]);
 
   const historyRedo = useCallback(async () => {
     await onHistoryRedo?.();
     await refreshSlidesNow();
+    setSaveFlash(true);
+    window.setTimeout(() => setSaveFlash(false), 1200);
   }, [onHistoryRedo, refreshSlidesNow]);
 
   // Safety net: rail opened with pptx downloads but empty twin/deck (old status).
@@ -308,7 +320,7 @@ export function PresentationPane({
     async (optimisticDeck?: DeckIR) => {
       if (optimisticDeck) setDeck(optimisticDeck);
       let done = false;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 120; i++) {
         await new Promise((res) => setTimeout(res, 500));
         const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
         const gBody = await g.json().catch(() => ({}));
@@ -406,9 +418,53 @@ export function PresentationPane({
   useEffect(() => {
     if (full) return;
     const onKey = (e: KeyboardEvent) => {
+      // Escape blurs active text input so single-key hotkeys work immediately
+      if (e.key === "Escape") {
+        if (
+          typeof document !== "undefined" &&
+          document.activeElement instanceof HTMLElement &&
+          (document.activeElement.classList.contains("deck-ed") ||
+            document.activeElement.tagName === "INPUT" ||
+            document.activeElement.tagName === "TEXTAREA")
+        ) {
+          document.activeElement.blur();
+        }
+        return;
+      }
+      // PageUp / PageDown and Alt+Arrows always navigate slides, even when focused in an input
+      if (e.key === "PageUp" || (e.altKey && e.key === "ArrowLeft")) {
+        e.preventDefault();
+        go(-1);
+        return;
+      }
+      if (e.key === "PageDown" || (e.altKey && e.key === "ArrowRight")) {
+        e.preventDefault();
+        go(1);
+        return;
+      }
+      // Undo / Redo in presentation editing (catches Cmd+Z / Ctrl+Z cleanly, even if inside an input)
+      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (
+          typeof document !== "undefined" &&
+          document.activeElement instanceof HTMLElement &&
+          (document.activeElement.classList.contains("deck-ed") ||
+            document.activeElement.tagName === "INPUT" ||
+            document.activeElement.tagName === "TEXTAREA")
+        ) {
+          document.activeElement.blur();
+        }
+        if (e.shiftKey) void historyRedo();
+        else void historyUndo();
+        return;
+      }
       const hasModal =
         typeof document !== "undefined" &&
-        Boolean(document.querySelector(".modal-backdrop, [role='dialog']"));
+        Boolean(
+          document.querySelector(
+            ".modal-backdrop, [role='dialog']:not(.artifact-rail-backdrop)",
+          ),
+        );
       if (shouldIgnoreDeckHotkey(e.target, hasModal)) return;
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === "ArrowRight") {
@@ -416,7 +472,7 @@ export function PresentationPane({
         go(1);
       }
       if (e.metaKey || e.ctrlKey || e.altKey) {
-        // fall through to undo/redo below; no plain-letter shortcuts with modifiers
+        // no plain-letter shortcuts with modifiers
       } else if ((e.key === "g" || e.key === "G") && slidePngs.length > 0) {
         setView("grid");
         if (editing) void leaveEdit();
@@ -433,11 +489,6 @@ export function PresentationPane({
         setView("slide");
         if (editing) void leaveEdit();
         else setEditing(true);
-      }
-      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) void historyRedo();
-        else void historyUndo();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -541,6 +592,7 @@ export function PresentationPane({
             body: JSON.stringify({
               chart_type: req.chartType,
               palette: req.palette,
+              style: req.styleNotes,
             }),
           },
         );
@@ -552,7 +604,14 @@ export function PresentationPane({
               : `chart edit ${res.status}`,
           );
         }
-        setMediaVersion((v) => v + 1);
+        if (data.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              data.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
+        setMediaVersion(Date.now());
         await refreshSlidesNow();
         closeMediaSheet();
       } catch (err) {
@@ -561,7 +620,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [closeMediaSheet, onEditFigure, refreshSlidesNow, runId],
+    [closeMediaSheet, onEditFigure, onEditHistory, refreshSlidesNow, runId],
   );
 
   const submitImage = useCallback(
@@ -598,7 +657,14 @@ export function PresentationPane({
               : `image edit ${res.status}`,
           );
         }
-        setMediaVersion((v) => v + 1);
+        if (data.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              data.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
+        setMediaVersion(Date.now());
         await refreshSlidesNow();
         closeMediaSheet();
       } catch (err) {
@@ -607,7 +673,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [closeMediaSheet, onEditImage, refreshSlidesNow, runId],
+    [closeMediaSheet, onEditHistory, onEditImage, refreshSlidesNow, runId],
   );
 
   const submitImageUpload = useCallback(
@@ -637,7 +703,14 @@ export function PresentationPane({
               : `upload failed (${res.status})`,
           );
         }
-        setMediaVersion((v) => v + 1);
+        if (data.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              data.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
+        setMediaVersion(Date.now());
         await refreshSlidesNow();
         closeMediaSheet();
       } catch (err) {
@@ -646,7 +719,7 @@ export function PresentationPane({
         setImageUploading(false);
       }
     },
-    [closeMediaSheet, openMediaId, refreshSlidesNow, runId],
+    [closeMediaSheet, onEditHistory, openMediaId, refreshSlidesNow, runId],
   );
 
   const openDiagram = diagrams.find((d) => d.id === openMediaId) || null;
@@ -696,6 +769,13 @@ export function PresentationPane({
             return [...rest, saved];
           });
         }
+        if (data.undo) {
+          onEditHistory?.(
+            parseEditHistory(
+              data.undo as Parameters<typeof parseEditHistory>[0],
+            ),
+          );
+        }
         const reb = await fetch(
           `/api/runs/${encodeURIComponent(runId)}/slides/rebuild`,
           { method: "POST" },
@@ -716,7 +796,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [closeMediaSheet, openMediaId, runId, waitPatchRebuild],
+    [closeMediaSheet, onEditHistory, openMediaId, runId, waitPatchRebuild],
   );
 
   const structureOp = useCallback(
@@ -727,7 +807,7 @@ export function PresentationPane({
       layout?: string;
     }) => {
       if (!deck?.slides?.length) {
-        setSaveError("Нет IR деки — соберите презентацию");
+        setSaveError("Нет данных презентации — соберите презентацию");
         return;
       }
       setSaving(true);
@@ -864,10 +944,10 @@ export function PresentationPane({
         case "charts":
           return "Готовлю графики и медиа";
         case "render":
-          return "Рисую twin-превью";
+          return "Рисую слайды";
         case "pptx":
         case "pdf":
-          return "Собираю editable PPTX";
+          return "Собираю презентацию";
         default:
           return making && !stage ? "Запускаю сборку" : "Собираю презентацию";
       }
@@ -899,7 +979,7 @@ export function PresentationPane({
             <span className="presentation-pending-stage">{stageLabel}</span>
           </p>
           <ol className="presentation-pending-steps" aria-label="Этапы">
-            {["IR", "Media", "Twin", "PPTX"].map((label, i) => (
+            {["Структура", "Медиа", "Слайды", "Презентация"].map((label, i) => (
               <li
                 key={label}
                 className={
@@ -1051,7 +1131,7 @@ export function PresentationPane({
                 disabled={!editHistory?.canUndo || saving}
                 onClick={() => void historyUndo()}
               >
-                ←
+                <IconUndo size={14} />
               </button>
               <button
                 type="button"
@@ -1061,7 +1141,7 @@ export function PresentationPane({
                 disabled={!editHistory?.canRedo || saving}
                 onClick={() => void historyRedo()}
               >
-                →
+                <IconRedo size={14} />
               </button>
             </div>
           ) : null}
@@ -1075,11 +1155,41 @@ export function PresentationPane({
           </button>
         </div>
         <div className="presentation-chrome-actions">
-          {n > 0 ? (
+          {n > 1 ? (
+            <div
+              className="presentation-header-nav"
+              role="group"
+              aria-label="Переключение слайдов"
+            >
+              <button
+                type="button"
+                className="presentation-hdr-arrow"
+                onClick={() => go(-1)}
+                disabled={saving}
+                title="Предыдущий слайд (←, PageUp, Alt+←)"
+                aria-label="Предыдущий слайд"
+              >
+                ‹
+              </button>
+              <span className="deck-slides-film-count" aria-live="polite">
+                {safeIdx + 1}
+                <span aria-hidden> / </span>
+                {n}
+              </span>
+              <button
+                type="button"
+                className="presentation-hdr-arrow"
+                onClick={() => go(1)}
+                disabled={saving}
+                title="Следующий слайд (→, PageDown, Alt+→)"
+                aria-label="Следующий слайд"
+              >
+                ›
+              </button>
+            </div>
+          ) : n === 1 ? (
             <span className="deck-slides-film-count" aria-live="polite">
-              {safeIdx + 1}
-              <span aria-hidden> / </span>
-              {n}
+              1 / 1
             </span>
           ) : null}
         </div>
@@ -1180,7 +1290,7 @@ export function PresentationPane({
                         ?.mermaid ||
                       null
                     }
-                    diagramPalette={defaultPalette}
+                    diagramPalette={deck?.palette || defaultPalette}
                   />
                 ) : currentPng ? (
                   <img
@@ -1215,7 +1325,7 @@ export function PresentationPane({
                         ?.mermaid ||
                       null
                     }
-                    diagramPalette={defaultPalette}
+                    diagramPalette={deck?.palette || defaultPalette}
                   />
                 ) : null}
               </motion.div>
@@ -1229,7 +1339,7 @@ export function PresentationPane({
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {saving ? "Сохраняю в PPTX…" : "Сохранено · twin + PPTX"}
+                  {saving ? "Сохраняю…" : "Сохранено"}
                 </motion.div>
               )}
               {saveError ? (
@@ -1252,8 +1362,7 @@ export function PresentationPane({
             </AnimatePresence>
             {live ? (
               <p className="presentation-font-honesty">
-                PPTX использует шрифты темы; twin в Liber может отличаться (как у
-                Julius).
+                Шрифты и разметка в скачанном файле PPTX могут незначительно отличаться от веб-превью.
               </p>
             ) : null}
           </div>
@@ -1463,7 +1572,9 @@ export function PresentationPane({
             palettes={palettes}
             catalogTypes={catalogTypes}
             initialPalette={
-              (openMediaId && chartIndex[openMediaId]?.palette) || defaultPalette
+              (openMediaId && chartIndex[openMediaId]?.palette) ||
+              deck?.palette ||
+              defaultPalette
             }
             initialType={(openMediaId && chartIndex[openMediaId]?.type) || ""}
             busy={editingFigureId === openMediaId || saving}
@@ -1536,7 +1647,7 @@ export function PresentationPane({
             diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
               ?.mermaid || null
           }
-          diagramPalette={defaultPalette}
+          diagramPalette={deck?.palette || defaultPalette}
         />
       ) : null}
 

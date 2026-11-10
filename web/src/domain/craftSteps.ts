@@ -34,7 +34,7 @@ export type CraftStepState = CraftStep & {
 };
 
 const REPORT: CraftStep[] = [
-  { id: "source", label: "Читаю Source" },
+  { id: "source", label: "Изучаю материал" },
   // llm stage — waiting on Qwen, NOT TeX print (that is «Печатаю PDF»)
   { id: "layout", label: "Пишу текст" },
   { id: "charts", label: "Рисую графики" },
@@ -44,15 +44,15 @@ const REPORT: CraftStep[] = [
 ];
 
 const DIAGRAM: CraftStep[] = [
-  { id: "source", label: "Читаю Source" },
+  { id: "source", label: "Изучаю материал" },
   // llm — waiting on Qwen (often minutes); not local Mermaid render
   { id: "layout", label: "Пишу схему" },
   { id: "pdf", label: "Отдаю в чат" },
 ];
 
 const PRESENTATION: CraftStep[] = [
-  { id: "source", label: "Читаю Source" },
-  { id: "layout", label: "Пишу каркас дека" },
+  { id: "source", label: "Изучаю материал" },
+  { id: "layout", label: "Пишу структуру слайдов" },
   { id: "charts", label: "Рисую графики" },
   { id: "photos", label: "Собираю медиа" },
   { id: "slides_plan", label: "План слайдов" },
@@ -330,9 +330,24 @@ export function upsertCraftSubstep(
     step.status === "done" || step.status === "skipped"
       ? step.status
       : "active";
+  let label = (step.label || "").trim();
+  if (!label || /^cht_\d+$/i.test(label) || /^fig_\d+$/i.test(label) || /^dia_\d+$/i.test(label)) {
+    if (/^cht_(\d+)$/i.test(step.id)) {
+      const num = parseInt(step.id.replace(/^cht_/i, ""), 10);
+      label = num ? `График ${num}` : "График";
+    } else if (/^fig_(\d+)$/i.test(step.id)) {
+      const num = parseInt(step.id.replace(/^fig_/i, ""), 10);
+      label = num ? `Иллюстрация ${num}` : "Иллюстрация";
+    } else if (/^dia_(\d+)$/i.test(step.id)) {
+      const num = parseInt(step.id.replace(/^dia_/i, ""), 10);
+      label = num ? `Схема ${num}` : "Схема";
+    } else {
+      label = label || step.id;
+    }
+  }
   const row: CraftSubstep = {
     id: step.id,
-    label: (step.label || step.id).trim() || step.id,
+    label,
     status,
     reason: step.reason || undefined,
   };

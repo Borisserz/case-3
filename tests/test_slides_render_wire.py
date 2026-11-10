@@ -63,3 +63,35 @@ def test_chart_split_copies_chart_png(tmp_path: Path, monkeypatch) -> None:
     assert 'src="media.png"' in html
     assert "Chart unavailable" not in html
     assert "unavailable" not in html.lower() or "Chart unavailable" not in html
+
+
+def test_render_deck_pngs_cleans_stale_pngs(tmp_path: Path, monkeypatch) -> None:
+    def _fake_capture(html_dir: Path, dest_png: Path) -> None:
+        dest_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x01" * 2400)
+
+    monkeypatch.setattr("case3.slides_render.capture_slide_png", _fake_capture)
+
+    out = tmp_path / "out"
+    out.mkdir(parents=True)
+    # Pre-existing 5 slides
+    for i in range(1, 6):
+        (out / f"slide_{i:02d}.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x01" * 2400)
+
+    # Now deck only has 3 slides
+    deck = {
+        "version": 1,
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "1"},
+            {"id": "s02", "layout": "bullets", "title": "2"},
+            {"id": "s03", "layout": "closing", "title": "3"},
+        ],
+    }
+    pngs = render_deck_pngs(
+        deck,
+        work_root=tmp_path / "work",
+        out_dir=out,
+    )
+    assert len(pngs) == 3
+    remaining = sorted(p.name for p in out.glob("slide_*.png"))
+    assert remaining == ["slide_01.png", "slide_02.png", "slide_03.png"]
+

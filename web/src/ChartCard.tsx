@@ -52,7 +52,6 @@ export function ChartCard({
               ))}
             </ul>
           ) : null}
-          <p className="chart-card-ui-source">числа из Source</p>
         </header>
       ) : null}
       <div className="chart-card-ui-viz">{children}</div>

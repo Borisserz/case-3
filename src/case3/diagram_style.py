@@ -200,8 +200,9 @@ def ensure_role_classdefs(
 ) -> str:
     """Add or retheme role classDefs so a flowchart matches the target palette/pack."""
     text = mermaid or ""
-    head = text.lstrip().splitlines()[:1]
-    first = head[0].lower() if head else ""
+    from case3.diagrams import first_meaningful_line
+
+    first = first_meaningful_line(text).lower()
     if not first.startswith("flowchart") and not first.startswith("graph"):
         return text
     colors = role_colors_for_palette(palette)

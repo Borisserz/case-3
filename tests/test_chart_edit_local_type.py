@@ -230,3 +230,49 @@ def test_edit_preview_keeps_the_deck_triad(tmp_path: Path) -> None:
     out = paint_deck_chart_html(tmp_path, html, "bar")
     assert "#E15759" not in out.upper()
     assert "#1B3A4B" in out.upper() or "#3D8B84" in out.upper()
+
+
+def test_edit_chart_omitted_palette_preserves_chart_palette(tmp_path: Path) -> None:
+    out = _seed_run(tmp_path)
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    fj["charts"][0]["palette"] = "ocean"
+    (out / "figures.json").write_text(json.dumps(fj), encoding="utf-8")
+
+    # Calling edit without palette must preserve "ocean", not force "editorial"
+    result = edit_chart_in_run(out, "cht_01", chart_type="line", formats=set())
+    fj_after = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert fj_after["charts"][0]["palette"] == "ocean"
+    assert result.get("palette") == "ocean" or "palette" not in result
+
+
+def test_preview_and_edit_consistency_for_deck_chart(tmp_path: Path) -> None:
+    out = _seed_run(tmp_path)
+    slides = out / "slides"
+    slides.mkdir()
+    (slides / "deck.json").write_text(
+        json.dumps({"style": {"chart_series": ["#226496", "#D96B43", "#2A8C72"]}}),
+        encoding="utf-8",
+    )
+    # 1. Preview without changing palette (keeps deck pack triad)
+    prev = preview_chart_html(out, "cht_01", palette="editorial", chart_type="donut")
+    assert "#226496" in prev["html"].upper()
+
+    # 2. Apply without changing palette (must also keep deck pack triad, not force editorial)
+    edit_chart_in_run(out, "cht_01", palette="editorial", chart_type="donut", formats=set())
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    chart_html = fj["charts"][0]["html"]
+    assert "#226496" in chart_html.upper()
+
+
+def test_paint_deck_chart_html_supports_kpi(tmp_path: Path) -> None:
+    slides = tmp_path / "slides"
+    slides.mkdir()
+    (slides / "deck.json").write_text(
+        json.dumps({"style": {"chart_series": ["#0072B2", "#E69F00"]}}),
+        encoding="utf-8",
+    )
+    kpi_html = '<div class="kpi" style="--kpi-value:#D62828;--kpi-label:#666666;"><span class="v">100</span></div>'
+    out = paint_deck_chart_html(tmp_path, kpi_html, "kpi")
+    assert "#0072B2" in out.upper()
+    assert "#D62828" not in out.upper()
+

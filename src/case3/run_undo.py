@@ -190,6 +190,12 @@ def _rel_files_to_snapshot(out: Path) -> list[str]:
             p = slides / name
             if p.is_file():
                 rels.append(f"slides/{name}")
+        for sub in ("charts", "diagrams"):
+            sub_dir = slides / sub
+            if sub_dir.is_dir():
+                for png in sorted(sub_dir.glob("*.png")):
+                    if png.is_file() and png.stat().st_size > 0:
+                        rels.append(f"slides/{sub}/{png.name}")
     return rels
 
 
@@ -299,6 +305,14 @@ def _maybe_rebuild(out: Path, info: dict[str, Any], *, rebuild: bool) -> None:
             except RenderError as exc:
                 log.warning("undo restore ok but rebuild failed: %s", exc)
                 info["rebuild_error"] = str(exc)
+
+    # Deck refresh: Always run if deck.json exists and either rebuild was requested
+    # OR the undone/redone edit touched slides, charts, figures, or diagrams.
+    kind = str(info.get("kind") or "")
+    is_deck_touching = kind.startswith(
+        ("slides", "chart", "diagram", "fig", "image", "usr", "cht", "batch_recolor")
+    )
+    if (out / "slides" / "deck.json").is_file() and (rebuild or is_deck_touching):
         try:
             from case3.deck_refresh import refresh_deck_from_ir
 
@@ -307,6 +321,7 @@ def _maybe_rebuild(out: Path, info: dict[str, Any], *, rebuild: bool) -> None:
         except Exception as exc:  # noqa: BLE001
             log.warning("undo restore ok but deck refresh failed: %s", exc)
             info["deck_refresh_error"] = str(exc)
+
     info["artifacts"] = {k: str(v) for k, v in artifacts.items()} if artifacts else {}
 
 

@@ -315,6 +315,7 @@ def get_slides(run_id: str) -> dict[str, Any]:
         if isinstance(mode, str) and mode.strip():
             deck_pdf_mode = mode.strip()
     patch_active = is_slides_patch_active(run_id)
+    from case3.run_undo import undo_meta
     return {
         "run_id": run_id,
         "slides_status": "running" if patch_active else (meta.get("slides_status") or "idle"),
@@ -331,6 +332,7 @@ def get_slides(run_id: str) -> dict[str, Any]:
         "deck_pdf_mode": deck_pdf_mode,
         "charts": _chart_index(out_dir),
         "diagrams": run_store.load_diagrams_from_out(out_dir),
+        "undo": undo_meta(out_dir),
     }
 
 
@@ -377,7 +379,7 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             log.exception("slides patch meta write failed run_id=%s", run_id)
 
         try:
-            rebuild_slides_from_deck(run_id, deck, root=run_store.ROOT)
+            rebuild_slides_from_deck(run_id, deck, root=run_store.ROOT, preserve_structure=True)
         except RunCancelled:
             log.info("slides patch cancelled run_id=%s", run_id)
             with _slides_patch_lock:
@@ -647,6 +649,22 @@ def download_slide_media(run_id: str, name: str) -> FileResponse:
     if not name.lower().endswith(".png") or not FILE_OK.match(name):
         raise HTTPException(400, detail="invalid media name")
     out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+
+    # If figure was newly edited in figures/, prefer it over stale slides/charts/
+    try:
+        fig_path = safe_run_file(run_id, "figures", name)
+    except HTTPException:
+        fig_path = None
+    try:
+        slide_chart_path = safe_run_file(run_id, "slides", "charts", name)
+    except HTTPException:
+        slide_chart_path = None
+
+    if fig_path is not None and slide_chart_path is not None:
+        if fig_path.stat().st_mtime >= slide_chart_path.stat().st_mtime:
+            return FileResponse(fig_path, media_type="image/png", filename=fig_path.name)
+        return FileResponse(slide_chart_path, media_type="image/png", filename=slide_chart_path.name)
+
     for parts in (
         ("slides", "charts", name),
         ("slides", "diagrams", name),

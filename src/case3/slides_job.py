@@ -1047,12 +1047,12 @@ def _materialize_deck_artifacts(
     raise_if_cancelled(out_dir)
     # Julius path: LO-convert native PPTX → PDF; PNG stitch if soffice missing.
     _, pdf_mode = write_deck_pdf(tmp_pptx, pngs, tmp_pdf)
-    tmp_pptx.replace(pptx_path)
-    tmp_pdf.replace(pdf_path)
+    actual_pptx = _safe_replace_artifact(tmp_pptx, pptx_path)
+    actual_pdf = _safe_replace_artifact(tmp_pdf, pdf_path)
 
     meta["slides_artifacts"] = {
-        "pptx": pptx_path.name,
-        "deck_pdf": pdf_path.name,
+        "pptx": actual_pptx.name,
+        "deck_pdf": actual_pdf.name,
         "deck_pdf_mode": pdf_mode,
         "ir": "slides/deck.json",
         "png_count": len(pngs),
@@ -1060,11 +1060,39 @@ def _materialize_deck_artifacts(
     _set_slides(out_dir, meta, status="ok", stage="ok", logs_dir=logs_dir)
 
 
+def _safe_replace_artifact(src: Path, dest: Path) -> Path:
+    """Atomically replace dest with src, with Windows retry & fallback on PermissionError."""
+    import time
+
+    for attempt in range(4):
+        try:
+            src.replace(dest)
+            return dest
+        except PermissionError as exc:
+            if attempt < 3:
+                time.sleep(0.3 * (2**attempt))
+                continue
+            log.warning(
+                "cannot overwrite %s (file locked/open on Windows): %s",
+                dest.name,
+                exc,
+            )
+            fallback = dest.with_name(f"{dest.stem}_v{int(time.time())}{dest.suffix}")
+            try:
+                src.replace(fallback)
+                log.info("saved locked slide artifact to fallback %s", fallback.name)
+                return fallback
+            except Exception:
+                raise exc
+    return dest
+
+
 def rebuild_slides_from_deck(
     run_id: str,
     deck: dict[str, Any],
     *,
     root: Path | None = None,
+    preserve_structure: bool = False,
 ) -> dict[str, Any]:
     """Re-render PPTX + twin PNGs/PDF from an already-validated deck IR (no LLM)."""
     root = Path(root) if root is not None else _repo_root()
@@ -1088,23 +1116,24 @@ def rebuild_slides_from_deck(
             if isinstance(ch, dict) and ch.get("id")
         }
         ensure_deck_charts(deck, {}, titles=chart_titles)
-        hidden_sources = schema_source_ids(fj_rebuild.get("diagrams") or [])
-        photo_ids = ensure_deck_photos(
-            deck,
-            [
-                fig
-                for fig in (fj_rebuild.get("figures") or [])
-                if isinstance(fig, dict)
-                and str(fig.get("id") or "") in png_by_id
-                and str(fig.get("id") or "") not in hidden_sources
-            ],
-        )
-        ensure_deck_diagrams(
-            deck,
-            [d for d in (fj_rebuild.get("diagrams") or []) if isinstance(d, dict)],
-        )
-        if photo_ids:
-            meta["slides_photo_injected"] = photo_ids
+        if not preserve_structure:
+            hidden_sources = schema_source_ids(fj_rebuild.get("diagrams") or [])
+            photo_ids = ensure_deck_photos(
+                deck,
+                [
+                    fig
+                    for fig in (fj_rebuild.get("figures") or [])
+                    if isinstance(fig, dict)
+                    and str(fig.get("id") or "") in png_by_id
+                    and str(fig.get("id") or "") not in hidden_sources
+                ],
+            )
+            ensure_deck_diagrams(
+                deck,
+                [d for d in (fj_rebuild.get("diagrams") or []) if isinstance(d, dict)],
+            )
+            if photo_ids:
+                meta["slides_photo_injected"] = photo_ids
     palette = normalize_palette_id(str(meta.get("chart_palette") or "atelier"))
     if palette == "auto":
         palette = "atelier"

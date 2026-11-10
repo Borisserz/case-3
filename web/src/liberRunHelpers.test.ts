@@ -14,15 +14,15 @@ import {
 
 describe("liberRunHelpers", () => {
   it("stageLabel charts detail", () => {
-    assert.equal(stageLabel("charts", "cht_01"), "Рисую cht_01…");
+    assert.equal(stageLabel("charts", "cht_01"), "Рисую график…");
     assert.equal(stageLabel("latex"), "Собираю PDF…");
   });
 
   it("stageLabel scales by thinking mode", () => {
     assert.match(stageLabel("llm", null, "diagram"), /схем/i);
-    assert.match(stageLabel("diagram_repair", null, "diagram"), /Source|схем/i);
+    assert.match(stageLabel("diagram_repair", null, "diagram"), /схем/i);
     assert.match(stageLabel("llm", null, "presentation"), /слайд/i);
-    assert.match(stageLabel("slides_render", null, "presentation"), /twin|превью/i);
+    assert.match(stageLabel("slides_render", null, "presentation"), /слайд/i);
   });
 
   it("reportReadyText prefers chat_summary", () => {
@@ -50,7 +50,7 @@ describe("liberRunHelpers", () => {
         failed_charts: ["cht_01"],
         failed_figures: [],
       }) || "",
-      /график.*cht_01/,
+      /график/,
     );
     assert.equal(softMediaFailToast({ warnings: [] }), null);
   });

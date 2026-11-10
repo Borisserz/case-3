@@ -23,6 +23,24 @@ const stroke = {
   strokeLinejoin: "round" as const,
 };
 
+export function IconUndo(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M3 7v6h6" />
+      <path {...stroke} d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+    </svg>
+  );
+}
+
+export function IconRedo(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M21 7v6h-6" />
+      <path {...stroke} d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+    </svg>
+  );
+}
+
 export function IconPlus(p: IconProps) {
   return (
     <svg {...base(p)}>

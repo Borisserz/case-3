@@ -92,3 +92,7 @@ workers/*/.wrangler/
 *.fdb_latexmk
 *.synctex.gz
 *.xdv
+
+# Generated outputs
+pipeline_generations/
+

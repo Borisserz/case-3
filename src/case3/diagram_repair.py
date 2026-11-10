@@ -50,7 +50,9 @@ def looks_like_linear_slop(mermaid: str) -> bool:
     if _DECISION.search(src):
         return False
     # sequence / mindmap / timeline / state usually not this failure mode
-    head = src.splitlines()[0].strip().lower()
+    from case3.diagrams import first_meaningful_line
+
+    head = first_meaningful_line(src).lower()
     if head.startswith(("sequencediagram", "mindmap", "timeline", "statediagram")):
         return False
     labels = _RECT_NODE.findall(src)
@@ -71,18 +73,28 @@ def parse_repair_response(raw: str, *, max_diagrams: int) -> list[dict[str, Any]
     if m:
         body = m.group(1).strip()
     else:
-        # bare object
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            body = text[start : end + 1]
+        # Check if bare JSON array or object
+        s_arr = text.find("[")
+        e_arr = text.rfind("]")
+        s_obj = text.find("{")
+        e_obj = text.rfind("}")
+        if s_arr >= 0 and e_arr > s_arr and (s_obj < 0 or s_arr < s_obj):
+            body = text[s_arr : e_arr + 1]
+        elif s_obj >= 0 and e_obj > s_obj:
+            body = text[s_obj : e_obj + 1]
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
         log.warning("diagram_repair: invalid JSON")
         return []
+    if isinstance(data, list):
+        return parse_diagrams(data, max_diagrams=max_diagrams)
     if not isinstance(data, dict):
         return []
+    if "diagrams" in data and isinstance(data["diagrams"], list):
+        return parse_diagrams(data["diagrams"], max_diagrams=max_diagrams)
+    if "mermaid" in data:
+        return parse_diagrams([data], max_diagrams=max_diagrams)
     return parse_diagrams(data.get("diagrams"), max_diagrams=max_diagrams)
 
 

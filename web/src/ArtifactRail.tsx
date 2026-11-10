@@ -306,7 +306,7 @@ export function ArtifactRail({
   const displaySourceTitle =
     artifact.kind === "source" || artifact.kind === "intent"
       ? artifact.title
-      : sourceTitle || "Source";
+      : sourceTitle || "Текст";
   const sourceFileName =
     artifact.kind === "source" ? artifact.fileName : undefined;
 
@@ -345,7 +345,7 @@ export function ArtifactRail({
         label: slidesFilmTabLabel(),
         show: Boolean(hasSlidesFilmTab),
       },
-      { id: "source", label: "Source", show: hasSource },
+      { id: "source", label: "Текст", show: hasSource },
     ];
     return all.filter((t) => t.show);
   }, [
