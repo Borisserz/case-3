@@ -83,8 +83,6 @@ workers/*/.wrangler/
 *.pdf
 *.docx
 !assets/docx/reference.docx
-!test1.docx
-!test2.docx
 .DS_Store
 *.aux
 *.toc

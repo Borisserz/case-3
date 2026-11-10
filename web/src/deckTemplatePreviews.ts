@@ -556,17 +556,8 @@ export function previewSlidesFor(structureId: string): PreviewSlide[] {
 
 /** Must match PNG count under web/public/deck/previews/{id}/ (else broken ? thumbs). */
 export const PREMIUM_PREVIEW_COUNTS: Record<string, number> = {
-  board_update: 15,
-  performance: 15,
-  qbr: 15,
-  survey: 14,
   council: 15,
-  campaign: 14,
   quarter: 15,
-  investor: 14,
-  launch: 9,
-  workshop: 11,
-  hire: 8,
   board_classic: 15,
   performance_classic: 15,
   qbr_classic: 15,
@@ -580,11 +571,8 @@ const PREVIEW_CACHE_BUST = "20261106-all11-premium";
 
 /** Real rendered frames (Liber smoke or Julius-ref raster). Prefer over CSS mocks. */
 export function previewPngUrls(structureId: string): string[] {
-  const id = PREMIUM_PREVIEW_COUNTS[structureId]
-    ? structureId
-    : TEMPLATE_PREVIEW_SLIDES[structureId]
-      ? structureId
-      : "board_update";
+  const id =
+    structureId in PREMIUM_PREVIEW_COUNTS ? structureId : "board_classic";
   const n = PREMIUM_PREVIEW_COUNTS[id] ?? 6;
   return Array.from({ length: n }, (_, i) => i + 1).map(
     (k) =>
