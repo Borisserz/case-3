@@ -195,10 +195,10 @@
   min-width: 0;
 }
 .presentation-chrome-kicker {
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--muted);
 }
 .presentation-chrome-title {
@@ -213,10 +213,10 @@
   max-width: min(42vw, 22rem);
 }
 .presentation-chrome-meta {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   color: var(--muted);
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .presentation-chrome-actions {
   display: flex;

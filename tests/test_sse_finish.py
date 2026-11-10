@@ -68,6 +68,24 @@ def test_publish_does_not_touch_meta_file(tmp_path: Path) -> None:
     assert after == before
 
 
+def test_merge_durable_steps_appends_disk_tail_when_bus_is_partial() -> None:
+    """RAM is a live tail. meta.steps stays the prefix after a restart or a late join."""
+    bus = RunEventBus()
+    bus.start("rmerge")
+    bus.publish_stage("rmerge", "llm", scope="pipeline")
+    disk = [
+        {"event": "stage", "stage": "llm", "scope": "pipeline", "t": 1.0},
+        {"event": "stage", "stage": "charts", "scope": "pipeline", "t": 2.0},
+        {"event": "done", "status": "ok", "t": 3.0},
+    ]
+    added = bus.merge_durable_steps("rmerge", disk)
+    assert added == 2
+    events = list(bus.subscribe("rmerge", timeout_s=1.0))
+    assert [e["event"] for e in events] == ["stage", "stage", "done"]
+    assert [e.get("stage") for e in events[:2]] == ["llm", "charts"]
+    assert bus.merge_durable_steps("rmerge", disk) == 0
+
+
 def test_seed_events_from_steps_replays_into_bus() -> None:
     bus = RunEventBus()
     bus.start("rseed")

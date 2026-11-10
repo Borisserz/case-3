@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from case3 import run_store
-from case3.run_events import EVENTS, seed_events_from_steps
+from case3.run_events import EVENTS
 from case3.run_store import RUN_ID_OK
 from case3.summary_bus import BUS
 
@@ -37,10 +37,10 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
     async def gen():
         import time as _time
 
-        # Late join: seed bus from meta if empty (API restart / missed start).
+        # meta.steps[] is the prefix. RAM is only the live tail after that.
         snap = EVENTS.snapshot(run_id)
         meta_path = out_dir / "meta.json"
-        if meta_path.is_file() and snap.get("count", 0) == 0:
+        if meta_path.is_file():
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -50,6 +50,7 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
             st = str(meta.get("status") or "")
             stage = str(meta.get("stage") or "queued")
             detail = meta.get("stage_detail")
+            playable: list[Any] = []
             if durable:
                 # While still running, drop terminal entries so SSE stays open
                 # (pipeline may have logged done before slides reopen).
@@ -69,34 +70,31 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
                     )
                     else durable
                 )
-                seeded = seed_events_from_steps(EVENTS, run_id, playable)
-                if seeded and (
-                    st == "running"
-                    or (
-                        st == "ok"
-                        and str(meta.get("slides_status") or "")
-                        in {"running", "queued"}
-                    )
-                ):
-                    EVENTS.ensure(run_id)
-                    EVENTS.scan_artifacts(run_id, out_dir)
-                elif seeded and st in {"ok", "error", "cancelled"}:
-                    # Terminal already in seeded events — subscribe will flush & end.
-                    pass
-                elif st == "running":
-                    EVENTS.publish_stage(
-                        run_id,
-                        stage,
-                        detail=str(detail) if detail else None,
-                        scope="pipeline",
-                    )
-                    EVENTS.scan_artifacts(run_id, out_dir)
+                EVENTS.merge_durable_steps(run_id, playable)
+            # Follow-up stage/terminal only for an empty RAM bus (restart).
+            # A live bus already has the tail; merge above only fills gaps.
+            if snap.get("count", 0) != 0:
+                pass
+            elif playable and (
+                st == "running"
+                or (
+                    st == "ok"
+                    and str(meta.get("slides_status") or "") in {"running", "queued"}
+                )
+            ):
+                EVENTS.ensure(run_id)
+                EVENTS.scan_artifacts(run_id, out_dir)
+            elif playable and st in {"ok", "error", "cancelled"}:
+                pass
             elif st == "running":
                 EVENTS.publish_stage(
-                    run_id, stage, detail=str(detail) if detail else None, scope="pipeline"
+                    run_id,
+                    stage,
+                    detail=str(detail) if detail else None,
+                    scope="pipeline",
                 )
                 EVENTS.scan_artifacts(run_id, out_dir)
-            elif st in {"ok", "error", "cancelled"}:
+            elif st in {"ok", "error", "cancelled"} and not durable:
                 slides_st = str(meta.get("slides_status") or "idle")
                 out_mode = str(meta.get("output_mode") or "")
                 if st == "ok" and slides_st in {"running", "queued"}:
@@ -112,7 +110,6 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
                     and out_mode == "presentation"
                     and slides_st in {"idle", ""}
                 ):
-                    # Pipeline done; slides not kicked yet — keep SSE open.
                     EVENTS.ensure(run_id)
                     EVENTS.publish_stage(run_id, "pipeline_ok", scope="pipeline")
                     EVENTS.scan_artifacts(run_id, out_dir)

@@ -2,7 +2,8 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { modeSurfaces } from "./domain/liberModes";
+import { FALLBACK_PALETTES } from "./domain/liberConstants";
+import { LIBER_MODE_PILLS, modeSurfaces } from "./domain/liberModes";
 import {
   formatRunStatusError,
   isRunInFlight,
@@ -14,6 +15,22 @@ import {
   pipelineWatchKind,
   stageLabel,
 } from "./domain/runHelpers";
+
+describe("liber surface copy", () => {
+  it("presentation hint keeps diagrams on the deck", () => {
+    const presentation = LIBER_MODE_PILLS.find((p) => p.id === "presentation");
+    assert.equal(
+      presentation?.hint,
+      "Одна преза · PPTX и PDF — без отчёта, схемы на слайдах",
+    );
+  });
+
+  it("fallback sunset swatch is the chart palette, not purple", () => {
+    const sunset = FALLBACK_PALETTES.find((p) => p.id === "sunset");
+    assert.equal(sunset?.swatches[0], "#EE6677");
+    assert.equal(sunset?.swatches.includes("#4A154B"), false);
+  });
+});
 
 describe("liberRunHelpers", () => {
   it("stageLabel charts detail", () => {

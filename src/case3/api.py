@@ -66,6 +66,10 @@ def __getattr__(name: str):
 async def lifespan(app: FastAPI):
     from case3.render import warmup_docker
     warmup_docker(background=True)
+    try:
+        recover_persisted_pipeline()
+    except Exception:  # noqa: BLE001
+        log.exception("pipeline queue recover failed")
     yield
 
 
@@ -164,7 +168,6 @@ def health(fresh: str | bool | None = None) -> dict[str, Any]:
 
     vision_cfg, vision_live, vision_err = probe_vision()
     images_configured = image_api_configured()
-    image_base = (os.environ.get("IMAGE_API_BASE_URL") or os.environ.get("KANDINSKY_API_BASE_URL") or "").strip()
     image_live_ok = False
     image_live_err: str | None = None
     if images_configured:
@@ -187,9 +190,10 @@ def health(fresh: str | bool | None = None) -> dict[str, Any]:
         soffice_path=soffice_path,
         soffice_hint=soffice_hint,
     )
-    # ok = desk can run a report (Vision + Docker). Image red/amber does not block.
+    # ok = Docker image present and Vision answered. A configured-but-down
+    # model must not look ready. Image red/amber does not block.
     payload = {
-        "ok": docker_ok and vision_cfg,
+        "ok": bool(docker_ok and vision_live),
         "docker_image": IMAGE,
         "docker_ok": docker_ok,
         "docker_error": docker_err,
@@ -203,8 +207,6 @@ def health(fresh: str | bool | None = None) -> dict[str, Any]:
         # live probe (short timeout) — UI chip Image · ok / down
         "image_api_ok": bool(image_live_ok),
         "image_api_error": image_live_err,
-        # so Windows desk can verify .env without opening the file
-        "image_api_base_url": image_base or None,
         # alias for Liber UI that still reads kandinsky_configured
         "kandinsky_configured": images_configured,
         "soffice_ok": soffice_ok,
@@ -514,6 +516,11 @@ def _release_pipeline_slot(
                 return
         job = _PIPELINE_WAITER
         _PIPELINE_WAITER = None
+        if job is not None and _waiter_should_drop(job.run_id):
+            from case3.pipeline_queue import clear_waiter
+
+            clear_waiter(run_store.ROOT, run_id=job.run_id)
+            job = None
         if job is not None:
             spawn_gen = _stamp_owner(job.run_id)
         else:
@@ -563,8 +570,26 @@ def _commit_waiter(job: _PipelineJob) -> str:
             _stamp_owner(job.run_id)
             _PIPELINE_WAITER = None
             return "start"
+        from case3.pipeline_queue import save_waiter
+
+        save_waiter(run_store.ROOT, _job_payload(job))
         _PIPELINE_WAITER = job
         return "queued"
+
+
+def _job_payload(job: _PipelineJob) -> dict[str, Any]:
+    return {
+        "src_path": str(job.src_path),
+        "run_id": job.run_id,
+        "formats": sorted(job.formats),
+        "dry_run": job.dry_run,
+        "intent": job.intent,
+        "max_images": job.max_images,
+        "max_charts": job.max_charts,
+        "max_diagrams": job.max_diagrams,
+        "user_figures": list(job.user_figures or []),
+        "output_mode": job.output_mode,
+    }
 
 
 def _spawn_pipeline_thread(
@@ -574,19 +599,82 @@ def _spawn_pipeline_thread(
         slot_gen = _slot_generation()
     kwargs = job.kwargs()
     kwargs["slot_gen"] = slot_gen
+
+    def _run() -> None:
+        from case3.pipeline_queue import clear_waiter
+
+        clear_waiter(run_store.ROOT, run_id=job.run_id)
+        _bg_run_pipeline(**kwargs)
+
     threading.Thread(
-        target=_bg_run_pipeline,
-        kwargs=kwargs,
+        target=_run,
         name=f"case3-pipeline-{job.run_id}",
         daemon=True,
     ).start()
+
+
+def recover_persisted_pipeline() -> str | None:
+    """Start the on-disk waiter after a process restart. One slot, one job."""
+    from case3.pipeline_queue import clear_waiter, load_waiter
+
+    payload = load_waiter(run_store.ROOT)
+    if payload is None:
+        return None
+    run_id = str(payload["run_id"])
+    if _is_pipeline_thread_alive(run_id):
+        return None
+    meta = _read_run_meta(run_id)
+    if meta.get("status") != "queued" or meta.get("cancel_requested"):
+        clear_waiter(run_store.ROOT, run_id=run_id)
+        return None
+    if _claim_pipeline_slot(run_id) is not None:
+        return None
+    job = _PipelineJob(
+        src_path=Path(str(payload["src_path"])),
+        run_id=run_id,
+        formats=set(payload.get("formats") or []),
+        dry_run=bool(payload.get("dry_run")),
+        intent=str(payload.get("intent") or ""),
+        max_images=int(payload.get("max_images") or 0),
+        max_charts=int(payload.get("max_charts") or 0),
+        max_diagrams=int(payload.get("max_diagrams") or 0),
+        user_figures=list(payload.get("user_figures") or []),
+        output_mode=str(payload.get("output_mode") or "auto"),
+    )
+    _spawn_pipeline_thread(job)
+    return run_id
+
+
+def _waiter_should_drop(run_id: str) -> bool:
+    """A queued run that was cancelled or already finished must not start."""
+    meta = _read_run_meta(run_id)
+    if not meta:
+        return False
+    if meta.get("cancel_requested"):
+        return True
+    return str(meta.get("status") or "") in {"ok", "error", "cancelled"}
+
+
+def _read_run_meta(run_id: str) -> dict[str, Any]:
+    for path in (
+        run_store.ROOT / "runs" / "out" / run_id / "meta.json",
+        run_store.ROOT / "runs" / "logs" / run_id / "meta.json",
+    ):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
 
 
 def _busy_detail(active: str | None) -> str:
     holder = active or "busy"
     return (
         f"Уже идёт прогон {holder}, и один запрос уже ждёт. "
-        "Дождись конца или убей python.exe и перезапусти api.cmd."
+        "Дождись конца. Ожидающий запрос лежит на диске и продолжится после перезапуска API."
     )
 
 
@@ -722,6 +810,9 @@ async def api_run(
     mode = (photo_mode or "document").strip().lower()
     if mode not in {"document", "edit"}:
         raise HTTPException(400, detail="photo_mode must be document|edit")
+    if source_text and len(source_text.encode("utf-8")) > 2 * 1024 * 1024:
+        raise HTTPException(400, detail="source text too large (>2 MiB)")
+
     out_mode = (output_mode or "auto").strip().lower()
     if out_mode not in {"report", "diagram", "presentation", "auto"}:
         raise HTTPException(
@@ -968,6 +1059,11 @@ async def api_run(
         meta0["stage"] = "queued"
         meta0["stage_detail"] = waiting_detail
         meta0["waiting_for"] = waiting_for
+        from case3.run_events import note_craft_stage
+
+        note_craft_stage(
+            meta0, stage="queued", scope="pipeline", detail=waiting_detail
+        )
         payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
         write_meta_atomic(out_dir / "meta.json", payload0, logs_meta=logs_dir / "meta.json")
         EVENTS.start(run_id)
@@ -1180,27 +1276,28 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
-    # Soft media skips are internal; suppressed from user-facing warnings.
+    """One short line per soft-failed chart or figure. The report still ships."""
     media = meta.get("media_status") or {}
-    c_planned = meta.get("charts_planned") or []
-    if c_planned:
-        failed_c = [
-            cid
-            for cid in c_planned
-            if not (isinstance(media.get(cid), dict) and media[cid].get("ok"))
-        ]
-        if failed_c:
-            log.info("charts soft-failed/skipped: %s", ", ".join(failed_c))
-    planned = meta.get("figures_planned") or []
-    if planned and max_images > 0:
-        failed_f = [
-            fid
-            for fid in planned
-            if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
-        ]
-        if failed_f:
-            log.info("figures soft-failed/skipped: %s", ", ".join(failed_f))
-    return []
+    if not isinstance(media, dict):
+        media = {}
+    lines: list[str] = []
+    for cid in meta.get("charts_planned") or []:
+        slot = media.get(cid)
+        if isinstance(slot, dict) and slot.get("ok"):
+            continue
+        lines.append(f"График {cid} не собрался")
+    if max_images > 0:
+        for fid in meta.get("figures_planned") or []:
+            slot = media.get(fid)
+            if isinstance(slot, dict) and slot.get("ok"):
+                continue
+            lines.append(f"Рисунок {fid} не собрался")
+    if lines:
+        log.info("media soft-failed: %s", ", ".join(lines))
+    if len(lines) > 4:
+        extra = len(lines) - 3
+        lines = lines[:3] + [f"Ещё {extra} не собрались"]
+    return lines
 
 
 def datetime_stamp() -> str:
@@ -1240,12 +1337,41 @@ def _bg_resume_pipeline(run_id: str, slot_gen: int | None = None) -> None:
         meta = read_meta(out) or {}
         if str(meta.get("output_mode") or "").strip().lower() == "presentation":
             _auto_kick_presentation_slides(run_id)
-    except PipelineError:
+    except PipelineError as exc:
         log.exception("background resume failed run_id=%s", run_id)
-    except Exception:  # noqa: BLE001
+        _settle_resume_if_still_running(run_id, str(exc) or "resume failed")
+    except Exception as exc:  # noqa: BLE001
         log.exception("background resume crashed run_id=%s", run_id)
+        _settle_resume_if_still_running(run_id, str(exc) or "resume crashed")
     finally:
         _release_pipeline_slot(run_id, generation=slot_gen)
+
+
+def _settle_resume_if_still_running(run_id: str, message: str) -> None:
+    """A resume that died before writing meta must not leave status=running."""
+    from case3.run_meta import read_meta, update_meta
+
+    out = run_store.ROOT / "runs" / "out" / run_id
+    logs = run_store.ROOT / "runs" / "logs" / run_id
+    current = read_meta(out)
+    if str(current.get("status") or "") != "running":
+        return
+    text = (message or "resume crashed")[:500]
+
+    def _mut(meta: dict[str, Any]) -> None:
+        if str(meta.get("status") or "") != "running":
+            return
+        meta["status"] = "error"
+        meta["stage"] = "error"
+        meta["error"] = text
+
+    update_meta(out, _mut, logs_dir=logs)
+    try:
+        from case3.run_events import EVENTS
+
+        EVENTS.publish_terminal(run_id, "error", error=text)
+    except Exception:  # noqa: BLE001
+        log.exception("could not publish resume terminal run_id=%s", run_id)
 
 
 def _kick_resume_thread(run_id: str) -> None:

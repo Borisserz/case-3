@@ -11,6 +11,7 @@ from typing import Any
 log = logging.getLogger("case3.user_photos")
 
 _MAX_BYTES = 4 * 1024 * 1024
+_MAX_PIXELS = 16_000_000
 _MAX_COUNT = 5
 _NAME_OK = re.compile(r"^[a-zA-Z0-9._ -]{1,120}$")
 _NUMBERED = re.compile(r"^((?:\d+[.)]\s*)+)(.+)$")
@@ -89,9 +90,28 @@ def _is_jpeg(data: bytes) -> bool:
     return data[:3] == b"\xff\xd8\xff"
 
 
+def _pixel_size(data: bytes) -> tuple[int, int]:
+    from PIL import Image  # type: ignore
+
+    with Image.open(BytesIO(data)) as im:
+        return int(im.size[0]), int(im.size[1])
+
+
 def bytes_to_png(data: bytes) -> bytes:
     if len(data) > _MAX_BYTES:
         raise UserPhotoError(f"photo too large (>{_MAX_BYTES // (1024 * 1024)} MiB)")
+    if not (_is_png(data) or _is_jpeg(data)):
+        raise UserPhotoError("photo must be PNG or JPEG")
+    try:
+        width, height = _pixel_size(data)
+    except UserPhotoError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise UserPhotoError("photo must be PNG or JPEG") from exc
+    if width < 1 or height < 1 or width * height > _MAX_PIXELS:
+        raise UserPhotoError(
+            f"photo is too many pixels ({width}×{height}, max 16 MP)"
+        )
     if _is_png(data):
         return data
     if _is_jpeg(data):

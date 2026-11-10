@@ -1,6 +1,7 @@
 /** Liber Atelier — report limits + desk health (chart type/style live in edit sheet). */
 
 import { useEffect, useId, useRef } from "react";
+import { FALLBACK_PALETTES } from "./domain/liberConstants";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type DeskProbeSnapshot = {
@@ -42,6 +43,8 @@ type Props = {
   onForbidCharts: (v: boolean) => void;
   forbidImages: boolean;
   onForbidImages: (v: boolean) => void;
+  /** From `/api/health` chart_palettes. Falls back to the offline catalog. */
+  palettes?: Array<{ id: string; label: string; swatches: string[] }>;
   chartPalette?: string;
   onChartPalette?: (p: string) => void;
   dryRun: boolean;
@@ -49,18 +52,6 @@ type Props = {
   health: HealthSnapshot | null;
   paradeHint: string;
 };
-
-const PALETTE_OPTIONS: Array<{
-  id: string;
-  label: string;
-  swatches: string[];
-}> = [
-  { id: "atelier", label: "Atelier", swatches: ["#1E3A2F", "#D4A373", "#CCD5AE", "#FAEDCD"] },
-  { id: "editorial", label: "Editorial", swatches: ["#1A202C", "#2B6CB0", "#C53030", "#DD6B20"] },
-  { id: "ocean", label: "Ocean", swatches: ["#1A365D", "#2B6CB0", "#319795", "#4FD1C5"] },
-  { id: "sunset", label: "Sunset", swatches: ["#4A154B", "#DD6B20", "#D69E2E", "#E53E3E"] },
-  { id: "mono", label: "Mono", swatches: ["#111827", "#4B5563", "#9CA3AF", "#D1D5DB"] },
-];
 
 export function SettingsModal({
   open,
@@ -78,6 +69,7 @@ export function SettingsModal({
   onForbidCharts,
   forbidImages,
   onForbidImages,
+  palettes,
   chartPalette = "atelier",
   onChartPalette,
   dryRun,
@@ -231,7 +223,9 @@ export function SettingsModal({
               Палитра графиков по умолчанию
             </h3>
             <div className="settings-palette-grid">
-              {PALETTE_OPTIONS.map((pal) => {
+              {(palettes?.length ? palettes : FALLBACK_PALETTES)
+                .filter((pal) => pal.id !== "auto")
+                .map((pal) => {
                 const selected = (chartPalette || "atelier") === pal.id;
                 return (
                   <button

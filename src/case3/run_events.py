@@ -138,6 +138,33 @@ def write_meta_atomic(
                 pass
 
 
+def _durable_key(ev: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        str(ev.get("event") or ""),
+        str(ev.get("stage") or ""),
+        str(ev.get("scope") or ""),
+        str(ev.get("parent") or ""),
+        str(ev.get("id") or ""),
+        str(ev.get("status") or ""),
+        str(ev.get("detail") or ""),
+    )
+
+
+def _normalize_steps(steps: list[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for raw in steps:
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("event") or "")
+        if kind not in {"stage", "step", "done", "error", "cancelled"}:
+            continue
+        ev = dict(raw)
+        if "t" not in ev:
+            ev["t"] = time.time()
+        out.append(ev)
+    return out
+
+
 def seed_events_from_steps(
     bus: RunEventBus,
     run_id: str,
@@ -235,25 +262,39 @@ class RunEventBus:
     def seed_from_steps(self, run_id: str, steps: list[Any]) -> int:
         """Load meta.steps into an empty in-memory bus (no re-persist)."""
         st = self._state(run_id)
-        n = 0
+        normalized = _normalize_steps(steps)
         with st.cond:
             if st.events:
                 return 0
-            for raw in steps:
-                if not isinstance(raw, dict):
-                    continue
-                kind = str(raw.get("event") or "")
-                if kind not in {"stage", "step", "done", "error", "cancelled"}:
-                    continue
-                ev = dict(raw)
-                if "t" not in ev:
-                    ev["t"] = time.time()
-                st.events.append(ev)
-                if kind in {"done", "error", "cancelled"}:
-                    st.done = True
-                    st.terminal = kind
-                    st.finished_at = float(ev.get("t") or time.time())
-                n += 1
+            return self._append_steps_locked(st, normalized)
+
+    def merge_durable_steps(self, run_id: str, steps: list[Any]) -> int:
+        """Append meta.steps the RAM bus does not already have.
+
+        Disk is the prefix. Live events that are not in the file stay in place.
+        Nothing is written back to meta.json.
+        """
+        st = self._state(run_id)
+        normalized = _normalize_steps(steps)
+        with st.cond:
+            if not st.events:
+                return self._append_steps_locked(st, normalized)
+            have = {_durable_key(ev) for ev in st.events}
+            missing = [ev for ev in normalized if _durable_key(ev) not in have]
+            return self._append_steps_locked(st, missing)
+
+    def _append_steps_locked(self, st: _RunEvents, steps: list[dict[str, Any]]) -> int:
+        """Caller holds ``st.cond``."""
+        n = 0
+        for ev in steps:
+            st.events.append(ev)
+            kind = str(ev.get("event") or "")
+            if kind in {"done", "error", "cancelled"}:
+                st.done = True
+                st.terminal = kind
+                st.finished_at = float(ev.get("t") or time.time())
+            n += 1
+        if n:
             st.cond.notify_all()
         return n
 

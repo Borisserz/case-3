@@ -401,7 +401,7 @@ export default function App() {
   });
 
   const healthReady = Boolean(
-    health?.vision_configured && health?.docker_ok && health?.playwright_ok,
+    health?.vision_ok && health?.docker_ok && health?.playwright_ok,
   );
 
   const plaqueDraft = sourceDraft
@@ -990,6 +990,7 @@ export default function App() {
         onForbidCharts={setForbidCharts}
         forbidImages={forbidImages}
         onForbidImages={setForbidImages}
+        palettes={palettes}
         chartPalette={chartPalette}
         onChartPalette={(p) => {
           setChartPalette(p);
@@ -1003,7 +1004,7 @@ export default function App() {
         onDryRun={setDryRun}
         health={health}
         paradeHint={
-          health?.vision_configured && health?.docker_ok
+          health?.vision_ok && health?.docker_ok
             ? `Готово: ${paradeHint}`
             : `Сейчас: ${paradeHint}`
         }

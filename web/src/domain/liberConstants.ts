@@ -39,6 +39,6 @@ export const FALLBACK_PALETTES: PaletteInfo[] = [
   { id: "atelier", label: "Atelier", swatches: ["#2E4208", "#4F6B14", "#7A9A28", "#B8D45A"] },
   { id: "editorial", label: "Editorial", swatches: ["#0F3D3E", "#F07A3A", "#2EC4B6", "#E8B84A"] },
   { id: "ocean", label: "Ocean", swatches: ["#0B4F8C", "#1E8AD4", "#2EC4E0", "#5ED4F0"] },
-  { id: "sunset", label: "Sunset", swatches: ["#8B2E4A", "#F04545", "#FF8C2A", "#F0C040"] },
+  { id: "sunset", label: "Sunset", swatches: ["#EE6677", "#CCBB44", "#4477AA", "#228833"] },
   { id: "mono", label: "Mono", swatches: ["#1A1F28", "#3A4250", "#8B939E", "#B0B6BE"] },
 ];

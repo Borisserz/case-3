@@ -27,6 +27,21 @@ _PNG = base64.b64decode(
 )
 
 
+def test_bytes_to_png_rejects_huge_pixel_count(monkeypatch) -> None:
+    class _Huge:
+        size = (10_000, 10_000)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("PIL.Image.open", lambda *_a, **_k: _Huge())
+    with pytest.raises(UserPhotoError, match="pixel"):
+        bytes_to_png(_PNG)
+
+
 def test_save_and_materialize(tmp_path: Path) -> None:
     figs = save_user_photos(tmp_path, [("shot.png", _PNG)], captions=["Мой кадр"])
     assert figs[0]["id"] == "usr_01"
