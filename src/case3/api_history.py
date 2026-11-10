@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,27 +26,46 @@ def _history_path() -> Path:
     return run_store.ROOT / "runs" / _HISTORY_FILE
 
 
+_history_lock = threading.Lock()
+
+
 def _load_user_history() -> dict[str, Any]:
     hp = _history_path()
     if not hp.is_file():
         return {"pinned": [], "folders": [], "item_folders": {}}
-    try:
-        data = json.loads(hp.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return data
-    except (OSError, json.JSONDecodeError):
-        pass
+    with _history_lock:
+        for attempt in range(4):
+            try:
+                data = json.loads(hp.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+            except (OSError, json.JSONDecodeError):
+                time.sleep(0.02 * (attempt + 1))
     return {"pinned": [], "folders": [], "item_folders": {}}
 
 
 def _save_user_history(data: dict[str, Any]) -> None:
     hp = _history_path()
     hp.parent.mkdir(parents=True, exist_ok=True)
-    temp_p = hp.with_suffix(".tmp")
-    temp_p.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    temp_p.replace(hp)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    with _history_lock:
+        temp_p = hp.with_suffix(".tmp")
+        last_err: OSError | None = None
+        for attempt in range(6):
+            try:
+                temp_p.write_text(payload, encoding="utf-8")
+                temp_p.replace(hp)
+                last_err = None
+                break
+            except OSError as exc:
+                last_err = exc
+                time.sleep(0.04 * (attempt + 1))
+        if last_err is not None:
+            # Fallback for Windows file lock / anti-virus handle collisions
+            try:
+                hp.write_text(payload, encoding="utf-8")
+            except OSError as fallback_err:
+                log.warning("failed to save history: %s (fallback: %s)", last_err, fallback_err)
 
 
 def _parse_timestamp(raw: str | None, fallback: float) -> int:

@@ -1101,8 +1101,11 @@
 }
 
 .report-fig-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+  min-height: 180px;
   padding: 0;
   margin: 0;
   border-radius: var(--radius-sm);

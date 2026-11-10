@@ -983,8 +983,11 @@ export function ReportBody({
                       });
                       onOpenMediaId?.(null);
                     }}
-                    onSubmit={(req) => {
-                      void onEditFigure(req);
+                    onSubmit={async (req) => {
+                      const ok = await onEditFigure(req);
+                      if (ok) {
+                        onOpenMediaId?.(null);
+                      }
                     }}
                     onDelete={
                       onDeleteFigure
@@ -1006,8 +1009,11 @@ export function ReportBody({
                     busy={isEditing}
                     error={sheetError}
                     onCancel={() => onOpenMediaId?.(null)}
-                    onSubmit={(req) => {
-                      void onEditImage(req);
+                    onSubmit={async (req) => {
+                      const ok = await onEditImage(req);
+                      if (ok) {
+                        onOpenMediaId?.(null);
+                      }
                     }}
                     onUpload={
                       onUploadFigure

@@ -483,29 +483,38 @@ def edit_png(
             decode_image_string(payload, cfg=cfg, dest=dest)
             return True
         except Exception as exc:  # noqa: BLE001
-            snip = (resp.text or "")[:120].replace("\n", " ")
+            snip = (resp.text or "")[:140].replace("\n", " ")
             errors.append(f"{label}: {exc} body={snip!r}")
-            log.warning("image edit attempt failed (%s): %s", label, exc)
+            log.debug("image edit attempt (%s) did not succeed: %s body=%s", label, exc, snip)
             return False
 
     with httpx.Client(timeout=cfg.timeout_s) as client:
-        # 1) form field image=<base64> (matches List[str] Form)
-        data1 = {"prompt": prompt, "image": b64, **knobs}
-        if _try_decode(client.post(url, data=data1, headers=_headers(cfg)), "form-b64"):
-            return
-        # 2) UploadFile under image=
-        data2 = {"prompt": prompt, **knobs}
-        files2 = {"image": (source_png.name, png_bytes, "image/png")}
+        # 1) Multipart file upload under image= (office FastAPI UploadFile / list[UploadFile])
+        data1 = {"prompt": prompt, **knobs}
+        files1 = {"image": (source_png.name, png_bytes, "image/png")}
         if _try_decode(
-            client.post(url, data=data2, files=files2, headers=_headers(cfg)),
+            client.post(url, data=data1, files=files1, headers=_headers(cfg)),
             "multipart-file",
         ):
             return
-        # 3) plural images=
-        data3 = {"prompt": prompt, "images": b64, **knobs}
-        if _try_decode(client.post(url, data=data3, headers=_headers(cfg)), "form-images"):
+        # 2) JSON body with image array (OpenAPI image: array<string>)
+        json2 = {
+            "prompt": prompt,
+            "image": [b64],
+            **_knobs(cfg, negative_prompt=brand_safe_negative()),
+        }
+        if _try_decode(client.post(url, json=json2, headers=_headers(cfg)), "json-b64-array"):
+            return
+        # 3) form field image=<base64> (legacy form backends)
+        data3 = {"prompt": prompt, "image": b64, **knobs}
+        if _try_decode(client.post(url, data=data3, headers=_headers(cfg)), "form-b64"):
+            return
+        # 4) plural images=
+        data4 = {"prompt": prompt, "images": b64, **knobs}
+        if _try_decode(client.post(url, data=data4, headers=_headers(cfg)), "form-images"):
             return
 
+    log.warning("Image API %s edit failed across all formats: %s", url, " | ".join(errors[:3]))
     raise RuntimeError(f"Image API {url} edit failed: " + " | ".join(errors[:3]))
 
 

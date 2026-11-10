@@ -133,7 +133,12 @@ export function ImageEditModal({
 
       {previewUrl && mode !== "upload" ? (
         <div className="img-edit-preview-current">
-          <img src={previewUrl} alt="Текущее фото" />
+          <img
+            src={previewUrl}
+            alt="Текущее фото"
+            className="img-edit-thumb"
+            loading="lazy"
+          />
           <div className="img-edit-preview-meta">
             <span className="img-edit-preview-label">Текущее изображение</span>
             <span className="img-edit-preview-fid">{figureId}</span>
@@ -201,7 +206,12 @@ export function ImageEditModal({
             />
             {filePreview ? (
               <div className="img-edit-file-selected">
-                <img src={filePreview} alt="Превью" />
+                <img
+                  src={filePreview}
+                  alt="Превью"
+                  className="img-edit-file-thumb"
+                  loading="lazy"
+                />
                 <div className="img-edit-file-meta">
                   <span className="img-edit-file-name">{file?.name}</span>
                   <span className="img-edit-file-size">
