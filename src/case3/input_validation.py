@@ -29,6 +29,17 @@ _COMMON_KEYBOARD_MASH = {
     "йцукен",
     "фывапролдж",
     "фывапрол",
+    "ывафыавфа",
+    "фывафыва",
+    "фыва",
+    "ываф",
+    "йцук",
+    "ячсм",
+    "ячсмить",
+    "asdf",
+    "asdfg",
+    "zxcv",
+    "qwer",
 }
 
 _TRIGGER_WORDS = {
@@ -122,18 +133,16 @@ def validate_input_heuristics(
 
     Returns (True, None) if inputs contain sufficient data signals,
     or (False, refusal_message) if the request is empty, nonsensical,
-    or a pure trigger without substance.
+    or a pure trigger without substance. Attached user photos are
+    illustrations and do not replace factual data.
     """
-    if has_attachments:
-        return True, None
-
     combined = ((source_text or "") + "\n" + (intent or "")).strip()
     if len(combined) < 4:
         return False, _format_refusal_message(output_mode)
 
     # 1. Check for keyboard mash / repetitive characters
     raw_letters = "".join(re.findall(r"[a-zA-Zа-яА-ЯёЁ]", combined.lower()))
-    if len(raw_letters) >= 6:
+    if len(raw_letters) >= 4:
         unique_letters = set(raw_letters)
         if len(unique_letters) <= 2:
             return False, _format_refusal_message(output_mode)

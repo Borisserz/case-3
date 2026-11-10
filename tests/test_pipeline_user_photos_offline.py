@@ -194,3 +194,27 @@ def test_pipeline_adopts_llm_vision_caption_for_user_photo(tmp_path: Path, monke
     assert r"\caption{Панель управления Liber" in tex
     assert r"\section{Интерфейс}" in tex
 
+
+def test_pipeline_refuses_insufficient_data_with_user_photo(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "prompt" / "gold").mkdir(parents=True)
+    (root / "assets" / "docx").mkdir(parents=True)
+    src = root / "source.txt"
+    src.write_text("ывафыавфа\n", encoding="utf-8")
+    upload = root / "uploads"
+    users = save_user_photos(upload, [("mine.png", _PNG)], captions=["Моё фото"])
+
+    out = run_pipeline(
+        src,
+        project_root=root,
+        formats={"pdf", "docx"},
+        intent="ывафыавфа",
+        max_images=1,
+        max_charts=0,
+        user_figures=users,
+    )
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta.get("insufficient_data") is True
+    assert "недостаточно данных" in (meta.get("chat_summary") or "").lower()
+
+

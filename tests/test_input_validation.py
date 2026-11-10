@@ -105,7 +105,21 @@ def test_substantial_descriptive_text_passes():
     assert msg is None
 
 
-def test_attachments_bypass_heuristic_check():
+def test_attachments_do_not_bypass_heuristic_check_when_data_free():
     valid, msg = validate_input_heuristics("привет", "", has_attachments=True)
+    assert not valid
+    assert "недостаточно данных" in msg.lower()
+
+    valid, msg = validate_input_heuristics("ывафыавфа", "", has_attachments=True)
+    assert not valid
+    assert "недостаточно данных" in msg.lower()
+
+
+def test_attachments_with_meaningful_request_pass():
+    valid, msg = validate_input_heuristics(
+        "Вот фото цеха, составь отчет о запуске линии упаковки",
+        "",
+        has_attachments=True,
+    )
     assert valid
     assert msg is None
