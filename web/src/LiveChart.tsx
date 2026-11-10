@@ -500,7 +500,7 @@ export function LiveChart({
   html,
   title = "Живой график",
   className = "",
-  showBadge = true,
+  showBadge = false,
   compact = false,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);

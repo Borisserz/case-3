@@ -427,11 +427,19 @@ export function ReportView({
         </div>
       ) : null}
 
-      {warnings && warnings.length > 0 ? (
-        <header className="report-meta">
-          <span className="report-warns">{warnings.join(" · ")}</span>
-        </header>
-      ) : null}
+      {(() => {
+        const displayWarns = (warnings || []).filter(
+          (w) =>
+            !/charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
+              w
+            )
+        );
+        return displayWarns.length > 0 ? (
+          <header className="report-meta">
+            <span className="report-warns">{displayWarns.join(" · ")}</span>
+          </header>
+        ) : null;
+      })()}
 
       {canEditTitle && activeBlockId === "doc_title" ? (
         <div className="report-title-editor inline-block-wrap">

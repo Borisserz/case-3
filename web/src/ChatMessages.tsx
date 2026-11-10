@@ -255,11 +255,19 @@ export function ChatMessages({
                           : undefined
                       }
                     />
-                    {m.result.warnings?.length ? (
-                      <div className="warns">
-                        {m.result.warnings.join(" · ")}
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const displayWarns = (m.result.warnings || []).filter(
+                        (w) =>
+                          !/charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
+                            w
+                          )
+                      );
+                      return displayWarns.length ? (
+                        <div className="warns">
+                          {displayWarns.join(" · ")}
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="msg-actions">
                       <button
                         type="button"

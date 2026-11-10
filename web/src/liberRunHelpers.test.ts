@@ -60,13 +60,13 @@ describe("liberRunHelpers", () => {
     );
   });
 
-  it("softMediaFailToast surfaces failed charts", () => {
-    assert.match(
+  it("softMediaFailToast is suppressed for executive presentation mode", () => {
+    assert.equal(
       softMediaFailToast({
         failed_charts: ["cht_01"],
         failed_figures: [],
-      }) || "",
-      /график/,
+      }),
+      null,
     );
     assert.equal(softMediaFailToast({ warnings: [] }), null);
   });

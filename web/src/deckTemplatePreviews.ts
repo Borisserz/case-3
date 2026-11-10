@@ -185,7 +185,7 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
       kind: "title",
       kicker: "ОПРОС",
       title: "Находки → действия",
-      subtitle: "n только из Source",
+      subtitle: "Выборка и ключевые когорты",
       dark: true,
     },
     {
@@ -318,12 +318,12 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
     {
       kind: "scorecard",
       kicker: "ЦЕЛИ",
-      title: "Только цифры из Source",
+      title: "Ключевые ориентиры",
       cells: [
-        { label: "Лист ожидания", value: "—", delta: "Source" },
-        { label: "Пилот", value: "—", delta: "Source" },
-        { label: "NPS", value: "—", delta: "Source" },
-        { label: "Затраты", value: "—", delta: "Source" },
+        { label: "Лист ожидания", value: "—", delta: "План" },
+        { label: "Пилот", value: "—", delta: "План" },
+        { label: "NPS", value: "—", delta: "План" },
+        { label: "Затраты", value: "—", delta: "План" },
       ],
       dark: true,
     },
@@ -458,7 +458,7 @@ export const TEMPLATE_PREVIEW_SLIDES: Record<string, PreviewSlide[]> = {
     {
       kind: "quote",
       kicker: "РЕШЕНИЕ",
-      title: "Одна фраза из источника",
+      title: "Ключевой вывод",
     },
     {
       kind: "closing",

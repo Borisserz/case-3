@@ -993,24 +993,8 @@ def get_run_preview(run_id: str) -> dict[str, Any]:
 
 
 def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
-    warnings: list[str] = []
-    planned = meta.get("figures_planned") or []
+    # Soft media skips are internal; suppressed from user-facing warnings.
     media = meta.get("media_status") or {}
-    if planned and max_images > 0:
-        if not image_api_configured():
-            warnings.append(
-                "Image API не настроен — слоты fig_* пропущены (отчёт без блокировки)"
-            )
-        else:
-            failed = [
-                fid
-                for fid in planned
-                if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
-            ]
-            if failed:
-                warnings.append(
-                    f"фото пропущены / не сгенерировались (Image API): {', '.join(failed)}"
-                )
     c_planned = meta.get("charts_planned") or []
     if c_planned:
         failed_c = [
@@ -1019,8 +1003,17 @@ def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
             if not (isinstance(media.get(cid), dict) and media[cid].get("ok"))
         ]
         if failed_c:
-            warnings.append(f"charts failed/skipped: {', '.join(failed_c)}")
-    return warnings
+            log.info("charts soft-failed/skipped: %s", ", ".join(failed_c))
+    planned = meta.get("figures_planned") or []
+    if planned and max_images > 0:
+        failed_f = [
+            fid
+            for fid in planned
+            if not (isinstance(media.get(fid), dict) and media[fid].get("ok"))
+        ]
+        if failed_f:
+            log.info("figures soft-failed/skipped: %s", ", ".join(failed_f))
+    return []
 
 
 def datetime_stamp() -> str:

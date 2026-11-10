@@ -1163,7 +1163,7 @@ function SlideBody({
   }
 
   if (layout === "chart_hero" || (layout === "media_hero" && String(slide.media_id || "").startsWith("dia_"))) {
-    const line = slide.caption || slide.takeaway || slide.title || "";
+    const line = slide.caption || slide.takeaway || "";
     const isDiagram = layout !== "chart_hero";
     const legend = diagramLegendStrokes(diagramPalette);
     return (
@@ -1171,7 +1171,9 @@ function SlideBody({
         <aside className="deck-cv-chart-rail">
           <div className="deck-cv-brand">{brand}</div>
           <Head slide={slide} editing={editing} onField={onField} compact />
-          {line ? <div className="deck-cv-chart-line">{line}</div> : null}
+          {line && line.trim() !== (slide.title || "").trim() ? (
+            <div className="deck-cv-chart-line">{line}</div>
+          ) : null}
           {isDiagram ? (
             <ul className="deck-cv-dia-legend">
               <li><i style={{ background: legend.start }} />Старт</li>
@@ -1200,13 +1202,15 @@ function SlideBody({
   }
 
   if (layout === "media_hero") {
-    const line = slide.caption || slide.takeaway || slide.title || "";
+    const line = slide.caption || slide.takeaway || "";
     return (
       <div className="deck-cv-inner deck-cv-chart-field">
         <aside className="deck-cv-chart-rail">
           <div className="deck-cv-brand">{brand}</div>
           <Head slide={slide} editing={editing} onField={onField} compact />
-          {line ? <div className="deck-cv-chart-line">{line}</div> : null}
+          {line && line.trim() !== (slide.title || "").trim() ? (
+            <div className="deck-cv-chart-line">{line}</div>
+          ) : null}
         </aside>
         <MediaSlot
           runId={runId}

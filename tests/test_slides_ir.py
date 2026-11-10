@@ -743,3 +743,69 @@ def test_parse_deck_ir_preserves_bullet_node_map() -> None:
     )
     assert ir["slides"][1]["bullet_node_map"] == {"0": "A", "1": "B"}
 
+
+def test_clean_source_placeholders() -> None:
+    from case3.slides_ir import clean_source_placeholders
+
+    assert clean_source_placeholders("Источник — Source") == ""
+    assert clean_source_placeholders("Источник: из Source") == ""
+    assert clean_source_placeholders("Цифры из Source") == ""
+    assert clean_source_placeholders("Только цифры из Source") == ""
+    assert clean_source_placeholders("n только из Source") == "n"
+    assert (
+        clean_source_placeholders("Выручка 100 млн | Источник — Source")
+        == "Выручка 100 млн"
+    )
+    assert (
+        clean_source_placeholders("Выручка 100 млн (из Source)")
+        == "Выручка 100 млн"
+    )
+    assert clean_source_placeholders("DATA") == ""
+    assert clean_source_placeholders("Источник") == ""
+    assert clean_source_placeholders("Источник: опрос") == "Источник: опрос"
+
+
+def test_parse_deck_ir_strips_source_placeholders_from_slides() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {
+                    "id": "s01",
+                    "layout": "title",
+                    "title": "Итоги года",
+                    "subtitle": "Только цифры из Source",
+                },
+                {
+                    "id": "s02",
+                    "layout": "chart_hero",
+                    "title": "Динамика выручки",
+                    "kicker": "DATA",
+                    "caption": "Источник — Source",
+                    "takeaway": "Цифры из Source",
+                    "chart_id": "cht_01",
+                },
+                {
+                    "id": "s03",
+                    "layout": "bullets",
+                    "title": "Факторы",
+                    "bullets": ["Выручка 120 | Источник: Source"],
+                },
+                {"id": "s04", "layout": "closing", "title": "C", "bullets": ["Итог"]},
+            ],
+        },
+        source="Выручка 120",
+        allowed_media_ids={"cht_01"},
+    )
+    s1 = ir["slides"][0]
+    assert "subtitle" not in s1
+    s2 = ir["slides"][1]
+    assert "kicker" not in s2
+    assert "caption" not in s2
+    assert "takeaway" not in s2
+    assert s2["title"] == "Динамика выручки"
+    s3 = ir["slides"][2]
+    assert s3["bullets"] == ["Выручка 120"]
+
+

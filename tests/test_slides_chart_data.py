@@ -96,6 +96,10 @@ def test_ensure_deck_injects_chart_hero_when_missing() -> None:
     assert "cht_01" in ids
     layouts = [str(s.get("layout")) for s in deck["slides"] if isinstance(s, dict)]
     assert "chart_hero" in layouts
+    injected = [s for s in deck["slides"] if s.get("chart_id") == "cht_01"][0]
+    assert "caption" not in injected or injected["caption"] == ""
+    assert "takeaway" not in injected or injected["takeaway"] == ""
+    assert "kicker" not in injected or injected["kicker"] == ""
 
 
 def test_ensure_deck_noop_when_chart_present() -> None:

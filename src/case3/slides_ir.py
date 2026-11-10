@@ -323,7 +323,7 @@ def scrub_invented_numbers(
         out = _NUMBER_RUN.sub(repl, compacted)
         out = re.sub(r"\s{2,}", " ", out)
         out = re.sub(r"\s+([,.;:!?])", r"\1", out)
-        return _strip_orphan_units(out.strip())
+        return clean_source_placeholders(_strip_orphan_units(out.strip()))
 
     slides_out: list[dict[str, Any]] = []
     for s in deck.get("slides") or []:
@@ -522,6 +522,35 @@ def scrub_unavailable_media(
     return out
 
 
+_PLACEHOLDER_SOURCE_RE = re.compile(
+    r"(?i)(?:\s*[|·•—–(-]\s*)?"
+    r"(?:только\s+)?"
+    r"(?:(?:источник(?:и|а)?|цифр(?:ы|а)|чис(?:ла|ло)|данны(?:е|х)|факт(?:ы|ов))\s*(?:—|–|-|:)?\s*)?"
+    r"(?:только\s+)?(?:из\s+)?(?:source|соурс(?:а|е)?)\b"
+    r"(?:\s*[|·•—–)-])?",
+    re.IGNORECASE,
+)
+
+_STANDALONE_PLACEHOLDER_RE = re.compile(
+    r"(?i)^(?:источник(?:и|а)?|source|соурс(?:а)?|данные|data|только)$",
+    re.IGNORECASE,
+)
+
+
+def clean_source_placeholders(text: str) -> str:
+    """Strip debug phrases like 'Источник — Source', 'Цифры из Source', 'из Source'."""
+    if not text:
+        return ""
+    cleaned = _PLACEHOLDER_SOURCE_RE.sub("", text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"^\s*[|·•—–:,;\-()]\s*", "", cleaned)
+    cleaned = re.sub(r"\s*[|·•—–:,;\-()]\s*$", "", cleaned)
+    cleaned = cleaned.strip()
+    if _STANDALONE_PLACEHOLDER_RE.match(cleaned):
+        return ""
+    return cleaned
+
+
 def _clip_str(val: Any, *, field: str, max_len: int, required: bool = False) -> str:
     if val is None or (isinstance(val, str) and not val.strip()):
         if required:
@@ -530,6 +559,19 @@ def _clip_str(val: Any, *, field: str, max_len: int, required: bool = False) -> 
     if not isinstance(val, str):
         raise DeckIrError(f"{field} must be string")
     s = _norm_ws(val)
+    s = clean_source_placeholders(s)
+    if not s:
+        if required:
+            if "title" in field:
+                s = "Ключевые показатели"
+            elif "term" in field:
+                s = "Тезис"
+            elif "definition" in field:
+                s = "Основной вывод"
+            else:
+                raise DeckIrError(f"{field} required")
+        else:
+            return ""
     if len(s) <= max_len:
         return s
     # A 4B model overruns the box. Cut the string; do not fail the deck.
@@ -547,9 +589,11 @@ def _parse_bullets(raw: Any, *, required: bool) -> list[str]:
         raw = raw[:_MAX_BULLETS]
     out: list[str] = []
     for i, b in enumerate(raw):
-        out.append(
-            _clip_str(b, field=f"bullets[{i}]", max_len=_MAX_BULLET, required=True)
-        )
+        cleaned_b = _clip_str(b, field=f"bullets[{i}]", max_len=_MAX_BULLET, required=False)
+        if cleaned_b:
+            out.append(cleaned_b)
+    if required and not out:
+        out.append("Ключевой фактор роста")
     return out
 
 

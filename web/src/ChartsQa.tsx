@@ -50,7 +50,7 @@ export function ChartsQa() {
             <section key={t} className="charts-qa-card" data-chart-type={t}>
               <h2>{t}</h2>
               {html ? (
-                <LiveChart html={html} title={t} showBadge compact />
+                <LiveChart html={html} title={t} compact />
               ) : (
                 <p className="charts-qa-miss">нет fixture</p>
               )}

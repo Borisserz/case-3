@@ -61,47 +61,14 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
   return "Отчёт готов";
 }
 
-/** RU toast when charts/photos soft-failed but run status is ok. */
-export function softMediaFailToast(result?: {
+/** Suppressed: soft media failures are handled silently without popup toasts. */
+export function softMediaFailToast(_result?: {
   warnings?: string[];
   failed_charts?: string[];
   failed_figures?: string[];
   media_status?: Record<string, unknown>;
 }): string | null {
-  if (!result) return null;
-  const failedC = Array.isArray(result.failed_charts)
-    ? result.failed_charts.filter(Boolean)
-    : [];
-  const failedF = Array.isArray(result.failed_figures)
-    ? result.failed_figures.filter(Boolean)
-    : [];
-  const warns = Array.isArray(result.warnings)
-    ? result.warnings.filter((w) => typeof w === "string" && w.trim())
-    : [];
-  if (!failedC.length && !failedF.length && !warns.length) {
-    // Infer from media_status if present
-    const media = result.media_status;
-    if (media && typeof media === "object") {
-      for (const [id, st] of Object.entries(media)) {
-        const ok =
-          st && typeof st === "object" && "ok" in st
-            ? (st as { ok?: boolean }).ok
-            : undefined;
-        if (ok === false) {
-          if (id.startsWith("cht_")) failedC.push(id);
-          else failedF.push(id);
-        }
-      }
-    }
-  }
-  if (!failedC.length && !failedF.length && !warns.length) return null;
-  const parts: string[] = [];
-  if (failedC.length) parts.push("график");
-  if (failedF.length) parts.push("фото");
-  if (!parts.length && warns.length) {
-    return "Часть медиа не собралась. Документ может быть без них.";
-  }
-  return `Часть медиа не собралась (${parts.join(", ")}). Документ может быть без них.`;
+  return null;
 }
 
 export function stageLabel(

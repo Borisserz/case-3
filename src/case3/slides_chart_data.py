@@ -331,11 +331,8 @@ def _chart_hero_slide(cid: str, *, title: str | None = None) -> dict[str, Any]:
     return {
         "id": f"s_native_{cid}",
         "layout": "chart_hero",
-        "kicker": "DATA",
-        "title": _clip_label(title) or "Ключевые цифры",
+        "title": _clip_label(title) or "Ключевые показатели",
         "chart_id": cid,
-        "caption": "Источник — Source",
-        "takeaway": "Цифры из Source",
     }
 
 

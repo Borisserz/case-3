@@ -31,7 +31,6 @@ import {
   RunFailedError,
   slidesJobInFlight,
   slidesJobTerminal,
-  softMediaFailToast,
   stageLabel,
   uid,
 } from "../domain/runHelpers";
@@ -931,11 +930,6 @@ async () => {
         !result.output_mode
       ) {
         openReportArtifact(pendingId, result);
-      }
-      const mediaToast = softMediaFailToast(result);
-      if (mediaToast) {
-        setToast(mediaToast);
-        window.setTimeout(() => setToast(null), 7200);
       }
     }
   } catch (err) {
