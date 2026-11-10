@@ -226,6 +226,8 @@ export function ArtifactRail({
   const tab = artifact.tab;
   const openWidthRef = useRef<number | null>(null);
   const isMedia = artifact.kind === "media";
+  const isUserPhoto =
+    artifact.kind === "media" && !artifact.mediaId.startsWith("film_");
   const isReport = artifact.kind === "report";
   const diagrams = isReport ? report?.diagrams || [] : [];
   const activeDiagramId =
@@ -326,7 +328,13 @@ export function ArtifactRail({
 
   const visibleTabs = useMemo(() => {
     if (isMedia) {
-      return [{ id: "preview" as ArtifactTab, label: "Кадр", show: true }];
+      return [
+        {
+          id: "preview" as ArtifactTab,
+          label: isUserPhoto ? "Фото" : "Кадр",
+          show: true,
+        },
+      ];
     }
     // Peer order for documents: Превью · Схема · PDF (schema sits next to preview).
     const diagramLabel =
@@ -350,6 +358,7 @@ export function ArtifactRail({
     return all.filter((t) => t.show);
   }, [
     isMedia,
+    isUserPhoto,
     isReport,
     hasPreview,
     hasPdf,
@@ -797,12 +806,27 @@ export function ArtifactRail({
             >
               {isMedia && artifact.kind === "media" ? (
                 <div className="artifact-rail-media">
-                  <p className="artifact-rail-media-caption">{artifact.title}</p>
-                  <img
-                    className="artifact-rail-media-img"
-                    src={artifact.url}
-                    alt={artifact.title}
-                  />
+                  <div className="artifact-rail-media-header">
+                    <p className="artifact-rail-media-caption">{artifact.title}</p>
+                    {artifact.url ? (
+                      <a
+                        className="artifact-rail-media-link"
+                        href={artifact.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={isUserPhoto ? artifact.title : undefined}
+                      >
+                        Открыть оригинал ↗
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="artifact-rail-media-img-wrap">
+                    <img
+                      className="artifact-rail-media-img"
+                      src={artifact.url}
+                      alt={artifact.title}
+                    />
+                  </div>
                 </div>
               ) : null}
 

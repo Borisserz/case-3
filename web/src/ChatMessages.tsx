@@ -8,7 +8,7 @@ import { IconCopy, IconLiberMark } from "./icons";
 import { LONG_TEXT_CHARS } from "./domain/liberConstants";
 import type { LiberWorkMode } from "./domain/liberModes";
 import type { CraftFilmFrame } from "./domain/craftSteps";
-import type { Msg, RunResult, SourceAttachment } from "./domain/liberTypes";
+import type { Msg, RunResult, SourceAttachment, UserPhotoThumb } from "./domain/liberTypes";
 import { reportThumb, reportTitle } from "./domain/runHelpers";
 import { MsgMarkdown } from "./lightMd";
 import { ReportPending } from "./ReportView";
@@ -33,6 +33,7 @@ type Props = {
   onOpenPresentation: (msgId: string, result: RunResult) => void;
   onOpenDeckSlides: (msgId: string, result: RunResult) => void;
   onOpenFilm?: (msgId: string, frame: CraftFilmFrame) => void;
+  onOpenPhoto?: (photo: UserPhotoThumb) => void;
   /** Continue failed pipeline from failed_stage (same run_id). */
   onResumeRun?: (msgId: string, runId: string) => void;
 };
@@ -55,6 +56,7 @@ export function ChatMessages({
   onOpenPresentation,
   onOpenDeckSlides,
   onOpenFilm,
+  onOpenPhoto,
   onResumeRun,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
@@ -113,12 +115,20 @@ export function ChatMessages({
                 <>
                   {m.photos?.length ? (
                     <div className="msg-photos" aria-label="Прикреплённые фото">
-                      {m.photos.map((photo) => (
-                        <img
-                          key={photo.url}
-                          src={photo.url}
-                          alt={photo.name || "Фото"}
-                        />
+                      {m.photos.map((photo, pi) => (
+                        <button
+                          key={`${photo.url}-${pi}`}
+                          type="button"
+                          className="msg-photo-btn"
+                          onClick={() => onOpenPhoto?.(photo)}
+                          title={photo.name ? `Открыть ${photo.name}` : "Открыть фото"}
+                          aria-label={photo.name ? `Открыть фото ${photo.name}` : "Открыть фото"}
+                        >
+                          <img
+                            src={photo.url}
+                            alt={photo.name || "Фото"}
+                          />
+                        </button>
                       ))}
                     </div>
                   ) : null}

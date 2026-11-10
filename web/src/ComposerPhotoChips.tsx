@@ -6,10 +6,12 @@ export function ComposerPhotoChips({
   files,
   busy,
   onRemove,
+  onPreview,
 }: {
   files: File[];
   busy: boolean;
   onRemove: (index: number) => void;
+  onPreview?: (photo: { url: string; name: string }) => void;
 }) {
   const [urls, setUrls] = useState<string[]>([]);
   useEffect(() => {
@@ -23,7 +25,15 @@ export function ComposerPhotoChips({
     <div className="composer-photos" aria-label="Прикреплённые фото">
       {files.map((p, i) => (
         <div key={`${p.name}-${i}-${p.size}`} className="composer-photo-chip">
-          <img src={urls[i]} alt="" />
+          <button
+            type="button"
+            className="composer-photo-thumb-btn"
+            onClick={() => onPreview?.({ url: urls[i], name: p.name })}
+            title={`Открыть ${p.name}`}
+            aria-label={`Открыть фото ${p.name}`}
+          >
+            <img src={urls[i]} alt={p.name} />
+          </button>
           <button
             type="button"
             className="composer-photo-x"

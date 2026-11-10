@@ -20,6 +20,7 @@ type Props = {
   onStop?: () => void;
   chat: string;
   attachPhotos: File[];
+  onPreviewPhoto?: (photo: { url: string; name: string }) => void;
   showPlaque: boolean;
   plaqueDraft: { title: string; subtitle: string; fileName?: string } | null;
   sourceDraft: SourceDraft | null;
@@ -66,6 +67,7 @@ export function ChatComposer({
   onStop,
   chat,
   attachPhotos,
+  onPreviewPhoto,
   showPlaque,
   plaqueDraft,
   sourceDraft,
@@ -130,6 +132,7 @@ export function ChatComposer({
               files={attachPhotos}
               busy={busy}
               onRemove={onRemovePhoto}
+              onPreview={onPreviewPhoto}
             />
           </div>
         )}

@@ -12,7 +12,7 @@ import type {
   ArtifactTab,
 } from "../ArtifactRail";
 import type { CraftFilmFrame } from "../domain/craftSteps";
-import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
+import type { Msg, RunResult, SourceDraft, UserPhotoThumb } from "../domain/liberTypes";
 import { reportTitle } from "../domain/runHelpers";
 import { loadRailWidth } from "../domain/railWidth";
 
@@ -124,6 +124,23 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
     [msgs, activeRunIdRef],
   );
 
+  const openUserPhoto = useCallback(
+    (photo: UserPhotoThumb) => {
+      setRailExiting(false);
+      setRailCollapsed(false);
+      setActiveArtifact({
+        kind: "media",
+        msgId: "",
+        tab: "preview",
+        runId: activeRunIdRef.current || "",
+        mediaId: photo.name || "user_photo",
+        url: photo.url,
+        title: photo.name || "Фото",
+      });
+    },
+    [activeRunIdRef],
+  );
+
   const openSourceArtifact = useCallback(
     (draft: Pick<SourceDraft, "title" | "text"> & { fileName?: string }) => {
       setRailExiting(false);
@@ -213,6 +230,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
     openPresentationArtifact,
     openDeckSlidesArtifact,
     openFilmFrame,
+    openUserPhoto,
     openSourceArtifact,
     openIntentArtifact,
     closeArtifact,

@@ -164,6 +164,7 @@ export default function App() {
     openPresentationArtifact,
     openDeckSlidesArtifact,
     openFilmFrame,
+    openUserPhoto,
     openSourceArtifact,
     openIntentArtifact,
     closeArtifact,
@@ -548,6 +549,7 @@ export default function App() {
                   onOpenPresentation={openPresentationArtifact}
                   onOpenDeckSlides={openDeckSlidesArtifact}
                   onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
+                  onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
                 />
 
@@ -558,6 +560,7 @@ export default function App() {
                   onStop={stopGeneration}
                   chat={chat}
                   attachPhotos={attachPhotos}
+                  onPreviewPhoto={openUserPhoto}
                   showPlaque={showPlaque}
                   plaqueDraft={plaqueDraft}
                   sourceDraft={sourceDraft}

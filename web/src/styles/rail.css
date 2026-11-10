@@ -773,6 +773,14 @@
   padding: 0.25rem 0 1rem;
 }
 
+.artifact-rail-media-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .artifact-rail-media-caption {
   margin: 0;
   font-size: 0.8rem;
@@ -781,12 +789,31 @@
   color: var(--muted-2);
 }
 
+.artifact-rail-media-link {
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.artifact-rail-media-link:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.artifact-rail-media-img-wrap {
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface, #fff) 94%, var(--muted-2));
+}
+
 .artifact-rail-media-img {
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--surface, #fff) 94%, var(--muted-2));
+  object-fit: contain;
 }
 
 .artifact-source-toolbar {
