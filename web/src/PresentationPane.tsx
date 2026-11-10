@@ -10,6 +10,7 @@ import {
 import { DeckCanvas, mediaUrl, type DeckMediaKind } from "./DeckCanvas";
 import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+import { slideIndexForUndoTarget } from "./domain/deckUndo";
 import {
   parseEditHistory,
   shouldIgnoreDeckHotkey,
@@ -119,9 +120,6 @@ export function PresentationPane({
   onEditFigure,
   onEditImage,
   diagrams: diagramsProp,
-  onHistoryUndo,
-  onHistoryRedo,
-  onClearEditHistory,
   onEditHistory,
   editing: editingProp,
   onEditingChange,
@@ -172,6 +170,7 @@ export function PresentationPane({
   const [pickerAfterId, setPickerAfterId] = useState<string | null>(null);
   const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
   const [copiedPng, setCopiedPng] = useState(false);
+  const dirtyRef = useRef(false);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
@@ -181,6 +180,9 @@ export function PresentationPane({
     (n ? `Слайд ${safeIdx + 1}` : "Презентация");
 
   useEffect(() => {
+    // A parent poll must not wipe rows that are already written locally
+    // and not yet echoed back. After «Готово» dirty clears and the prop wins.
+    if (dirtyRef.current) return;
     setDeck(deckProp);
   }, [deckProp]);
 
@@ -228,14 +230,18 @@ export function PresentationPane({
     };
   }, [runId]);
 
-  const refreshSlidesNow = useCallback(async () => {
+  const refreshSlidesNow = useCallback(async (): Promise<DeckIR | null> => {
     const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
     const gBody = await g.json().catch(() => ({}));
-    if (!g.ok) return;
+    if (!g.ok) return null;
     const pngs = Array.isArray(gBody.slide_pngs)
       ? (gBody.slide_pngs as string[])
       : [];
-    if (gBody.deck) setDeck(gBody.deck as DeckIR);
+    const nextDeck =
+      gBody.deck && typeof gBody.deck === "object"
+        ? (gBody.deck as DeckIR)
+        : null;
+    if (nextDeck) setDeck(nextDeck);
     if (gBody.charts && typeof gBody.charts === "object") {
       setChartIndex(gBody.charts);
     }
@@ -257,21 +263,67 @@ export function PresentationPane({
       );
     }
     setMediaVersion(Date.now());
+    return nextDeck;
   }, [diagrams, onDeckUpdated, onEditHistory, runId]);
 
+  const jumpToUndoTarget = useCallback((deckNow: DeckIR | null, target: unknown) => {
+    const idx = slideIndexForUndoTarget(
+      deckNow?.slides,
+      typeof target === "string" ? target : "",
+    );
+    if (idx < 0) return;
+    setView("slide");
+    setDir(idx >= safeIdx ? 1 : -1);
+    setIdx(idx);
+  }, [safeIdx]);
+
+  const postDeckHistory = useCallback(
+    async (path: "undo" | "redo") => {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const r = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/${path}?rebuild=0`,
+          { method: "POST" },
+        );
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(
+            typeof data.detail === "string" ? data.detail : `${path} ${r.status}`,
+          );
+        }
+        onEditHistory?.(
+          parseEditHistory(data.undo as Parameters<typeof parseEditHistory>[0]),
+        );
+        const action = path === "undo" ? data.undone : data.redone;
+        const target =
+          action && typeof action === "object"
+            ? (action as { target?: unknown }).target
+            : "";
+        // Server already rebuilt PPTX/PDF from the restored deck.json.
+        dirtyRef.current = false;
+        setDocsDirty(false);
+        onDocsDirtyChange?.(false);
+        const next = await refreshSlidesNow();
+        jumpToUndoTarget(next, target);
+        setSaveFlash(true);
+        window.setTimeout(() => setSaveFlash(false), 1200);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [jumpToUndoTarget, onDocsDirtyChange, onEditHistory, refreshSlidesNow, runId],
+  );
+
   const historyUndo = useCallback(async () => {
-    await onHistoryUndo?.();
-    await refreshSlidesNow();
-    setSaveFlash(true);
-    window.setTimeout(() => setSaveFlash(false), 1200);
-  }, [onHistoryUndo, refreshSlidesNow]);
+    await postDeckHistory("undo");
+  }, [postDeckHistory]);
 
   const historyRedo = useCallback(async () => {
-    await onHistoryRedo?.();
-    await refreshSlidesNow();
-    setSaveFlash(true);
-    window.setTimeout(() => setSaveFlash(false), 1200);
-  }, [onHistoryRedo, refreshSlidesNow]);
+    await postDeckHistory("redo");
+  }, [postDeckHistory]);
 
   // Safety net: rail opened with pptx downloads but empty twin/deck (old status).
   useEffect(() => {
@@ -365,7 +417,6 @@ export function PresentationPane({
   }, [onDocsDirtyChange]);
 
   const inFlightPatchRef = useRef<Promise<void> | null>(null);
-  const dirtyRef = useRef(false);
 
   const flushDeckRebuild = useCallback(async () => {
     setSaving(true);
@@ -407,7 +458,6 @@ export function PresentationPane({
         await inFlightPatchRef.current;
       }
       if (docsDirty || dirtyRef.current) await flushDeckRebuild();
-      void onClearEditHistory?.();
       setOpenMediaId(null);
       setOpenMediaKind(null);
       setChartPreview(null);
@@ -415,7 +465,7 @@ export function PresentationPane({
     } catch {
       /* stay in edit — error already shown */
     }
-  }, [docsDirty, flushDeckRebuild, onClearEditHistory, setEditing]);
+  }, [docsDirty, flushDeckRebuild, setEditing]);
 
   useEffect(() => {
     if (full) return;
@@ -529,6 +579,9 @@ export function PresentationPane({
           markDirty();
         } catch (err) {
           setSaveError(err instanceof Error ? err.message : String(err));
+          // Server rejected the shape (or the write failed). Drop the
+          // optimistic table/text so the slide matches deck.json.
+          await refreshSlidesNow();
         } finally {
           setSaving(false);
         }
@@ -539,7 +592,7 @@ export function PresentationPane({
         inFlightPatchRef.current = null;
       }
     },
-    [markDirty, onEditHistory, runId],
+    [markDirty, onEditHistory, refreshSlidesNow, runId],
   );
 
   const mediaSheetRef = useRef<HTMLDivElement | null>(null);
@@ -1123,7 +1176,8 @@ export function PresentationPane({
               </button>
             ) : null}
           </div>
-          {editing && showEditChrome ? (
+          {showEditChrome &&
+          (editing || editHistory?.canUndo || editHistory?.canRedo) ? (
             <div className="presentation-history" role="group" aria-label="История">
               <button
                 type="button"
@@ -1270,7 +1324,7 @@ export function PresentationPane({
                 exit="exit"
                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               >
-                {editing && live && deck ? (
+                {live && deck ? (
                   <DeckCanvas
                     runId={runId}
                     deck={deck}
@@ -1279,9 +1333,7 @@ export function PresentationPane({
                     saving={saving}
                     mediaVersion={mediaVersion}
                     openMediaId={openMediaId}
-                    onMediaClick={
-                      editing ? onMediaClick : undefined
-                    }
+                    onMediaClick={editing ? onMediaClick : undefined}
                     onDiagramZoom={handleDiagramZoom}
                     onDeckChange={setDeck}
                     onPatch={patchSlides}
@@ -1304,31 +1356,6 @@ export function PresentationPane({
                         : currentPng
                     }
                     alt={`Слайд ${safeIdx + 1} из ${n}`}
-                  />
-                ) : live && deck ? (
-                  <DeckCanvas
-                    runId={runId}
-                    deck={deck}
-                    index={safeIdx}
-                    editing={editing}
-                    saving={saving}
-                    mediaVersion={mediaVersion}
-                    openMediaId={openMediaId}
-                    onMediaClick={
-                      editing ? onMediaClick : undefined
-                    }
-                    onDiagramZoom={handleDiagramZoom}
-                    onDeckChange={setDeck}
-                    onPatch={patchSlides}
-                    previewHtml={chartPreview}
-                    diagramMermaid={
-                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.media_id)
-                        ?.mermaid ||
-                      diagrams.find((d) => d.id === deck?.slides?.[safeIdx]?.chart_id)
-                        ?.mermaid ||
-                      null
-                    }
-                    diagramPalette={deck?.palette || defaultPalette}
                   />
                 ) : null}
               </motion.div>

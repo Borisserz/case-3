@@ -9,6 +9,7 @@ import os
 import re
 import threading
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -358,10 +359,66 @@ def _user_source_text(meta: dict[str, Any]) -> str:
 
 
 # Win desk: parallel daemon pipelines share case3 FileHandlers + meta lock and
-# leave zombies (stage=images/inject forever). One report at a time.
+# leave zombies (stage=images/inject forever). One report executes, one waits.
+@dataclass
+class _PipelineJob:
+    src_path: Path
+    run_id: str
+    formats: set[str]
+    dry_run: bool
+    intent: str
+    max_images: int
+    max_charts: int
+    max_diagrams: int
+    user_figures: list[dict[str, Any]] | None
+    output_mode: str
+
+    def kwargs(self) -> dict[str, Any]:
+        return {
+            "src_path": self.src_path,
+            "run_id": self.run_id,
+            "formats": self.formats,
+            "dry_run": self.dry_run,
+            "intent": self.intent,
+            "max_images": self.max_images,
+            "max_charts": self.max_charts,
+            "max_diagrams": self.max_diagrams,
+            "user_figures": self.user_figures,
+            "output_mode": self.output_mode,
+        }
+
+
 _PIPELINE_SLOT = threading.Lock()
 _PIPELINE_ACTIVE_ID: str | None = None
 _PIPELINE_ACTIVE_GUARD = threading.Lock()
+_PIPELINE_WAITER: _PipelineJob | None = None
+_WAITER_RESERVED = False
+# Bumps on every owner change. A thread releases only with the generation it
+# captured at claim time, so a stale finally cannot drop a newer owner of the
+# same run_id (terminal meta + reclaim, then resume).
+_SLOT_GEN = 0
+# True from claim/bind until the pipeline thread is visible in threading.enumerate.
+# Reclaim must not treat that gap as a dead thread.
+_SLOT_HANDOFF = False
+
+
+def _slot_generation() -> int:
+    with _PIPELINE_ACTIVE_GUARD:
+        return _SLOT_GEN
+
+
+def _set_slot_handoff(active: bool) -> None:
+    global _SLOT_HANDOFF
+    with _PIPELINE_ACTIVE_GUARD:
+        _SLOT_HANDOFF = active
+
+
+def _stamp_owner(run_id: str) -> int:
+    """Caller holds ``_PIPELINE_ACTIVE_GUARD``. Returns the new generation."""
+    global _SLOT_GEN, _PIPELINE_ACTIVE_ID
+    _SLOT_GEN += 1
+    _PIPELINE_ACTIVE_ID = run_id
+    return _SLOT_GEN
 
 
 def _pipeline_active_run() -> str | None:
@@ -377,14 +434,24 @@ def _is_pipeline_thread_alive(run_id: str | None) -> bool:
 
 
 def _reclaim_stale_slot_if_dead() -> bool:
-    """If slot is locked but the run is already finished/cancelled, or the thread died, auto-recover."""
+    """Release the slot only when its thread is already gone and meta is terminal.
+
+    A live thread, or the handoff before ``Thread.start`` returns, keeps the slot.
+    ``status=running`` with no thread yet is not stolen — ``POST /pipeline/slot/reset``
+    covers a thread that died without ``finally``.
+    """
     if not _PIPELINE_SLOT.locked():
         return False
-    active_id = _pipeline_active_run()
+    with _PIPELINE_ACTIVE_GUARD:
+        if _SLOT_HANDOFF:
+            return False
+        active_id = _PIPELINE_ACTIVE_ID
     if not active_id:
         _release_pipeline_slot()
         return True
     if active_id == "pending":
+        return False
+    if _is_pipeline_thread_alive(active_id):
         return False
 
     out_dir = run_store.ROOT / "runs" / "out" / active_id
@@ -392,27 +459,20 @@ def _reclaim_stale_slot_if_dead() -> bool:
     meta_path = out_dir / "meta.json"
     if not meta_path.is_file():
         meta_path = logs_dir / "meta.json"
-    if meta_path.is_file():
-        try:
-            m = json.loads(meta_path.read_text(encoding="utf-8"))
-            if m.get("status") in {"ok", "error", "cancelled"}:
-                log.warning(
-                    "Pipeline slot held by terminal run %s (%s); releasing slot",
-                    active_id,
-                    m.get("status"),
-                )
-                _release_pipeline_slot(active_id)
-                return True
-            if not _is_pipeline_thread_alive(active_id):
-                log.warning(
-                    "Pipeline slot held by run %s with dead thread; releasing slot",
-                    active_id,
-                )
-                _release_pipeline_slot(active_id)
-                return True
-        except Exception:
-            pass
-
+    if not meta_path.is_file():
+        return False
+    try:
+        m = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if m.get("status") in {"ok", "error", "cancelled"}:
+        log.warning(
+            "Pipeline slot held by terminal run %s (%s) with dead thread; releasing slot",
+            active_id,
+            m.get("status"),
+        )
+        _release_pipeline_slot(active_id)
+        return True
     return False
 
 
@@ -424,31 +484,110 @@ def _claim_pipeline_slot(run_id: str) -> str | None:
     if not _PIPELINE_SLOT.acquire(blocking=False):
         return _pipeline_active_run() or "busy"
     with _PIPELINE_ACTIVE_GUARD:
-        _PIPELINE_ACTIVE_ID = run_id
+        _stamp_owner(run_id)
     return None
 
 
 def _bind_pipeline_slot(run_id: str) -> None:
-    global _PIPELINE_ACTIVE_ID
     with _PIPELINE_ACTIVE_GUARD:
-        _PIPELINE_ACTIVE_ID = run_id
+        _stamp_owner(run_id)
 
 
-def _release_pipeline_slot(run_id: str | None = None) -> None:
-    """Drop active label (if ours) and release the desk slot lock."""
-    global _PIPELINE_ACTIVE_ID
+def _release_pipeline_slot(
+    run_id: str | None = None, *, generation: int | None = None
+) -> None:
+    """Drop the slot only if this caller still owns it.
+
+    ``generation`` is the value captured when this run became owner. A stale
+    ``finally`` passes an older generation and returns without touching the lock.
+    ``run_id is None`` is the explicit reset path.
+    If a waiter is committed, start it on the same lock under a new generation.
+    """
+    global _PIPELINE_ACTIVE_ID, _PIPELINE_WAITER, _SLOT_GEN
+    job: _PipelineJob | None = None
+    spawn_gen: int | None = None
     with _PIPELINE_ACTIVE_GUARD:
-        if run_id is None or _PIPELINE_ACTIVE_ID in {run_id, "pending"} or _PIPELINE_ACTIVE_ID is None:
-            _PIPELINE_ACTIVE_ID = None
-        elif _PIPELINE_ACTIVE_ID == run_id:
-            _PIPELINE_ACTIVE_ID = None
+        if run_id is not None:
+            if _PIPELINE_ACTIVE_ID != run_id:
+                return
+            if generation is not None and generation != _SLOT_GEN:
+                return
+        job = _PIPELINE_WAITER
+        _PIPELINE_WAITER = None
+        if job is not None:
+            spawn_gen = _stamp_owner(job.run_id)
         else:
-            # finally from our thread — always clear; slot is single-owner
             _PIPELINE_ACTIVE_ID = None
-    try:
-        _PIPELINE_SLOT.release()
-    except RuntimeError:
-        pass
+            _SLOT_GEN += 1
+            try:
+                _PIPELINE_SLOT.release()
+            except RuntimeError:
+                pass
+    if job is not None:
+        _spawn_pipeline_thread(job, slot_gen=spawn_gen)
+
+
+def _reserve_run_turn() -> tuple[str, str | None]:
+    """``run`` owns the slot, ``queue`` holds the single waiter, ``busy`` is the third."""
+    global _PIPELINE_ACTIVE_ID, _WAITER_RESERVED
+    if _PIPELINE_SLOT.locked():
+        _reclaim_stale_slot_if_dead()
+    with _PIPELINE_ACTIVE_GUARD:
+        if not _PIPELINE_SLOT.locked():
+            if _PIPELINE_SLOT.acquire(blocking=False):
+                _stamp_owner("pending")
+                return "run", None
+        active = _PIPELINE_ACTIVE_ID or "busy"
+        if _PIPELINE_WAITER is not None or _WAITER_RESERVED:
+            return "busy", active
+        _WAITER_RESERVED = True
+        return "queue", active
+
+
+def _cancel_queue_reservation() -> None:
+    global _WAITER_RESERVED
+    with _PIPELINE_ACTIVE_GUARD:
+        if _PIPELINE_WAITER is None:
+            _WAITER_RESERVED = False
+
+
+def _commit_waiter(job: _PipelineJob) -> str:
+    """Store the waiter, or start it now if the executing slot freed during upload.
+
+    Returns ``queued`` or ``start``.
+    """
+    global _PIPELINE_ACTIVE_ID, _PIPELINE_WAITER, _WAITER_RESERVED
+    with _PIPELINE_ACTIVE_GUARD:
+        _WAITER_RESERVED = False
+        if not _PIPELINE_SLOT.locked() and _PIPELINE_SLOT.acquire(blocking=False):
+            _stamp_owner(job.run_id)
+            _PIPELINE_WAITER = None
+            return "start"
+        _PIPELINE_WAITER = job
+        return "queued"
+
+
+def _spawn_pipeline_thread(
+    job: _PipelineJob, slot_gen: int | None = None
+) -> None:
+    if slot_gen is None:
+        slot_gen = _slot_generation()
+    kwargs = job.kwargs()
+    kwargs["slot_gen"] = slot_gen
+    threading.Thread(
+        target=_bg_run_pipeline,
+        kwargs=kwargs,
+        name=f"case3-pipeline-{job.run_id}",
+        daemon=True,
+    ).start()
+
+
+def _busy_detail(active: str | None) -> str:
+    holder = active or "busy"
+    return (
+        f"Уже идёт прогон {holder}, и один запрос уже ждёт. "
+        "Дождись конца или убей python.exe и перезапусти api.cmd."
+    )
 
 
 def _auto_kick_presentation_slides(run_id: str) -> None:
@@ -492,6 +631,7 @@ def _bg_run_pipeline(
     max_diagrams: int = 0,
     user_figures: list[dict[str, Any]] | None = None,
     output_mode: str = "auto",
+    slot_gen: int | None = None,
 ) -> None:
     # print+flush: uvicorn often hides case3.api INFO; Win desk needs a visible line.
     print(f"[case3] pipeline thread start run_id={run_id}", flush=True)
@@ -516,7 +656,11 @@ def _bg_run_pipeline(
             from case3.run_meta import read_meta
 
             out_meta = read_meta(run_store.ROOT / "runs" / "out" / run_id)
-            if not out_meta.get("insufficient_data"):
+            if (
+                out_meta.get("status") == "ok"
+                and not out_meta.get("insufficient_data")
+                and not out_meta.get("cancel_requested")
+            ):
                 _auto_kick_presentation_slides(run_id)
     except PipelineError:
         # meta already written with status=error
@@ -533,8 +677,14 @@ def _bg_run_pipeline(
             m.update({"status": "error", "stage": "error", "error": "pipeline crashed"})
 
         update_meta(out, _mut_crash, logs_dir=logs)
+        try:
+            from case3.run_events import EVENTS
+
+            EVENTS.publish_terminal(run_id, "error", error="pipeline crashed")
+        except Exception:  # noqa: BLE001
+            log.exception("could not publish crash terminal run_id=%s", run_id)
     finally:
-        _release_pipeline_slot(run_id)
+        _release_pipeline_slot(run_id, generation=slot_gen)
 
 
 @app.post("/api/run")
@@ -563,6 +713,7 @@ async def api_run(
     target_slides: int | None = Form(None),
     photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
+    prior_run_id: str = Form(""),
 ) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
     no_images = _as_bool(forbid_images)
@@ -645,17 +796,17 @@ async def api_run(
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
 
-    # Claim pipeline slot BEFORE writing uploads to disk so rejected 409 requests
-    # never clobber an active run's upload directory or waste disk I/O.
-    busy = _claim_pipeline_slot("pending")
-    if busy is not None:
-        raise HTTPException(
-            409,
-            detail=(
-                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
-                "и перезапусти api.cmd."
-            ),
-        )
+    # Third request must not touch disk. One waiter is reserved before the upload.
+    from case3.prior_turn import insert_prior_turn, prior_block_for_form
+
+    try:
+        prior_block = prior_block_for_form(prior_run_id, root=run_store.ROOT)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    turn, waiting_for = _reserve_run_turn()
+    if turn == "busy":
+        raise HTTPException(409, detail=_busy_detail(waiting_for))
 
     try:
         # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
@@ -692,6 +843,7 @@ async def api_run(
             output_mode=out_mode,
             deck_pack=(deck_pack or "").strip()[:40],
         )
+        full_intent = insert_prior_turn(full_intent, prior_block)
         if user_figures:
             ids = ", ".join(f["id"] for f in user_figures)
             caps = "; ".join(f"{f['id']}: {f['caption']}" for f in user_figures)
@@ -737,9 +889,13 @@ async def api_run(
         # Reserve run_id + write stage=llm BEFORE kick (Win: 2nd run sat on queued while
         # prior LLM thread still held the desk; Liber must not wait on thread scheduling).
         run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=run_store.ROOT)
-        _bind_pipeline_slot(run_id)
+        if turn == "run":
+            _bind_pipeline_slot(run_id)
     except BaseException:
-        _release_pipeline_slot("pending")
+        if turn == "queue":
+            _cancel_queue_reservation()
+        else:
+            _release_pipeline_slot("pending")
         raise
 
     from case3.deck_structure import normalize_structure_id
@@ -792,30 +948,60 @@ async def api_run(
     }
     from case3.run_events import write_meta_atomic
 
+    job = _PipelineJob(
+        src_path=src_path,
+        run_id=run_id,
+        formats=fmt_set,
+        dry_run=is_dry,
+        intent=full_intent,
+        max_images=max_images,
+        max_charts=max_charts,
+        max_diagrams=max_diagrams,
+        user_figures=user_figures,
+        output_mode=out_mode,
+    )
+    waiting_detail = (
+        f"Жду прогон {waiting_for}" if waiting_for else "Жду текущий прогон"
+    )
+    if turn == "queue":
+        meta0["status"] = "queued"
+        meta0["stage"] = "queued"
+        meta0["stage_detail"] = waiting_detail
+        meta0["waiting_for"] = waiting_for
+        payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
+        write_meta_atomic(out_dir / "meta.json", payload0, logs_meta=logs_dir / "meta.json")
+        EVENTS.start(run_id)
+        EVENTS.bind_out(run_id, out_dir)
+        EVENTS.publish_stage(run_id, "queued", detail=waiting_detail, scope="pipeline")
+        if _commit_waiter(job) == "queued":
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "run_id": run_id,
+                    "status": "queued",
+                    "stage": "queued",
+                    "stage_detail": waiting_detail,
+                    "waiting_for": waiting_for,
+                    "output_mode": out_mode,
+                    "max_charts": max_charts,
+                    "max_images": max_images,
+                    "max_diagrams": max_diagrams,
+                },
+            )
+        meta0["status"] = "running"
+        meta0["stage"] = "llm"
+        meta0["stage_detail"] = "жду модель…"
+        meta0.pop("waiting_for", None)
+
     payload0 = json.dumps(meta0, ensure_ascii=False, indent=2)
     write_meta_atomic(out_dir / "meta.json", payload0, logs_meta=logs_dir / "meta.json")
-    EVENTS.start(run_id)
-    EVENTS.bind_out(run_id, out_dir)
+    if turn != "queue":
+        EVENTS.start(run_id)
+        EVENTS.bind_out(run_id, out_dir)
     EVENTS.publish_stage(run_id, "llm", detail="жду модель…", scope="pipeline")
 
     # Slot already claimed — thread only releases in finally (do not claim again).
-    threading.Thread(
-        target=_bg_run_pipeline,
-        kwargs={
-            "src_path": src_path,
-            "run_id": run_id,
-            "formats": fmt_set,
-            "dry_run": is_dry,
-            "intent": full_intent,
-            "max_images": max_images,
-            "max_charts": max_charts,
-            "max_diagrams": max_diagrams,
-            "user_figures": user_figures,
-            "output_mode": out_mode,
-        },
-        name=f"case3-pipeline-{run_id}",
-        daemon=True,
-    ).start()
+    _spawn_pipeline_thread(job)
 
     return JSONResponse(
         status_code=202,
@@ -852,12 +1038,13 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         raise HTTPException(500, detail="corrupt meta.json") from exc
 
     status = meta.get("status") or "running"
-    if status == "running":
+    if status in {"running", "queued"}:
         return {
             "run_id": run_id,
-            "status": "running",
+            "status": status,
             "stage": meta.get("stage") or "queued",
             "stage_detail": meta.get("stage_detail"),
+            "waiting_for": meta.get("waiting_for"),
             "max_charts": meta.get("max_charts"),
             "max_images": meta.get("max_images"),
             "chat_summary": str(meta.get("chat_summary") or ""),
@@ -1041,7 +1228,7 @@ def download_file(run_id: str, name: str) -> FileResponse:
     return FileResponse(path, media_type=media, filename=path.name)
 
 
-def _bg_resume_pipeline(run_id: str) -> None:
+def _bg_resume_pipeline(run_id: str, slot_gen: int | None = None) -> None:
     print(f"[case3] resume thread start run_id={run_id}", flush=True)
     log.info("resume thread start run_id=%s", run_id)
     from case3.pipeline import PipelineError, resume_pipeline
@@ -1058,22 +1245,15 @@ def _bg_resume_pipeline(run_id: str) -> None:
     except Exception:  # noqa: BLE001
         log.exception("background resume crashed run_id=%s", run_id)
     finally:
-        _release_pipeline_slot(run_id)
+        _release_pipeline_slot(run_id, generation=slot_gen)
 
 
 def _kick_resume_thread(run_id: str) -> None:
-    busy = _claim_pipeline_slot(run_id)
-    if busy is not None:
-        raise HTTPException(
-            409,
-            detail=(
-                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
-                "и перезапусти api.cmd."
-            ),
-        )
+    """Start resume. Caller already owns the slot (``resume_run`` claimed it)."""
+    gen = _slot_generation()
     threading.Thread(
         target=_bg_resume_pipeline,
-        kwargs={"run_id": run_id},
+        kwargs={"run_id": run_id, "slot_gen": gen},
         name=f"case3-resume-{run_id}",
         daemon=True,
     ).start()
@@ -1081,7 +1261,11 @@ def _kick_resume_thread(run_id: str) -> None:
 
 @app.post("/api/runs/{run_id}/resume")
 def resume_run(run_id: str) -> dict[str, Any]:
-    """Continue a failed run from failed_stage (same run_id, no LLM)."""
+    """Continue a failed run from failed_stage.
+
+    ``llm`` replays ``work/*.raw_model.txt`` and does not call the model.
+    The slot is claimed before meta flips to ``running``.
+    """
     if not _RUN_ID_OK.match(run_id):
         raise HTTPException(400, detail="invalid run_id")
     out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
@@ -1109,28 +1293,32 @@ def resume_run(run_id: str) -> dict[str, Any]:
             409,
             detail="run is not eligible to resume (need error after LLM on media/render)",
         )
-    if _PIPELINE_SLOT.locked():
-        _reclaim_stale_slot_if_dead()
-    if _PIPELINE_SLOT.locked():
-        busy = _pipeline_active_run() or "busy"
+    # Claim before any meta write. A 409 must leave status=error so «Продолжить» stays.
+    busy = _claim_pipeline_slot(run_id)
+    if busy is not None:
         raise HTTPException(
             409,
-            detail=(
-                f"Уже идёт прогон {busy}. Дождись конца или убей python.exe "
-                "и перезапусти api.cmd."
-            ),
+            detail=f"Уже идёт прогон {busy}. Дождись конца.",
         )
-    # Flip to running so Liber poll leaves the error card immediately.
-    meta["status"] = "running"
-    meta["stage"] = meta.get("failed_stage") or "queued"
-    meta.pop("cancel_requested", None)
-    meta.pop("error", None)
-    logs_dir = run_store.ROOT / "runs" / "logs" / run_id
-    from case3.run_meta import write_meta
+    resumed_from = meta.get("failed_stage")
+    _set_slot_handoff(True)
+    try:
+        # Flip to running so Liber poll leaves the error card immediately.
+        meta["status"] = "running"
+        meta["stage"] = resumed_from or "queued"
+        meta.pop("cancel_requested", None)
+        meta.pop("error", None)
+        logs_dir = run_store.ROOT / "runs" / "logs" / run_id
+        from case3.run_meta import write_meta
 
-    write_meta(out_dir, meta, logs_dir=logs_dir)
-    _kick_resume_thread(run_id)
-    return {"run_id": run_id, "status": "started", "resumed_from": meta.get("failed_stage")}
+        write_meta(out_dir, meta, logs_dir=logs_dir)
+        _kick_resume_thread(run_id)
+    except Exception:
+        _release_pipeline_slot(run_id, generation=_slot_generation())
+        raise
+    finally:
+        _set_slot_handoff(False)
+    return {"run_id": run_id, "status": "started", "resumed_from": resumed_from}
 
 
 @app.post("/api/runs/{run_id}/cancel")
@@ -1164,8 +1352,16 @@ def cancel_run(run_id: str) -> dict[str, Any]:
 
 @app.post("/api/pipeline/slot/reset")
 def reset_pipeline_slot() -> dict[str, Any]:
-    """Force release pipeline lock if stuck."""
+    """Release the desk slot only when its pipeline thread is already dead."""
     old = _pipeline_active_run()
+    if old == "pending" or (old and _is_pipeline_thread_alive(old)):
+        raise HTTPException(
+            409,
+            detail=(
+                f"Прогон {old} ещё выполняется. "
+                "Сброс слота только если поток уже умер."
+            ),
+        )
     _release_pipeline_slot()
     return {"ok": True, "reset_from": old}
 

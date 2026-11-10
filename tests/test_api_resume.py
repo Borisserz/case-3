@@ -51,13 +51,18 @@ def test_resume_200_kicks_background(tmp_path: Path, monkeypatch) -> None:
     run_id = _failed_run(tmp_path, failed_stage="latex")
     kicked = MagicMock()
     monkeypatch.setattr("case3.api._kick_resume_thread", kicked)
+    from case3.api import _release_pipeline_slot
+
     client = TestClient(app)
-    r = client.post(f"/api/runs/{run_id}/resume")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["run_id"] == run_id
-    assert body["status"] == "started"
-    kicked.assert_called_once_with(run_id)
+    try:
+        r = client.post(f"/api/runs/{run_id}/resume")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["run_id"] == run_id
+        assert body["status"] == "started"
+        kicked.assert_called_once_with(run_id)
+    finally:
+        _release_pipeline_slot(run_id)
 
 
 def test_status_error_includes_can_resume(tmp_path: Path, monkeypatch) -> None:
@@ -70,6 +75,21 @@ def test_status_error_includes_can_resume(tmp_path: Path, monkeypatch) -> None:
     assert body["status"] == "error"
     assert body["can_resume"] is True
     assert body["failed_stage"] == "charts"
+
+
+def test_resume_claim_failure_keeps_error_meta(tmp_path: Path, monkeypatch) -> None:
+    """Slot loss must not flip meta to running — otherwise «Продолжить» disappears."""
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = _failed_run(tmp_path, failed_stage="latex")
+    monkeypatch.setattr("case3.api._claim_pipeline_slot", lambda _rid: "other_run")
+    client = TestClient(app)
+    r = client.post(f"/api/runs/{run_id}/resume")
+    assert r.status_code == 409
+    meta = json.loads(
+        (tmp_path / "runs" / "out" / run_id / "meta.json").read_text(encoding="utf-8")
+    )
+    assert meta["status"] == "error"
+    assert meta["failed_stage"] == "latex"
 
 
 def test_resume_409_when_pipeline_slot_busy(tmp_path: Path, monkeypatch) -> None:
@@ -94,7 +114,7 @@ def test_resume_200_real_background_pipeline_transitions_to_ok(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Real _bg_resume_pipeline must not fail eligibility after resume_run flips state."""
-    from case3.api import _bg_resume_pipeline, _claim_pipeline_slot
+    from case3.api import _bg_resume_pipeline
 
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = _failed_run(tmp_path, failed_stage="latex")
@@ -112,8 +132,9 @@ def test_resume_200_real_background_pipeline_transitions_to_ok(
     )
 
     def sync_kick(rid: str) -> None:
-        assert _claim_pipeline_slot(rid) is None
-        _bg_resume_pipeline(rid)
+        from case3.api import _slot_generation
+
+        _bg_resume_pipeline(rid, slot_gen=_slot_generation())
 
     monkeypatch.setattr("case3.api._kick_resume_thread", sync_kick)
     client = TestClient(app)
@@ -133,24 +154,49 @@ def test_datetime_stamp_unique_within_same_second() -> None:
     assert s1 != s2
 
 
-def test_create_run_409_when_busy_does_not_write_uploads(
+def test_create_run_queues_one_waiter_and_third_writes_nothing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from case3.api import _claim_pipeline_slot, _release_pipeline_slot
+    """One run executes, one waits, the third is 409 and must not touch disk."""
+    from case3.api import _PIPELINE_SLOT, _claim_pipeline_slot, _release_pipeline_slot
 
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    monkeypatch.setattr("case3.api._bg_run_pipeline", lambda **_k: None)
     assert _claim_pipeline_slot("busy_run_123") is None
     try:
         client = TestClient(app)
-        r = client.post(
+        queued = client.post(
             "/api/run",
             data={"source_text": "Конфиденциальный отчёт за Q4", "intent": "Отчёт"},
         )
-        assert r.status_code == 409
+        assert queued.status_code == 202, queued.text
+        body = queued.json()
+        assert body["status"] == "queued"
+        assert body["waiting_for"] == "busy_run_123"
+        run_id = body["run_id"]
+        meta = json.loads(
+            (tmp_path / "runs" / "out" / run_id / "meta.json").read_text(encoding="utf-8")
+        )
+        assert meta["status"] == "queued"
+        assert meta["waiting_for"] == "busy_run_123"
         uploads_root = tmp_path / "runs" / "uploads"
-        written = list(uploads_root.rglob("source.txt")) if uploads_root.exists() else []
-        assert written == []
+        written = list(uploads_root.rglob("source.txt"))
+        assert len(written) == 1
+
+        rejected = client.post(
+            "/api/run",
+            data={"source_text": "Ещё один отчёт", "intent": "Отчёт"},
+        )
+        assert rejected.status_code == 409
+        written_after = list(uploads_root.rglob("source.txt"))
+        assert written_after == written
+
+        status = client.get(f"/api/runs/{run_id}/status")
+        assert status.status_code == 200
+        assert status.json()["status"] == "queued"
     finally:
         _release_pipeline_slot("busy_run_123")
+        if _PIPELINE_SLOT.locked():
+            _release_pipeline_slot()
 
 

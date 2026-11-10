@@ -31,6 +31,8 @@ export type BuildRunFormDataArgs = {
   chartPalette?: string;
   /** Wish for deck length (6–24). Model may emit fewer if Source is thin. */
   targetSlides?: number;
+  /** Previous bot run in this chat. Empty on the first send. */
+  priorRunId?: string | null;
 };
 
 export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
@@ -50,6 +52,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     deckStyle,
     chartPalette,
     targetSlides,
+    priorRunId,
   } = args;
   const outMode = modeToOutputMode(workMode);
 
@@ -119,6 +122,8 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     outMode === "diagram" || outMode === "presentation" ? "none" : "both",
   );
   fd.append("dry_run", String(dryRun));
+  const prior = (priorRunId || "").trim();
+  if (prior) fd.append("prior_run_id", prior);
   if (outMode === "diagram") {
     fd.set("max_charts", "0");
     fd.set("max_images", "0");

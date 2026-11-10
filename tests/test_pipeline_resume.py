@@ -77,7 +77,7 @@ def _seed_failed_run(
 
 def test_resume_stages_constant() -> None:
     assert RESUME_STAGES == frozenset(
-        {"images", "charts", "inject", "latex", "docx"}
+        {"llm", "images", "charts", "inject", "latex", "docx"}
     )
 
 
@@ -89,8 +89,34 @@ def test_can_resume_true(tmp_path: Path) -> None:
     assert can_resume_run(meta, work=work, out=out) is True
 
 
-def test_can_resume_false_wrong_stage(tmp_path: Path) -> None:
+def test_can_resume_llm_when_raw_model_saved(tmp_path: Path) -> None:
     run_id = _seed_failed_run(tmp_path, failed_stage="llm")
+    out = tmp_path / "runs" / "out" / run_id
+    work = tmp_path / "runs" / "work" / run_id
+    for p in list(work.glob("*.tex")) + list(out.glob("*.tex")):
+        p.unlink()
+    (work / "figures.json").unlink()
+    (out / "figures.json").unlink()
+    (work / "brief.raw_model.txt").write_text(
+        "```latex\n\\documentclass{article}\n\\begin{document}x\\end{document}\n```\n",
+        encoding="utf-8",
+    )
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert can_resume_run(meta, work=work, out=out) is True
+
+
+def test_can_resume_false_llm_without_raw(tmp_path: Path) -> None:
+    run_id = _seed_failed_run(tmp_path, failed_stage="llm")
+    out = tmp_path / "runs" / "out" / run_id
+    work = tmp_path / "runs" / "work" / run_id
+    for p in work.glob("*.raw_model.txt"):
+        p.unlink()
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert can_resume_run(meta, work=work, out=out) is False
+
+
+def test_can_resume_false_wrong_stage(tmp_path: Path) -> None:
+    run_id = _seed_failed_run(tmp_path, failed_stage="summary")
     out = tmp_path / "runs" / "out" / run_id
     work = tmp_path / "runs" / "work" / run_id
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
@@ -235,4 +261,53 @@ def test_resume_reinjects_slots_erased_by_prior_write_injected(
     resume_pipeline(run_id, project_root=tmp_path)
     final_tex = (out / "brief.tex").read_text(encoding="utf-8")
     assert "figures/cht_02.png" in final_tex
+
+
+def test_resume_llm_replays_saved_raw_without_calling_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id = _seed_failed_run(tmp_path, failed_stage="llm")
+    work = tmp_path / "runs" / "work" / run_id
+    out = tmp_path / "runs" / "out" / run_id
+    for p in list(work.glob("*.tex")) + list(out.glob("*.tex")):
+        p.unlink()
+    (work / "figures.json").unlink()
+    (out / "figures.json").unlink()
+    raw = (
+        "```json\n"
+        '{"charts":[],"diagrams":[],"figures":[]}\n'
+        "```\n"
+        "```latex\n"
+        "\\documentclass{article}\n"
+        "\\begin{document}\nМаржа 12\\%.\n\\end{document}\n"
+        "```\n"
+    )
+    (work / "brief.raw_model.txt").write_text(raw, encoding="utf-8")
+
+    def _boom(*_a, **_k):  # noqa: ANN001
+        raise AssertionError("LLM must not be called on llm resume")
+
+    monkeypatch.setattr("case3.llm_client.LLMClient.complete", _boom)
+
+    def fake_render(tex_path, **kwargs):  # noqa: ANN001
+        out_dir = kwargs["out_dir"]
+        pdf = out_dir / f"{tex_path.stem}.pdf"
+        pdf.write_bytes(b"%PDF")
+        return {"pdf": pdf}
+
+    monkeypatch.setattr("case3.pipeline.render_tex", fake_render)
+    monkeypatch.setattr("case3.pipeline.generate_all_charts", lambda *a, **k: {})
+    monkeypatch.setattr("case3.pipeline.generate_all_figures", lambda *a, **k: {})
+    monkeypatch.setattr("case3.pipeline.materialize_user_figures", lambda *a, **k: {})
+    monkeypatch.setattr(
+        "case3.pipeline.try_generate_chat_summary",
+        lambda *a, **k: ("ok", "ok"),
+    )
+
+    resume_pipeline(run_id, project_root=tmp_path)
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "ok"
+    assert meta.get("resumed_from_stage") == "llm"
+    # Thin replay is filled from Source; the model is not called.
+    assert "12" in (out / "brief.tex").read_text(encoding="utf-8")
 

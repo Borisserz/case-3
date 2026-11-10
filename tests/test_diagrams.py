@@ -74,6 +74,27 @@ def test_sanitize_repairs_space_separated_class_nodes() -> None:
     )
 
 
+def test_sanitize_repairs_two_colon_role_suffix() -> None:
+    """LLM writes ``]::start``; Mermaid needs ``]:::start``."""
+    raw = (
+        "flowchart TD\n"
+        '  A["Клиент<br/>Заявка"]::start --> B["Склад"]::process\n'
+        "  B --> C{Товар годен}::decision\n"
+        "  C -->|годен| D[Деньги]::ok\n"
+        "  classDef start fill:#D4EBE8,stroke:#1F6F66,color:#1a2e22\n"
+        "  classDef process fill:#E7F0D8,stroke:#6B7F45,color:#1a2e22\n"
+        "  classDef decision fill:#F8E6D8,stroke:#C47A3A,color:#1a2e22\n"
+        "  classDef ok fill:#D7EDD9,stroke:#2F7D4A,color:#1a2e22\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert 'A["Клиент<br/>Заявка"]:::start' in out
+    assert 'B["Склад"]:::process' in out
+    assert "C{Товар годен}:::decision" in out
+    assert "D[Деньги]:::ok" in out
+    assert "]::start" not in out
+    assert 'classDef start fill:#D4EBE8' in out
+
+
 def test_sanitize_repairs_class_with_leading_colons() -> None:
     """LLM emits ``class A :::start`` — invalid style separator; fix to ``class A start``."""
     raw = (

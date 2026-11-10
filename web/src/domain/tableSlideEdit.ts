@@ -1,4 +1,9 @@
-/** Table slide cell and structure editing utilities. */
+/** Table slide cell and structure editing utilities.
+ * Caps match slides_ir._MAX_TABLE_ROWS / _MAX_TABLE_COLS.
+ */
+
+export const MAX_TABLE_ROWS = 8;
+export const MAX_TABLE_COLS = 5;
 
 export function updateTableCell(
   rows: string[][],

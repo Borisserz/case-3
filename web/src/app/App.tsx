@@ -365,6 +365,7 @@ export default function App() {
     desk: {
       health,
       imageChip,
+      msgs,
       setMsgs,
       setBusy,
       setStopping,

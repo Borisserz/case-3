@@ -25,15 +25,18 @@ import {
   asString,
   formatApiDetailError,
   formatRunStatusError,
+  isRunInFlight,
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
   RunFailedError,
   slidesJobInFlight,
   slidesJobTerminal,
+  pipelineWatchKind,
   stageLabel,
   uid,
 } from "../domain/runHelpers";
+import { priorRunIdFromMessages } from "../domain/priorRun";
 import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
   attachSlidesPayload,
@@ -75,10 +78,11 @@ export type LiberSendDeps = {
     setSourceDraft: Dispatch<SetStateAction<SourceDraft | null>>;
     setAttachPhotos: Dispatch<SetStateAction<File[]>>;
   };
-  desk: {
-    health: Health | null;
-    imageChip: { ok: boolean };
-    setMsgs: Dispatch<SetStateAction<Msg[]>>;
+    desk: {
+      health: Health | null;
+      imageChip: { ok: boolean };
+      msgs: Msg[];
+      setMsgs: Dispatch<SetStateAction<Msg[]>>;
     setBusy: Dispatch<SetStateAction<boolean>>;
     setStopping: Dispatch<SetStateAction<boolean>>;
     setHasStoredReport: Dispatch<SetStateAction<boolean>>;
@@ -134,6 +138,7 @@ export function useLiberRun(deps: LiberSendDeps) {
     desk: {
       health,
       imageChip,
+      msgs,
       setMsgs,
       setBusy,
       setStopping,
@@ -159,6 +164,7 @@ export function useLiberRun(deps: LiberSendDeps) {
 async () => {
   if (!canSend) return;
   const chatTrim = chat.trim();
+  const priorRunId = priorRunIdFromMessages(msgs);
   const draftSnap = sourceDraft;
   const hasSource = Boolean(file) || Boolean(draftSnap?.text);
   const intentText = hasSource ? chatTrim || DEFAULT_INTENT : chatTrim;
@@ -299,6 +305,7 @@ async () => {
     workMode,
     deckStyle,
     chartPalette,
+    priorRunId,
   });
 
   try {
@@ -541,7 +548,7 @@ async () => {
             cancelled = true;
             return null;
           }
-          if (body.status === "running" || body.status === "started") {
+          if (isRunInFlight(body.status)) {
             // meta.stage is source of truth — steps[] can lag (persist race)
             // and must NOT pin the checklist on «Читаю Source» for minutes.
             applyStage(stage, detail);
@@ -725,7 +732,16 @@ async () => {
                   slides_stage?: string | null;
                   steps?: CraftStepLogEntry[];
                 };
-                if (body.status !== "running" && body.status !== "started") {
+                const terminalKind = pipelineWatchKind(
+                  body.status,
+                  body.slides_status,
+                  outMode,
+                );
+                if (terminalKind) {
+                  settle(terminalKind);
+                  return;
+                }
+                if (!isRunInFlight(body.status)) {
                   return;
                 }
                 let stage = body.stage || "queued";
@@ -817,10 +833,14 @@ async () => {
       outMode === "presentation" || result.output_mode === "presentation";
     const slidesAlreadyDone =
       result.slides_status === "ok" || Boolean(result.downloads?.pptx);
+    const slidesFailed =
+      isPresentationOnly &&
+      (result.slides_status || "").toLowerCase() === "error";
     const slidesStillBuilding =
       isPresentationOnly &&
       Boolean(result.run_id) &&
-      !slidesAlreadyDone;
+      !slidesAlreadyDone &&
+      !slidesFailed;
 
     const stablePhotos = uploadedPhotoThumbs(result.previews);
     if (result.run_id) {
@@ -835,7 +855,8 @@ async () => {
         result.preview?.blocks?.length ||
         result.downloads?.pdf ||
         result.downloads?.pptx ||
-        (result.diagrams && result.diagrams.length > 0)
+        (result.diagrams && result.diagrams.length > 0) ||
+        isPresentationOnly
       ) {
         rememberRun(result);
         setHasStoredReport(true);
@@ -851,6 +872,21 @@ async () => {
         if (msg.id !== pendingId || msg.role !== "bot") return msg;
         const streamed =
           msg.streamingSummary && msg.text.trim() ? msg.text : "";
+        if (slidesFailed) {
+          return {
+            ...msg,
+            pending: false,
+            text: "Слайды не собрались",
+            error: result.slides_error || "Слайды не собрались",
+            result,
+            thinkingElapsedSec: msg.thinkingStartedAt
+              ? Math.max(
+                  0,
+                  Math.round((Date.now() - msg.thinkingStartedAt) / 1000),
+                )
+              : msg.thinkingElapsedSec,
+          };
+        }
         if (slidesStillBuilding) {
           // Keep pending — never flash empty PPTX/PDF cards + «Сделать».
           const ss = result.slides_stage || "starting";
@@ -967,6 +1003,7 @@ async () => {
       file,
       health,
       imageChip,
+      msgs,
       workMode,
       deckStyle,
       attachPhotos,

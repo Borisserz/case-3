@@ -18,6 +18,7 @@ from case3.chart_style import (
 )
 from case3.charts import _DEFAULT_RENDER_CHART_PNG, render_chart_png, render_charts_batch
 from case3.deck_theme import normalize_pack_id, resolve_deck_theme
+from case3.input_validation import InsufficientDataError
 from case3.llm_client import LLMClient, LLMConfig, LLMConfigError, LLMError
 from case3.run_cancel import RunCancelled, raise_if_cancelled
 from case3.run_events import EVENTS
@@ -251,8 +252,12 @@ def _read_meta(out_dir: Path) -> dict[str, Any]:
 
 def _write_meta(out_dir: Path, meta: dict[str, Any], logs_dir: Path | None = None) -> None:
     from case3.run_events import _meta_file_lock, write_meta_atomic
+    from case3.run_meta import read_meta
 
     with _meta_file_lock:
+        disk = read_meta(out_dir)
+        if disk.get("cancel_requested"):
+            meta["cancel_requested"] = True
         payload = json.dumps(meta, ensure_ascii=False, indent=2)
         logs_meta = (logs_dir / "meta.json") if logs_dir is not None else None
         write_meta_atomic(out_dir / "meta.json", payload, logs_meta=logs_meta)
@@ -767,8 +772,8 @@ def run_slides_job(
         meta.pop("slides_stage_detail", None)
         _set_slides(out_dir, meta, status="ok", stage="ok", logs_dir=logs_dir)
         (out_dir / "chat_summary.txt").write_text(exc.message, encoding="utf-8")
-        _EV.publish_stage(run_id, "ok", detail="Недостаточно данных", scope="slides")
-        _EV.publish_terminal(run_id, "ok", recap={"headline": "Недостаточно данных", "body": exc.message})
+        EVENTS.publish_stage(run_id, "ok", detail="Недостаточно данных", scope="slides")
+        EVENTS.publish_terminal(run_id, "ok", recap={"headline": "Недостаточно данных", "body": exc.message})
     except (DeckIrError, LLMError, LLMConfigError, OSError, RuntimeError, ValueError) as exc:
         log.exception("slides failed run_id=%s", run_id)
         meta = _read_meta(out_dir)

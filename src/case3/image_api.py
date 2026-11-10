@@ -206,46 +206,59 @@ def _write_image_bytes(dest: Path, data: bytes) -> None:
     dest.write_bytes(data)
 
 
-def _host_allowed_for_download(url: str, *, api_base: str) -> bool:
-    """Allow public https OR same host as IMAGE_API_BASE_URL (office LAN)."""
+def _same_api_host(url: str, api_base: str) -> bool:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        return False
     api = urllib.parse.urlparse(api_base if "://" in api_base else f"http://{api_base}")
-    if api.hostname and parsed.hostname.lower() == api.hostname.lower():
-        return True
-    # public only
+    if parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or "").lower()
+    api_host = (api.hostname or "").lower()
+    if not host or not api_host or parsed.scheme not in {"http", "https"}:
+        return False
+    return host == api_host
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return bool(
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _public_https(url: str) -> bool:
+    """Explicit opt-in path: https whose every address is a public unicast."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
     try:
-        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 80)
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443)
     except socket.gaierror:
         return False
+    if not infos:
+        return False
     for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local:
+        if _is_blocked_ip(ipaddress.ip_address(info[4][0])):
             return False
     return True
 
 
 def _download_url(url: str, dest: Path, *, cfg: ImageApiConfig) -> None:
-    # Always enforce host policy (office same-host OR public when allow flag).
-    if not _host_allowed_for_download(url, api_base=cfg.base_url):
-        if not cfg.allow_url_download:
-            raise RuntimeError(
-                "API returned url but download blocked "
-                "(prefer base64 string; set IMAGE_ALLOW_URL_DOWNLOAD=1 for public https)"
-            )
-        # flag on → still require public host (no LAN/metadata)
-        parsed = urllib.parse.urlparse(url)
-        if not parsed.hostname:
-            raise RuntimeError("blocked empty image host")
-        try:
-            infos = socket.getaddrinfo(parsed.hostname, parsed.port or 80)
-        except socket.gaierror as exc:
-            raise RuntimeError(f"cannot resolve image host: {parsed.hostname}") from exc
-        for info in infos:
-            ip = ipaddress.ip_address(info[4][0])
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                raise RuntimeError(f"blocked non-public image IP: {ip}")
+    # Default: only the Image API host (after loopback rewrite).
+    # IMAGE_ALLOW_URL_DOWNLOAD=1 additionally allows public https.
+    if not (
+        _same_api_host(url, cfg.base_url)
+        or (cfg.allow_url_download and _public_https(url))
+    ):
+        raise RuntimeError(
+            "API returned url but download blocked "
+            "(prefer base64 string; set IMAGE_ALLOW_URL_DOWNLOAD=1 for public https)"
+        )
     # No redirect follow → prevents SSRF via 302 to metadata/LAN
     with httpx.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
         resp = client.get(url)

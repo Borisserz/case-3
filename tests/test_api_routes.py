@@ -103,8 +103,15 @@ def test_run_returns_202_and_status_poll(
 
 
 def test_run_rejects_second_while_busy(client: TestClient) -> None:
-    """Win desk: parallel pipelines → zombie stage=images/inject; API returns 409."""
+    """One executing run. The next request waits. A third gets 409."""
     assert api_mod._claim_pipeline_slot("holder_test") is None
+    started: list[str] = []
+
+    def _fake_bg(**kwargs: object) -> None:
+        started.append(str(kwargs["run_id"]))
+
+    original = api_mod._bg_run_pipeline
+    api_mod._bg_run_pipeline = _fake_bg  # type: ignore[assignment]
     try:
         r = client.post(
             "/api/run",
@@ -119,12 +126,21 @@ def test_run_rejects_second_while_busy(client: TestClient) -> None:
                 "formats": "both",
             },
         )
-        assert r.status_code == 409, r.text
-        assert "прогон" in (r.json().get("detail") or "").lower() or "holder" in (
-            r.json().get("detail") or ""
+        assert r.status_code == 202, r.text
+        assert r.json()["status"] == "queued"
+        assert r.json()["waiting_for"] == "holder_test"
+        assert started == []
+        third = client.post(
+            "/api/run",
+            data={"source_text": "y", "intent": "t", "dry_run": "true"},
         )
+        assert third.status_code == 409, third.text
+        assert "holder_test" in (third.json().get("detail") or "")
     finally:
+        api_mod._bg_run_pipeline = original
         api_mod._release_pipeline_slot("holder_test")
+        if api_mod._PIPELINE_SLOT.locked():
+            api_mod._release_pipeline_slot()
 
 
 def test_chart_edit_404_missing_run(client: TestClient) -> None:

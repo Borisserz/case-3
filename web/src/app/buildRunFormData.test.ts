@@ -26,6 +26,27 @@ describe("buildRunFormData", () => {
     assert.equal(fd.get("source_text"), "hello");
     assert.equal(fd.get("output_mode"), "report");
     assert.equal(fd.get("target_slides"), "12");
+    assert.equal(fd.get("prior_run_id"), null);
+  });
+
+  it("sends prior_run_id when this chat already has a run", () => {
+    const fd = buildRunFormData({
+      file: null,
+      draftSnap: null,
+      chatTrim: "сделай короче",
+      intentText: "сделай короче",
+      photosSnapshot: [],
+      forbidCharts: false,
+      forbidImages: false,
+      maxCharts: 2,
+      maxImages: 2,
+      maxDiagrams: 2,
+      dryRun: false,
+      workMode: "report",
+      deckStyle: DEFAULT_DECK_STYLE,
+      priorRunId: "source_abc",
+    });
+    assert.equal(fd.get("prior_run_id"), "source_abc");
   });
 
   it("clamps a presentation slide wish into 6–24", () => {

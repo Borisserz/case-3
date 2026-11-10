@@ -1,4 +1,6 @@
-/** Local report history — sessionStorage only (no backend). */
+/** Sidebar list is stored on the server (`runs/user_history.json`).
+ *  sessionStorage caches that list and the run payload so a report can reopen offline.
+ */
 
 import { attachSlidesPayload, type SlidesPayload } from "./attachSlidesPayload";
 import type { RunResult } from "./liberTypes";
@@ -16,6 +18,14 @@ export type HistoryItem = {
   pinned?: boolean;
   folderId?: string | null;
 };
+
+/** Items assigned to a folder, including pinned ones. */
+export function historyInFolder(
+  items: HistoryItem[],
+  folderId: string,
+): HistoryItem[] {
+  return items.filter((h) => h.folderId === folderId);
+}
 
 export type HistoryFolder = {
   id: string;
@@ -162,9 +172,9 @@ export function mergeServerFolders(
 export async function syncServerHistory(
   items: HistoryItem[],
   folders: HistoryFolder[],
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await fetch("/api/history/sync", {
+    const res = await fetch("/api/history/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -176,8 +186,13 @@ export async function syncServerHistory(
         folders,
       }),
     });
-  } catch {
-    /* ignore network / server unavailable */
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : "network";
+    return { ok: false, error };
   }
 }
 

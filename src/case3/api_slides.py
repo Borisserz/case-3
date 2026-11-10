@@ -47,6 +47,14 @@ def _write_slides_crash(run_id: str, message: str) -> None:
         write_meta(out, meta, logs_dir=logs)
     except OSError:
         log.exception("could not write slides crash meta run_id=%s", run_id)
+        return
+    try:
+        from case3.run_events import EVENTS
+
+        EVENTS.publish_stage(run_id, "error", detail=message, scope="slides")
+        EVENTS.publish_terminal(run_id, "error", error=message)
+    except Exception:
+        log.exception("could not publish slides crash run_id=%s", run_id)
 
 
 def _clear_stale_slides_running(meta: dict[str, Any], *, run_id: str, out_dir: Path) -> bool:

@@ -11,7 +11,11 @@ import {
   IconPlus,
   IconSettings,
 } from "./icons";
-import type { HistoryFolder, HistoryItem } from "./domain/reportHistory";
+import {
+  historyInFolder,
+  type HistoryFolder,
+  type HistoryItem,
+} from "./domain/reportHistory";
 
 export type { HistoryItem, HistoryFolder };
 
@@ -460,9 +464,7 @@ export function Sidebar({
                 ) : (
                   <div className="liber-hist-folders">
                     {folders.map((f) => {
-                      const folderItems = unpinned.filter(
-                        (h) => h.folderId === f.id,
-                      );
+                      const folderItems = historyInFolder(history, f.id);
                       return (
                         <FolderBlock
                           key={f.id}

@@ -1115,10 +1115,15 @@
 .deck-cv-diagram-live .mermaid-view,
 .deck-cv-diagram-live .mermaid-view-svg {
   width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 .deck-cv-diagram-live .mermaid-view-svg svg {
-  max-height: 72cqw;
-  width: auto;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: auto;
   margin: 0 auto;
 }
 .deck-cv-diagram-live .edgeLabel rect,
@@ -2324,6 +2329,13 @@ button.deck-cv-media,
   border-color: var(--deck-foil, var(--deck-accent, #3b82f6));
   color: var(--deck-foil, var(--deck-accent, #3b82f6));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.deck-cv-inline-add:disabled,
+.deck-cv-inline-add:disabled:hover {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
 }
 
 /* Toolbar separator */

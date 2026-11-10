@@ -77,6 +77,15 @@ export function useReportHistory({
     };
   }, []);
 
+  const persistServer = useCallback(
+    (items: HistoryItem[], nextFolders: HistoryFolder[]) => {
+      void syncServerHistory(items, nextFolders).then((result) => {
+        if (!result.ok) showToast("История не сохранилась на сервере");
+      });
+    },
+    [showToast],
+  );
+
   const rememberRun = useCallback(
     (result: RunResult) => {
       saveRunPayload(result);
@@ -89,9 +98,9 @@ export function useReportHistory({
         savedAt: Date.now(),
       });
       setHistory(next);
-      void syncServerHistory(next, folders);
+      void persistServer(next, folders);
     },
-    [folders, setChatTitle],
+    [folders, persistServer, setChatTitle],
   );
 
   const openHistoryItem = useCallback(
@@ -189,36 +198,36 @@ export function useReportHistory({
     (runId: string) => {
       const next = togglePinHistory(runId);
       setHistory(next);
-      void syncServerHistory(next, folders);
+      void persistServer(next, folders);
     },
-    [folders],
+    [folders, persistServer],
   );
 
   const onMoveToFolder = useCallback(
     (runId: string, folderId: string | null) => {
       const next = moveHistoryToFolder(runId, folderId);
       setHistory(next);
-      void syncServerHistory(next, folders);
+      void persistServer(next, folders);
     },
-    [folders],
+    [folders, persistServer],
   );
 
   const onCreateFolder = useCallback(
     (name: string) => {
       const next = createFolder(name);
       setFolders(next);
-      void syncServerHistory(history, next);
+      void persistServer(history, next);
     },
-    [history],
+    [history, persistServer],
   );
 
   const onRenameFolder = useCallback(
     (id: string, name: string) => {
       const next = renameFolder(id, name);
       setFolders(next);
-      void syncServerHistory(history, next);
+      void persistServer(history, next);
     },
-    [history],
+    [history, persistServer],
   );
 
   const onDeleteFolder = useCallback(
@@ -226,9 +235,9 @@ export function useReportHistory({
       const next = deleteFolder(id);
       setFolders(next.folders);
       setHistory(next.history);
-      void syncServerHistory(next.history, next.folders);
+      void persistServer(next.history, next.folders);
     },
-    [],
+    [persistServer],
   );
 
   return {

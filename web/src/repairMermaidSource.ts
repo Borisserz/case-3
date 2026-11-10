@@ -83,10 +83,13 @@ function repairClassAssignLines(src: string): string {
     .join("\n");
 }
 
+const SHORT_ROLE = /(?<=[\]\)\}>])::(?!:)(?=[A-Za-z])/g;
+
 /** Repair broken `class A,B foo bar` lines + sequence diagram participants + edge-label spaces for live Mermaid. */
 export function repairMermaidSource(source: string): string {
   let raw = (source || "").trim();
   if (!raw) return raw;
+  raw = raw.replace(SHORT_ROLE, ":::");
   raw = repairClassAssignLines(raw);
   raw = repairSequenceDiagramLines(raw);
   raw = raw.replace(EDGE_LABEL_SPACES, "$1|$2| ");

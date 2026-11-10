@@ -79,9 +79,14 @@ export function stageLabel(
   if (mode !== "report") {
     return stageLabelForMode(stage, detail, mode);
   }
+  if (stage === "queued" && detail) return detail;
   if (detail && stage === "charts") return "Рисую график…";
   if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
   return "Генерирую документ…";
+}
+
+export function isRunInFlight(status?: string | null): boolean {
+  return status === "running" || status === "started" || status === "queued";
 }
 
 export function uid(): string {
@@ -133,8 +138,38 @@ export function slidesJobInFlight(status?: string | null): boolean {
 }
 
 export function slidesJobTerminal(status?: string | null): boolean {
+  return slidesTerminalKind(status) != null;
+}
+
+/** SSE may miss the deck crash. Poll uses this to leave «жду модель». */
+export function slidesTerminalKind(
+  status?: string | null,
+): "done" | "error" | "cancelled" | null {
   const st = (status || "").toLowerCase();
-  return st === "ok" || st === "error" || st === "cancelled";
+  if (st === "ok") return "done";
+  if (st === "error") return "error";
+  if (st === "cancelled") return "cancelled";
+  return null;
+}
+
+/**
+ * What the status poll should do while SSE is still open.
+ * `null` means keep waiting: the run is in flight, or a presentation
+ * still owes a deck after the report status flipped to ok.
+ */
+export function pipelineWatchKind(
+  status?: string | null,
+  slidesStatus?: string | null,
+  outputMode?: string | null,
+): "done" | "error" | "cancelled" | null {
+  const st = (status || "").toLowerCase();
+  if (st === "error") return "error";
+  if (st === "cancelled") return "cancelled";
+  if (st !== "ok") return null;
+  if (outputMode === "presentation") {
+    return slidesTerminalKind(slidesStatus);
+  }
+  return "done";
 }
 
 /** True when Liber should POST /slides (idle / failed), false when done or in-flight. */

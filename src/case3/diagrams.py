@@ -27,6 +27,17 @@ def max_diagrams_from_env() -> int:
     return max(0, min(n, DIAGRAMS_HARD_MAX))
 
 
+def clamp_diagram_budget(value: int | None) -> int:
+    """Per-request diagram ceiling. None follows the env default. Never a hidden 3."""
+    if value is None:
+        return max_diagrams_from_env()
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = 0
+    return max(0, min(n, DIAGRAMS_HARD_MAX))
+
+
 DIAGRAM_TYPES = frozenset(
     {"flowchart", "sequence", "mindmap", "timeline", "stateDiagram"}
 )
@@ -47,6 +58,8 @@ _MAX_TITLE = 80
 _FIRST_TOKEN = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)")
 _HEX_COLOR = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
 _CLICK_LINE = re.compile(r"(?im)^\s*click\s+.*$")
+# LLM writes ``Node]::role`` (two colons). Mermaid class suffix is ``:::role``.
+_SHORT_ROLE_SUFFIX = re.compile(r"(?<=[\]\)\}>])::(?!:)(?=[A-Za-z])")
 # `class A,B foo` is valid; `class A,B foo bar baz` (N names) is not — LLM leak.
 # Also catches space-separated nodes: `class A B C process`.
 _CLASS_ASSIGN_LINE = re.compile(
@@ -238,6 +251,7 @@ def sanitize_mermaid(text: str) -> str:
     # Mermaid accepts `graph` as alias of flowchart — normalize for Liber + type gate.
     raw = re.sub(r"(?im)^(\s*)graph(\s+)", r"\1flowchart\2", raw, count=1)
     raw = _CLICK_LINE.sub("", raw)
+    raw = _SHORT_ROLE_SUFFIX.sub(":::", raw)
     raw = _repair_class_assign_lines(raw)
     raw = _repair_sequence_diagram_lines(raw)
     raw = _normalize_edge_label_spaces(raw)

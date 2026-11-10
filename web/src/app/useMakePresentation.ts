@@ -14,6 +14,7 @@ import {
   reportTitle,
   slidesJobInFlight,
   slidesJobNeedsKick,
+  slidesTerminalKind,
 } from "../domain/runHelpers";
 import { attachSlidesPayload } from "../domain/attachSlidesPayload";
 import type { Msg, RunResult } from "../domain/liberTypes";
@@ -159,6 +160,8 @@ async (msgId: string, result: RunResult) => {
         );
       }
       const slidesStatus = (stBody.slides_status as string) || "idle";
+      const slidesError =
+        (stBody.slides_error as string) || "Слайды не собрались";
       // Prefer GET /slides (deck IR); status already carries twin PNG URLs.
       let payload = stBody as Record<string, unknown>;
       if (slidesStatus === "ok") {
@@ -218,9 +221,16 @@ async (msgId: string, result: RunResult) => {
             },
             payload,
           );
+          const failed = slidesStatus === "error";
+          const summary =
+            typeof stBody.chat_summary === "string"
+              ? stBody.chat_summary.trim()
+              : "";
           return {
             ...msg,
             pending: false,
+            text: failed ? "Слайды не собрались" : summary || msg.text,
+            error: failed ? slidesError : msg.error,
             thinkingElapsedSec: msg.thinkingStartedAt
               ? Math.max(
                   0,
@@ -254,9 +264,11 @@ async (msgId: string, result: RunResult) => {
       "done" | "error" | "cancelled" | "fallback"
     >((resolve) => {
       let settled = false;
+      let statusWatch: number | null = null;
       const settle = (v: "done" | "error" | "cancelled" | "fallback") => {
         if (settled) return;
         settled = true;
+        if (statusWatch != null) window.clearInterval(statusWatch);
         resolve(v);
       };
       slideCloser.stop = openRunEvents(runId, {
@@ -346,6 +358,28 @@ async (msgId: string, result: RunResult) => {
         },
         onFallback: () => settle("fallback"),
       });
+      statusWatch = window.setInterval(() => {
+        if (settled) return;
+        void fetch(`/api/runs/${encodeURIComponent(runId)}/status`)
+          .then(async (st) => {
+            if (settled || !st.ok) return;
+            const body = (await st.json().catch(() => ({}))) as {
+              slides_status?: string;
+              slides_stage?: string | null;
+            };
+            const kind = slidesTerminalKind(body.slides_status);
+            if (kind) {
+              settle(kind);
+              return;
+            }
+            if (slidesJobInFlight(body.slides_status)) {
+              applySlideStage(body.slides_stage || "starting");
+            }
+          })
+          .catch(() => {
+            /* next tick */
+          });
+      }, 1500);
       const cancelWatch = window.setInterval(() => {
         if (cancelRequestedRef.current) {
           window.clearInterval(cancelWatch);

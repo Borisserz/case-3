@@ -124,3 +124,36 @@ def test_patch_kpi_and_table_cell() -> None:
     assert out["slides"][2]["kpis"][0]["label"] == "Revenue"
     assert out["slides"][2]["kpis"][0]["value"] == "12"
     assert out["slides"][3]["rows"][1][0] == "9"
+
+
+def test_patch_adds_table_row_and_column() -> None:
+    out = apply_deck_text_patch(
+        _base(),
+        {
+            "slides": [
+                {
+                    "id": "s04",
+                    "rows": [
+                        ["H1", "H2", "Колонка 3"],
+                        ["1", "2", "—"],
+                        ["Новая строка", "—", "—"],
+                    ],
+                }
+            ]
+        },
+    )
+    rows = out["slides"][3]["rows"]
+    assert rows == [
+        ["H1", "H2", "Колонка 3"],
+        ["1", "2", "—"],
+        ["Новая строка", "—", "—"],
+    ]
+
+
+def test_patch_rejects_table_over_slide_caps() -> None:
+    wide = [["H1", "H2", "H3", "H4", "H5", "H6"], ["1", "2", "3", "4", "5", "6"]]
+    with pytest.raises(DeckIrError, match="column"):
+        apply_deck_text_patch(_base(), {"slides": [{"id": "s04", "rows": wide}]})
+    tall = [["H1", "H2"]] + [[str(i), "x"] for i in range(8)]
+    with pytest.raises(DeckIrError, match="row"):
+        apply_deck_text_patch(_base(), {"slides": [{"id": "s04", "rows": tall}]})

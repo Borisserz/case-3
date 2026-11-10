@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from case3.chart_html import CHART_TYPES
 from case3.chart_style import intent_palette_lines, normalize_palette_id
+from case3.diagrams import clamp_diagram_budget
 
 _CHART_TYPE_LIST = ", ".join(sorted(CHART_TYPES))
 
@@ -42,10 +43,12 @@ def build_intent_from_ui(
     mode = (output_mode or "auto").strip().lower()
     if mode not in {"report", "diagram", "presentation", "auto"}:
         mode = "auto"
+    md = clamp_diagram_budget(max_diagrams)
     req: list[str] = ["Требования UI:"]
     if mode == "diagram":
+        hi = md if md > 1 else 1
         req.append(
-            "- РЕЖИМ СХЕМА (output_mode=diagram): только Mermaid diagrams[] (1–3) "
+            f"- РЕЖИМ СХЕМА (output_mode=diagram): только Mermaid diagrams[] (1–{hi}) "
             "и короткий LaTeX-stub — \\title + 1–2 абзаца описания схем; "
             "без таблиц KPI, без полного отчёта; PDF/DOCX не нужны"
         )
@@ -63,7 +66,6 @@ def build_intent_from_ui(
     auto = bool(chart_auto) or (not clean and not hints)
     palette = normalize_palette_id(chart_palette)
     title = (doc_title or "").strip()
-    md = max(0, min(int(max_diagrams), 3))
     if title:
         # Marker parsed by generate.doc_title_from_intent — keep format stable.
         req.append(f"- CASE3_DOC_TITLE: {title}")

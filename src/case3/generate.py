@@ -810,6 +810,14 @@ def _build_latex_recovery_prompt(
     )
 
 
+def _persist_raw_model(out_tex: Path, stem: str, raw: str) -> Path:
+    """Write the model text before the next call or parse. Parent may vanish on Win."""
+    out_tex.parent.mkdir(parents=True, exist_ok=True)
+    path = out_tex.parent / f"{stem}.raw_model.txt"
+    path.write_text(raw or "", encoding="utf-8")
+    return path
+
+
 def generate_document(
     source: Path,
     *,
@@ -824,13 +832,15 @@ def generate_document(
     cancel_check: Callable[[], None] | None = None,
     user_figures: list[dict[str, Any]] | None = None,
     vision_images: list[tuple[str, str]] | None = None,
+    replay_raw: str | None = None,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Returns (tex_path, figures, charts, diagrams).
 
     max_images / max_charts / max_diagrams: per-request overrides; None → env defaults.
     cancel_check: optional cooperative stop (raises between LLM attempts).
+    replay_raw: saved model text. Skips the network and parses this string.
     """
-    from case3.diagrams import max_diagrams_from_env
+    from case3.diagrams import clamp_diagram_budget
 
     text_path = resolve_text_file(source)
     source_text = text_path.read_text(encoding="utf-8")
@@ -846,10 +856,7 @@ def generate_document(
         max_charts = max_charts_from_env()
     else:
         max_charts = max(0, int(max_charts))
-    if max_diagrams is None:
-        max_diagrams = max_diagrams_from_env()
-    else:
-        max_diagrams = max(0, min(int(max_diagrams), 3))
+    max_diagrams = clamp_diagram_budget(max_diagrams)
 
     from case3.prompts import dump_prompts
 
@@ -883,7 +890,10 @@ def generate_document(
     out_tex.parent.mkdir(parents=True, exist_ok=True)
     dump_prompts(out_tex.parent, system=system, user=user)
 
-    if dry_run:
+    if replay_raw is not None:
+        raw = replay_raw
+        hard_trunc = False
+    elif dry_run:
         stub = Path(__file__).resolve().parent / "templates" / "article_skeleton.tex"
         # Escape specials; no verbatim (source may contain \end{verbatim}).
         lines = [
@@ -899,117 +909,119 @@ def generate_document(
         )
         log.info("dry-run wrote %s", out_tex)
         return out_tex, [], [], []
-
-    cfg = LLMConfig.from_env()
-    # 8 charts HTML ≈ burns 4k tokens alone — Win desk still had VISION_MAX_TOKENS=4096.
-    # ≥6 charts need headroom for full Chart.js HTML + TeX (16384).
-    if max_charts >= 6 or (max_charts >= 4 and max_images >= 4):
-        floor_tok = 16384
-    elif max_charts >= 4 or max_images >= 4:
-        floor_tok = 12288
     else:
-        floor_tok = 8192
-    if cfg.max_tokens < floor_tok:
-        log.warning(
-            "VISION_MAX_TOKENS=%d too low for charts=%d images=%d — bumping to %d",
-            cfg.max_tokens,
-            max_charts,
-            max_images,
-            floor_tok,
-        )
-        cfg = LLMConfig(
-            base_url=cfg.base_url,
-            api_key=cfg.api_key,
-            model=cfg.model,
-            timeout_s=cfg.timeout_s,
-            max_retries=cfg.max_retries,
-            temperature=cfg.temperature,
-            reasoning=cfg.reasoning,
-            max_tokens=floor_tok,
-        )
-    llm = client or LLMClient(cfg)
-    raw = llm.complete(
-        system=system, user_text=user, cancel_check=cancel_check, images=vision_images
-    )
-    finish = getattr(llm, "last_finish_reason", "") or ""
-    if finish == "error" or (
-        "\\documentclass" not in (raw or "") and "```json" not in (raw or "").lower()
-    ):
-        log.warning(
-            "model returned no document (finish_reason=%r, %d chars) — retry once",
-            finish,
-            len(raw or ""),
-        )
-        raw = llm.complete(
-            system=system,
-            user_text=(
-                f"{user}\n\n"
-                "Previous answer had no JSON and no LaTeX. "
-                "Return ONLY two fenced blocks: a ```json object "
-                "(charts, then diagrams, then figures) and a ```latex document "
-                "that contains \\documentclass. No prose."
-            ),
-            cancel_check=cancel_check,
-            images=vision_images,
-        )
-        finish = getattr(llm, "last_finish_reason", "") or ""
-    need_cont = output_looks_truncated(raw or "") or finish == "length"
-    hard_trunc = finish == "length"
-    if need_cont:
-        log.warning(
-            "model output looks truncated (%d chars, finish_reason=%r) — continuation pass",
-            len(raw or ""),
-            finish,
-        )
-        cont_user = build_continuation_prompt(
-            partial=raw or "",
-            source=source_text,
-            max_charts=max_charts,
-        )
-        dump_prompts(
-            out_tex.parent, system=system, user=user, continuation=cont_user
-        )
-        cont = llm.complete(
-            system=system,
-            user_text=cont_user,
-            cancel_check=cancel_check,
-            images=vision_images,
-        )
-        cont_finish = getattr(llm, "last_finish_reason", "") or ""
-        if cont_finish == "length":
-            hard_trunc = True
+        cfg = LLMConfig.from_env()
+        # 8 charts HTML ≈ burns 4k tokens alone — Win desk still had VISION_MAX_TOKENS=4096.
+        # ≥6 charts need headroom for full Chart.js HTML + TeX (16384).
+        if max_charts >= 6 or (max_charts >= 4 and max_images >= 4):
+            floor_tok = 16384
+        elif max_charts >= 4 or max_images >= 4:
+            floor_tok = 12288
+        else:
+            floor_tok = 8192
+        if cfg.max_tokens < floor_tok:
             log.warning(
-                "continuation also truncated (finish_reason=length) — will force Source fill if TeX thin"
+                "VISION_MAX_TOKENS=%d too low for charts=%d images=%d — bumping to %d",
+                cfg.max_tokens,
+                max_charts,
+                max_images,
+                floor_tok,
             )
-        raw = merge_continuation(raw or "", cont or "")
-        log.info("continuation merged → %d chars", len(raw or ""))
-        if r"\documentclass" not in (raw or "") and (
-            "```json" in (raw or "").lower() or '"charts"' in (raw or "")
+            cfg = LLMConfig(
+                base_url=cfg.base_url,
+                api_key=cfg.api_key,
+                model=cfg.model,
+                timeout_s=cfg.timeout_s,
+                max_retries=cfg.max_retries,
+                temperature=cfg.temperature,
+                reasoning=cfg.reasoning,
+                max_tokens=floor_tok,
+            )
+        llm = client or LLMClient(cfg)
+        raw = llm.complete(
+            system=system, user_text=user, cancel_check=cancel_check, images=vision_images
+        )
+        _persist_raw_model(out_tex, stem, raw or "")
+        finish = getattr(llm, "last_finish_reason", "") or ""
+        if finish == "error" or (
+            "\\documentclass" not in (raw or "") and "```json" not in (raw or "").lower()
         ):
             log.warning(
-                "still no \\documentclass after continuation — running LaTeX recovery pass"
+                "model returned no document (finish_reason=%r, %d chars) — retry once",
+                finish,
+                len(raw or ""),
             )
-            tex_recovery_user = _build_latex_recovery_prompt(
-                raw_json_reply=raw or "",
-                intent=intent_text,
-                source=source_text,
-            )
-            tex_cont = llm.complete(
+            raw = llm.complete(
                 system=system,
-                user_text=tex_recovery_user,
+                user_text=(
+                    f"{user}\n\n"
+                    "Previous answer had no JSON and no LaTeX. "
+                    "Return ONLY two fenced blocks: a ```json object "
+                    "(charts, then diagrams, then figures) and a ```latex document "
+                    "that contains \\documentclass. No prose."
+                ),
                 cancel_check=cancel_check,
                 images=vision_images,
             )
-            raw = merge_continuation(raw or "", tex_cont or "")
-            log.info("LaTeX recovery merged → %d chars", len(raw or ""))
-    else:
-        hard_trunc = False
+            _persist_raw_model(out_tex, stem, raw or "")
+            finish = getattr(llm, "last_finish_reason", "") or ""
+        need_cont = output_looks_truncated(raw or "") or finish == "length"
+        hard_trunc = finish == "length"
+        if need_cont:
+            log.warning(
+                "model output looks truncated (%d chars, finish_reason=%r) — continuation pass",
+                len(raw or ""),
+                finish,
+            )
+            cont_user = build_continuation_prompt(
+                partial=raw or "",
+                source=source_text,
+                max_charts=max_charts,
+            )
+            dump_prompts(
+                out_tex.parent, system=system, user=user, continuation=cont_user
+            )
+            cont = llm.complete(
+                system=system,
+                user_text=cont_user,
+                cancel_check=cancel_check,
+                images=vision_images,
+            )
+            cont_finish = getattr(llm, "last_finish_reason", "") or ""
+            if cont_finish == "length":
+                hard_trunc = True
+                log.warning(
+                    "continuation also truncated (finish_reason=length) — will force Source fill if TeX thin"
+                )
+            raw = merge_continuation(raw or "", cont or "")
+            _persist_raw_model(out_tex, stem, raw or "")
+            log.info("continuation merged → %d chars", len(raw or ""))
+            if r"\documentclass" not in (raw or "") and (
+                "```json" in (raw or "").lower() or '"charts"' in (raw or "")
+            ):
+                log.warning(
+                    "still no \\documentclass after continuation — running LaTeX recovery pass"
+                )
+                tex_recovery_user = _build_latex_recovery_prompt(
+                    raw_json_reply=raw or "",
+                    intent=intent_text,
+                    source=source_text,
+                )
+                tex_cont = llm.complete(
+                    system=system,
+                    user_text=tex_recovery_user,
+                    cancel_check=cancel_check,
+                    images=vision_images,
+                )
+                raw = merge_continuation(raw or "", tex_cont or "")
+                _persist_raw_model(out_tex, stem, raw or "")
+                log.info("LaTeX recovery merged → %d chars", len(raw or ""))
+        else:
+            hard_trunc = False
 
     # Re-mkdir: Win desk 073916 lost work/ during the long LLM call
     # (cleanup / sync / cancel race) → FileNotFoundError on write.
-    out_tex.parent.mkdir(parents=True, exist_ok=True)
-    raw_path = out_tex.parent / f"{stem}.raw_model.txt"
-    raw_path.write_text(raw or "", encoding="utf-8")
+    raw_path = _persist_raw_model(out_tex, stem, raw or "")
     if not (raw or "").strip():
         raise LLMError(
             f"модель вернула пустой текст (см. {raw_path.name}). "

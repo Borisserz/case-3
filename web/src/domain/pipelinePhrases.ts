@@ -446,6 +446,7 @@ export function stageLabelForMode(
   detail?: string | null,
   mode: ThinkingMode = "report",
 ): string {
+  if (detail && stage === "queued") return detail;
   if (detail && (stage === "charts" || stage === "slides_charts")) {
     return mode === "presentation"
       ? "График на слайд…"

@@ -5,10 +5,13 @@ import { describe, it } from "node:test";
 import { modeSurfaces } from "./domain/liberModes";
 import {
   formatRunStatusError,
+  isRunInFlight,
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
   softMediaFailToast,
+  slidesTerminalKind,
+  pipelineWatchKind,
   stageLabel,
 } from "./domain/runHelpers";
 
@@ -16,6 +19,22 @@ describe("liberRunHelpers", () => {
   it("stageLabel charts detail", () => {
     assert.equal(stageLabel("charts", "cht_01"), "Рисую график…");
     assert.equal(stageLabel("latex"), "Собираю PDF…");
+    assert.equal(stageLabel("queued"), "В очереди…");
+    assert.equal(stageLabel("queued", "Жду прогон holder"), "Жду прогон holder");
+  });
+
+  it("slides terminal kind unblocks a deck wait", () => {
+    assert.equal(slidesTerminalKind("running"), null);
+    assert.equal(slidesTerminalKind("llm_retry"), null);
+    assert.equal(slidesTerminalKind("ok"), "done");
+    assert.equal(slidesTerminalKind("error"), "error");
+    assert.equal(slidesTerminalKind("cancelled"), "cancelled");
+  });
+
+  it("queued run stays in flight", () => {
+    assert.equal(isRunInFlight("queued"), true);
+    assert.equal(isRunInFlight("running"), true);
+    assert.equal(isRunInFlight("ok"), false);
   });
 
   it("stageLabel scales by thinking mode", () => {
@@ -125,5 +144,16 @@ describe("liberRunHelpers", () => {
     assert.match(msg, /TeX:/);
     assert.match(msg, /Misplaced/);
     assert.match(msg, /run run_x/);
+  });
+
+  it("pipelineWatchKind settles a dead run and waits for a live deck", () => {
+    assert.equal(pipelineWatchKind("error"), "error");
+    assert.equal(pipelineWatchKind("cancelled"), "cancelled");
+    assert.equal(pipelineWatchKind("running"), null);
+    assert.equal(pipelineWatchKind("ok", null, "report"), "done");
+    assert.equal(pipelineWatchKind("ok", "running", "presentation"), null);
+    assert.equal(pipelineWatchKind("ok", "idle", "presentation"), null);
+    assert.equal(pipelineWatchKind("ok", "error", "presentation"), "error");
+    assert.equal(pipelineWatchKind("ok", "ok", "presentation"), "done");
   });
 });

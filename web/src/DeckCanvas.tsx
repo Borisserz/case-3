@@ -22,6 +22,8 @@ import { matchBulletToNodeIds, matchNodeToBulletIndex } from "./diagramSlideSync
 import {
   addTableCol,
   addTableRow,
+  MAX_TABLE_COLS,
+  MAX_TABLE_ROWS,
   deleteTableCol,
   deleteTableRow,
   ensureTableRows,
@@ -867,8 +869,10 @@ function SlideBody({
             <button
               type="button"
               className="deck-cv-inline-add"
+              disabled={rows.length >= MAX_TABLE_ROWS}
               onClick={(e) => {
                 e.stopPropagation();
+                if (rows.length >= MAX_TABLE_ROWS) return;
                 const next = addTableRow(rows);
                 onField({ rows: next });
               }}
@@ -878,8 +882,10 @@ function SlideBody({
             <button
               type="button"
               className="deck-cv-inline-add"
+              disabled={ (rows[0]?.length || 0) >= MAX_TABLE_COLS }
               onClick={(e) => {
                 e.stopPropagation();
+                if ((rows[0]?.length || 0) >= MAX_TABLE_COLS) return;
                 const next = addTableCol(rows);
                 onField({ rows: next });
               }}

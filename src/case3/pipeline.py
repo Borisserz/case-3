@@ -31,8 +31,9 @@ from case3.user_photos import (
 )
 log = logging.getLogger("case3.pipeline")
 
-# Stages eligible for POST /resume (after LLM artifacts exist).
-RESUME_STAGES = frozenset({"images", "charts", "inject", "latex", "docx"})
+# Stages eligible for POST /resume.
+# ``llm`` replays work/*.raw_model.txt and does not call the model again.
+RESUME_STAGES = frozenset({"llm", "images", "charts", "inject", "latex", "docx"})
 
 # Isolate pipeline.log per run when multiple FileHandlers share logger "case3"
 # (Win AV + cross-run emit was a hang amplifier; see debug 114628).
@@ -90,14 +91,32 @@ def _media_ok_on_disk(mid: str, status: dict[str, Any], figs_dir: Path) -> bool:
     return (figs_dir / f"{mid}.png").is_file()
 
 
+def _saved_raw_model(work: Path, source: Path | None = None) -> Path | None:
+    """Non-empty ``*.raw_model.txt`` written before parse (see generate.py)."""
+    if not work.is_dir():
+        return None
+    if source is not None:
+        named = work / f"{source.stem}.raw_model.txt"
+        if named.is_file() and named.stat().st_size > 0:
+            return named
+    for path in sorted(work.glob("*.raw_model.txt")):
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+    return None
+
+
 def can_resume_run(
     meta: dict[str, Any], *, work: Path, out: Path
 ) -> bool:
     """True when Liber may offer «Продолжить» for this failed run."""
     if str(meta.get("status") or "") != "error":
         return False
-    if str(meta.get("failed_stage") or "") not in RESUME_STAGES:
+    stage = str(meta.get("failed_stage") or "")
+    if stage not in RESUME_STAGES:
         return False
+    if stage == "llm":
+        source = Path(str(meta.get("source") or ""))
+        return source.is_file() and _saved_raw_model(work, source) is not None
     if _find_run_tex(work, out) is None:
         return False
     fj = work / "figures.json"
@@ -232,9 +251,20 @@ def _presentation_chat_blurb(
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
     from case3.run_events import _meta_file_lock
-    from case3.run_meta import write_meta
+    from case3.run_meta import read_meta, write_meta
 
     with _meta_file_lock:
+        # The pipeline holds one in-memory snapshot. A concurrent
+        # mark_cancel_requested writes the flag on disk; the next stage
+        # dump must not erase it.
+        disk = read_meta(out)
+        if disk.get("cancel_requested"):
+            meta["cancel_requested"] = True
+            if meta.get("status") == "ok":
+                meta["status"] = "cancelled"
+                meta["stage"] = "cancelled"
+                meta["error"] = "Остановлено"
+                meta.pop("stage_detail", None)
         write_meta(out, meta, logs_dir=logs)
 
 
@@ -301,6 +331,19 @@ _DESK_SLIDES_KEYS = (
     "slides_style",
     "slides_target",
 )
+
+
+def carry_chat_prompt(meta: dict[str, Any], previous: dict[str, Any] | None) -> None:
+    """Keep the user's own words when the pipeline rebuilds meta from scratch.
+
+    ``/api/run`` stamps ``chat_prompt`` before the thread starts. The first
+    ``_write_meta`` would otherwise drop it, and the next turn could not
+    quote what the user actually asked.
+    """
+    prev = previous or {}
+    incoming = str(prev.get("chat_prompt") or "").strip()
+    if incoming and not str(meta.get("chat_prompt") or "").strip():
+        meta["chat_prompt"] = incoming
 
 
 def merge_desk_slides_fields(
@@ -677,10 +720,10 @@ def resume_pipeline(
     project_root: Path,
     on_stage: Callable[[str, str | None], None] | None = None,
 ) -> Path:
-    """Continue a failed run without LLM: missing media → inject → render.
+    """Continue a failed run without a new model call.
 
-    Requires ``meta.status=error``, ``failed_stage`` in ``RESUME_STAGES``, and
-    existing TeX + ``figures.json`` under work/out.
+    Media/render stages need TeX + ``figures.json``. Stage ``llm`` needs the
+    Source file and a non-empty ``*.raw_model.txt`` saved before parse.
     """
     root = project_root.resolve()
     work = root / "runs" / "work" / run_id
@@ -730,27 +773,38 @@ def resume_pipeline(
             meta=meta,
         )
 
-    tex_path = _find_run_tex(work, out)
-    assert tex_path is not None  # can_resume_run checked
-    # Prefer work copy for inject mutability
-    if tex_path.parent != work:
-        work_tex = work / tex_path.name
-        shutil.copy2(tex_path, work_tex)
-        tex_path = work_tex
+    failed_from = str(meta.get("failed_stage") or "")
+    llm_replay = failed_from == "llm"
+    source_path = Path(str(meta.get("source") or ""))
+    if llm_replay:
+        tex_path = work / f"{source_path.stem}.tex"
+        fj_path = work / "figures.json"
+        fj = {}
+        figures = []
+        charts = []
+        diagrams = []
+    else:
+        tex_path = _find_run_tex(work, out)
+        assert tex_path is not None  # can_resume_run checked
+        # Prefer work copy for inject mutability
+        if tex_path.parent != work:
+            work_tex = work / tex_path.name
+            shutil.copy2(tex_path, work_tex)
+            tex_path = work_tex
 
-    fj_path = work / "figures.json"
-    if not fj_path.is_file():
-        src_fj = out / "figures.json"
-        shutil.copy2(src_fj, fj_path)
-    try:
-        fj = json.loads(fj_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        fj = {}
-    if not isinstance(fj, dict):
-        fj = {}
-    figures = [f for f in (fj.get("figures") or []) if isinstance(f, dict)]
-    charts = [c for c in (fj.get("charts") or []) if isinstance(c, dict)]
-    diagrams = [d for d in (fj.get("diagrams") or []) if isinstance(d, dict)]
+        fj_path = work / "figures.json"
+        if not fj_path.is_file():
+            src_fj = out / "figures.json"
+            shutil.copy2(src_fj, fj_path)
+        try:
+            fj = json.loads(fj_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            fj = {}
+        if not isinstance(fj, dict):
+            fj = {}
+        figures = [f for f in (fj.get("figures") or []) if isinstance(f, dict)]
+        charts = [c for c in (fj.get("charts") or []) if isinstance(c, dict)]
+        diagrams = [d for d in (fj.get("diagrams") or []) if isinstance(d, dict)]
 
     status: dict[str, Any] = {}
     for candidate in (work / "status.json", out / "status.json"):
@@ -782,7 +836,6 @@ def resume_pipeline(
     if mode not in {"report", "diagram", "presentation", "auto"}:
         mode = "auto"
     dry_run = bool(meta.get("dry_run"))
-    failed_from = str(meta.get("failed_stage") or "")
 
     handler = _attach_pipeline_log_handler(logs, run_id)
     root_logger = logging.getLogger("case3")
@@ -822,7 +875,37 @@ def resume_pipeline(
             on_stage(stage, detail)
 
     try:
-        need_media = failed_from in {"images", "charts"} or any(
+        if llm_replay:
+            raw_path = _saved_raw_model(work, source_path)
+            if raw_path is None or not source_path.is_file():
+                raise PipelineError(
+                    "resume llm: saved model text or source missing",
+                    run_id=run_id,
+                    out_dir=out,
+                    logs_dir=logs,
+                    meta=meta,
+                )
+            bump("llm", "разбор сохранённого ответа…")
+            _, figures, charts, diagrams = generate_document(
+                source_path,
+                out_tex=tex_path,
+                intent=intent,
+                gold_dir=root / "prompt" / "gold",
+                max_images=images_budget,
+                max_charts=charts_budget,
+                max_diagrams=int(meta.get("max_diagrams") or 0),
+                dry_run=False,
+                replay_raw=raw_path.read_text(encoding="utf-8"),
+                cancel_check=lambda: raise_if_cancelled(out),
+            )
+            try:
+                fj = json.loads(fj_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                fj = {}
+            if not isinstance(fj, dict):
+                fj = {}
+
+        need_media = failed_from in {"images", "charts", "llm"} or any(
             not _media_ok_on_disk(str(x.get("id") or ""), status, figs_dir)
             for x in figures + charts + diagrams
             if isinstance(x, dict) and x.get("id")
@@ -996,11 +1079,9 @@ def run_pipeline(
 
     images_budget = max_images_from_env() if max_images is None else max(0, int(max_images))
     charts_budget = max_charts_from_env() if max_charts is None else max(0, int(max_charts))
-    diagrams_budget = (
-        max_diagrams_from_env()
-        if max_diagrams is None
-        else max(0, min(int(max_diagrams), 3))
-    )
+    from case3.diagrams import clamp_diagram_budget
+
+    diagrams_budget = clamp_diagram_budget(max_diagrams)
     mode = (output_mode or "auto").strip().lower()
     if mode not in {"report", "diagram", "presentation", "auto"}:
         mode = "auto"
@@ -1033,6 +1114,7 @@ def run_pipeline(
         "stage_detail": "жду модель…",
     }
     merge_desk_slides_fields(meta, prev_desk)
+    carry_chat_prompt(meta, prev_desk)
     EVENTS.ensure(run_id)
     from case3.run_events import note_craft_stage
 
@@ -1097,21 +1179,11 @@ def run_pipeline(
         tex_path = work / f"{stem}.tex"
         if mode == "diagram":
             from case3.chart_style import palette_from_intent
-            from case3.diagram_edit import _load_generate_system
-            from case3.diagram_repair import parse_repair_response
-            from case3.diagram_style import format_diagram_color_prompt
+            from case3.diagram_generate import complete_diagrams
             from case3.llm_client import LLMClient, LLMConfig
 
             source_text = text_path.read_text(encoding="utf-8")
             pal = palette_from_intent(intent or "")
-            system = _load_generate_system(max_diagrams=diagrams_budget, palette=pal)
-            user = (
-                f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
-                f"## Source\n{source_text[:12000]}\n\n"
-                f"{format_diagram_color_prompt(pal)}\n\n"
-                "Return ONLY one ```json fence with a diagrams array "
-                f"(1–{diagrams_budget} Mermaid). No prose before the fence."
-            )
             cfg = LLMConfig.from_env()
             diag_cfg = LLMConfig(
                 base_url=cfg.base_url,
@@ -1126,11 +1198,15 @@ def run_pipeline(
             if dry_run:
                 diagrams = []
             else:
-                raw_d = LLMClient(diag_cfg).complete(
-                    system=system, user_text=user, cancel_check=lambda: raise_if_cancelled(out)
-                )
                 try:
-                    diagrams = parse_repair_response(raw_d or "", max_diagrams=diagrams_budget)
+                    diagrams = complete_diagrams(
+                        intent=intent,
+                        source_text=source_text,
+                        max_diagrams=diagrams_budget,
+                        client=LLMClient(diag_cfg),
+                        palette=pal,
+                        cancel_check=lambda: raise_if_cancelled(out),
+                    )
                 except InsufficientDataError as exc:
                     return _handle_insufficient_data(exc.message)
             figures = []
@@ -1182,28 +1258,18 @@ def run_pipeline(
             bump("diagram_generate", "повтор: только Mermaid JSON…")
             try:
                 from case3.chart_style import palette_from_intent
-                from case3.diagram_edit import _load_generate_system
-                from case3.diagram_repair import parse_repair_response
-                from case3.diagram_style import format_diagram_color_prompt
+                from case3.diagram_generate import complete_diagrams
                 from case3.llm_client import LLMClient, LLMConfig
 
                 source_text = text_path.read_text(encoding="utf-8")
                 pal = palette_from_intent(intent or "")
-                system = _load_generate_system(
-                    max_diagrams=diagrams_budget, palette=pal
-                )
-                user = (
-                    f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
-                    f"## Source\n{source_text[:12000]}\n\n"
-                    f"{format_diagram_color_prompt(pal)}\n\n"
-                    "Return ONLY one ```json fence with a diagrams array "
-                    f"(1–{diagrams_budget} Mermaid). No prose before the fence."
-                )
-                raw_d = LLMClient(LLMConfig.from_env()).complete(
-                    system=system, user_text=user
-                )
-                diagrams = parse_repair_response(
-                    raw_d or "", max_diagrams=diagrams_budget
+                diagrams = complete_diagrams(
+                    intent=intent,
+                    source_text=source_text,
+                    max_diagrams=diagrams_budget,
+                    client=LLMClient(LLMConfig.from_env()),
+                    palette=pal,
+                    cancel_check=lambda: raise_if_cancelled(out),
                 )
                 meta["diagrams_recovery"] = "generate" if diagrams else "empty"
                 log.info(
@@ -1369,6 +1435,8 @@ def run_pipeline(
         meta.pop("stage_detail", None)
         meta.pop("cancel_requested", None)
         _write_meta(meta, out, logs)
+        if meta.get("status") == "cancelled":
+            raise RunCancelled("cancelled by user")
         EVENTS.scan_artifacts(run_id, out)
         # Presentation: slides job continues on the same bus — defer terminal.
         if mode != "presentation":

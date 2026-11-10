@@ -4,7 +4,7 @@
 ## Limits
 - max_images (photo slots via Image API /generate): {{MAX_IMAGES}}
 - CASE3_MAX_CHARTS (HTML→PNG budget): {{MAX_CHARTS}}
-- CASE3_MAX_DIAGRAMS (Mermaid Liber UI-only): {{MAX_DIAGRAMS}}
+- CASE3_MAX_DIAGRAMS (Mermaid → PNG in PDF/DOCX and Liber rail): {{MAX_DIAGRAMS}}
 - Output order (mandatory): ```json FIRST with keys **charts → diagrams → figures**, then ```latex full document.
 - Finish BOTH fences — never stop mid-table. Prefer short prose. **Fill chart budget first** (up to max_charts) when Source has numbers — do not soft-cap at 2; drop/extra photos before dropping charts.
 - If max_charts≥1 and Source has numbers → emit charts with variety of types (aim near max_charts, not 1–2).

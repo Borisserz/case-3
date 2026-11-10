@@ -54,4 +54,13 @@ describe("repairMermaidSource", () => {
     assert.match(out, /class A start/);
     assert.match(out, /class B process/);
   });
+
+  it("repairs a two-colon role suffix on a node", () => {
+    const raw = `flowchart TD
+  A["Клиент<br/>Заявка"]::start --> B["Склад"]::process`;
+    const out = repairMermaidSource(raw);
+    assert.match(out, /A\["Клиент<br\/>Заявка"\]:::start/);
+    assert.match(out, /B\["Склад"\]:::process/);
+    assert.ok(!out.includes("]::start"));
+  });
 });

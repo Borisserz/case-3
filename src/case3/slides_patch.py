@@ -6,7 +6,13 @@ import copy
 import re
 from typing import Any
 
-from case3.slides_ir import DeckIrError, _norm_ws, SLIDE_LAYOUTS
+from case3.slides_ir import (
+    SLIDE_LAYOUTS,
+    DeckIrError,
+    _MAX_TABLE_COLS,
+    _MAX_TABLE_ROWS,
+    _norm_ws,
+)
 
 _ID_OK = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 
@@ -30,8 +36,8 @@ def apply_deck_text_patch(
     """Merge text fields from ``patch`` into a copy of ``deck``.
 
     Allowed: string fields, bullets[i] (same length), kpis[i] text keys
-    (same length), rows[r][c] (same shape). Forbidden: layout, media/chart
-    ids, slide add/remove, chapter, style.
+    (same length), table rows (add/remove within the slide caps). Forbidden:
+    layout, media/chart ids, slide add/remove, chapter, style.
     """
     if not isinstance(deck, dict) or not isinstance(patch, dict):
         raise DeckIrError("deck/patch must be objects")
@@ -172,22 +178,38 @@ def _patch_kpis(target: dict[str, Any], kpis: Any) -> None:
 
 
 def _patch_rows(target: dict[str, Any], rows: Any) -> None:
+    """Replace table cells. Row and column counts may change inside the slide caps."""
     cur = target.get("rows")
-    if not isinstance(cur, list):
+    if not isinstance(cur, list) or not cur:
         raise DeckIrError("slide has no rows to patch")
     if not isinstance(rows, list):
         raise DeckIrError("rows must be list")
-    if len(rows) != len(cur):
-        raise DeckIrError("cannot change table row count")
-    for r, nrow in enumerate(rows):
-        if not isinstance(nrow, list) or not isinstance(cur[r], list):
-            raise DeckIrError("table row must be list")
-        if len(nrow) != len(cur[r]):
-            raise DeckIrError("cannot change table column count")
-        for c, cell in enumerate(nrow):
+    if len(rows) < 2:
+        raise DeckIrError("table needs a header and at least one data row")
+    if len(rows) > _MAX_TABLE_ROWS:
+        raise DeckIrError(f"table row count exceeds {_MAX_TABLE_ROWS}")
+    out: list[list[str]] = []
+    width = 0
+    for i, nrow in enumerate(rows):
+        if not isinstance(nrow, list) or not nrow:
+            raise DeckIrError("table row must be a non-empty list")
+        if i == 0 and len(nrow) > _MAX_TABLE_COLS:
+            raise DeckIrError(f"table column count exceeds {_MAX_TABLE_COLS}")
+        cells: list[str] = []
+        for cell in nrow[:_MAX_TABLE_COLS]:
             if not isinstance(cell, str):
                 raise DeckIrError("table cell must be string")
-            cur[r][c] = _norm_ws(cell)
+            cells.append(_norm_ws(cell) or "—")
+        if i == 0:
+            if len(cells) < 2:
+                raise DeckIrError("table needs at least 2 columns")
+            width = len(cells)
+        elif len(cells) < width:
+            cells = cells + ["—"] * (width - len(cells))
+        elif len(cells) > width:
+            cells = cells[:width]
+        out.append(cells)
+    target["rows"] = out
 
 
 def _slide_list(deck: dict[str, Any]) -> list[dict[str, Any]]:

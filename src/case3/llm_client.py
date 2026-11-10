@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import re
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +20,102 @@ from typing import Any
 log = logging.getLogger("case3.llm")
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
+_BAG = threading.local()
+_OPENER_LOCK = threading.Lock()
+_OPENER_READY = False
+
+
+def _remember_sock(sock: socket.socket | None) -> None:
+    if sock is None:
+        return
+    bag = getattr(_BAG, "socks", None)
+    if isinstance(bag, list):
+        bag.append(sock)
+
+
+class _AbortHTTPConnection(http.client.HTTPConnection):
+    def connect(self) -> None:
+        super().connect()
+        _remember_sock(self.sock)
+
+
+class _AbortHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self) -> None:
+        super().connect()
+        _remember_sock(self.sock)
+
+
+class _AbortHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_AbortHTTPConnection, req)
+
+
+class _AbortHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(
+            _AbortHTTPSConnection,
+            req,
+            context=self._context,
+            check_hostname=self._check_hostname,
+        )
+
+
+def _ensure_abort_opener() -> None:
+    global _OPENER_READY
+    with _OPENER_LOCK:
+        if _OPENER_READY:
+            return
+        urllib.request.install_opener(
+            urllib.request.build_opener(_AbortHTTPHandler(), _AbortHTTPSHandler())
+        )
+        _OPENER_READY = True
+
+
+def _abort_socks(socks: list[socket.socket]) -> None:
+    for sock in socks:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def _urlopen_until_cancel(req, timeout_s: float, cancel_check, poll_s: float = 0.25):  # type: ignore[no-untyped-def]
+    """Open the LLM request. ``cancel_check`` is polled while the socket blocks.
+
+    The check's exception propagates within one poll. The worker thread then
+    sees a shut-down socket instead of waiting out ``timeout_s``.
+    """
+    if cancel_check is None:
+        return urllib.request.urlopen(req, timeout=timeout_s)
+    _ensure_abort_opener()
+    box: dict[str, Any] = {}
+    socks: list[socket.socket] = []
+    done = threading.Event()
+
+    def _worker() -> None:
+        _BAG.socks = socks
+        try:
+            box["resp"] = urllib.request.urlopen(req, timeout=timeout_s)
+        except BaseException as exc:  # noqa: BLE001
+            box["exc"] = exc
+        finally:
+            _BAG.socks = None
+            done.set()
+
+    threading.Thread(target=_worker, name="case3-llm-http", daemon=True).start()
+    try:
+        while not done.wait(poll_s):
+            cancel_check()
+    except BaseException:
+        _abort_socks(socks)
+        raise
+    if "exc" in box:
+        raise box["exc"]
+    return box["resp"]
 
 
 class LLMConfigError(ValueError):
@@ -398,7 +496,9 @@ class LLMClient:
                 self.config.endpoint, data=data, headers=headers, method="POST"
             )
             try:
-                with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
+                with _urlopen_until_cancel(
+                    req, self.config.timeout_s, cancel_check
+                ) as resp:
                     text, finish = _content(json.loads(resp.read().decode("utf-8")))
                     self.last_finish_reason = finish
                     log.info(

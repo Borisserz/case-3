@@ -20,6 +20,8 @@ log = logging.getLogger("case3.api_history")
 router = APIRouter(tags=["history"])
 
 _HISTORY_FILE = "user_history.json"
+_INDEX_FILE = "history_index.json"
+UNPINNED_HISTORY_CAP = 24
 
 
 def _history_path() -> Path:
@@ -66,6 +68,107 @@ def _save_user_history(data: dict[str, Any]) -> None:
                 hp.write_text(payload, encoding="utf-8")
             except OSError as fallback_err:
                 log.warning("failed to save history: %s (fallback: %s)", last_err, fallback_err)
+
+
+def _title_from_meta(meta: dict[str, Any], run_id: str) -> str:
+    title = ""
+    prev = meta.get("preview")
+    if isinstance(prev, dict) and prev.get("title"):
+        title = str(prev.get("title")).strip()
+    elif meta.get("title"):
+        title = str(meta.get("title")).strip()
+    elif meta.get("intent"):
+        intent_line = str(meta.get("intent")).strip().split("\n")[0]
+        title = intent_line[:60]
+    return title or run_id
+
+
+def _index_path() -> Path:
+    return run_store.ROOT / "runs" / _INDEX_FILE
+
+
+def _load_history_index() -> dict[str, Any]:
+    hp = _index_path()
+    if not hp.is_file():
+        return {}
+    try:
+        data = json.loads(hp.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entries = data.get("entries") if isinstance(data, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def _save_history_index(entries: dict[str, Any]) -> None:
+    hp = _index_path()
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"entries": entries}, ensure_ascii=False, indent=2)
+    with _history_lock:
+        temp_p = hp.with_suffix(".tmp")
+        try:
+            temp_p.write_text(payload, encoding="utf-8")
+            temp_p.replace(hp)
+        except OSError:
+            hp.write_text(payload, encoding="utf-8")
+
+
+def _sync_history_index(out_dir: Path) -> dict[str, Any]:
+    """Refresh run rows from meta mtime. Unchanged meta.json files are not re-read."""
+    entries = _load_history_index()
+    seen: set[str] = set()
+    changed = False
+    if out_dir.is_dir():
+        for run_dir in out_dir.iterdir():
+            if not run_dir.is_dir() or not RUN_ID_OK.match(run_dir.name):
+                continue
+            meta_path = run_dir / "meta.json"
+            if not meta_path.is_file():
+                continue
+            seen.add(run_dir.name)
+            try:
+                mtime_ns = meta_path.stat().st_mtime_ns
+                mtime = meta_path.stat().st_mtime
+            except OSError:
+                continue
+            prev = entries.get(run_dir.name)
+            if isinstance(prev, dict) and str(prev.get("meta_mtime_ns")) == str(mtime_ns):
+                continue
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(meta, dict):
+                continue
+            entries[run_dir.name] = {
+                "title": _title_from_meta(meta, run_dir.name),
+                "savedAt": _parse_timestamp(meta.get("started_at"), fallback=mtime),
+                "status": meta.get("status", "ok"),
+                "meta_mtime_ns": str(mtime_ns),
+            }
+            changed = True
+    for stale in list(entries):
+        if stale not in seen:
+            entries.pop(stale, None)
+            changed = True
+    if changed:
+        _save_history_index(entries)
+    return entries
+
+
+def _cap_history_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """All pinned rows, plus the newest unpinned rows up to the desk cap."""
+    pinned = [it for it in items if it.get("pinned")]
+    unpinned = [it for it in items if not it.get("pinned")]
+    unpinned.sort(key=lambda x: x["savedAt"], reverse=True)
+    kept = pinned + unpinned[:UNPINNED_HISTORY_CAP]
+    kept.sort(
+        key=lambda x: (
+            1 if x["pinned"] else 0,
+            x["savedAt"],
+        ),
+        reverse=True,
+    )
+    return kept
 
 
 def _parse_timestamp(raw: str | None, fallback: float) -> int:
@@ -115,62 +218,25 @@ def get_history() -> dict[str, Any]:
     folders = user_data.get("folders", [])
 
     items: list[dict[str, Any]] = []
-    if out_dir.is_dir():
-        for run_dir in out_dir.iterdir():
-            if not run_dir.is_dir() or not RUN_ID_OK.match(run_dir.name):
-                continue
-            meta_path = run_dir / "meta.json"
-            if not meta_path.is_file():
-                continue
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(meta, dict):
-                continue
-
-            run_id = str(meta.get("run_id") or run_dir.name)
-            title = ""
-            prev = meta.get("preview")
-            if isinstance(prev, dict) and prev.get("title"):
-                title = str(prev.get("title")).strip()
-            elif meta.get("title"):
-                title = str(meta.get("title")).strip()
-            elif meta.get("intent"):
-                intent_line = str(meta.get("intent")).strip().split("\n")[0]
-                title = intent_line[:60]
-            if not title:
-                title = run_id
-
-            mtime = meta_path.stat().st_mtime
-            saved_at = _parse_timestamp(meta.get("started_at"), fallback=mtime)
-
-            is_pinned = run_id in pinned_set
-            folder_id = item_folders.get(run_id)
-
-            items.append(
-                {
-                    "id": run_id,
-                    "runId": run_id,
-                    "title": title,
-                    "savedAt": saved_at,
-                    "pinned": is_pinned,
-                    "folderId": folder_id,
-                    "status": meta.get("status", "ok"),
-                }
-            )
-
-    # Pinned first, then latest savedAt
-    items.sort(
-        key=lambda x: (
-            1 if x["pinned"] else 0,
-            x["savedAt"],
-        ),
-        reverse=True,
-    )
+    entries = _sync_history_index(out_dir)
+    for run_id, ent in entries.items():
+        if not isinstance(ent, dict):
+            continue
+        is_pinned = run_id in pinned_set
+        items.append(
+            {
+                "id": run_id,
+                "runId": run_id,
+                "title": str(ent.get("title") or run_id),
+                "savedAt": int(ent.get("savedAt") or 0),
+                "pinned": is_pinned,
+                "folderId": item_folders.get(run_id),
+                "status": ent.get("status", "ok"),
+            }
+        )
 
     return {
-        "items": items,
+        "items": _cap_history_items(items),
         "folders": folders,
     }
 

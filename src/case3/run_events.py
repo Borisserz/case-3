@@ -503,7 +503,8 @@ class RunEventBus:
         """
         st = self._state(run_id)
         sent = 0
-        deadline = time.monotonic() + max(0.1, timeout_s)
+        timeout_s = max(0.1, float(timeout_s))
+        deadline = time.monotonic() + timeout_s
         last_out = time.monotonic()
         keep_every = max(1.0, float(keepalive_s))
         while True:
@@ -533,9 +534,12 @@ class RunEventBus:
                 finished = st.done and sent >= len(st.events)
 
             if ping is not None:
+                # Idle budget, not a clock from the moment the client connected.
+                deadline = time.monotonic() + timeout_s
                 last_out = time.monotonic()
                 yield ping
             for ev in batch:
+                deadline = time.monotonic() + timeout_s
                 last_out = time.monotonic()
                 yield ev
             if finished:
@@ -552,7 +556,8 @@ class RunEventBus:
         """Non-blocking async generator yielding event dicts until terminal or timeout."""
         st = self._state(run_id)
         sent = 0
-        deadline = time.monotonic() + max(0.1, timeout_s)
+        timeout_s = max(0.1, float(timeout_s))
+        deadline = time.monotonic() + timeout_s
         last_out = time.monotonic()
         keep_every = max(1.0, float(keepalive_s))
         while True:
@@ -566,6 +571,7 @@ class RunEventBus:
 
             if batch:
                 for ev in batch:
+                    deadline = time.monotonic() + timeout_s
                     last_out = time.monotonic()
                     yield ev
                 if finished:
@@ -587,6 +593,7 @@ class RunEventBus:
                 return
 
             if now - last_out >= keep_every:
+                deadline = time.monotonic() + timeout_s
                 last_out = now
                 yield {"event": "ping", "t": time.time()}
                 continue

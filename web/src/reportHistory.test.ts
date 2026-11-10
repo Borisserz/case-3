@@ -3,6 +3,7 @@ import { describe, it, beforeEach } from "node:test";
 import {
   createFolder,
   deleteFolder,
+  historyInFolder,
   hydrateHistoryResult,
   loadFolders,
   loadHistory,
@@ -12,6 +13,7 @@ import {
   moveHistoryToFolder,
   pushHistory,
   saveUserTurn,
+  syncServerHistory,
   togglePinHistory,
   uploadedPhotoThumbs,
 } from "./domain/reportHistory";
@@ -169,6 +171,52 @@ describe("reportHistory folders + pin", () => {
     const afterMove = moveHistoryToFolder("run_2", "f_1");
     assert.equal(afterMove.length, 2);
     assert.equal(afterMove.find((h) => h.runId === "run_2")?.folderId, "f_1");
+  });
+
+  it("folder lists pinned items that were moved into it", () => {
+    const items = [
+      {
+        id: "run_1",
+        runId: "run_1",
+        title: "Север",
+        savedAt: 2,
+        pinned: true,
+        folderId: "fld_1",
+      },
+      {
+        id: "run_2",
+        runId: "run_2",
+        title: "Черновик",
+        savedAt: 1,
+        pinned: false,
+        folderId: null,
+      },
+    ];
+    const inFolder = historyInFolder(items, "fld_1");
+    assert.equal(inFolder.length, 1);
+    assert.equal(inFolder[0].runId, "run_1");
+  });
+
+  it("syncServerHistory reports HTTP and network failures", async () => {
+    const item = {
+      id: "run_1",
+      runId: "run_1",
+      title: "A",
+      savedAt: 1,
+    };
+    const fetchMock = async () =>
+      new Response("no", { status: 500 });
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as typeof fetch;
+    const httpFail = await syncServerHistory([item], []);
+    assert.equal(httpFail.ok, false);
+    if (!httpFail.ok) assert.equal(httpFail.error, "HTTP 500");
+
+    (globalThis as { fetch?: typeof fetch }).fetch = (async () => {
+      throw new Error("offline");
+    }) as typeof fetch;
+    const netFail = await syncServerHistory([item], []);
+    assert.equal(netFail.ok, false);
+    if (!netFail.ok) assert.match(netFail.error, /offline/);
   });
 });
 
