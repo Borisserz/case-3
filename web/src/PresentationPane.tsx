@@ -19,6 +19,7 @@ import {
   ImageEditModal,
   type ImageEditRequest,
 } from "./ImageEditModal";
+import { useConfirm } from "./ConfirmModal";
 import { IconUndo, IconRedo } from "./icons";
 const DiagramVisualEditor = lazy(() =>
   import("./DiagramVisualEditor").then((m) => ({
@@ -127,6 +128,7 @@ export function PresentationPane({
   showEditChrome = true,
   onDocsDirtyChange,
 }: Props) {
+  const confirm = useConfirm();
   const reduce = useReducedMotion();
   const [idx, setIdx] = useState(0);
   const [dir, setDir] = useState(0);
@@ -1219,7 +1221,7 @@ export function PresentationPane({
           }
           onDelete={
             live
-              ? (i) => {
+              ? async (i) => {
                   const id = deck?.slides?.[i]?.id;
                   if (!id) return;
                   if (deck!.slides.length <= 1) {
@@ -1227,13 +1229,14 @@ export function PresentationPane({
                     return;
                   }
                   const title = deck?.slides?.[i]?.title || `Слайд ${i + 1}`;
-                  if (
-                    !window.confirm(
-                      `Удалить слайд «${title}»? PPTX и превью пересоберутся.`,
-                    )
-                  ) {
-                    return;
-                  }
+                  const ok = await confirm({
+                    title: "Удалить слайд?",
+                    eyebrow: "презентация · структура",
+                    message: `Удалить слайд «${title}»? PPTX и превью пересоберутся на столе.`,
+                    confirmLabel: "Удалить слайд",
+                    danger: true,
+                  });
+                  if (!ok) return;
                   void structureOp({ op: "delete", id });
                 }
               : undefined
@@ -1516,18 +1519,19 @@ export function PresentationPane({
                 type="button"
                 className="presentation-nav is-danger"
                 disabled={saving || (deck?.slides?.length || 0) <= 1}
-                onClick={() => {
+                onClick={async () => {
                   const id = deck?.slides?.[safeIdx]?.id;
                   if (!id) return;
                   const title =
                     deck?.slides?.[safeIdx]?.title || `Слайд ${safeIdx + 1}`;
-                  if (
-                    !window.confirm(
-                      `Удалить слайд «${title}»? PPTX и превью пересоберутся.`,
-                    )
-                  ) {
-                    return;
-                  }
+                  const ok = await confirm({
+                    title: "Удалить слайд?",
+                    eyebrow: "презентация · структура",
+                    message: `Удалить слайд «${title}»? PPTX и превью пересоберутся на столе.`,
+                    confirmLabel: "Удалить слайд",
+                    danger: true,
+                  });
+                  if (!ok) return;
                   void structureOp({ op: "delete", id });
                 }}
               >

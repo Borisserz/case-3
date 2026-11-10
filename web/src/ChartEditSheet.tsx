@@ -1,6 +1,7 @@
 /** Liber desk: tune one chart — type chips, palette, notes. Preview swaps the figure above (G9). */
 
 import { useEffect, useRef, useState } from "react";
+import { useConfirm } from "./ConfirmModal";
 import {
   ChartTypeChip,
   chartTypeChipLabel,
@@ -67,6 +68,7 @@ export function ChartEditSheet({
   onPreviewHtml,
   onDelete,
 }: Props) {
+  const confirm = useConfirm();
   const DEFAULT_TYPES = [
     "bar",
     "line",
@@ -306,8 +308,15 @@ export function ChartEditSheet({
               type="button"
               className="chart-edit-delete"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm("Удалить этот график из отчёта?")) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Удалить график?",
+                  eyebrow: "отчёт · график",
+                  message: `Удалить график «${(caption || "").trim() || figureId}»? Он будет удалён из текста отчёта и figures.json.`,
+                  confirmLabel: "Удалить график",
+                  danger: true,
+                });
+                if (ok) {
                   onDelete();
                 }
               }}

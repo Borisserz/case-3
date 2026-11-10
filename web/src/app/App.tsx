@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
+import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../lazyChartsQa";
@@ -482,8 +483,9 @@ export default function App() {
   }
 
   return (
-    <div
-      className={`app chat-app${drag ? " is-drag" : ""}${railLayout && !narrowRail ? " has-rail" : ""}`}
+    <ConfirmProvider>
+      <div
+        className={`app chat-app${drag ? " is-drag" : ""}${railLayout && !narrowRail ? " has-rail" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDrag(true);
@@ -1006,5 +1008,6 @@ export default function App() {
         }
       />
     </div>
+  </ConfirmProvider>
   );
 }

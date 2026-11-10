@@ -37,6 +37,7 @@ import {
   serializeMermaidFlowchart,
 } from "./diagramIr";
 import { layoutPositions } from "./diagramLayout";
+import { useConfirm } from "./ConfirmModal";
 import { useFocusTrap } from "./useFocusTrap";
 
 /** React Flow fires dimensions/select on mount — those must not mark dirty. */
@@ -250,6 +251,7 @@ function EditorInner({
   onCancel,
   onSave,
 }: Props) {
+  const confirm = useConfirm();
   const { fitView } = useReactFlow();
   const sheetRef = useRef<HTMLDivElement>(null);
   useFocusTrap(sheetRef, { active: open });
@@ -446,12 +448,18 @@ function EditorInner({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, undo, redo]);
 
-  const requestClose = () => {
-    if (
-      dirty &&
-      !window.confirm("Закрыть без сохранения? Черновик останется в этой вкладке.")
-    ) {
-      return;
+  const requestClose = async () => {
+    if (dirty) {
+      const ok = await confirm({
+        title: "Несохранённые изменения",
+        eyebrow: "схема · редактор",
+        message:
+          "Закрыть редактор схемы без сохранения? Черновик останется в этой вкладке.",
+        confirmLabel: "Закрыть без сохранения",
+        cancelLabel: "Продолжить редактирование",
+        danger: true,
+      });
+      if (!ok) return;
     }
     onCancel();
   };

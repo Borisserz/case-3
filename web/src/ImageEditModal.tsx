@@ -1,6 +1,7 @@
 /** Liber desk: regenerate, img2img-edit, or upload one photo. */
 
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useConfirm } from "./ConfirmModal";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type ImageEditMode = "generate" | "edit" | "upload";
@@ -40,6 +41,7 @@ export function ImageEditModal({
   onUpload,
   onDelete,
 }: Props) {
+  const confirm = useConfirm();
   const [mode, setMode] = useState<ImageEditMode>("generate");
   const [prompt, setPrompt] = useState("");
   const [caption, setCaption] = useState("");
@@ -284,8 +286,15 @@ export function ImageEditModal({
               type="button"
               className="chart-edit-delete"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm("Удалить эту иллюстрацию из отчёта?")) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Удалить фото?",
+                  eyebrow: "отчёт · иллюстрация",
+                  message: `Удалить иллюстрацию «${(initialCaption || "").trim() || figureId}»? Она будет удалена из документа.`,
+                  confirmLabel: "Удалить фото",
+                  danger: true,
+                });
+                if (ok) {
                   onDelete();
                 }
               }}

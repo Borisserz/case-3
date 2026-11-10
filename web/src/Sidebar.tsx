@@ -1,6 +1,7 @@
 /** Liber left rail — New · Pinned · Folders · Recent · Settings (Codex-style). */
 
 import { useMemo, useState } from "react";
+import { useConfirm } from "./ConfirmModal";
 import {
   IconChevron,
   IconFolder,
@@ -171,6 +172,7 @@ function FolderBlock({
   const [open, setOpen] = useState(defaultOpen);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(title);
+  const confirm = useConfirm();
 
   return (
     <section className={`liber-hist-group${open ? " is-open" : ""}`}>
@@ -232,10 +234,15 @@ function FolderBlock({
             className="liber-hist-act liber-hist-act-danger"
             title="Удалить папку"
             aria-label="Удалить папку"
-            onClick={() => {
-              if (
-                window.confirm(`Удалить папку «${title}»? Чаты останутся.`)
-              ) {
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Удалить папку?",
+                eyebrow: "папка · удаление",
+                message: `Удалить папку «${title}»? Все отчёты и чаты сохранятся в истории.`,
+                confirmLabel: "Удалить папку",
+                danger: true,
+              });
+              if (ok) {
                 onDelete();
               }
             }}
