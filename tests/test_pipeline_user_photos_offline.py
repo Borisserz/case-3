@@ -115,3 +115,82 @@ def test_pipeline_merges_user_photo_and_skips_image_api(tmp_path: Path, monkeypa
     assert "usr_01" in tex
     assert r"\includegraphics" in tex
     assert "%CASE3_FIG" not in tex
+
+
+def test_pipeline_adopts_llm_vision_caption_for_user_photo(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "proj"
+    (root / "prompt" / "gold").mkdir(parents=True)
+    (root / "assets" / "docx").mkdir(parents=True)
+    src = root / "source.txt"
+    src.write_text("Текст отчёта\n", encoding="utf-8")
+    upload = root / "uploads"
+    users = save_user_photos(upload, [("screen.png", _PNG)], captions=["Фото 1"])
+
+    passed_kwargs = {}
+
+    def fake_generate(source, *, out_tex, intent=None, **kwargs):
+        nonlocal passed_kwargs
+        passed_kwargs = dict(kwargs)
+        out_tex.parent.mkdir(parents=True, exist_ok=True)
+        # LLM placed the slot right in the section
+        tex_with_slot = r"""
+\documentclass{article}
+\begin{document}
+\section{Интерфейс}
+На скриншоте показана панель Liber.
+%CASE3_FIG:usr_01%
+\end{document}
+"""
+        out_tex.write_text(tex_with_slot, encoding="utf-8")
+        llm_figs = [
+            {
+                "id": "usr_01",
+                "caption": "Панель управления Liber с активными метриками",
+                "width": r"0.85\textwidth",
+            }
+        ]
+        (out_tex.parent / "figures.json").write_text(
+            json.dumps({"figures": llm_figs, "charts": []}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return out_tex, llm_figs, [], []
+
+    def fake_render(tex_path, **kwargs):
+        out_dir = kwargs.get("out_dir") or tex_path.parent
+        pdf = Path(out_dir) / "source.pdf"
+        docx = Path(out_dir) / "source.docx"
+        pdf.write_bytes(b"%PDF-1.4 fake")
+        docx.write_bytes(b"PK fake")
+        return {"pdf": pdf, "docx": docx}
+
+    monkeypatch.setenv("IMAGE_API_BASE_URL", "")
+
+    with (
+        patch("case3.pipeline.generate_document", side_effect=fake_generate),
+        patch("case3.pipeline.generate_all_charts", return_value={}),
+        patch("case3.pipeline.generate_all_figures"),
+        patch("case3.pipeline.render_tex", side_effect=fake_render),
+    ):
+        out = run_pipeline(
+            src,
+            project_root=root,
+            formats={"pdf", "docx"},
+            intent="проанализируй скриншот",
+            max_images=1,
+            max_charts=0,
+            user_figures=users,
+        )
+
+    assert "user_figures" in passed_kwargs
+    assert passed_kwargs["user_figures"][0]["id"] == "usr_01"
+
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert fj["figures"][0]["id"] == "usr_01"
+    # LLM descriptive caption adopted!
+    assert fj["figures"][0]["caption"] == "Панель управления Liber с активными метриками"
+    # Placed in the section where LLM put it
+    tex = (out / "source.tex").read_text(encoding="utf-8")
+    assert "Панель управления Liber" in tex
+    assert r"\caption{Панель управления Liber" in tex
+    assert r"\section{Интерфейс}" in tex
+

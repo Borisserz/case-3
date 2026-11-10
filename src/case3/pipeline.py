@@ -1159,6 +1159,7 @@ def run_pipeline(
                     max_charts=charts_budget,
                     max_diagrams=diagrams_budget,
                     cancel_check=lambda: raise_if_cancelled(out),
+                    user_figures=user_figs,
                 )
             except InsufficientDataError as exc:
                 return _handle_insufficient_data(exc.message)

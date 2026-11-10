@@ -74,6 +74,19 @@ def test_user_prompt_comes_from_md_scaffold() -> None:
     assert "{{SOURCE}}" in md
 
 
+def test_user_prompt_includes_user_figures_vision_guidance() -> None:
+    text = build_user_prompt(
+        intent="Сделай отчёт",
+        source="Данные",
+        max_images=1,
+        max_charts=2,
+        user_figures=[{"id": "usr_01", "caption": "Мой файл"}],
+    )
+    assert "usr_01" in text
+    assert "Vision" in text
+    assert "%CASE3_FIG:id%" in text
+
+
 def test_continuation_prompt_from_md() -> None:
     text = build_continuation_prompt(
         partial="x" * 100,

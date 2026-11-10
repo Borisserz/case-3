@@ -182,10 +182,28 @@ def merge_user_figures(
     budget = max(0, int(max_images))
     if budget <= 0:
         return []
-    users = user_figures[:budget]
+    users = [dict(u) for u in user_figures[:budget]]
+    llm_by_id = {
+        str(f.get("id") or "").strip(): f
+        for f in (llm_figures or [])
+        if isinstance(f, dict) and str(f.get("id") or "").strip()
+    }
+    for u in users:
+        uid = str(u.get("id") or "").strip()
+        if uid in llm_by_id:
+            llm_fig = llm_by_id[uid]
+            llm_cap = str(llm_fig.get("caption") or "").strip()
+            cur_cap = str(u.get("caption") or "").strip()
+            is_llm_generic = bool(re.fullmatch(r"(?i)фото\s*\d*", llm_cap))
+            is_cur_generic = not cur_cap or bool(re.fullmatch(r"(?i)фото\s*\d*", cur_cap))
+            if llm_cap and (not is_llm_generic or is_cur_generic):
+                u["caption"] = llm_cap
+            if llm_fig.get("width"):
+                u["width"] = llm_fig["width"]
+
     user_caps = {str(u.get("caption") or "").strip().lower() for u in users}
     rest = budget - len(users)
-    llm = [f for f in llm_figures if str(f.get("source") or "") != "upload"]
+    llm = [f for f in (llm_figures or []) if str(f.get("source") or "") != "upload"]
     # avoid id clashes with usr_*
     llm = [f for f in llm if not str(f.get("id") or "").startswith("usr_")]
     cleaned_llm: list[dict[str, Any]] = []
@@ -199,6 +217,52 @@ def merge_user_figures(
             fc["caption"] = f"Иллюстрация {idx}"
         cleaned_llm.append(fc)
     return users + cleaned_llm
+
+
+def _image_path_to_data_url(path: Path, *, max_edge: int = 768) -> str | None:
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("vision skipped: pillow missing")
+        return None
+    try:
+        im = Image.open(path)
+        im = im.convert("RGB")
+        im.thumbnail((max_edge, max_edge))
+        buf = BytesIO()
+        im.save(buf, format="JPEG", quality=80, optimize=True)
+    except (OSError, ValueError) as exc:
+        log.warning("vision skip %s: %s", path.name, exc)
+        return None
+    import base64
+
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
+
+
+def user_photos_to_vision_images(
+    user_figures: list[dict[str, Any]],
+    *,
+    limit: int = 5,
+    max_edge: int = 768,
+) -> list[tuple[str, str]]:
+    """Convert user figure image files into resized JPEG data URLs for vision LLMs.
+
+    Returns [(fid, 'data:image/jpeg;base64,...'), ...]
+    """
+    out: list[tuple[str, str]] = []
+    for fig in user_figures[:limit]:
+        fid = str(fig.get("id") or "").strip()
+        path_str = str(fig.get("path") or "").strip()
+        if not fid or not path_str:
+            continue
+        p = Path(path_str)
+        if not p.is_file():
+            continue
+        data_url = _image_path_to_data_url(p, max_edge=max_edge)
+        if data_url:
+            out.append((fid, data_url))
+    return out
 
 
 def _insert_user_slot_block(tex: str, block: str) -> str:

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from case3.llm_client import build_body
+from case3.llm_client import LLMClient, LLMConfig, build_body
+import io
+import json
+import urllib.error
+from unittest.mock import patch
 
 
 def test_local_off_uses_chat_template_kwargs() -> None:
@@ -71,3 +75,57 @@ def test_images_become_qwen_vision_parts() -> None:
 def test_no_images_keeps_plain_string_content() -> None:
     body = build_body(system="s", user_text="u", reasoning="off", images=[])
     assert body["messages"][1]["content"] == "u"
+
+
+def test_llm_complete_falls_back_to_text_on_400_with_images() -> None:
+    cfg = LLMConfig(
+        base_url="http://test.api",
+        api_key="key",
+        max_retries=1,
+    )
+    client = LLMClient(cfg)
+
+    calls = 0
+    posted_contents = []
+
+    def mock_urlopen(req, timeout=None):
+        nonlocal calls
+        calls += 1
+        payload = json.loads(req.data.decode("utf-8"))
+        posted_contents.append(payload["messages"][1]["content"])
+        if calls == 1:
+            # First call with images fails with 400 (e.g. image not supported)
+            err = urllib.error.HTTPError(
+                url="http://test.api/chat/completions",
+                code=400,
+                msg="Bad Request",
+                hdrs={},
+                fp=io.BytesIO(b'{"error": "Images not supported by this model"}'),
+            )
+            raise err
+        # Second call succeeds
+        resp_obj = {
+            "choices": [
+                {
+                    "message": {"content": "ok text response"},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        mock_resp = io.BytesIO(json.dumps(resp_obj).encode("utf-8"))
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+        res = client.complete(
+            system="sys",
+            user_text="describe",
+            images=[("usr_01", "data:image/jpeg;base64,1234")],
+        )
+
+    assert res == "ok text response"
+    assert calls == 2
+    # First call had list content (multimodal)
+    assert isinstance(posted_contents[0], list)
+    # Fallback call was pure string
+    assert posted_contents[1] == "describe"
+

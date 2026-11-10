@@ -449,6 +449,18 @@ class LLMClient:
                         credit_shrinks += 1
                         attempt += 1
                         continue
+
+                # If multimodal request returned 400 (model doesn't support images or bad image payload),
+                # fall back to text-only so the pipeline continues gracefully.
+                if exc.code == 400 and isinstance(body.get("messages", [{}])[1].get("content"), list):
+                    log.warning(
+                        "LLM 400 on multimodal request — falling back to text-only: %s",
+                        body_txt[:200],
+                    )
+                    body["messages"][1]["content"] = user_text
+                    attempt += 1
+                    continue
+
                 # Local Qwen: prompt + max_tokens > n_ctx → 500 context exceeded.
                 if exc.code == 500 and context_exceeded(body_txt):
                     nxt = context_shrink_max_tokens(max_tokens)

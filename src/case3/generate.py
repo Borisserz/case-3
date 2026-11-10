@@ -189,6 +189,7 @@ def build_user_prompt(
     max_images: int,
     max_charts: int,
     max_diagrams: int = 0,
+    user_figures: list[dict[str, Any]] | None = None,
 ) -> str:
     from case3.citations import citation_intent_hint
     from case3.prompts import load as load_prompt
@@ -198,6 +199,20 @@ def build_user_prompt(
     intent_block = intent.strip() or DEFAULT_INTENT
     if cite_hint:
         intent_block = intent_block + "\n- " + cite_hint
+    if user_figures:
+        ids_str = ", ".join(f["id"] for f in user_figures if f.get("id"))
+        photo_lines = [
+            f"- Прикреплены реальные пользовательские изображения (ID: {ids_str}).",
+            "- ВНИМАТЕЛЬНО ПОСМОТРИ на каждое прикреплённое изображение: определи, что именно на нём показано (интерфейс, схема, оборудование, документ, процесс, фото с места и т.д.).",
+            "- Опиши увиденное на фото в тексте отчёта в соответствующем по смыслу разделе и абзаце (например, «Как видно на фотографии...», «В интерфейсе системы (рис. ...)...»).",
+            f"- Размести слот %CASE3_FIG:id% (используй ровно id из {ids_str}) в LaTeX непосредственно рядом с тем абзацем, где это фото анализируется/обсуждается. Не собирай фото в конце документа!",
+            "- В JSON в массиве figures[] верни объект для каждого такого id с конкретным, информативным caption на русском языке, точно описывающим содержание изображения (не абстрактное «Фото 1»!).",
+        ]
+        intent_block = (
+            intent_block
+            + "\n\n### Фотографии пользователя (Vision-анализ обязателен):\n"
+            + "\n".join(photo_lines)
+        )
     return load_prompt(
         "user_tex",
         INTENT_BLOCK=intent_block,
@@ -806,6 +821,8 @@ def generate_document(
     max_charts: int | None = None,
     max_diagrams: int | None = None,
     cancel_check: Callable[[], None] | None = None,
+    user_figures: list[dict[str, Any]] | None = None,
+    vision_images: list[tuple[str, str]] | None = None,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Returns (tex_path, figures, charts, diagrams).
 
@@ -835,6 +852,11 @@ def generate_document(
 
     from case3.prompts import dump_prompts
 
+    if vision_images is None and user_figures:
+        from case3.user_photos import user_photos_to_vision_images
+
+        vision_images = user_photos_to_vision_images(user_figures)
+
     gold_paths = select_gold(gold_dir, intent_text, max_items=3, max_images=max_images)
     system = load_system_prompt(
         max_images=max_images, max_charts=max_charts, max_diagrams=max_diagrams
@@ -845,6 +867,7 @@ def generate_document(
         max_images=max_images,
         max_charts=max_charts,
         max_diagrams=max_diagrams,
+        user_figures=user_figures,
     )
     log.info(
         "source=%s intent_len=%d gold=%s max_images=%d max_charts=%d max_diagrams=%d",
@@ -905,7 +928,7 @@ def generate_document(
         )
     llm = client or LLMClient(cfg)
     raw = llm.complete(
-        system=system, user_text=user, cancel_check=cancel_check
+        system=system, user_text=user, cancel_check=cancel_check, images=vision_images
     )
     finish = getattr(llm, "last_finish_reason", "") or ""
     if finish == "error" or (
@@ -926,6 +949,7 @@ def generate_document(
                 "that contains \\documentclass. No prose."
             ),
             cancel_check=cancel_check,
+            images=vision_images,
         )
         finish = getattr(llm, "last_finish_reason", "") or ""
     need_cont = output_looks_truncated(raw or "") or finish == "length"
@@ -948,6 +972,7 @@ def generate_document(
             system=system,
             user_text=cont_user,
             cancel_check=cancel_check,
+            images=vision_images,
         )
         cont_finish = getattr(llm, "last_finish_reason", "") or ""
         if cont_finish == "length":
@@ -972,6 +997,7 @@ def generate_document(
                 system=system,
                 user_text=tex_recovery_user,
                 cancel_check=cancel_check,
+                images=vision_images,
             )
             raw = merge_continuation(raw or "", tex_cont or "")
             log.info("LaTeX recovery merged → %d chars", len(raw or ""))

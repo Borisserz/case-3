@@ -12,6 +12,7 @@
 - If max_images≥1 → emit figures when Source has place/object/scene/process/product, but **after** charts/diagrams in the JSON. Skip if Intent says «без фото» or Source is pure numbers with no visual scene.
 - Mermaid: ASCII node ids; RU labels in []; first line matches type (flowchart/sequenceDiagram/…); flowchart nodes need :::role + classDef colors.
 - Chart colors: follow Intent palette hexes; captions RU; photo prompts EN (sharp, high quality); place FIG slots next to related prose.
+- User photos (usr_*): look at the attached image, describe its visible content in prose, place %CASE3_FIG:usr_*% in the matching section, and provide an informative Russian caption in figures[].
 - Page: A4 portrait by default; wide tables → tabularx{\textwidth}{…}; if still too wide (≈6+ cols) wrap that table only in \begin{landscape}…\end{landscape}.
 - Footnotes: only if Source has URL/«см. …»/biblio — never invent \cite/\footnote.
 - Never write case-3/case3 in \title/\author/body; topical title; \author{} if unknown.

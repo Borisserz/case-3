@@ -17,7 +17,10 @@ from case3.user_photos import (
     merge_user_figures,
     save_user_photos,
     split_image_budget,
+    user_photos_to_vision_images,
 )
+from case3.generate import generate_document
+from case3.llm_client import LLMClient
 
 _PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -131,3 +134,98 @@ def test_reject_too_many(tmp_path: Path) -> None:
 def test_bytes_to_png_rejects_garbage() -> None:
     with pytest.raises(UserPhotoError):
         bytes_to_png(b"not-an-image")
+
+
+def test_user_photos_to_vision_images(tmp_path: Path) -> None:
+    p = tmp_path / "usr_01.png"
+    p.write_bytes(_PNG)
+    user_figs = [{"id": "usr_01", "path": str(p), "source": "upload"}]
+    images = user_photos_to_vision_images(user_figs)
+    assert len(images) == 1
+    assert images[0][0] == "usr_01"
+    assert images[0][1].startswith("data:image/jpeg;base64,")
+
+
+def test_merge_user_figures_adopts_llm_caption() -> None:
+    users = [{"id": "usr_01", "source": "upload", "caption": "Фото 1", "path": "/tmp/u1.png"}]
+    llm = [{"id": "usr_01", "caption": "Схема архитектуры микросервисов", "width": r"0.90\textwidth"}]
+    merged = merge_user_figures(llm, users, max_images=2)
+    assert len(merged) == 1
+    assert merged[0]["id"] == "usr_01"
+    assert merged[0]["caption"] == "Схема архитектуры микросервисов"
+    assert merged[0]["source"] == "upload"
+    assert merged[0]["path"] == "/tmp/u1.png"
+    assert merged[0]["width"] == r"0.90\textwidth"
+
+
+def test_merge_user_figures_keeps_specific_user_caption_over_generic_llm() -> None:
+    users = [{"id": "usr_01", "source": "upload", "caption": "Архитектурная схема v2", "path": "/tmp/u1.png"}]
+    llm = [{"id": "usr_01", "caption": "Фото 1"}]
+    merged = merge_user_figures(llm, users, max_images=2)
+    assert merged[0]["caption"] == "Архитектурная схема v2"
+
+
+def test_generate_document_passes_user_figures_and_vision_images(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("Выручка 10 и 20.\n", encoding="utf-8")
+    out_tex = tmp_path / "work" / "run_vision" / "source.tex"
+    out_tex.parent.mkdir(parents=True)
+    photo_png = tmp_path / "usr_01.png"
+    photo_png.write_bytes(_PNG)
+
+    captured_kwargs = {}
+
+    class _VisionTestLLM(LLMClient):
+        def __init__(self) -> None:
+            pass
+
+        last_finish_reason = "stop"
+
+        def complete(self, *args, **kwargs) -> str:  # noqa: ANN002, ANN003
+            nonlocal captured_kwargs
+            captured_kwargs = dict(kwargs)
+            return (
+                "```json\n"
+                '{"charts":[],"diagrams":[],"figures":[{"id":"usr_01","caption":"Вид интерфейса"}]}\n'
+                "```\n"
+                "```latex\n"
+                r"\documentclass{article}"
+                "\n"
+                r"\begin{document}"
+                "\n"
+                r"\section{Обзор}"
+                "\nИнтерфейс показан ниже.\n"
+                "%CASE3_FIG:usr_01%\n"
+                r"\end{document}"
+                "\n"
+                "```\n"
+            )
+
+    monkeypatch.setenv("VISION_API_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("VISION_MODEL", "test")
+
+    user_figs = [{"id": "usr_01", "path": str(photo_png), "source": "upload", "caption": "Фото 1"}]
+
+    generate_document(
+        source,
+        out_tex=out_tex,
+        intent="отчёт с фото",
+        dry_run=False,
+        max_images=1,
+        max_charts=0,
+        max_diagrams=0,
+        user_figures=user_figs,
+        client=_VisionTestLLM(),  # type: ignore[arg-type]
+    )
+
+    assert "images" in captured_kwargs
+    images = captured_kwargs["images"]
+    assert len(images) == 1
+    assert images[0][0] == "usr_01"
+    assert images[0][1].startswith("data:image/jpeg;base64,")
+
+    user_prompt = captured_kwargs["user_text"]
+    assert "usr_01" in user_prompt
+    assert "Vision" in user_prompt
+
+
