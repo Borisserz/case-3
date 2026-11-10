@@ -1,4 +1,4 @@
-"""Text-only deck IR patches (edit existing; no add/delete)."""
+"""Text-only deck IR patches (edit existing slides; bullets may grow or shrink)."""
 
 from __future__ import annotations
 
@@ -93,11 +93,29 @@ def test_patch_rejects_add_slide() -> None:
         )
 
 
-def test_patch_rejects_bullet_count_change() -> None:
-    with pytest.raises(DeckIrError, match="bullets"):
+def test_patch_changes_bullet_count_within_cap() -> None:
+    shrunk = apply_deck_text_patch(
+        _base(),
+        {"slides": [{"id": "s02", "bullets": ["only-one"]}]},
+    )
+    assert shrunk["slides"][1]["bullets"] == ["only-one"]
+    grown = apply_deck_text_patch(
+        _base(),
+        {"slides": [{"id": "s02", "bullets": ["A", "B", "Новый тезис"]}]},
+    )
+    assert grown["slides"][1]["bullets"] == ["A", "B", "Новый тезис"]
+
+
+def test_patch_rejects_bullet_count_outside_cap() -> None:
+    with pytest.raises(DeckIrError, match="empty"):
         apply_deck_text_patch(
             _base(),
-            {"slides": [{"id": "s02", "bullets": ["only-one"]}]},
+            {"slides": [{"id": "s02", "bullets": []}]},
+        )
+    with pytest.raises(DeckIrError, match="exceeds"):
+        apply_deck_text_patch(
+            _base(),
+            {"slides": [{"id": "s02", "bullets": ["1", "2", "3", "4", "5", "6"]}]},
         )
 
 

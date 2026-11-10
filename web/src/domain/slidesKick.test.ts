@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { DEFAULT_DECK_STYLE, slidesAutoKickPayload } from "../deckStyle";
 import {
   slidesJobInFlight,
   slidesJobNeedsKick,
@@ -23,6 +24,12 @@ describe("slidesKick helpers", () => {
       }),
       false,
     );
+  });
+
+  it("auto kick marks itself so Stop is not cleared", () => {
+    const body = slidesAutoKickPayload(DEFAULT_DECK_STYLE);
+    assert.equal(body.kick_source, "api_auto");
+    assert.equal(body.theme_pack, "atelier");
   });
 
   it("inFlight / terminal cover Windows poll wait", () => {

@@ -2152,6 +2152,13 @@
   filter: brightness(1.08);
 }
 
+.deck-slides-film-dl:disabled {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+  filter: none;
+}
+
 .deck-slides-film-dl.is-stale {
   background: color-mix(in srgb, var(--muted) 35%, var(--sheet));
   color: var(--ink);

@@ -309,6 +309,96 @@ def test_status_includes_slide_pngs_when_twins_exist(
     assert pngs[1].endswith("/slides/png/slide_02.png")
 
 
+def test_auto_kick_keeps_cancel_and_does_not_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from case3.api_slides import try_claim_slides_start
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = "run_cancel_before_slides"
+    out = _seed_ok_run(tmp_path, run_id)
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["cancel_requested"] = True
+    meta["slides_status"] = "idle"
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    logs = tmp_path / "runs" / "logs" / run_id
+    logs.mkdir(parents=True)
+
+    claimed, _ = try_claim_slides_start(
+        run_id,
+        out_dir=out,
+        logs_dir=logs,
+        kick_source="api_auto",
+        only_if_unbuilt=True,
+    )
+    assert claimed is False
+    disk = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert disk["cancel_requested"] is True
+    assert disk.get("slides_status") != "running"
+
+
+def test_post_slides_api_auto_keeps_cancel(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chat auto-kick after Stop must not clear cancel or start the deck."""
+    run_id = "run_auto_kick_http_cancel"
+    out = _seed_ok_run(tmp_path, run_id)
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["cancel_requested"] = True
+    meta["slides_status"] = "idle"
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    started: list[str] = []
+    monkeypatch.setattr(
+        "case3.api_slides._kick_slides_thread", lambda rid: started.append(rid)
+    )
+
+    r = client.post(
+        f"/api/runs/{run_id}/slides",
+        json={"theme_pack": "atelier", "kick_source": "api_auto"},
+    )
+    assert r.status_code == 202, r.text
+    disk = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert disk["cancel_requested"] is True
+    assert disk.get("slides_status") != "running"
+    assert started == []
+
+
+def test_manual_slides_start_clears_stale_cancel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from case3.api_slides import try_claim_slides_start
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = "run_slides_after_stop"
+    out = _seed_ok_run(tmp_path, run_id)
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["cancel_requested"] = True
+    meta["slides_status"] = "idle"
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    logs = tmp_path / "runs" / "logs" / run_id
+    logs.mkdir(parents=True)
+
+    claimed, _ = try_claim_slides_start(
+        run_id,
+        out_dir=out,
+        logs_dir=logs,
+    )
+    assert claimed is True
+    disk = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert disk.get("cancel_requested") is not True
+    assert disk["slides_status"] == "running"
+
+
+def test_slides_patch_mark_keeps_cancel() -> None:
+    from case3.api_slides import note_slides_patch
+
+    meta = {"run_id": "r", "status": "ok", "cancel_requested": True}
+    note_slides_patch(meta, "r")
+    assert meta["cancel_requested"] is True
+    assert meta["slides_status"] == "running"
+    assert meta["slides_stage"] == "patch"
+
+
 def test_try_claim_slides_start_is_single_winner_under_race(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

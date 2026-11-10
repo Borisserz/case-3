@@ -116,6 +116,9 @@ class SlidesStartBody(BaseModel):
     theme_pack: str | None = Field(default=None)
     structure_id: str | None = Field(default=None)
     style_settings: dict[str, Any] | None = Field(default=None)
+    # Chat auto-kick sends api_auto so a Stop that landed first is kept.
+    # A hand click on «Собрать презентацию» omits this and may clear a stale flag.
+    kick_source: str | None = Field(default=None)
 
 
 @router.get("/api/deck-themes")
@@ -152,6 +155,10 @@ def try_claim_slides_start(
         if not isinstance(meta, dict):
             raise ValueError("corrupt meta.json")
         if meta.get("status") != "ok" or meta.get("insufficient_data"):
+            return False, meta
+        # Auto-kick races Stop: the flag landed after the pipeline read meta.
+        # A manual POST /slides is a new request and may clear a stale flag.
+        if meta.get("cancel_requested") and kick_source == "api_auto":
             return False, meta
         st_slides = str(meta.get("slides_status") or "idle")
         if st_slides == "running":
@@ -234,6 +241,7 @@ async def start_slides(
             theme_pack=body.theme_pack if body else None,
             structure_id=body.structure_id if body else None,
             style_settings=body.style_settings if body else None,
+            kick_source=body.kick_source if body else None,
         )
     except ValueError as exc:
         raise HTTPException(500, detail="corrupt meta.json") from exc
@@ -359,6 +367,15 @@ class SlidesStructureBody(BaseModel):
     layout: str | None = Field(default=None)
 
 
+def note_slides_patch(meta: dict[str, Any], run_id: str) -> None:
+    """Mark a deck IR rebuild. Leave ``cancel_requested`` for Stop."""
+    if not meta:
+        meta.update({"run_id": run_id, "status": "ok"})
+    meta["slides_status"] = "running"
+    meta["slides_stage"] = "patch"
+    meta["slides_error"] = None
+
+
 def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
     """Drain coalesced IR patches — latest deck wins; no 409 on concurrent edits."""
     from case3.run_cancel import RunCancelled
@@ -373,16 +390,12 @@ def _slides_patch_worker(run_id: str, out_dir: Path) -> None:
             deck = pending["deck"]
             _slides_patch_busy.add(run_id)
 
-        def _mark_patch(m: dict[str, Any]) -> None:
-            if not m:
-                m.update({"run_id": run_id, "status": "ok"})
-            m["slides_status"] = "running"
-            m["slides_stage"] = "patch"
-            m["slides_error"] = None
-            m.pop("cancel_requested", None)
-
         try:
-            update_meta(out_dir, _mark_patch, logs_dir=run_store.ROOT / "runs" / "logs" / run_id)
+            update_meta(
+                out_dir,
+                lambda m: note_slides_patch(m, run_id),
+                logs_dir=run_store.ROOT / "runs" / "logs" / run_id,
+            )
         except OSError:
             log.exception("slides patch meta write failed run_id=%s", run_id)
 

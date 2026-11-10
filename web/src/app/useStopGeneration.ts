@@ -2,6 +2,7 @@
 
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Msg } from "../domain/liberTypes";
+import { stopPollSettled } from "../domain/stopRun";
 
 type Deps = {
   stopping: boolean;
@@ -59,13 +60,7 @@ export function useStopGeneration({
             const body = await st.json().catch(() => ({}));
             const pipe = body.status as string | undefined;
             const slides = body.slides_status as string | undefined;
-            if (
-              pipe === "cancelled" ||
-              slides === "cancelled" ||
-              (pipe !== "running" &&
-                slides !== "running" &&
-                slides !== "queued")
-            ) {
+            if (stopPollSettled(pipe, slides)) {
               break;
             }
           } catch {

@@ -174,6 +174,9 @@ type Props = {
     diagrams: DiagramInfo[],
     meta?: import("./DiagramPane").DiagramUpdateMeta,
   ) => void;
+  /** Deck file lags the screen until «Готово». */
+  deckDownloadsBlocked?: boolean;
+  onDeckDownloadsBlockedChange?: (blocked: boolean) => void;
 };
 
 export function ArtifactRail({
@@ -221,6 +224,8 @@ export function ArtifactRail({
   finishReportEditBusy = false,
   makingPresentation = false,
   onDiagramsUpdated,
+  deckDownloadsBlocked = false,
+  onDeckDownloadsBlockedChange,
 }: Props) {
   const reduceMotion = useReducedMotion();
   const tab = artifact.tab;
@@ -758,12 +763,30 @@ export function ArtifactRail({
                 ))
               : null}
             {isReport && (tab === "presentation" || tab === "slides")
-              ? deckDownloadLinks(report?.downloads).map((link) => {
+              ? deckDownloadLinks(report?.downloads, {
+                  blocked: deckDownloadsBlocked,
+                }).map((link) => {
                   const current =
                     (tab === "presentation" && link.kind === "pptx") ||
                     (tab === "slides" && link.kind === "deck_pdf");
-                  const label =
-                    link.kind === "pptx" ? "Скачать PPTX" : "Скачать PDF";
+                  const label = link.disabled
+                    ? link.label
+                    : link.kind === "pptx"
+                      ? "Скачать PPTX"
+                      : "Скачать PDF";
+                  if (link.disabled) {
+                    return (
+                      <button
+                        key={link.kind}
+                        type="button"
+                        disabled
+                        title={link.title}
+                        className="artifact-rail-dl is-blocked"
+                      >
+                        {label}
+                      </button>
+                    );
+                  }
                   return (
                     <a
                       key={link.kind}
@@ -939,13 +962,20 @@ export function ArtifactRail({
                   onHistoryRedo={onHistoryRedo}
                   onClearEditHistory={onClearEditHistory}
                   onEditHistory={onEditHistory}
+                  downloadsBlocked={deckDownloadsBlocked}
+                  onDocsDirtyChange={onDeckDownloadsBlockedChange}
                 />
               ) : null}
 
               {!showDiagramSurface && tab === "slides" ? (
                 <DeckSlidesFilm
                   slides={report?.slidePngs || []}
-                  downloadHref={report?.downloads?.deck_pdf || null}
+                  downloadHref={
+                    deckDownloadsBlocked
+                      ? null
+                      : report?.downloads?.deck_pdf || null
+                  }
+                  downloadBlocked={deckDownloadsBlocked}
                 />
               ) : null}
 

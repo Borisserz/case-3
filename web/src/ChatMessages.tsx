@@ -36,6 +36,8 @@ type Props = {
   onOpenPhoto?: (photo: UserPhotoThumb) => void;
   /** Continue failed pipeline from failed_stage (same run_id). */
   onResumeRun?: (msgId: string, runId: string) => void;
+  /** Message whose deck file lags the screen. Its PPTX/PDF stay closed. */
+  deckDownloadsBlockedMsgId?: string | null;
 };
 
 export function ChatMessages({
@@ -58,6 +60,7 @@ export function ChatMessages({
   onOpenFilm,
   onOpenPhoto,
   onResumeRun,
+  deckDownloadsBlockedMsgId = null,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -224,6 +227,7 @@ export function ChatMessages({
                       deck={m.result.deck}
                       runId={m.result.run_id}
                       outputMode={m.result.output_mode}
+                      deckDownloadsBlocked={m.id === deckDownloadsBlockedMsgId}
                       onView={() => {
                         const r = m.result!;
                         const diagramOnly =

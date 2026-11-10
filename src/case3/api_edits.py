@@ -43,6 +43,7 @@ from case3.run_store import (
     FILE_OK,
     artifact_downloads,
     build_preview_payload,
+    diagram_print_formats,
     edit_response_envelope,
     formats_from_edit_body,
     load_diagrams_from_out,
@@ -205,7 +206,7 @@ async def edit_run_diagram(
     if not FILE_OK.match(diagram_id):
         raise HTTPException(400, detail="invalid diagram_id")
     out_dir = resolve_run_dir(run_id)
-    fmt_set = formats_from_edit_body(body.formats)
+    fmt_set = diagram_print_formats(body.formats)
     try:
         diagram = await asyncio.to_thread(
             partial(
@@ -219,6 +220,8 @@ async def edit_run_diagram(
         )
     except DiagramEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
     undo = None
     artifacts = None
     if isinstance(diagram, dict):
@@ -254,7 +257,7 @@ async def refine_run_diagram(
             pass
     default_palette = str(run_meta.get("chart_palette") or run_meta.get("image_style_pack") or "atelier")
     palette = normalize_palette_id(body.palette or default_palette)
-    fmt_set = formats_from_edit_body(body.formats)
+    fmt_set = diagram_print_formats(body.formats)
     try:
         diagram = await asyncio.to_thread(
             partial(
@@ -269,6 +272,8 @@ async def refine_run_diagram(
         )
     except DiagramEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    except RenderError as exc:
+        raise HTTPException(500, detail=str(exc)) from exc
     except (LLMError, LLMConfigError) as exc:
         raise HTTPException(502, detail=str(exc)) from exc
     undo = None

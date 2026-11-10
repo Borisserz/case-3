@@ -53,6 +53,28 @@ def _seed_run(tmp_path: Path) -> Path:
     return out
 
 
+def test_edit_diagram_print_failure_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicit pdf/docx rebuild must not look saved when Docker fails."""
+    from case3.render import RenderError
+
+    out = _seed_run(tmp_path)
+
+    def _boom(*_a, **_k):
+        raise RenderError("docker down")
+
+    monkeypatch.setattr("case3.run_rebuild.rebuild_run_docs", _boom)
+    with pytest.raises(RenderError, match="docker down"):
+        edit_diagram_in_run(
+            out,
+            "dia_01",
+            mermaid="flowchart TD\nA-->B",
+            title="Схема",
+            formats={"pdf"},
+        )
+
+
 def test_edit_diagram_saves_sanitized_mermaid(tmp_path: Path) -> None:
     out = _seed_run(tmp_path)
     new_src = (

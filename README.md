@@ -19,7 +19,7 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
-**Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. **В PDF/DOCX схем нет** (только графики/фото); print-truth = PDF.
+**Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. Слот `%CASE3_DIAG:dia_NN%` попадает в PDF и DOCX как `figures/dia_NN.png` (ADR-0009). Битый Mermaid не валит TeX. print-truth = PDF.
 
 **Презентация:** слайдов 6–24 (настройка «Слайдов в презе»). До 5 своих PNG/JPEG. В тексте: `1. логотип …`, `2. схема …`, `3. интерфейс …`. Логотип и скрин встают как фото. Схема перерисовывается в Mermaid и стоит на слайде. Длинный текст сжимается в карту; из листинга на слайд берётся одна строка кода. Правка схемы: `E` → клик по схеме → «Сохранить». Подробно: `docs/knowledge/deck.md`.
 
@@ -78,7 +78,7 @@ scripts\web.cmd
 | Завис после TeX на «фото» / `stage=images` / `inject` навсегда | Баг ETA-lock (fixed `4a64a98`+): `git pull`, убей python, один прогон. Image `:8000` мёртв → `IMAGE_MAX_IMAGES=0` |
 | «PDF 6 минут» а файла нет | Это не latexmk — LLM + deadlock на 2-й стадии; после pull PDF ~секунды после TeX |
 | Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
-| HTTP **409** уже идёт прогон | Дождись / убей python — на Win только 1 report за раз |
+| HTTP **409** | Третий `POST /api/run`: один прогон уже идёт, второй ждёт (`202 queued`). Сброс слота — `POST /api/pipeline/slot/reset`, только если поток мёртв |
 | Коллега «404» | Не тот URL: Qwen≠`/generate`; или качаешь PDF пока `status=running` |
 | мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` (≥12288 при 4–5 графиках); UI «Графиков ≤» + `CASE3_MAX_CHARTS`; рестарт `api.cmd` |
 | Dry-run | графиков не будет — снять галку, нужен Vision |

@@ -1138,7 +1138,12 @@ def run_pipeline(
         if on_stage:
             on_stage(stage, detail)
 
-    from case3.input_validation import InsufficientDataError, validate_input_heuristics
+    from case3.input_validation import (
+        InsufficientDataError,
+        user_text_before_ui,
+        validate_input_heuristics,
+        with_default_brief,
+    )
 
     def _handle_insufficient_data(msg: str) -> Path:
         log.info("insufficient data run_id=%s mode=%s: %s", run_id, mode, msg)
@@ -1160,11 +1165,7 @@ def run_pipeline(
     try:
         # Tier 1: Fast input validation (intercept empty / data-free requests early).
         source_raw = text_path.read_text(encoding="utf-8") if text_path.is_file() else ""
-        user_intent = (
-            (intent or "")
-            .split("\n\nТребования UI:", 1)[0]
-            .split("\nТребования UI:", 1)[0]
-        )
+        user_intent = user_text_before_ui(intent)
         valid_in, refusal_msg = validate_input_heuristics(
             source_raw,
             user_intent,
@@ -1173,6 +1174,8 @@ def run_pipeline(
         )
         if not valid_in:
             return _handle_insufficient_data(refusal_msg or "В запросе недостаточно данных.")
+        if not user_intent.strip():
+            intent = with_default_brief(intent, user_intent)
 
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")

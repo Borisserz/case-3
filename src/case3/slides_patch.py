@@ -9,6 +9,7 @@ from typing import Any
 from case3.slides_ir import (
     SLIDE_LAYOUTS,
     DeckIrError,
+    _MAX_BULLETS,
     _MAX_TABLE_COLS,
     _MAX_TABLE_ROWS,
     _norm_ws,
@@ -35,7 +36,7 @@ def apply_deck_text_patch(
 ) -> dict[str, Any]:
     """Merge text fields from ``patch`` into a copy of ``deck``.
 
-    Allowed: string fields, bullets[i] (same length), kpis[i] text keys
+    Allowed: string fields, bullets (1–5, add or remove), kpis[i] text keys
     (same length), table rows (add/remove within the slide caps). Forbidden:
     layout, media/chart ids, slide add/remove, chapter, style.
     """
@@ -111,12 +112,14 @@ def apply_deck_text_patch(
 
 def _patch_bullets(target: dict[str, Any], bullets: Any) -> None:
     cur = target.get("bullets")
-    if not isinstance(cur, list):
+    if cur is not None and not isinstance(cur, list):
         raise DeckIrError("slide has no bullets to patch")
     if not isinstance(bullets, list):
         raise DeckIrError("bullets must be list")
-    if len(bullets) != len(cur):
-        raise DeckIrError("cannot change bullets length")
+    if len(bullets) < 1:
+        raise DeckIrError("bullets cannot be empty")
+    if len(bullets) > _MAX_BULLETS:
+        raise DeckIrError(f"bullet count exceeds {_MAX_BULLETS}")
     out: list[str] = []
     for b in bullets:
         if not isinstance(b, str):

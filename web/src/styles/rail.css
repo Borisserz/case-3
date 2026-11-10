@@ -674,6 +674,15 @@
   border-radius: 7px;
   border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
   background: color-mix(in srgb, var(--sheet) 88%, var(--secondary));
+  font-family: inherit;
+}
+
+.artifact-rail-dl:disabled {
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--muted) 35%, transparent);
+  background: color-mix(in srgb, var(--sheet) 92%, var(--muted));
+  opacity: 0.72;
+  cursor: default;
 }
 
 .artifact-rail-dl:hover {

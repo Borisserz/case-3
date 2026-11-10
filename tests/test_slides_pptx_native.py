@@ -8,6 +8,7 @@ from PIL import Image
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
+from case3.slides_patch import apply_deck_text_patch
 from case3.slides_pptx_native import build_native_pptx
 
 
@@ -326,6 +327,115 @@ def test_media_photo_not_squashed_in_pptx(tmp_path: Path) -> None:
     pic = pics[0]
     ratio = float(pic.width) / float(pic.height)
     assert 0.82 <= ratio <= 1.22, f"expected ~square photo, got ratio {ratio:.2f}"
+
+
+def _shape_text(slide) -> str:
+    return "\n".join(
+        s.text_frame.text for s in slide.shapes if s.has_text_frame
+    )
+
+
+def test_patched_bullet_lands_in_pptx(tmp_path: Path) -> None:
+    deck = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "bullets",
+                "title": "Факты",
+                "bullets": ["Первый", "Второй"],
+            }
+        ],
+    }
+    patched = apply_deck_text_patch(
+        deck,
+        {"slides": [{"id": "s01", "bullets": ["Первый", "Второй", "Третий тезис"]}]},
+    )
+    out = build_native_pptx(patched, tmp_path / "bullets.pptx")
+    text = _shape_text(Presentation(str(out)).slides[0])
+    assert "Третий тезис" in text
+
+
+def test_stat_hero_paints_heading_and_kpi(tmp_path: Path) -> None:
+    deck = {
+        "version": 1,
+        "palette": "atelier",
+        "style": {"brand_mark": "LIBER"},
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "stat_hero",
+                "kicker": "МАСШТАБ",
+                "title": "Ключевой мультипликатор",
+                "kpis": [
+                    {
+                        "label": "Рост отдачи",
+                        "value": "2,6×",
+                        "delta": "+160%",
+                        "hint": "к базе",
+                    }
+                ],
+                "bullets": ["Фокус на ядре"],
+            }
+        ],
+    }
+    out = build_native_pptx(deck, tmp_path / "stat.pptx")
+    text = _shape_text(Presentation(str(out)).slides[0])
+    assert "Ключевой мультипликатор" in text
+    assert "МАСШТАБ" in text
+    assert "2,6×" in text
+    assert "Рост отдачи" in text
+    assert "+160%" in text
+    assert "Фокус на ядре" in text
+
+
+def test_compare_and_quote_edits_land_in_pptx(tmp_path: Path) -> None:
+    deck = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "compare",
+                "title": "Выбор",
+                "cards": [
+                    {"kicker": "А", "title": "Старое А", "body": "Текст А"},
+                    {"kicker": "Б", "title": "Старое Б", "body": "Текст Б"},
+                ],
+            },
+            {
+                "id": "s02",
+                "layout": "quote",
+                "title": "Позиция",
+                "definition": "Старая цитата",
+                "term": "Источник",
+                "body": "Пояснение",
+            },
+        ],
+    }
+    patched = apply_deck_text_patch(
+        deck,
+        {
+            "slides": [
+                {
+                    "id": "s01",
+                    "cards": [
+                        {"kicker": "А", "title": "Новая колонка", "body": "Текст А"},
+                        {"kicker": "Б", "title": "Старое Б", "body": "Текст Б"},
+                    ],
+                },
+                {"id": "s02", "definition": "Новая цитата", "term": "Новый источник"},
+            ]
+        },
+    )
+    out = build_native_pptx(patched, tmp_path / "compare_quote.pptx")
+    prs = Presentation(str(out))
+    left = _shape_text(prs.slides[0])
+    right = _shape_text(prs.slides[1])
+    assert "Новая колонка" in left
+    assert "Новая цитата" in right
+    assert "НОВЫЙ ИСТОЧНИК" in right
 
 
 def test_missing_chart_png_does_not_crash(tmp_path: Path) -> None:

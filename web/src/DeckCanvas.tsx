@@ -1,4 +1,4 @@
-/** Live editable twin of deck IR (Julius-style; edit existing text only). */
+/** Live editable twin of deck IR (Julius-style). */
 
 import {
   createContext,
@@ -15,7 +15,7 @@ import { DeckEditToolbar } from "./DeckEditToolbar";
 import { LiveChart } from "./LiveChart";
 import { MermaidView } from "./MermaidView";
 import { diagramLegendStrokes, officeFace } from "./deckStyle";
-import type { DeckIR, DeckSlide } from "./deckTypes";
+import type { DeckIR, DeckKpi, DeckSlide } from "./deckTypes";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { parseMermaidFlowchart } from "./diagramIr";
 import { matchBulletToNodeIds, matchNodeToBulletIndex } from "./diagramSlideSync";
@@ -771,9 +771,33 @@ function SlideBody({
         <div className="deck-cv-brand">{brand}</div>
         <Head slide={slide} editing={editing} onField={onField} />
         <blockquote className="deck-cv-quote">
-          <p className="deck-cv-quote-text">{slide.definition || ""}</p>
-          {slide.term ? <p className="deck-cv-quote-who">{slide.term}</p> : null}
-          {slide.body ? <p className="deck-cv-quote-note">{slide.body}</p> : null}
+          <Editable
+            className="deck-cv-quote-text"
+            value={slide.definition || ""}
+            editing={editing}
+            multiline
+            label="Цитата"
+            onCommit={(v) => onField({ definition: v })}
+          />
+          {editing || slide.term ? (
+            <Editable
+              className="deck-cv-quote-who"
+              value={slide.term || ""}
+              editing={editing}
+              label="Источник"
+              onCommit={(v) => onField({ term: v })}
+            />
+          ) : null}
+          {editing || slide.body ? (
+            <Editable
+              className="deck-cv-quote-note"
+              value={slide.body || ""}
+              editing={editing}
+              multiline
+              label="Пояснение"
+              onCommit={(v) => onField({ body: v })}
+            />
+          ) : null}
         </blockquote>
       </div>
     );
@@ -1073,7 +1097,14 @@ function SlideBody({
   }
 
   if (layout === "stat_hero") {
-    const kpi = (slide.kpis || [])[0];
+    const kpis = slide.kpis || [];
+    const kpi = kpis[0];
+    const setKpi = (patch: Partial<DeckKpi>) => {
+      if (!kpis.length) return;
+      onField({
+        kpis: kpis.map((item, i) => (i === 0 ? { ...item, ...patch } : { ...item })),
+      });
+    };
     return (
       <div className="deck-cv-inner deck-cv-stat deck-cv-stat--field">
         <div className="deck-cv-stat-fig">
@@ -1095,10 +1126,39 @@ function SlideBody({
               onCommit={(v) => onField({ title: v })}
             />
           ) : null}
-          <div className="deck-cv-stat-val">{kpi?.value || ""}</div>
-          <div className="deck-cv-stat-lab">{kpi?.label || ""}</div>
-          {kpi?.delta ? <div className="deck-cv-stat-delta">{kpi.delta}</div> : null}
-          {kpi?.hint ? <div className="deck-cv-stat-hint">{kpi.hint}</div> : null}
+          <Editable
+            className="deck-cv-stat-val"
+            value={kpi?.value || ""}
+            editing={editing}
+            label="Число"
+            onCommit={(v) => setKpi({ value: v })}
+          />
+          <Editable
+            className="deck-cv-stat-lab"
+            value={kpi?.label || ""}
+            editing={editing}
+            label="Подпись числа"
+            onCommit={(v) => setKpi({ label: v })}
+          />
+          {editing || kpi?.delta ? (
+            <Editable
+              className="deck-cv-stat-delta"
+              value={kpi?.delta || ""}
+              editing={editing}
+              label="Дельта"
+              onCommit={(v) => setKpi({ delta: v })}
+            />
+          ) : null}
+          {editing || kpi?.hint ? (
+            <Editable
+              className="deck-cv-stat-hint"
+              value={kpi?.hint || ""}
+              editing={editing}
+              multiline
+              label="Пояснение"
+              onCommit={(v) => setKpi({ hint: v })}
+            />
+          ) : null}
         </div>
         <div className="deck-cv-stat-notes">
           <Bullets slide={slide} editing={editing} onField={onField} bands />
@@ -1157,9 +1217,44 @@ function SlideBody({
         <div className="deck-cv-compare deck-cv-compare--fields">
           {cards.map((c, i) => (
             <article key={i} className={i === 0 ? "is-a" : "is-b"}>
-              {c.kicker ? <p className="deck-cv-compare-k">{c.kicker}</p> : null}
-              <p className="deck-cv-compare-t">{c.title || ""}</p>
-              {c.body ? <p className="deck-cv-compare-b">{c.body}</p> : null}
+              {editing || c.kicker ? (
+                <Editable
+                  className="deck-cv-compare-k"
+                  value={c.kicker || ""}
+                  editing={editing}
+                  label="Кикер колонки"
+                  onCommit={(v) => {
+                    const next = cards.map((x) => ({ ...x }));
+                    next[i] = { ...next[i], kicker: v };
+                    onField({ cards: next });
+                  }}
+                />
+              ) : null}
+              <Editable
+                className="deck-cv-compare-t"
+                value={c.title || ""}
+                editing={editing}
+                label="Заголовок колонки"
+                onCommit={(v) => {
+                  const next = cards.map((x) => ({ ...x }));
+                  next[i] = { ...next[i], title: v };
+                  onField({ cards: next });
+                }}
+              />
+              {editing || c.body ? (
+                <Editable
+                  className="deck-cv-compare-b"
+                  value={c.body || ""}
+                  editing={editing}
+                  multiline
+                  label="Текст колонки"
+                  onCommit={(v) => {
+                    const next = cards.map((x) => ({ ...x }));
+                    next[i] = { ...next[i], body: v };
+                    onField({ cards: next });
+                  }}
+                />
+              ) : null}
               <p className="deck-cv-compare-i">{String(i + 1).padStart(2, "0")}</p>
             </article>
           ))}
@@ -1420,6 +1515,8 @@ function Head({
   );
 }
 
+const MAX_BULLETS = 5;
+
 function Bullets({
   slide,
   editing,
@@ -1494,7 +1591,7 @@ function Bullets({
           );
         })}
       </ul>
-      {editing ? (
+      {editing && bullets.length < MAX_BULLETS ? (
         <div className="deck-cv-bullet-actions">
           <button
             type="button"

@@ -176,6 +176,52 @@ def test_slides_ir_rebuild_false_skips_worker(
     assert saved["slides"][0]["title"] == "B"
 
 
+def test_diagram_edit_omitted_formats_skips_print(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Schema save from the rail omits formats. None must not mean pdf+docx."""
+    run_id = "edit_dia_none_20260101T000000Z"
+    out = _seed_run(repo_root, run_id)
+    (out / "meta.json").write_text(json.dumps({"status": "ok"}), encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def _fake_edit(out_dir, diagram_id, *, mermaid, title, formats=None):
+        seen["formats"] = formats
+        return {
+            "id": diagram_id,
+            "title": title or "Схема",
+            "type": "flowchart",
+            "mermaid": mermaid,
+        }
+
+    import case3.api_edits as edits_mod
+
+    monkeypatch.setattr(edits_mod, "edit_diagram_in_run", _fake_edit)
+    r = client.post(
+        f"/api/runs/{run_id}/diagrams/dia_01/edit",
+        json={"mermaid": "flowchart TD\nA-->B", "title": "Схема"},
+    )
+    assert r.status_code == 200, r.text
+    assert seen.get("formats") == set()
+
+    def _docker_down(*_a, **_k):
+        from case3.render import RenderError
+
+        raise RenderError("docker down")
+
+    monkeypatch.setattr(edits_mod, "edit_diagram_in_run", _docker_down)
+    failed = client.post(
+        f"/api/runs/{run_id}/diagrams/dia_01/edit",
+        json={
+            "mermaid": "flowchart TD\nA-->B",
+            "title": "Схема",
+            "formats": ["pdf"],
+        },
+    )
+    assert failed.status_code == 500
+    assert "docker down" in str(failed.json().get("detail") or "")
+
+
 def test_figure_delete_accepts_formats_body(
     client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

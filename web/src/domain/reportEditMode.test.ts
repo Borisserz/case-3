@@ -6,6 +6,7 @@ import {
   copyMarkdownButtonVisible,
   docsNeedRebuild,
   parseEditHistory,
+  toastUndoRebuildsDocs,
   recolorChartsButtonVisible,
   reportEditModeHint,
   reportEditToggleVisible,
@@ -49,6 +50,10 @@ describe("reportEditMode", () => {
   it("hint describes click-to-edit + deferred print", () => {
     assert.match(reportEditModeHint(true), /Готово/i);
     assert.match(reportEditModeHint(false), /Чтение/);
+  });
+
+  it("toast undo does not rebuild PDF", () => {
+    assert.equal(toastUndoRebuildsDocs(), false);
   });
 
   it("docsNeedRebuild when stack or redo branch has work", () => {

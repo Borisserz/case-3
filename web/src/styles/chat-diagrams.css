@@ -1645,6 +1645,12 @@
   color: var(--ink);
 }
 
+.deck-file-card-action:disabled {
+  color: var(--muted);
+  cursor: default;
+  background: transparent;
+}
+
 .deck-file-card-action.is-strong {
   color: var(--primary);
 }

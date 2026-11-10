@@ -178,11 +178,8 @@ def edit_diagram_in_run(
     if formats:
         from case3.run_rebuild import rebuild_run_docs
 
-        try:
-            art_paths = rebuild_run_docs(out_dir, formats=formats)
-            artifacts = {k: str(p) for k, p in art_paths.items()}
-        except Exception:
-            log.warning("failed to rebuild docs after diagram edit", exc_info=True)
+        art_paths = rebuild_run_docs(out_dir, formats=formats)
+        artifacts = {k: str(p) for k, p in art_paths.items()}
 
     from case3.run_undo import undo_meta
 
@@ -481,11 +478,8 @@ def refine_diagram_in_run(
     if formats:
         from case3.run_rebuild import rebuild_run_docs
 
-        try:
-            art_paths = rebuild_run_docs(out_dir, formats=formats)
-            artifacts = {k: str(p) for k, p in art_paths.items()}
-        except Exception:
-            log.warning("failed to rebuild docs after diagram refine", exc_info=True)
+        art_paths = rebuild_run_docs(out_dir, formats=formats)
+        artifacts = {k: str(p) for k, p in art_paths.items()}
 
     from case3.run_undo import undo_meta
 

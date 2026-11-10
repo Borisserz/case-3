@@ -44,6 +44,11 @@ export function reportEditModeHint(editMode: boolean): string {
     : "Чтение · правки документов";
 }
 
+/** Toast «Отменить» restores the edit. PDF/DOCX stay until «Готово». */
+export function toastUndoRebuildsDocs(): boolean {
+  return false;
+}
+
 /** Session has Preview edits not yet flushed to print artifacts. */
 export function docsNeedRebuild(
   history: EditHistoryDesc | null | undefined,

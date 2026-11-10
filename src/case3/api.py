@@ -33,7 +33,6 @@ from case3.api_photo import quick_photo_edit
 from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image, is_docker_warmed
-from case3.run_cancel import mark_cancel_requested
 from case3.user_photos import (
     UserPhotoError,
     captions_from_intent,
@@ -52,6 +51,31 @@ from case3.run_store import (
 )
 
 log = logging.getLogger("case3.api")
+
+# FastAPI calls Request.form() with Starlette's 1 MiB default, so the 2 MiB
+# source check never ran. Parts must fit the largest accepted upload (photos).
+_SOURCE_MAX_BYTES = 2 * 1024 * 1024
+_FORM_PART_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _raise_form_part_limit() -> None:
+    """Let form fields reach the source and photo checks above Starlette's 1 MiB."""
+    from starlette.requests import Request
+
+    if getattr(Request.form, "_case3_part_limit", False):
+        return
+    original = Request.form
+
+    def form(self: Request, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        current = int(kwargs.get("max_part_size") or 0)
+        kwargs["max_part_size"] = max(current, _FORM_PART_MAX_BYTES)
+        return original(self, *args, **kwargs)
+
+    form._case3_part_limit = True  # type: ignore[attr-defined]
+    Request.form = form  # type: ignore[method-assign]
+
+
+_raise_form_part_limit()
 
 load_dotenv(run_store.ROOT / ".env")
 
@@ -645,6 +669,19 @@ def recover_persisted_pipeline() -> str | None:
     return run_id
 
 
+def _drop_queued_waiter(run_id: str) -> None:
+    """A cancelled queued run must not stay in memory or on disk."""
+    global _PIPELINE_WAITER, _WAITER_RESERVED
+    from case3.pipeline_queue import clear_waiter
+
+    clear_waiter(run_store.ROOT, run_id=run_id)
+    with _PIPELINE_ACTIVE_GUARD:
+        if _PIPELINE_WAITER is not None and _PIPELINE_WAITER.run_id == run_id:
+            _PIPELINE_WAITER = None
+        if _PIPELINE_WAITER is None:
+            _WAITER_RESERVED = False
+
+
 def _waiter_should_drop(run_id: str) -> bool:
     """A queued run that was cancelled or already finished must not start."""
     meta = _read_run_meta(run_id)
@@ -810,7 +847,7 @@ async def api_run(
     mode = (photo_mode or "document").strip().lower()
     if mode not in {"document", "edit"}:
         raise HTTPException(400, detail="photo_mode must be document|edit")
-    if source_text and len(source_text.encode("utf-8")) > 2 * 1024 * 1024:
+    if source_text and len(source_text.encode("utf-8")) > _SOURCE_MAX_BYTES:
         raise HTTPException(400, detail="source text too large (>2 MiB)")
 
     out_mode = (output_mode or "auto").strip().lower()
@@ -969,7 +1006,7 @@ async def api_run(
             if not name.lower().endswith((".txt", ".md")):
                 raise HTTPException(400, detail="source file must be .txt or .md")
             data = await source.read()
-            if len(data) > 2 * 1024 * 1024:
+            if len(data) > _SOURCE_MAX_BYTES:
                 raise HTTPException(400, detail="source file too large (>2 MiB)")
             src_path.write_bytes(data)
         elif source_text and source_text.strip():
@@ -1459,7 +1496,30 @@ def cancel_run(run_id: str) -> dict[str, Any]:
     logs_dir = run_store.ROOT / "runs" / "logs" / run_id
     if not (out_dir / "meta.json").is_file() and not (logs_dir / "meta.json").is_file():
         raise HTTPException(404, detail="run not found")
-    meta = mark_cancel_requested(out_dir, logs_dir=logs_dir)
+    settled_queue = False
+
+    def _mut_cancel(m: dict[str, Any]) -> None:
+        nonlocal settled_queue
+        m["cancel_requested"] = True
+        if str(m.get("status") or "") == "queued":
+            settled_queue = True
+            m["status"] = "cancelled"
+            m["stage"] = "cancelled"
+            m["error"] = "Остановлено"
+            m.pop("stage_detail", None)
+            m.pop("waiting_for", None)
+
+    from case3.run_meta import update_meta
+
+    meta = update_meta(out_dir, _mut_cancel, logs_dir=logs_dir)
+    if settled_queue:
+        _drop_queued_waiter(run_id)
+        try:
+            from case3.run_events import EVENTS
+
+            EVENTS.publish_terminal(run_id, "cancelled", error="Остановлено")
+        except Exception:  # noqa: BLE001
+            log.exception("could not publish queued cancel run_id=%s", run_id)
     from case3.api_slides import _slides_patch_lock, _slides_patch_pending
 
     with _slides_patch_lock:

@@ -18,7 +18,8 @@ import {
   type CraftFilmFrame,
   type CraftStepLogEntry,
 } from "../domain/craftSteps";
-import { DEFAULT_INTENT } from "../domain/liberConstants";
+import { cancelIfStopPressed } from "../domain/stopRun";
+import { userIntentForRun } from "../domain/userIntent";
 import { modeToOutputMode, type LiberWorkMode } from "../domain/liberModes";
 import {
   appendBotThinking,
@@ -49,8 +50,7 @@ import type {
   SourceAttachment,
   SourceDraft,
 } from "../domain/liberTypes";
-import type { DeckStyle } from "../deckStyle";
-import { deckStyleToApiPayload } from "../deckStyle";
+import { slidesAutoKickPayload, type DeckStyle } from "../deckStyle";
 import type { ActiveArtifact, ArtifactTab } from "../ArtifactRail";
 import { buildRunFormData } from "./buildRunFormData";
 
@@ -167,7 +167,7 @@ async () => {
   const priorRunId = priorRunIdFromMessages(msgs);
   const draftSnap = sourceDraft;
   const hasSource = Boolean(file) || Boolean(draftSnap?.text);
-  const intentText = hasSource ? chatTrim || DEFAULT_INTENT : chatTrim;
+  const intentText = userIntentForRun(chatTrim);
   if (!hasSource && !chatTrim) return;
   setDeckApplyHint(null);
 
@@ -351,6 +351,20 @@ async () => {
       const runId = asString(data.run_id);
       if (!runId) throw new Error("server did not return run_id");
       activeRunIdRef.current = runId;
+      if (
+        await cancelIfStopPressed(
+          runId,
+          cancelRequestedRef.current,
+          async (id) => {
+            await fetch(`/api/runs/${encodeURIComponent(id)}/cancel`, {
+              method: "POST",
+            });
+          },
+        )
+      ) {
+        setBusy(false);
+        return;
+      }
       saveUserTurn(runId, { text: userBody });
       setMsgs((m) =>
         m.map((msg) => {
@@ -642,7 +656,8 @@ async () => {
                 outMode === "presentation" &&
                 (stage === "pipeline_ok" || stage === "ok") &&
                 scope === "pipeline" &&
-                !slidesKicked
+                !slidesKicked &&
+                !cancelRequestedRef.current
               ) {
                 slidesKicked = true;
                 void fetch(
@@ -650,7 +665,7 @@ async () => {
                   {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(deckStyleToApiPayload(deckStyle)),
+                    body: JSON.stringify(slidesAutoKickPayload(deckStyle)),
                   },
                 ).catch(() => {
                   /* makePresentation path still runs if needed */

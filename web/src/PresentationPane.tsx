@@ -97,6 +97,8 @@ type Props = {
   showEditChrome?: boolean;
   /** Notify parent that twin/PPTX need flush on Готово. */
   onDocsDirtyChange?: (dirty: boolean) => void;
+  /** Parent copy of the unsaved-edit flag. Survives this pane unmounting. */
+  downloadsBlocked?: boolean;
 };
 
 export function PresentationPane({
@@ -125,6 +127,7 @@ export function PresentationPane({
   onEditingChange,
   showEditChrome = true,
   onDocsDirtyChange,
+  downloadsBlocked = false,
 }: Props) {
   const confirm = useConfirm();
   const reduce = useReducedMotion();
@@ -186,14 +189,18 @@ export function PresentationPane({
     setDeck(deckProp);
   }, [deckProp]);
 
+  const runSeen = useRef<string | null>(null);
   useEffect(() => {
+    const switched = runSeen.current != null && runSeen.current !== runId;
+    runSeen.current = runId;
     setIdx(0);
     setDir(0);
     setEditing(false);
     setView("grid");
     setSaveError(null);
     setDocsDirty(false);
-    onDocsDirtyChange?.(false);
+    dirtyRef.current = false;
+    if (switched) onDocsDirtyChange?.(false);
     setOpenMediaId(null);
     setOpenMediaKind(null);
     setChartPreview(null);
@@ -457,7 +464,7 @@ export function PresentationPane({
       if (inFlightPatchRef.current) {
         await inFlightPatchRef.current;
       }
-      if (docsDirty || dirtyRef.current) await flushDeckRebuild();
+      if (docsDirty || dirtyRef.current || downloadsBlocked) await flushDeckRebuild();
       setOpenMediaId(null);
       setOpenMediaKind(null);
       setChartPreview(null);
@@ -465,7 +472,7 @@ export function PresentationPane({
     } catch {
       /* stay in edit — error already shown */
     }
-  }, [docsDirty, flushDeckRebuild, setEditing]);
+  }, [docsDirty, downloadsBlocked, flushDeckRebuild, setEditing]);
 
   useEffect(() => {
     if (full) return;
@@ -549,7 +556,6 @@ export function PresentationPane({
 
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
-      dirtyRef.current = true;
       setSaving(true);
       setSaveError(null);
       const task = (async () => {
@@ -576,6 +582,7 @@ export function PresentationPane({
               ),
             );
           }
+          dirtyRef.current = true;
           markDirty();
         } catch (err) {
           setSaveError(err instanceof Error ? err.message : String(err));
@@ -933,8 +940,10 @@ export function PresentationPane({
     [deck, saving, structureOp],
   );
 
+  const fileBehind = docsDirty || downloadsBlocked;
+
   const handleDownloadPng = useCallback(async () => {
-    if (!currentPng) return;
+    if (fileBehind || !currentPng) return;
     try {
       const res = await fetch(currentPng);
       const blob = await res.blob();
@@ -955,10 +964,10 @@ export function PresentationPane({
         `Не удалось скачать PNG: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, [currentPng, deck, safeIdx]);
+  }, [currentPng, deck, fileBehind, safeIdx]);
 
   const handleCopyPng = useCallback(async () => {
-    if (!currentPng) return;
+    if (fileBehind || !currentPng) return;
     try {
       const res = await fetch(currentPng);
       const blob = await res.blob();
@@ -972,7 +981,7 @@ export function PresentationPane({
         `Не удалось скопировать PNG в буфер: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, [currentPng]);
+  }, [currentPng, fileBehind]);
 
   const pending =
     status === "running" ||
@@ -1572,18 +1581,31 @@ export function PresentationPane({
               <button
                 type="button"
                 className="presentation-nav"
+                disabled={fileBehind}
                 onClick={() => void handleCopyPng()}
-                title="Скопировать PNG слайда в буфер обмена"
+                title={
+                  fileBehind
+                    ? "Сначала нажмите Готово — картинка слайда ещё старая"
+                    : "Скопировать PNG слайда в буфер обмена"
+                }
               >
                 {copiedPng ? "Скопировано ✓" : "Копировать PNG"}
               </button>
               <button
                 type="button"
                 className="presentation-nav"
-                onClick={() => void handleDownloadPng()}
-                title="Скачать текущий слайд как PNG"
+                disabled={fileBehind}
+                onClick={() => {
+                  if (fileBehind) return;
+                  void handleDownloadPng();
+                }}
+                title={
+                  fileBehind
+                    ? "Сначала нажмите Готово — в файле ещё нет этих правок"
+                    : "Скачать текущий слайд как PNG"
+                }
               >
-                Скачать PNG
+                {fileBehind ? "Сначала Готово" : "Скачать PNG"}
               </button>
             </>
           ) : null}

@@ -31,6 +31,8 @@ type Props = {
   onOpenPresentation?: () => void;
   /** Open vertical Слайды film (deck PDF twin). */
   onOpenDeckSlides?: () => void;
+  /** PPTX and deck PDF stay closed until «Готово». */
+  deckDownloadsBlocked?: boolean;
 };
 
 function fileNameFromUrl(url: string, fallback: string): string {
@@ -136,6 +138,7 @@ export function ArtifactCard({
   onOpenDiagram,
   onOpenPresentation,
   onOpenDeckSlides,
+  deckDownloadsBlocked = false,
 }: Props) {
   const surfaces = modeSurfaces(outputMode);
   const slidesBusy =
@@ -214,9 +217,10 @@ export function ArtifactCard({
                 : ""}
               {updated ? " · обновлено" : ""}
             </p>
-            <DeckFileCard
+              <DeckFileCard
               kind="pptx"
               href={pptxHref}
+              downloadsBlocked={deckDownloadsBlocked}
               previewUrl={hero}
               fileLabel={pptxName}
               filmstrip={slidePngs}
@@ -237,6 +241,7 @@ export function ArtifactCard({
               <DeckFileCard
                 kind="deck_pdf"
                 href={downloads?.deck_pdf || downloads?.pptx || "#"}
+                downloadsBlocked={deckDownloadsBlocked}
                 previewUrl={hero}
                 fileLabel={
                   downloads?.deck_pdf

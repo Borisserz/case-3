@@ -18,6 +18,7 @@ import type { Msg, RunResult } from "../domain/liberTypes";
 import {
   docsNeedRebuild,
   parseEditHistory,
+  toastUndoRebuildsDocs,
   type EditHistoryDesc,
 } from "../domain/reportEditMode";
 import { mapTableEditHttpError, postJsonEdit } from "./postJsonEdit";
@@ -187,7 +188,7 @@ export function useLiberEdits({
     if (!undoOffer) return;
     const { msgId, runId } = undoOffer;
     await postHistory(msgId, runId, "undo", "Правка отменена", {
-      rebuild: true,
+      rebuild: toastUndoRebuildsDocs(),
     });
   }
 

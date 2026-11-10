@@ -42,6 +42,24 @@ def formats_from_edit_body(raw: str | None) -> set[str]:
         raise HTTPException(400, detail=str(exc)) from exc
 
 
+def diagram_print_formats(raw: list[str] | str | None) -> set[str]:
+    """Diagram save: omitted or empty formats skip PDF/DOCX.
+
+    ``parse_formats_form(None)`` means both. The schema pane omits the field
+    and flushes print on «Готово», so None here is an empty set.
+    """
+    if raw is None:
+        return set()
+    if isinstance(raw, str):
+        return formats_from_edit_body(raw)
+    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+        raise HTTPException(400, detail="formats must be pdf|docx|both|none")
+    out: set[str] = set()
+    for item in raw:
+        out |= formats_from_edit_body(item)
+    return out
+
+
 def artifact_downloads(run_id: str, out_dir: Path, version: int) -> dict[str, str]:
     """URLs for Liber downloads: report pdf/docx + deck pptx/deck_pdf.
 

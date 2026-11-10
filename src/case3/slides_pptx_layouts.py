@@ -1050,17 +1050,46 @@ def _layout_stat_hero(
     rail.line.fill.background()
     kpi = next((k for k in (s.get("kpis") or []) if isinstance(k, dict)), {})
     mark = str((style or {}).get("brand_mark") or "").strip()
-    if mark:
+    kicker = str(s.get("kicker") or "").strip()
+    title = str(s.get("title") or "").strip()
+    if kicker or title:
+        y = 0.48
+        if mark:
+            _add_textbox(
+                slide, Inches(0.85), Inches(y), Inches(6.4), Inches(0.28),
+                mark.upper(), size_pt=12, bold=True, color=on,
+            )
+            y += 0.34
+        if kicker:
+            _add_textbox(
+                slide, Inches(0.85), Inches(y), Inches(6.4), Inches(0.28),
+                kicker.upper(), size_pt=13, bold=True, color=on,
+            )
+            y += 0.32
+        if title:
+            _add_textbox(
+                slide, Inches(0.8), Inches(y), Inches(6.6), Inches(0.78),
+                title, size_pt=22, bold=True, color=on,
+            )
+            y += 0.86
         _add_textbox(
-            slide, Inches(0.85), Inches(1.7), Inches(6.4), Inches(0.32),
-            mark.upper(), size_pt=12, bold=True, color=on,
+            slide, Inches(0.8), Inches(y), Inches(6.6), Inches(1.35),
+            str(kpi.get("value") or ""), size_pt=56, bold=True, color=on,
         )
+        label_top = y + 1.4
+    else:
+        if mark:
+            _add_textbox(
+                slide, Inches(0.85), Inches(1.7), Inches(6.4), Inches(0.32),
+                mark.upper(), size_pt=12, bold=True, color=on,
+            )
+        _add_textbox(
+            slide, Inches(0.8), Inches(2.15), Inches(6.6), Inches(1.8),
+            str(kpi.get("value") or ""), size_pt=72, bold=True, color=on,
+        )
+        label_top = 4.15
     _add_textbox(
-        slide, Inches(0.8), Inches(2.15), Inches(6.6), Inches(1.8),
-        str(kpi.get("value") or ""), size_pt=72, bold=True, color=on,
-    )
-    _add_textbox(
-        slide, Inches(0.85), Inches(4.15), Inches(6.2), Inches(0.45),
+        slide, Inches(0.85), Inches(label_top), Inches(6.2), Inches(0.45),
         str(kpi.get("label") or ""), size_pt=20, bold=True, color=on,
     )
     foot = " · ".join(
@@ -1068,7 +1097,7 @@ def _layout_stat_hero(
     )
     if foot:
         _add_textbox(
-            slide, Inches(0.85), Inches(4.7), Inches(6.2), Inches(0.6),
+            slide, Inches(0.85), Inches(label_top + 0.55), Inches(6.2), Inches(0.6),
             foot, size_pt=16, color=on,
         )
     bullets = [str(b) for b in (s.get("bullets") or []) if str(b).strip()]

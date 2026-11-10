@@ -16,12 +16,17 @@ describe("deckDownloadLinks", () => {
     assert.equal(links[1]?.label, "PDF");
   });
 
-  it("marks stale during deferred flush", () => {
+  it("blocks the file while the screen is ahead of it", () => {
     const links = deckDownloadLinks(
-      { pptx: "/p.pptx" },
-      { stale: true },
+      { pptx: "/p.pptx", deck_pdf: "/d.pdf" },
+      { blocked: true },
     );
-    assert.equal(links[0]?.stale, true);
-    assert.match(links[0]?.label || "", /устарел/i);
+    assert.equal(links.length, 2);
+    for (const link of links) {
+      assert.equal(link.disabled, true);
+      assert.equal(link.href, "");
+      assert.equal(link.label, "Сначала Готово");
+      assert.match(link.title || "", /Готово/);
+    }
   });
 });

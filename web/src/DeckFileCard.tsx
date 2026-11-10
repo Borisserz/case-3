@@ -1,6 +1,7 @@
 /** Julius-style file card: matte stage, icon, hover CTA, footer. */
 
 import { DeckChatHero } from "./DeckChatHero";
+import { DECK_DOWNLOAD_BLOCKED_LABEL, DECK_DOWNLOAD_BLOCKED_TITLE } from "./domain/deckDownloads";
 import { prefersLiveChatHero } from "./domain/chatDeckHero";
 import type { DeckIR } from "./deckTypes";
 import { PdfThumb } from "./PdfThumb";
@@ -25,6 +26,8 @@ type Props = {
   /** Live IR twin for crisp chat hero (PPTX / deck PDF cards). */
   deck?: DeckIR | null;
   runId?: string | null;
+  /** Unsaved deck edits: do not hand out the file on disk. */
+  downloadsBlocked?: boolean;
 };
 
 function FileGlyph({ kind }: { kind: Kind }) {
@@ -152,6 +155,7 @@ export function DeckFileCard({
   filmstrip = [],
   deck = null,
   runId = null,
+  downloadsBlocked = false,
 }: Props) {
   const isPptx = kind === "pptx";
   const isReportPdf = kind === "pdf";
@@ -302,7 +306,16 @@ export function DeckFileCard({
           <span className="deck-file-card-hint">{kindHint}</span>
         </span>
         <span className="deck-file-card-actions">
-          {href && href !== "#" ? (
+          {downloadsBlocked && (isPptx || isDeckPdf) ? (
+            <button
+              type="button"
+              className="deck-file-card-action"
+              disabled
+              title={DECK_DOWNLOAD_BLOCKED_TITLE}
+            >
+              {DECK_DOWNLOAD_BLOCKED_LABEL}
+            </button>
+          ) : href && href !== "#" ? (
             <a href={href} download className="deck-file-card-action">
               Скачать
             </a>

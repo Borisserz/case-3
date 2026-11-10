@@ -224,3 +224,13 @@ export function deckStyleToApiPayload(style: DeckStyle): {
   if (style.structureId) payload.structure_id = style.structureId;
   return payload;
 }
+
+/** Automatic deck start after a presentation run. Keeps a Stop that landed first. */
+export function slidesAutoKickPayload(style: DeckStyle): {
+  theme_pack: string;
+  structure_id?: string;
+  style_settings: Record<string, string>;
+  kick_source: "api_auto";
+} {
+  return { ...deckStyleToApiPayload(style), kick_source: "api_auto" };
+}

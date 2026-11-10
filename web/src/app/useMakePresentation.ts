@@ -52,7 +52,7 @@ export function useMakePresentation({
   return useCallback(
 async (msgId: string, result: RunResult) => {
   const runId = result.run_id;
-  if (!runId) return;
+  if (!runId || cancelRequestedRef.current) return;
   // Julius: deck builds on the main chat — never park progress in the rail.
   setRailExiting(false);
   setRailCollapsed(false);

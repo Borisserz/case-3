@@ -5,6 +5,48 @@ import pytest
 from case3.input_validation import validate_input_heuristics
 
 
+def test_ui_block_is_not_user_text_and_empty_chat_gets_brief():
+    from case3.generate import DEFAULT_INTENT
+    from case3.input_validation import user_text_before_ui, with_default_brief
+    from case3.intent_compose import build_intent_from_ui
+
+    intent = build_intent_from_ui(
+        chat="",
+        chart_types=[],
+        max_charts=2,
+        max_images=0,
+        forbid_charts=False,
+        forbid_images=True,
+        chart_auto=True,
+        output_mode="report",
+    )
+    user = user_text_before_ui(intent)
+    assert user == ""
+    valid, _ = validate_input_heuristics("привет", user)
+    assert not valid
+    valid, _ = validate_input_heuristics("", user)
+    assert not valid
+    valid, msg = validate_input_heuristics("Выручка 10 млн, доля 35%", user)
+    assert valid and msg is None
+    briefed = with_default_brief(intent, user)
+    assert briefed.startswith(DEFAULT_INTENT)
+    assert "Требования UI:" in briefed
+    typed = with_default_brief("свой бриф\n\nТребования UI:\n- x", "свой бриф")
+    assert typed.startswith("свой бриф")
+
+
+def test_greeting_file_with_empty_intent_is_refused():
+    valid, msg = validate_input_heuristics("привет", "")
+    assert not valid
+    assert "недостаточно данных" in msg.lower()
+
+
+def test_factual_file_with_empty_intent_passes():
+    valid, msg = validate_input_heuristics("Выручка 10 млн, доля 35%", "")
+    assert valid
+    assert msg is None
+
+
 def test_empty_and_whitespace():
     valid, msg = validate_input_heuristics("", "")
     assert not valid

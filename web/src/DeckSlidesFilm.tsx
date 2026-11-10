@@ -6,12 +6,15 @@ type Props = {
   slides: string[];
   /** Absolute or proxied URL for deck PDF download. */
   downloadHref?: string | null;
+  /** Unsaved deck edits: the file on disk is behind the screen. */
+  downloadBlocked?: boolean;
   title?: string;
 };
 
 export function DeckSlidesFilm({
   slides,
   downloadHref = null,
+  downloadBlocked = false,
   title = "Презентация · PDF",
 }: Props) {
   const labelId = useId();
@@ -84,7 +87,16 @@ export function DeckSlidesFilm({
             <span aria-hidden> / </span>
             {urls.length}
           </span>
-          {downloadHref ? (
+          {downloadBlocked ? (
+            <button
+              type="button"
+              className="deck-slides-film-dl"
+              disabled
+              title="Сначала нажмите Готово — в файле ещё нет этих правок"
+            >
+              Сначала Готово
+            </button>
+          ) : downloadHref ? (
             <a
               href={downloadHref}
               download

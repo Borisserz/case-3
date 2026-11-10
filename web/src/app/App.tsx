@@ -120,6 +120,7 @@ export default function App() {
     depth: 0,
   });
   const [reportEditMode, setReportEditMode] = useState(false);
+  const [deckDocsDirty, setDeckDocsDirty] = useState(false);
   const [downloadsPulseMsgId, setDownloadsPulseMsgId] = useState<string | null>(
     null,
   );
@@ -464,6 +465,9 @@ export default function App() {
     activeReportMsg && activeReportMsg.role === "bot" && activeReportMsg.result
       ? activeReportMsg.result
       : null;
+  useEffect(() => {
+    setDeckDocsDirty(false);
+  }, [activeReport?.run_id]);
 
   const railSourceText =
     activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
@@ -554,6 +558,11 @@ export default function App() {
                   onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
+                  deckDownloadsBlockedMsgId={
+                    deckDocsDirty && activeReportMsg?.role === "bot"
+                      ? activeReportMsg.id
+                      : null
+                  }
                 />
 
                 <ChatComposer
@@ -737,6 +746,8 @@ export default function App() {
                 onSelectDiagram={
                   railArtifact.kind === "report" ? selectDiagram : undefined
                 }
+                deckDownloadsBlocked={deckDocsDirty}
+                onDeckDownloadsBlockedChange={setDeckDocsDirty}
                 makingPresentation={
                   activeReport?.slides_status === "queued" ||
                   activeReport?.slides_status === "running" ||

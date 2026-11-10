@@ -122,6 +122,28 @@ def _format_refusal_message(output_mode: str) -> str:
     )
 
 
+def user_text_before_ui(intent: str | None) -> str:
+    """Chat text only. A leading «Требования UI» block is not the user's words."""
+    text = intent or ""
+    for marker in ("\n\nТребования UI:", "\nТребования UI:", "Требования UI:"):
+        if marker in text:
+            text = text.split(marker, 1)[0]
+            break
+    return text.strip()
+
+
+def with_default_brief(intent: str | None, user_text: str) -> str:
+    """After validation, an empty chat still gets the model brief."""
+    if user_text.strip():
+        return intent or ""
+    from case3.generate import DEFAULT_INTENT
+
+    rest = (intent or "").strip()
+    if not rest:
+        return DEFAULT_INTENT
+    return f"{DEFAULT_INTENT}\n\n{rest}"
+
+
 def validate_input_heuristics(
     source_text: str | None,
     intent: str | None,
