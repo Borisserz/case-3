@@ -578,6 +578,14 @@ def run_slides_job(
                 "If images are attached, look at them: logo wordmark and UI labels "
                 "only if they are visible. "
                 + (
+                    f"If user photos are in Available figures ({', '.join(f for f in figure_ids if f.startswith('usr_'))}), "
+                    "you MUST place each photo on a slide using layout 'media_hero' or 'media_split' with "
+                    "media_id matching the photo id, with a clear, descriptive Russian title and caption based on what is shown on the photo. "
+                    "Use each photo at most once. "
+                    if any(f.startswith("usr_") for f in figure_ids)
+                    else ""
+                )
+                + (
                     "CODE HIGHLIGHTS are required callout slides: term is the name, "
                     "definition is that single line. Do not paste the rest of a listing. "
                     if code_notes

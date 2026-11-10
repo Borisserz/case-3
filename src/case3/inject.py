@@ -251,12 +251,23 @@ def inject_media(
     by_chart = {c["id"]: c for c in charts}
     by_diag = {d["id"]: d for d in (diagrams or [])}
 
+    existing_includes = {
+        m.group(2)
+        for m in _MEDIA_INCLUDEGRAPHICS.finditer(tex or "")
+    }
+    seen_fig_ids: set[str] = set(existing_includes)
+    seen_chart_ids: set[str] = set(existing_includes)
+    seen_diag_ids: set[str] = set(existing_includes)
+
     def repl_fig(m: re.Match[str]) -> str:
         fid = m.group(1)
+        if fid in seen_fig_ids:
+            return ""
         st = status.get(fid) or {}
         meta = by_fig.get(fid)
         if not st.get("ok") or not meta:
             return ""
+        seen_fig_ids.add(fid)
         if _slot_inside_figure(tex, m.start()):
             return _inner_slot_replacement(
                 tex, m.start(), fid, meta, rel_dir=rel_dir, label_prefix="fig"
@@ -267,10 +278,13 @@ def inject_media(
 
     def repl_chart(m: re.Match[str]) -> str:
         cid = m.group(1)
+        if cid in seen_chart_ids:
+            return ""
         st = status.get(cid) or {}
         meta = by_chart.get(cid)
         if not st.get("ok") or not meta:
             return ""
+        seen_chart_ids.add(cid)
         # Positions are relative to `out` (post-figure inject), not original `tex`.
         if _slot_inside_figure(out, m.start()):
             return _inner_slot_replacement(
@@ -282,10 +296,13 @@ def inject_media(
 
     def repl_diag(m: re.Match[str]) -> str:
         did = m.group(1)
+        if did in seen_diag_ids:
+            return ""
         st = status.get(did) or {}
         meta = by_diag.get(did)
         if not st.get("ok") or not meta:
             return ""
+        seen_diag_ids.add(did)
         if _slot_inside_figure(out, m.start()):
             return _inner_slot_replacement(
                 out, m.start(), did, meta, rel_dir=rel_dir, label_prefix="dia"

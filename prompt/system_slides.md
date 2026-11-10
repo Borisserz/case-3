@@ -107,13 +107,23 @@ The color pack changes chrome. It does not assign a story. Use the menu in the o
     {
       "id": "s07",
       "layout": "media_hero",
-      "kicker": "Схема",
-      "title": "…",
-      "media_id": "dia_01",
-      "caption": "…"
+      "kicker": "ФОТО / ОБЪЕКТ",
+      "title": "Интерфейс системы",
+      "caption": "Панель управления и мониторинга процессов",
+      "media_id": "usr_01"
     },
     {
       "id": "s08",
+      "layout": "media_split",
+      "kicker": "СХЕМА",
+      "title": "Архитектура процесса",
+      "media_id": "dia_01",
+      "caption": "Взаимодействие ключевых узлов",
+      "body": "Центральный узел маршрутизирует потоки данных между сервисами.",
+      "bullets": ["Отказоустойчивая обработка запросов", "Минимальная задержка передачи"]
+    },
+    {
+      "id": "s09",
       "layout": "closing",
       "title": "Итог",
       "bullets": ["…", "…"]
@@ -156,6 +166,11 @@ The color pack changes chrome. It does not assign a story. Use the menu in the o
 # Available figures (photos)
 
 {{FIGURE_IDS}}
+
+When user photos (ids starting with `usr_`) are in the list:
+- **Mandatory placement:** place each available user photo on a matching slide using `layout: "media_hero"` (for full photo frame) or `layout: "media_split"` (for photo alongside explanation/bullets) with `media_id: "usr_XX"`.
+- Craft a specific, informative Russian title and caption based on what is depicted on the photo.
+- **Single use:** place each photo id at most ONCE across the entire presentation.
 
 # Available diagrams (Mermaid → slide PNG)
 

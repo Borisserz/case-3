@@ -283,8 +283,33 @@ def _insert_user_slot_block(tex: str, block: str) -> str:
     return tex[:idx] + "\n" + block + "\n" + tex[idx:]
 
 
+def deduplicate_slots_in_tex(tex: str) -> str:
+    """Ensure each %CASE3_FIG:id%, %CASE3_CHART:id%, %CASE3_DIAG:id% appears at most once."""
+    if not tex:
+        return tex or ""
+    seen: set[str] = set()
+
+    def _repl(m: re.Match[str]) -> str:
+        tag = m.group(1).lower()
+        if tag in seen:
+            return ""
+        seen.add(tag)
+        return m.group(0)
+
+    return re.sub(
+        r"(?m)^[ \t]*%CASE3_(?:FIG|CHART|DIAG):([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?",
+        _repl,
+        tex,
+    )
+
+
 def ensure_user_slots_in_tex(tex: str, user_figures: list[dict[str, Any]]) -> str:
-    """If LLM omitted %CASE3_FIG:usr_XX%, inject slots near early body prose."""
+    """If LLM omitted %CASE3_FIG:usr_XX%, inject slots near early body prose.
+    Guarantees no duplicate slots exist in the returned text.
+    """
+    if not tex:
+        return tex or ""
+    tex = deduplicate_slots_in_tex(tex)
     if not user_figures:
         return tex
     missing = [
@@ -295,4 +320,5 @@ def ensure_user_slots_in_tex(tex: str, user_figures: list[dict[str, Any]]) -> st
     if not missing:
         return tex
     block = "\n".join(f"%CASE3_FIG:{f['id']}%" for f in missing) + "\n"
-    return _insert_user_slot_block(tex, block)
+    res = _insert_user_slot_block(tex, block)
+    return deduplicate_slots_in_tex(res)

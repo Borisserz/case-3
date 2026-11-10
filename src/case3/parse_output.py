@@ -611,18 +611,33 @@ def parse_model_output(
             f"id collision between figures/charts/diagrams: {sorted(clash)}"
         )
 
+    from case3.user_photos import deduplicate_slots_in_tex
+
+    tex = deduplicate_slots_in_tex(tex)
+    fig_slots = _ids(_FIG_SLOT, tex)
+    chart_slots = _ids(_CHART_SLOT, tex)
+    diag_slots = _ids(_DIAG_SLOT, tex)
+
     if max_images > 0 and figures:
-        non_user_fig_slots = [s for s in fig_slots if not s.startswith("usr_")]
-        if not non_user_fig_slots:
+        missing_slots = [
+            f["id"]
+            for f in figures[:max_images]
+            if isinstance(f, dict)
+            and f.get("id")
+            and f["id"] not in fig_slots
+            and f"figures/{f['id']}.png" not in tex
+        ]
+        if missing_slots:
             log.warning(
                 "JSON figures without slots — appending %s",
-                [f["id"] for f in figures],
+                missing_slots,
             )
             tex = _append_missing_slots(
                 tex,
                 chart_ids=[],
-                figure_ids=[f["id"] for f in figures[:max_images]],
+                figure_ids=missing_slots,
             )
+            tex = deduplicate_slots_in_tex(tex)
             fig_slots = _ids(_FIG_SLOT, tex)
         by_fig = {f["id"]: f for f in figures}
         aligned_figs = [by_fig[s] for s in fig_slots if s in by_fig][:max_images]

@@ -57,6 +57,9 @@ def apply_deck_text_patch(
         target = by_id[sid]
         if "layout" in ps and str(ps.get("layout")) != str(target.get("layout")):
             raise DeckIrError("cannot change layout")
+        layout = str(target.get("layout") or "")
+        allow_media_change = layout in ("media_hero", "media_split", "title", "closing")
+
         for forbidden in (
             "chart_id",
             "media_id",
@@ -66,8 +69,17 @@ def apply_deck_text_patch(
         ):
             if forbidden == "id":
                 continue
+            if forbidden == "media_id" and allow_media_change:
+                continue
             if forbidden in ps and ps.get(forbidden) != target.get(forbidden):
                 raise DeckIrError(f"cannot change {forbidden}")
+
+        if "media_id" in ps and allow_media_change:
+            mid = ps.get("media_id")
+            if mid is not None:
+                if not isinstance(mid, str) or not _ID_OK.match(mid):
+                    raise DeckIrError(f"invalid media_id in patch: {mid!r}")
+                target["media_id"] = mid
 
         for key in _TEXT_KEYS:
             if key not in ps:
@@ -196,7 +208,11 @@ def _fresh_slide_id(existing: set[str]) -> str:
     raise DeckIrError("could not allocate slide id")
 
 
-def _default_slide_for_layout(new_id: str, layout: str) -> dict[str, Any]:
+def _default_slide_for_layout(
+    new_id: str,
+    layout: str,
+    op_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     slide: dict[str, Any] = {"id": new_id, "layout": layout}
     if layout == "title":
         slide.update({
@@ -311,7 +327,27 @@ def _default_slide_for_layout(new_id: str, layout: str) -> dict[str, Any]:
                 "Провести промежуточный статус-чек через 30 дней",
             ],
         })
-    else:  # bullets, chart_hero, media_hero, etc.
+    elif layout in ("media_hero", "media_split"):
+        mid = str((op_body or {}).get("media_id") or "usr_01").strip()
+        slide.update({
+            "title": str((op_body or {}).get("title") or "Иллюстрация к разделу").strip(),
+            "kicker": str((op_body or {}).get("kicker") or ("СХЕМА" if mid.startswith("dia_") else "КАДР")).strip(),
+            "media_id": mid,
+            "caption": str((op_body or {}).get("caption") or "").strip(),
+        })
+        if layout == "media_split":
+            body = str((op_body or {}).get("body") or "").strip()
+            bullets = (op_body or {}).get("bullets")
+            if body:
+                slide["body"] = body
+            if isinstance(bullets, list) and bullets:
+                slide["bullets"] = bullets
+            elif not body:
+                slide["bullets"] = [
+                    "Ключевой аспект отображаемых данных",
+                    "Практические выводы и дальнейшие шаги",
+                ]
+    else:  # bullets, chart_hero, etc.
         slide.update({
             "title": "Ключевые тезисы реализации",
             "kicker": "ТЕЗИСЫ",
@@ -372,7 +408,7 @@ def apply_deck_structure(
         if layout not in SLIDE_LAYOUTS:
             raise DeckIrError(f"unknown layout: {layout!r}")
         new_id = _fresh_slide_id(set(by_id))
-        new_slide = _default_slide_for_layout(new_id, layout)
+        new_slide = _default_slide_for_layout(new_id, layout, op_body=op_body)
         at_id = str(op_body.get("id") or op_body.get("after_id") or "")
         if at_id and at_id in by_id:
             idx = next(i for i, s in enumerate(slides) if str(s["id"]) == at_id)
