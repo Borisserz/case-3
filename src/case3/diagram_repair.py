@@ -91,6 +91,11 @@ def parse_repair_response(raw: str, *, max_diagrams: int) -> list[dict[str, Any]
         return parse_diagrams(data, max_diagrams=max_diagrams)
     if not isinstance(data, dict):
         return []
+    if data.get("status") == "insufficient_data":
+        from case3.input_validation import InsufficientDataError
+
+        msg = str(data.get("message") or "В запросе недостаточно конкретных данных для составления схемы.")
+        raise InsufficientDataError(msg)
     if "diagrams" in data and isinstance(data["diagrams"], list):
         return parse_diagrams(data["diagrams"], max_diagrams=max_diagrams)
     if "mermaid" in data:

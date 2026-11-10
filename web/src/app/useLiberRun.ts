@@ -908,6 +908,11 @@ async () => {
       setBusy(false);
       return;
     }
+    if (result.insufficient_data) {
+      activeRunIdRef.current = null;
+      setBusy(false);
+      return;
+    }
     if (slidesStillBuilding) {
       // Attach or kick once — never second POST when SSE already got 202.
       void makePresentation(pendingId, result);

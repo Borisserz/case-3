@@ -34,6 +34,22 @@ describe("liberRunHelpers", () => {
     assert.equal(reportReadyText(), "Отчёт готов");
   });
 
+  it("reportReadyText handles insufficient_data", () => {
+    assert.equal(
+      reportReadyText({
+        insufficient_data: true,
+        chat_summary: "Недостаточно данных для отчета.",
+      } as never),
+      "Недостаточно данных для отчета.",
+    );
+    assert.match(
+      reportReadyText({
+        insufficient_data: true,
+      } as never),
+      /недостаточно данных/i,
+    );
+  });
+
   it("reportReadyText is honest when diagram mode has zero diagrams", () => {
     assert.match(
       reportReadyText({

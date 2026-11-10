@@ -42,6 +42,12 @@ export function appendBotThinking(
 }
 
 export function reportReadyText(result?: RunResult, streamed?: string): string {
+  if (result?.insufficient_data) {
+    return (
+      (result.chat_summary || "").trim() ||
+      "В запросе недостаточно данных для составления документа. Пожалуйста, укажите конкретные данные или прикрепите файл."
+    );
+  }
   const fromResult = (result?.chat_summary || "").trim();
   if (fromResult) return fromResult;
   const fromStream = (streamed || "").trim();

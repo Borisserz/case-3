@@ -593,6 +593,12 @@ def run_slides_job(
             def _parse_or_scrub(raw_ir: dict[str, Any]) -> dict[str, Any]:
                 from case3.slides_ir import scrub_unavailable_media
 
+                if isinstance(raw_ir, dict) and raw_ir.get("status") == "insufficient_data":
+                    from case3.input_validation import InsufficientDataError
+
+                    msg = str(raw_ir.get("message") or "В запросе недостаточно конкретных данных для презентации.")
+                    raise InsufficientDataError(msg)
+
                 try:
                     return parse_deck_ir(
                         raw_ir,
@@ -742,6 +748,19 @@ def run_slides_job(
             error="Остановлено",
             logs_dir=logs_dir,
         )
+    except InsufficientDataError as exc:
+        log.info("slides model refused with insufficient_data run_id=%s: %s", run_id, exc.message)
+        meta = _read_meta(out_dir)
+        meta["insufficient_data"] = True
+        meta["slides_status"] = "ok"
+        meta["slides_stage"] = "ok"
+        meta["slides_artifacts"] = {}
+        meta["chat_summary"] = exc.message
+        meta.pop("slides_stage_detail", None)
+        _set_slides(out_dir, meta, status="ok", stage="ok", logs_dir=logs_dir)
+        (out_dir / "chat_summary.txt").write_text(exc.message, encoding="utf-8")
+        _EV.publish_stage(run_id, "ok", detail="Недостаточно данных", scope="slides")
+        _EV.publish_terminal(run_id, "ok", recap={"headline": "Недостаточно данных", "body": exc.message})
     except (DeckIrError, LLMError, LLMConfigError, OSError, RuntimeError, ValueError) as exc:
         log.exception("slides failed run_id=%s", run_id)
         meta = _read_meta(out_dir)

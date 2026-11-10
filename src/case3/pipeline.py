@@ -1056,7 +1056,42 @@ def run_pipeline(
         if on_stage:
             on_stage(stage, detail)
 
+    from case3.input_validation import InsufficientDataError, validate_input_heuristics
+
+    def _handle_insufficient_data(msg: str) -> Path:
+        log.info("insufficient data run_id=%s mode=%s: %s", run_id, mode, msg)
+        meta["insufficient_data"] = True
+        meta["status"] = "ok"
+        meta["stage"] = "ok"
+        meta["artifacts"] = {}
+        meta["chat_summary"] = msg
+        meta.pop("stage_detail", None)
+        _write_meta(meta, out, logs)
+        (out / "chat_summary.txt").write_text(msg, encoding="utf-8")
+        (logs / "chat_summary.txt").write_text(msg, encoding="utf-8")
+        BUS.start(run_id)
+        BUS.finish(run_id, msg, "ok")
+        EVENTS.publish_stage(run_id, "ok", detail="Недостаточно данных", scope="pipeline")
+        EVENTS.publish_terminal(run_id, "ok", recap={"headline": "Недостаточно данных", "body": msg})
+        return out
+
     try:
+        # Tier 1: Fast input validation (intercept empty / data-free requests early).
+        source_raw = text_path.read_text(encoding="utf-8") if text_path.is_file() else ""
+        user_intent = (
+            (intent or "")
+            .split("\n\nТребования UI:", 1)[0]
+            .split("\nТребования UI:", 1)[0]
+        )
+        valid_in, refusal_msg = validate_input_heuristics(
+            source_raw,
+            user_intent,
+            output_mode=mode,
+            has_attachments=bool(user_figs),
+        )
+        if not valid_in:
+            return _handle_insufficient_data(refusal_msg or "В запросе недостаточно данных.")
+
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
@@ -1094,7 +1129,10 @@ def run_pipeline(
                 raw_d = LLMClient(diag_cfg).complete(
                     system=system, user_text=user, cancel_check=lambda: raise_if_cancelled(out)
                 )
-                diagrams = parse_repair_response(raw_d or "", max_diagrams=diagrams_budget)
+                try:
+                    diagrams = parse_repair_response(raw_d or "", max_diagrams=diagrams_budget)
+                except InsufficientDataError as exc:
+                    return _handle_insufficient_data(exc.message)
             figures = []
             charts = []
             title = (intent or "").split("\n", 1)[0][:60].strip() or "Схема"
@@ -1110,17 +1148,20 @@ def run_pipeline(
                 encoding="utf-8",
             )
         else:
-            _, figures, charts, diagrams = generate_document(
-                text_path,
-                out_tex=tex_path,
-                intent=intent,
-                gold_dir=root / "prompt" / "gold",
-                dry_run=dry_run,
-                max_images=llm_image_budget,
-                max_charts=charts_budget,
-                max_diagrams=diagrams_budget,
-                cancel_check=lambda: raise_if_cancelled(out),
-            )
+            try:
+                _, figures, charts, diagrams = generate_document(
+                    text_path,
+                    out_tex=tex_path,
+                    intent=intent,
+                    gold_dir=root / "prompt" / "gold",
+                    dry_run=dry_run,
+                    max_images=llm_image_budget,
+                    max_charts=charts_budget,
+                    max_diagrams=diagrams_budget,
+                    cancel_check=lambda: raise_if_cancelled(out),
+                )
+            except InsufficientDataError as exc:
+                return _handle_insufficient_data(exc.message)
             figures = merge_user_figures(figures, user_figs, max_images=images_budget)
             raw_tex = tex_path.read_text(encoding="utf-8")
             tex_path.write_text(ensure_user_slots_in_tex(raw_tex, user_figs), encoding="utf-8")

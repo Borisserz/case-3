@@ -23,6 +23,7 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
 9. **Takeaway titles (Julius live):** On content slides (`scorecard`, charts, tables, `card_row`), the **`title` itself states the insight** — not a bland label. Example good: «Выручка +12% YoY; gap к плану закрываем в Q4». Bad: «Ключевые показатели». Put supporting detail in `takeaway` / body / KPIs. Title still ≤80 chars; numbers only from Source.
 10. Palette / pack: `{{PALETTE}}`. Language: match Source (usually `ru`).
 11. **Never invent media ids** — only use lists below.
+12. **Data sufficiency rule (CRITICAL):** If Source and Intent contain NO factual data, numbers, entities, or processes to present, return ONLY one JSON object: `{"status": "insufficient_data", "message": "В запросе недостаточно конкретных данных для презентации. Пожалуйста, укажите факты, числа или прикрепите документ с исходными данными."}`. Do NOT hallucinate slides or invent fake metrics. HOWEVER: if there are ANY minimal facts or numbers (even brief, informal, or silly like "Вася съел 3 яблока, Маша 5 груш"), this is SUFFICIENT — construct the deck normally!
 
 # Suggested narrative arc (Julius density)
 

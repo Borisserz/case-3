@@ -492,6 +492,12 @@ def parse_model_output(
     tex_body, json_body = _pick_fences(raw)
     data = _load_media_payload(raw, json_body)
 
+    if isinstance(data, dict) and data.get("status") == "insufficient_data":
+        from case3.input_validation import InsufficientDataError
+
+        msg = str(data.get("message") or "В запросе недостаточно конкретных данных для составления отчёта.")
+        raise InsufficientDataError(msg)
+
     # Peek media ids early so we can rebuild a body if preamble was truncated.
     early_charts = _chart_ids_from_data(data, max_charts=max_charts)
     early_figs = _figure_ids_from_data(data, max_images=max_images)

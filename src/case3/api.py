@@ -513,7 +513,11 @@ def _bg_run_pipeline(
         # Presentation: Liber UI also POSTs /slides; auto-kick so CLI/matrix
         # get PPTX without a browser (idempotent if already running).
         if (output_mode or "").strip().lower() == "presentation":
-            _auto_kick_presentation_slides(run_id)
+            from case3.run_meta import read_meta
+
+            out_meta = read_meta(run_store.ROOT / "runs" / "out" / run_id)
+            if not out_meta.get("insufficient_data"):
+                _auto_kick_presentation_slides(run_id)
     except PipelineError:
         # meta already written with status=error
         log.exception("background pipeline failed run_id=%s", run_id)

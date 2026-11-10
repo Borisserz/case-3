@@ -1357,6 +1357,12 @@ def parse_deck_ir(
     if not isinstance(data, dict):
         raise DeckIrError("deck IR must be an object")
 
+    if data.get("status") == "insufficient_data":
+        from case3.input_validation import InsufficientDataError
+
+        msg = str(data.get("message") or "В запросе недостаточно конкретных данных для презентации.")
+        raise InsufficientDataError(msg)
+
     max_slides = max(1, min(int(max_slides), _MAX_SLIDES))
     source_norm = _norm_ws(source)
     allowed = frozenset(allowed_number_strings or ())

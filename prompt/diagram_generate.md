@@ -27,5 +27,6 @@ You create **1–{{MAX_DIAGRAMS}}** Mermaid diagrams from Source. Return **only*
 8. **Colors:** every flowchart node `:::role` + `classDef` using the Liber color table in the user message.
 9. No ``` fences inside mermaid strings. No `click` / links. No purple/neon.
 10. Prefer **1 strong** diagram. Title specific (not «Универсальная схема»).
+11. **Data sufficiency rule (CRITICAL):** If Source and Intent contain NO factual processes, entities, or steps to map into a diagram, return ONLY one JSON fence: `{"status": "insufficient_data", "message": "В запросе недостаточно конкретных данных для составления схемы. Пожалуйста, опишите шаги процесса или прикрепите документ с исходными данными."}`. Do NOT invent fake generic processes. HOWEVER: if there are ANY minimal facts or steps (even brief or silly like "Вася моет яблоко, потом ест его"), this is SUFFICIENT — construct the diagram normally!
 
 {{DIAGRAM_COLOR_TABLE}}

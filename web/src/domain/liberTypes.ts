@@ -94,6 +94,8 @@ export type RunResult = {
   output_mode?: string;
   /** Source the user sent. Restored when a chat is opened from history. */
   user_text?: string;
+  /** Set when input lacked enough factual data to build artifacts */
+  insufficient_data?: boolean;
   error?: string;
   detail?: string;
 };

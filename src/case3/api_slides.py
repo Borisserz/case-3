@@ -143,7 +143,7 @@ def try_claim_slides_start(
             raise ValueError("corrupt meta.json") from exc
         if not isinstance(meta, dict):
             raise ValueError("corrupt meta.json")
-        if meta.get("status") != "ok":
+        if meta.get("status") != "ok" or meta.get("insufficient_data"):
             return False, meta
         st_slides = str(meta.get("slides_status") or "idle")
         if st_slides == "running":
