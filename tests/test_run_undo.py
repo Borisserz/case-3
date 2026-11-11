@@ -172,10 +172,10 @@ def test_presentation_chart_and_slide_undo_refreshes_deck(
     (charts_dir / "cht_01.png").write_bytes(b"SLIDE_CHART_V1")
     (out / "figures.json").write_text(json.dumps({"charts": [{"id": "cht_01", "palette": "ocean"}]}), encoding="utf-8")
 
-    # 3. Apply undo (even with rebuild=False!)
+    # 3. Session undo restores files only. Twin/PPTX wait for rebuild=True (Готово).
     info = apply_undo(out, rebuild=False)
-    assert info.get("deck_refreshed") is True
-    assert len(refreshed_runs) == 1
+    assert info.get("deck_refreshed") is not True
+    assert refreshed_runs == []
 
     # Verify files restored
     restored_deck = json.loads((slides_dir / "deck.json").read_text(encoding="utf-8"))
@@ -187,12 +187,17 @@ def test_presentation_chart_and_slide_undo_refreshes_deck(
     assert meta["can_undo"] is False
     assert meta["can_redo"] is True
 
-    # 4. Apply redo
+    # 4. Redo stays on the restored IR too.
     info_redo = apply_redo(out, rebuild=False)
-    assert info_redo.get("deck_refreshed") is True
-    assert len(refreshed_runs) == 2
+    assert info_redo.get("deck_refreshed") is not True
+    assert refreshed_runs == []
 
     redone_deck = json.loads((slides_dir / "deck.json").read_text(encoding="utf-8"))
     assert redone_deck["palette"] == "ocean"
     assert redone_deck["slides"][0]["title"] == "Chart V1"
+
+    # 5. Explicit rebuild still refreshes the twin.
+    info_flush = apply_undo(out, rebuild=True)
+    assert info_flush.get("deck_refreshed") is True
+    assert len(refreshed_runs) == 1
 

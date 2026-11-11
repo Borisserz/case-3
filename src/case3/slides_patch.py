@@ -385,6 +385,58 @@ def _default_slide_for_layout(
     return slide
 
 
+def structure_focus_ids(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    op_body: dict[str, Any],
+) -> str:
+    """Comma-separated slide ids to show after undo or redo.
+
+    The client picks the first id that still exists. A new slide is listed
+    first so redo lands on the copy; the slide the user acted on follows,
+    so undo (which drops the copy) lands there. Delete lists the removed
+    id first, then a neighbor that remains after redo.
+    """
+
+    def _ids(deck: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        for slide in deck.get("slides") or []:
+            if isinstance(slide, dict) and slide.get("id"):
+                out.append(str(slide["id"]))
+        return out
+
+    before_ids = _ids(before if isinstance(before, dict) else {})
+    after_ids = _ids(after if isinstance(after, dict) else {})
+    added = [i for i in after_ids if i not in before_ids]
+    removed = [i for i in before_ids if i not in after_ids]
+    anchor = str((op_body or {}).get("id") or "")
+    op = str((op_body or {}).get("op") or "").strip().lower()
+    focus: list[str] = []
+    if op == "reorder":
+        order = [str(x) for x in ((op_body or {}).get("order") or [])]
+        for i, sid in enumerate(order):
+            if i >= len(before_ids) or before_ids[i] != sid:
+                focus.append(sid)
+                break
+    elif op == "delete":
+        focus.extend(removed)
+        if anchor in before_ids:
+            idx = before_ids.index(anchor)
+            for j in (idx + 1, idx - 1):
+                if 0 <= j < len(before_ids) and before_ids[j] != anchor:
+                    focus.append(before_ids[j])
+                    break
+    else:
+        focus.extend(added)
+        if anchor:
+            focus.append(anchor)
+    seen: list[str] = []
+    for sid in focus:
+        if sid and sid not in seen:
+            seen.append(sid)
+    return ",".join(seen) or "*"
+
+
 def apply_deck_structure(
     deck: dict[str, Any],
     op_body: dict[str, Any],

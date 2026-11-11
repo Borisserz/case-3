@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from case3.slides_ir import DeckIrError
-from case3.slides_patch import apply_deck_structure
+from case3.slides_patch import apply_deck_structure, structure_focus_ids
 
 
 def _base() -> dict:
@@ -94,6 +94,51 @@ def test_insert_slide_appends_when_no_id() -> None:
     assert len(out["slides"]) == 4
     assert out["slides"][-1]["layout"] == "scorecard"
     assert len(out["slides"][-1]["kpis"]) >= 2
+
+
+def test_structure_focus_ids_survive_undo_and_redo() -> None:
+    """First id that still exists is the slide to show.
+
+    Duplicate/insert: new id first (redo), anchor second (undo drops the copy).
+    Delete: removed id first (undo brings it back), then a neighbor (redo).
+    Reorder: the slide that moved.
+    """
+    base = _base()
+    dup = apply_deck_structure(base, {"op": "duplicate", "id": "s02"})
+    dup_ids = structure_focus_ids(base, dup, {"op": "duplicate", "id": "s02"})
+    new_id = [s["id"] for s in dup["slides"] if s["id"] not in ("s01", "s02", "s03")][0]
+    assert dup_ids.split(",")[0] == new_id
+    assert "s02" in dup_ids.split(",")
+
+    deleted = apply_deck_structure(base, {"op": "delete", "id": "s02"})
+    assert structure_focus_ids(base, deleted, {"op": "delete", "id": "s02"}).split(
+        ","
+    )[0] == "s02"
+    assert "s03" in structure_focus_ids(
+        base, deleted, {"op": "delete", "id": "s02"}
+    ).split(",")
+
+    reordered = apply_deck_structure(
+        base, {"op": "reorder", "order": ["s03", "s01", "s02"]}
+    )
+    assert (
+        structure_focus_ids(
+            base, reordered, {"op": "reorder", "order": ["s03", "s01", "s02"]}
+        )
+        == "s03"
+    )
+
+    inserted = apply_deck_structure(
+        base, {"op": "insert", "id": "s01", "layout": "bullets"}
+    )
+    ins = structure_focus_ids(
+        base, inserted, {"op": "insert", "id": "s01", "layout": "bullets"}
+    )
+    added = [s["id"] for s in inserted["slides"] if s["id"] not in ("s01", "s02", "s03")][
+        0
+    ]
+    assert ins.split(",")[0] == added
+    assert ins.split(",")[1] == "s01"
 
 
 def test_insert_rejects_unknown_layout() -> None:

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useConfirm } from "./ConfirmModal";
+import { chartTypeEditConfirm } from "./domain/chartTypeFit";
 import {
   ChartTypeChip,
   chartTypeChipLabel,
@@ -20,6 +21,8 @@ export type ChartEditRequest = {
   palette: string;
   styleNotes: string;
   chartType: string;
+  /** Set after the user accepts a style rewrite that changed numbers. */
+  acceptedHtml?: string;
 };
 
 export type ChartEditDraft = {
@@ -86,6 +89,7 @@ export function ChartEditSheet({
   const [chartType, setChartType] = useState(initialType || types[0] || "bar");
   const [styleNotes, setStyleNotes] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
+  const [typeWarning, setTypeWarning] = useState("");
   /** Local preview failure — keep last good HTML above; do not blank forever. */
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewSeq = useRef(0);
@@ -106,6 +110,7 @@ export function ChartEditSheet({
     setChartType(t);
     setStyleNotes("");
     setPreviewError(null);
+    setTypeWarning("");
     onPreviewHtml?.(null);
   }, [open, figureId, initialPalette, initialType]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -153,9 +158,10 @@ export function ChartEditSheet({
             const detail = await r.text();
             throw new Error(detail.slice(0, 180) || `preview ${r.status}`);
           }
-          const data = (await r.json()) as { html?: string };
+          const data = (await r.json()) as { html?: string; type_warning?: string };
           if (seq !== previewSeq.current) return;
           setPreviewError(null);
+          setTypeWarning(typeof data.type_warning === "string" ? data.type_warning : "");
           onPreviewHtml?.(data.html || null);
         } catch (exc) {
           if (seq !== previewSeq.current) return;
@@ -179,7 +185,34 @@ export function ChartEditSheet({
   const dirtyPalette =
     Boolean(initialPalette) && palette !== initialPalette && initialPalette !== "auto";
 
-  function apply() {
+  async function apply() {
+    let warning = typeWarning;
+    if (dirtyType && runId && figureId) {
+      try {
+        const r = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(figureId)}/preview`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ palette, chart_type: chartType }),
+          },
+        );
+        if (r.ok) {
+          const data = (await r.json()) as { type_warning?: string };
+          warning = typeof data.type_warning === "string" ? data.type_warning : "";
+        }
+      } catch {
+        warning = typeWarning;
+      }
+    }
+    const ask = dirtyType ? chartTypeEditConfirm(warning) : null;
+    if (ask) {
+      const ok = await confirm(ask);
+      if (!ok) {
+        setChartType(initialType || chartType);
+        return;
+      }
+    }
     onSubmit({
       figureId,
       palette,
@@ -237,6 +270,11 @@ export function ChartEditSheet({
             </ChartTypeChip>
           ))}
         </div>
+        {dirtyType && typeWarning && (
+          <p className="chart-edit-warn" role="status">
+            {typeWarning}
+          </p>
+        )}
       </section>
 
       <section className="chart-edit-block">

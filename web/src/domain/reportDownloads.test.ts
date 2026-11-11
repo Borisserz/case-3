@@ -43,6 +43,7 @@ describe("reportDownloadLinks", () => {
       { stale: true },
     );
     assert.equal(links[0]?.stale, true);
+    assert.equal(links[0]?.href, "");
     assert.match(links[0]?.label || "", /устарел/i);
     assert.match(links[0]?.title || "", /Готово/i);
   });

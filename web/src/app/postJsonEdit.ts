@@ -18,14 +18,19 @@ export async function postJsonEdit(
   }
   if (!res.ok) {
     const detail = data.detail;
-    const raw =
+    let raw =
       typeof detail === "string"
         ? detail
         : typeof data.error === "string"
           ? data.error
           : res.statusText || fallbackError;
-    const err = new Error(raw) as Error & { status?: number };
+    if (detail && typeof detail === "object" && "message" in detail) {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) raw = message;
+    }
+    const err = new Error(raw) as Error & { status?: number; detail?: unknown };
     err.status = res.status;
+    err.detail = detail;
     throw err;
   }
   return data;

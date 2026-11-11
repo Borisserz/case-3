@@ -38,7 +38,8 @@ def _palette_colors(palette_id: str) -> tuple[str, str, str]:
 
 
 def _esc(s: str) -> str:
-    return html.escape(s or "", quote=True)
+    plain = (s or "").replace(r"{\,}", ",").replace("{,}", ",").replace("{.}", ".")
+    return html.escape(plain, quote=True)
 
 
 def _brand(mark: str | None = None) -> str:

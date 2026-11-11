@@ -168,6 +168,8 @@ type Props = {
   reportEditMode?: boolean;
   /** «Готово»: flush PDF/DOCX then leave edit. */
   onFinishReportEdit?: () => Promise<void> | void;
+  /** Undo every pending edit so the files on disk match the screen again. */
+  onDiscardReportEdits?: () => Promise<void> | void;
   finishReportEditBusy?: boolean;
   makingPresentation?: boolean;
   onDiagramsUpdated?: (
@@ -221,6 +223,7 @@ export function ArtifactRail({
   onReportEditModeChange,
   reportEditMode = false,
   onFinishReportEdit,
+  onDiscardReportEdits,
   finishReportEditBusy = false,
   makingPresentation = false,
   onDiagramsUpdated,
@@ -228,6 +231,7 @@ export function ArtifactRail({
   onDeckDownloadsBlockedChange,
 }: Props) {
   const reduceMotion = useReducedMotion();
+  const [stalePrompt, setStalePrompt] = useState<null | "report" | "deck">(null);
   const tab = artifact.tab;
   const openWidthRef = useRef<number | null>(null);
   const isMedia = artifact.kind === "media";
@@ -235,6 +239,57 @@ export function ArtifactRail({
     artifact.kind === "media" && !artifact.mediaId.startsWith("film_");
   const isReport = artifact.kind === "report";
   const diagrams = isReport ? report?.diagrams || [] : [];
+  const openStalePrompt = useCallback((scope: "report" | "deck") => {
+    setStalePrompt(scope);
+  }, []);
+  const saveStale = useCallback(async () => {
+    const scope = stalePrompt;
+    if (!scope) return;
+    if (scope === "report") {
+      await onFinishReportEdit?.();
+      setStalePrompt(null);
+      return;
+    }
+    const runId = report?.runId;
+    if (!runId) return;
+    const res = await fetch(
+      `/api/runs/${encodeURIComponent(runId)}/slides/rebuild`,
+      { method: "POST" },
+    );
+    if (!res.ok) return;
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const g = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+      const gBody = await g.json().catch(() => ({}));
+      if (gBody.slides_status === "ok") {
+        const pngs = (gBody.slide_pngs as string[]) || [];
+        const dl =
+          gBody.downloads && typeof gBody.downloads === "object"
+            ? (gBody.downloads as Record<string, string>)
+            : undefined;
+        if (gBody.deck) {
+          report?.onDeckUpdated?.(gBody.deck, pngs, { downloads: dl, diagrams });
+        }
+        onDeckDownloadsBlockedChange?.(false);
+        setStalePrompt(null);
+        return;
+      }
+      if (gBody.slides_status === "error" || gBody.slides_status === "cancelled") {
+        return;
+      }
+    }
+  }, [
+    diagrams,
+    onDeckDownloadsBlockedChange,
+    onFinishReportEdit,
+    report,
+    stalePrompt,
+  ]);
+  const discardStale = useCallback(async () => {
+    await onDiscardReportEdits?.();
+    onDeckDownloadsBlockedChange?.(false);
+    setStalePrompt(null);
+  }, [onDeckDownloadsBlockedChange, onDiscardReportEdits]);
   const activeDiagramId =
     isReport && artifact.kind === "report"
       ? artifact.activeDiagramId || diagrams[0]?.id || null
@@ -750,17 +805,29 @@ export function ArtifactRail({
               ? reportDownloadLinks(report?.downloads, {
                   enabled: surfaces.showReportPdf,
                   stale: docsNeedRebuild(editHistory),
-                }).map((link) => (
-                  <a
-                    key={link.kind}
-                    href={link.href}
-                    download
-                    title={link.title}
-                    className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}${link.stale ? " is-stale" : ""}`}
-                  >
-                    {link.label}
-                  </a>
-                ))
+                }).map((link) =>
+                  link.stale || !link.href ? (
+                    <button
+                      key={link.kind}
+                      type="button"
+                      title={link.title}
+                      className={`artifact-rail-dl is-stale${downloadsPulse ? " is-pulse" : ""}`}
+                      onClick={() => openStalePrompt("report")}
+                    >
+                      {link.label}
+                    </button>
+                  ) : (
+                    <a
+                      key={link.kind}
+                      href={link.href}
+                      download
+                      title={link.title}
+                      className={`artifact-rail-dl${downloadsPulse ? " is-pulse" : ""}`}
+                    >
+                      {link.label}
+                    </a>
+                  ),
+                )
               : null}
             {isReport && (tab === "presentation" || tab === "slides")
               ? deckDownloadLinks(report?.downloads, {
@@ -779,9 +846,9 @@ export function ArtifactRail({
                       <button
                         key={link.kind}
                         type="button"
-                        disabled
                         title={link.title}
-                        className="artifact-rail-dl is-blocked"
+                        className="artifact-rail-dl is-stale"
+                        onClick={() => openStalePrompt("deck")}
                       >
                         {label}
                       </button>
@@ -812,6 +879,23 @@ export function ArtifactRail({
             </button>
           </div>
         </header>
+        {stalePrompt ? (
+          <div className="artifact-rail-stale" role="status">
+            <p>
+              Сохраните изменения или отмените их. После этого файл можно
+              скачать.
+            </p>
+            <button type="button" onClick={() => void saveStale()}>
+              Сохранить
+            </button>
+            <button type="button" onClick={() => void discardStale()}>
+              Отменить изменения
+            </button>
+            <button type="button" onClick={() => setStalePrompt(null)}>
+              Закрыть
+            </button>
+          </div>
+        ) : null}
 
         <div className="artifact-rail-body" ref={setBodyRef}>
           <AnimatePresence mode="wait">
@@ -964,6 +1048,7 @@ export function ArtifactRail({
                   onEditHistory={onEditHistory}
                   downloadsBlocked={deckDownloadsBlocked}
                   onDocsDirtyChange={onDeckDownloadsBlockedChange}
+                  onStaleDownload={() => openStalePrompt("deck")}
                 />
               ) : null}
 
@@ -976,6 +1061,7 @@ export function ArtifactRail({
                       : report?.downloads?.deck_pdf || null
                   }
                   downloadBlocked={deckDownloadsBlocked}
+                  onBlockedClick={() => openStalePrompt("deck")}
                 />
               ) : null}
 

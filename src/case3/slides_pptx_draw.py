@@ -32,12 +32,16 @@ _MARGIN_TOP = Inches(0.55)
 def _as_inches(val: Any) -> float:
     """python-pptx Length: ``float(Inches(0.85))`` is EMUs (~777240), not 0.85.
 
-    Always convert via ``.inches`` before arithmetic that expects inch floats.
+    Subtraction of two lengths returns a raw EMU ``int`` with no ``.inches``.
+    Treating that int as inches parks a photo millions of inches off the slide
+    and PowerPoint repairs the file.
     """
     if val is None:
         return 0.0
     if hasattr(val, "inches"):
         return float(val.inches)
+    if isinstance(val, int):
+        return float(val) / 914400.0
     return float(val)
 
 
@@ -155,6 +159,16 @@ _PPTX_TITLE_FONT = "Georgia"
 _BRAND_MARK = "LIBER · ATELIER"
 
 
+def _plain(text: str) -> str:
+    """TeX decimal grouping ``2{,}68`` is a comma on a slide, not braces."""
+    return (
+        (text or "")
+        .replace(r"{\,}", ",")
+        .replace("{,}", ",")
+        .replace("{.}", ".")
+    )
+
+
 def _set_run(
     run,
     *,
@@ -203,7 +217,7 @@ def _add_textbox(
     p = tf.paragraphs[0]
     p.alignment = align
     run = p.add_run()
-    run.text = text or ""
+    run.text = _plain(text)
     # Titles / display sizes use title face; kickers stay body.
     use_title = bool(title) if title is not None else (bold and size_pt >= 24)
     _set_run(run, size_pt=size_pt, bold=bold, color=color, title=use_title)
@@ -228,7 +242,7 @@ def _add_bullets(
         p.level = 0
         p.alignment = PP_ALIGN.LEFT
         run = p.add_run()
-        run.text = f"• {item}"
+        run.text = _plain(f"• {item}")
         _set_run(run, size_pt=size_pt, color=color)
         p.space_after = Pt(8)
 

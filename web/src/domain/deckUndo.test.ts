@@ -18,4 +18,8 @@ describe("slideIndexForUndoTarget", () => {
     assert.equal(slideIndexForUndoTarget(slides, "s99"), -1);
     assert.equal(slideIndexForUndoTarget(null, "s01"), -1);
   });
+
+  it("skips an id that the undo removed and uses the next one", () => {
+    assert.equal(slideIndexForUndoTarget(slides, "s99,s04"), 2);
+  });
 });

@@ -22,6 +22,7 @@ REQUIRED_PACKAGES = (
     "fancyhdr",
     "caption",
     "pdflscape",  # C4: landscape page for wide tables only
+    "amsmath",  # \text{литров} inside formulas; without it XeLaTeX exits 1
     "xcolor",  # before hyperref; LLM often emits \definecolor / \color
     "hyperref",
 )
@@ -869,6 +870,7 @@ def ensure_document_preamble(tex: str) -> str:
         fix_unclosed_caption_args,
         fix_unclosed_float_envs,
         fix_unclosed_heading_args,
+        harden_math_prose,
         harden_prose_lists,
         harden_russian_typography,
         normalize_includegraphics_aspect,
@@ -886,6 +888,7 @@ def ensure_document_preamble(tex: str) -> str:
     out = harden_prose_lists(out)
     out = brace_schema_item_labels(out)
     out = normalize_includegraphics_aspect(out)
+    out = harden_math_prose(out)
     out = harden_russian_typography(out)
     return harden_table_rules(out)
 

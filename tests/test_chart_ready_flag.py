@@ -23,3 +23,10 @@ def test_ready_flag_not_duplicated() -> None:
     )
     out = sanitize_chart_html(html)
     assert out.count("__CASE3_CHART_READY") == 1
+
+
+def test_tex_decimal_comma_is_plain_text() -> None:
+    html = '<div class="kpi"><div class="value">2{,}68</div></div>'
+    out = sanitize_chart_html(html)
+    assert "2,68" in out
+    assert "{,}" not in out

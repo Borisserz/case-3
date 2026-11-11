@@ -30,7 +30,7 @@ export function reportDownloadLinks(
   if (downloads.pdf) {
     out.push({
       kind: "pdf",
-      href: downloads.pdf,
+      href: stale ? "" : downloads.pdf,
       label: stale ? "PDF · устарел" : "PDF",
       stale,
       title,
@@ -39,7 +39,7 @@ export function reportDownloadLinks(
   if (downloads.docx) {
     out.push({
       kind: "docx",
-      href: downloads.docx,
+      href: stale ? "" : downloads.docx,
       label: stale ? "DOCX · устарел" : "DOCX",
       stale,
       title,

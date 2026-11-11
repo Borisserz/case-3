@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./app/App";
+import { ConfirmProvider } from "./ConfirmModal";
 /* Direct imports — Vite @import inlining was serving a stale CSS bundle. */
 import "./styles/tokens.css";
 import "./styles/shell.css";
@@ -17,6 +18,8 @@ import "katex/dist/katex.min.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ConfirmProvider>
+      <App />
+    </ConfirmProvider>
   </StrictMode>,
 );

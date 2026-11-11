@@ -306,13 +306,9 @@ def _maybe_rebuild(out: Path, info: dict[str, Any], *, rebuild: bool) -> None:
                 log.warning("undo restore ok but rebuild failed: %s", exc)
                 info["rebuild_error"] = str(exc)
 
-    # Deck refresh: Always run if deck.json exists and either rebuild was requested
-    # OR the undone/redone edit touched slides, charts, figures, or diagrams.
-    kind = str(info.get("kind") or "")
-    is_deck_touching = kind.startswith(
-        ("slides", "chart", "diagram", "fig", "image", "usr", "cht", "batch_recolor")
-    )
-    if (out / "slides" / "deck.json").is_file() and (rebuild or is_deck_touching):
+    # Twin/PPTX stay put unless this call asked to rebuild (Готово / rebuild=1).
+    # Session undo passes rebuild=False and only restores the snapshotted files.
+    if rebuild and (out / "slides" / "deck.json").is_file():
         try:
             from case3.deck_refresh import refresh_deck_from_ir
 

@@ -8,6 +8,11 @@ import {
   type SetStateAction,
 } from "react";
 import type { ChartEditRequest } from "../ChartEditSheet";
+import { useConfirm } from "../ConfirmModal";
+import {
+  chartNumberEditConfirm,
+  numberChangeFromEditError,
+} from "../domain/chartTypeFit";
 import type { ImageEditRequest } from "../ImageEditModal";
 import type { ParagraphEditRequest } from "../ParagraphEditSheet";
 import type { HeadingEditRequest } from "../HeadingEditTypes";
@@ -21,6 +26,7 @@ import {
   toastUndoRebuildsDocs,
   type EditHistoryDesc,
 } from "../domain/reportEditMode";
+import { scrollReportUndo } from "../domain/reportUndoJump";
 import { mapTableEditHttpError, postJsonEdit } from "./postJsonEdit";
 
 /** Preview-only edit session; PDF/DOCX flush on «Готово». */
@@ -73,6 +79,7 @@ export function useLiberEdits({
   undoOffer,
   undoBusyRef: undoBusyRefProp,
 }: Args) {
+  const confirm = useConfirm();
   const editLock = useRef(false);
   const undoBusyLocal = useRef(false);
   const undoBusyRef = undoBusyRefProp ?? undoBusyLocal;
@@ -118,8 +125,10 @@ export function useLiberEdits({
       } else {
         setUndoOffer(null);
       }
-      setToast(toastText);
-      window.setTimeout(() => setToast(null), 4200);
+      if (toastText) {
+        setToast(toastText);
+        window.setTimeout(() => setToast(null), 4200);
+      }
       if (opts?.pulseDownloads) {
         setDownloadsPulseMsgId(msgId);
         window.setTimeout(() => setDownloadsPulseMsgId(null), 2200);
@@ -140,9 +149,9 @@ export function useLiberEdits({
     runId: string,
     path: "undo" | "redo",
     okToast: string,
-    opts?: { rebuild?: boolean },
-  ) {
-    if (undoBusyRef.current) return;
+    opts?: { rebuild?: boolean; quiet?: boolean },
+  ): Promise<EditHistoryDesc | null> {
+    if (undoBusyRef.current) return null;
     undoBusyRef.current = true;
     try {
       const q =
@@ -173,12 +182,27 @@ export function useLiberEdits({
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as UndoApi,
         },
-        okToast,
-        { pulseDownloads: opts?.rebuild !== false },
+        opts?.quiet ? "" : okToast,
+        { pulseDownloads: opts?.rebuild !== false && !opts?.quiet },
       );
+      const history = parseEditHistory(data.undo as UndoApi);
+      if (!opts?.quiet) {
+        const key = path === "undo" ? "undone" : "redone";
+        const raw = data[key];
+        if (raw && typeof raw === "object") {
+          const jump = raw as { kind?: unknown; target?: unknown };
+          const kind = typeof jump.kind === "string" ? jump.kind : "";
+          const target = typeof jump.target === "string" ? jump.target : "";
+          if (kind) scrollReportUndo(kind, target);
+        }
+      }
+      return history;
     } catch (err) {
-      setToast(err instanceof Error ? err.message : String(err));
-      window.setTimeout(() => setToast(null), 3200);
+      if (!opts?.quiet) {
+        setToast(err instanceof Error ? err.message : String(err));
+        window.setTimeout(() => setToast(null), 3200);
+      }
+      return null;
     } finally {
       undoBusyRef.current = false;
     }
@@ -202,6 +226,19 @@ export function useLiberEdits({
     await postHistory(msgId, runId, "redo", "Правка возвращена", {
       rebuild: false,
     });
+  }
+
+  async function discardEdits(msgId: string, runId: string) {
+    for (let i = 0; i < 40; i++) {
+      const hist = await postHistory(msgId, runId, "undo", "", {
+        rebuild: false,
+        quiet: true,
+      });
+      if (!hist || !hist.canUndo) break;
+    }
+    await clearEditHistory(runId);
+    setToast("Изменения отменены");
+    window.setTimeout(() => setToast(null), 3200);
   }
 
   async function clearEditHistory(runId: string) {
@@ -268,6 +305,7 @@ export function useLiberEdits({
     msgId: string,
     runId: string,
     req: ChartEditRequest,
+    allowNumberRetry = true,
   ): Promise<boolean> {
     if (editLock.current) return false;
     editLock.current = true;
@@ -281,11 +319,26 @@ export function useLiberEdits({
           style: req.styleNotes,
           chart_type: req.chartType,
           formats: EDIT_FORMATS,
+          accepted_html: req.acceptedHtml || "",
         },
       );
       applyEditPayload(msgId, runId, data, PREVIEW_EDIT_TOAST);
       return true;
     } catch (err) {
+      const changed = allowNumberRetry ? numberChangeFromEditError(err) : null;
+      if (changed) {
+        const ask = chartNumberEditConfirm(changed.message);
+        const ok = ask ? await confirm(ask) : false;
+        if (!ok) return false;
+        editLock.current = false;
+        setEditBusy(null);
+        return await editFigure(
+          msgId,
+          runId,
+          { ...req, acceptedHtml: changed.html },
+          false,
+        );
+      }
       setEditError({
         msgId,
         figureId: req.figureId,
@@ -823,6 +876,7 @@ export function useLiberEdits({
     undoEdit,
     redoEdit,
     clearEditHistory,
+    discardEdits,
     rebuildDocs,
     finishEditSession,
   };

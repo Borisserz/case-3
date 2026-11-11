@@ -556,6 +556,13 @@
 
 .report-block {
   animation: report-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  scroll-margin: 4.5rem;
+}
+
+.report-block.is-undo-flash,
+#report-doc-title.is-undo-flash {
+  outline: 2px solid var(--warn);
+  outline-offset: 4px;
 }
 
 /* Opacity-only: transform on .report-fig leaves a compositor layer that

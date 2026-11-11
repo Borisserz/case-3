@@ -260,6 +260,7 @@ export default function App() {
     undoEdit,
     redoEdit,
     clearEditHistory,
+    discardEdits,
     finishEditSession,
   } =
     useLiberEdits({
@@ -915,6 +916,12 @@ export default function App() {
                           setFinishEditBusy(false);
                         }
                       }
+                    : undefined
+                }
+                onDiscardReportEdits={
+                  railArtifact.kind === "report" && activeReport?.run_id
+                    ? () =>
+                        discardEdits(railArtifact.msgId, activeReport.run_id)
                     : undefined
                 }
                 onEditList={

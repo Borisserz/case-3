@@ -442,7 +442,7 @@ export function ReportView({
       })()}
 
       {canEditTitle && activeBlockId === "doc_title" ? (
-        <div className="report-title-editor inline-block-wrap">
+        <div id="report-doc-title" className="report-title-editor inline-block-wrap">
           <InlineBlockEditor
             hideActions
             kind="heading"
@@ -460,6 +460,7 @@ export function ReportView({
         </div>
       ) : (
         <h1
+          id="report-doc-title"
           className={`report-title${!preview.title ? " muted" : ""}${canEditTitle ? " is-click-edit" : ""}`}
           role={canEditTitle ? "button" : undefined}
           tabIndex={canEditTitle ? 0 : undefined}

@@ -204,6 +204,7 @@ export function ReportBody({
             return (
               <Fragment key={i}>
                 <div
+                  id={headingId}
                   className={`report-h-row report-block${headActive || isEditingHead ? " is-editing" : ""}${canEditHeading && !headActive ? " is-editable-idle" : ""}`}
                   style={delayStyle}
                 >
@@ -222,7 +223,7 @@ export function ReportBody({
                     </span>
                   </button>
                   {headActive ? (
-                    <div className="report-h-edit" id={headingId}>
+                    <div className="report-h-edit">
                       <InlineBlockEditor
                         hideActions
                         kind="heading"
@@ -252,7 +253,6 @@ export function ReportBody({
                     </div>
                   ) : (
                     <Tag
-                      id={headingId}
                       className={`report-h report-h${b.level}${canEditHeading ? " is-click-edit" : ""}`}
                       role={canEditHeading ? "button" : undefined}
                       tabIndex={canEditHeading ? 0 : undefined}
@@ -357,6 +357,7 @@ export function ReportBody({
             return (
               <Fragment key={i}>
                 <div
+                  id={`report-para-${n}`}
                   className={`report-para-wrap report-block${paraActive || isEditingPara ? " is-editing" : ""}${canEditPara && !paraActive ? " is-editable-idle" : ""}`}
                   style={delayStyle}
                 >
@@ -504,6 +505,7 @@ export function ReportBody({
               return (
                 <div
                   key={i}
+                  id={`report-list-${n}`}
                   className={`report-list-wrap report-block is-editing`}
                   style={delayStyle}
                 >
@@ -542,6 +544,7 @@ export function ReportBody({
             return (
               <Tag
                 key={i}
+                id={`report-list-${n}`}
                 className={`report-list report-block${b.ordered ? " is-ol" : ""}${canEditList ? " is-editable-idle is-click-edit" : ""}`}
                 style={delayStyle}
                 role={canEditList ? "button" : undefined}
@@ -604,6 +607,7 @@ export function ReportBody({
             return (
               <figure
                 key={i}
+                id={`report-table-${n}`}
                 className={`report-table-wrap report-block${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}${canEditTable && !tableOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
@@ -1039,6 +1043,7 @@ export function ReportBody({
             return (
               <figure
                 key={i}
+                id={b.id ? `report-fig-${b.id}` : undefined}
                 className={`report-fig report-block${isEditing ? " is-editing" : ""}${sheetOpen || imageOpen ? " is-tuning" : ""}${(canEditFigure || canEditImage || canEditDiagram) && !sheetOpen && !imageOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >

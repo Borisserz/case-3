@@ -329,6 +329,42 @@ def test_media_photo_not_squashed_in_pptx(tmp_path: Path) -> None:
     assert 0.82 <= ratio <= 1.22, f"expected ~square photo, got ratio {ratio:.2f}"
 
 
+def test_media_hero_photo_stays_on_slide_with_title(tmp_path: Path) -> None:
+    """Length subtraction is a raw EMU int. Treating it as inches
+    parks the photo millions of inches off-slide and PowerPoint repairs
+    the file, dropping the text.
+    """
+    sq = tmp_path / "fig_01.png"
+    Image.new("RGB", (1024, 1024), (90, 120, 60)).save(sq, format="PNG")
+    deck = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "atelier",
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "media_hero",
+                "kicker": "Соцсети",
+                "title": "Съёмка контента",
+                "caption": "Подросток снимает видео",
+                "media_id": "fig_01",
+            }
+        ],
+    }
+    out = build_native_pptx(
+        deck, tmp_path / "hero.pptx", media_by_id={"fig_01": sq}
+    )
+    slide = Presentation(str(out)).slides[0]
+    pics = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pics) == 1
+    left = pics[0].left.inches
+    assert 0 <= left <= 13.4, f"photo left {left}"
+    assert pics[0].width.inches < 13.4
+    text = _shape_text(slide)
+    assert "Съёмка контента" in text
+    assert "Подросток снимает видео" in text
+
+
 def _shape_text(slide) -> str:
     return "\n".join(
         s.text_frame.text for s in slide.shapes if s.has_text_frame

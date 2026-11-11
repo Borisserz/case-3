@@ -455,3 +455,54 @@ def test_download_slide_media_prefers_newer_figure(client: TestClient, tmp_path:
     assert resp.content == b"\x89PNG\r\n\x1a\n" + b"NEW_EDITED"
 
 
+def test_structure_rebuild_0_writes_ir_without_worker(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Add/duplicate stays in deck.json. Twin/PPTX wait for Готово."""
+    run_id = "run_struct0"
+    out = _seed_ok_run(tmp_path, run_id)
+    slides = out / "slides"
+    slides.mkdir(parents=True)
+    deck = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "atelier",
+        "language": "ru",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "A"},
+            {"id": "s02", "layout": "bullets", "title": "B", "bullets": ["x"]},
+        ],
+    }
+    (slides / "deck.json").write_text(
+        json.dumps(deck, ensure_ascii=False), encoding="utf-8"
+    )
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["slides_status"] = "ok"
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+    def _boom(*_a: object, **_k: object) -> dict:
+        raise AssertionError("structure rebuild=0 must not start the slides worker")
+
+    monkeypatch.setattr("case3.slides_job.rebuild_slides_from_deck", _boom)
+
+    r = client.post(
+        f"/api/runs/{run_id}/slides/structure?rebuild=0",
+        json={"op": "duplicate", "id": "s02"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("rebuilt") is False
+    assert body.get("slides_status") == "ok"
+    ids = [s["id"] for s in body["deck"]["slides"]]
+    assert ids[:2] == ["s01", "s02"]
+    assert len(ids) == 3
+    target = str((body.get("undo") or {}).get("target") or "")
+    assert target.split(",")[0] == ids[2]
+    assert "s02" in target.split(",")
+    assert "duplicate" not in target.split(",")
+    disk = json.loads((slides / "deck.json").read_text(encoding="utf-8"))
+    assert [s["id"] for s in disk["slides"]] == ids
+    disk_meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert disk_meta.get("slides_status") != "running"
+
+

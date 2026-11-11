@@ -10,6 +10,7 @@ import { ModeStarterGrid } from "./ModeStarterGrid";
 import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
 import type { SourceDraft } from "./domain/liberTypes";
+import { takeInputFiles } from "./domain/takeInputFiles";
 
 type Props = {
   busy: boolean;
@@ -166,14 +167,13 @@ export function ChatComposer({
         <div className="composer">
           <input
             ref={fileRef}
+            className="composer-file-input"
             type="file"
             accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
             multiple
-            hidden
             onChange={(e) => {
-              const list = e.target.files;
-              e.target.value = "";
-              if (list?.length) onIngestFiles(list);
+              const files = takeInputFiles(e.target);
+              if (files.length) onIngestFiles(files);
             }}
           />
           <input

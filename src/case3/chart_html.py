@@ -265,6 +265,11 @@ def sanitize_chart_html(html: str) -> str:
     text = (html or "").strip()
     if not text:
         raise ChartHtmlError("empty chart html")
+    text = (
+        text.replace(r"{\,}", ",")
+        .replace("{,}", ",")
+        .replace("{.}", ".")
+    )
     if len(text.encode("utf-8")) > _MAX_HTML_BYTES:
         raise ChartHtmlError(f"chart html exceeds {_MAX_HTML_BYTES} bytes")
     text = re.sub(r"(?is)<!DOCTYPE[^>]*>", "", text)

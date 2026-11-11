@@ -948,29 +948,35 @@ def _layout_media(
         mid = str(s.get("media_id") or s.get("chart_id") or "")
         is_dia = mid.startswith("dia_")
         is_cht = mid.startswith("cht_")
-        rail_w = Inches(4.5)
         _rect(slide, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H, colors["paper"])
-        phrase = cap or title
-        mark = str((style or {}).get("brand_mark") or "").strip()
-        if mark:
+        # Same split as the HTML twin: copy on the left, photo on the right.
+        y = 1.35
+        if kicker:
             _add_textbox(
-                slide, Inches(0.5), Inches(4.35), Inches(3.5), Inches(0.3),
-                mark, size_pt=11, bold=True, color=colors["muted"],
+                slide, Inches(0.55), Inches(y), Inches(4.3), Inches(0.32),
+                kicker.upper(), size_pt=12, bold=True, color=colors["accent"],
             )
-        _add_textbox(
-            slide, Inches(0.5), Inches(4.75), Inches(3.6), Inches(1.4),
-            phrase, size_pt=22, color=colors["ink"], title=True,
-        )
-        if is_dia:
+            y += 0.42
+        if title:
             _add_textbox(
-                slide, Inches(0.5), Inches(6.25), Inches(3.6), Inches(0.7),
-                "Старт    Решение    Успех    Риск",
-                size_pt=12,
-                color=colors["muted"],
+                slide, Inches(0.55), Inches(y), Inches(4.3), Inches(1.8),
+                title, size_pt=32, bold=True, color=colors["ink"], title=True,
             )
-        pic_left = rail_w + Inches(0.15)
-        pic_w = _SLIDE_W - rail_w - Inches(0.35)
-        pic_h = Inches(5.8) if is_dia else Inches(4.6)
+            y += 1.9
+        if body:
+            _add_textbox(
+                slide, Inches(0.55), Inches(y), Inches(4.3), Inches(1.2),
+                body, size_pt=16, color=colors["ink2"],
+            )
+            y += 1.2
+        if cap and cap != title:
+            _add_textbox(
+                slide, Inches(0.55), Inches(min(y, 5.6)), Inches(4.3), Inches(1.2),
+                cap, size_pt=16, color=colors["ink"],
+            )
+        pic_left = Inches(5.15)
+        pic_w = Inches(7.6)
+        pic_h = Inches(6.2) if is_dia else Inches(5.6)
         placed = False
         if is_dia and diagram_spec:
             from case3.slides_pptx_diagrams import add_native_diagram

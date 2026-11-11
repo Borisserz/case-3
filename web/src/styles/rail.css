@@ -677,6 +677,42 @@
   font-family: inherit;
 }
 
+.artifact-rail-dl.is-stale {
+  color: var(--warn);
+  cursor: pointer;
+}
+
+.artifact-rail-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  margin: 0;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--warn) 14%, var(--sheet));
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+}
+
+.artifact-rail-stale p {
+  margin: 0;
+  flex: 1 1 12rem;
+}
+
+.artifact-rail-stale button {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.28rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  background: var(--sheet);
+  color: var(--ink);
+  cursor: pointer;
+}
+
 .artifact-rail-dl:disabled {
   color: var(--muted);
   border-color: color-mix(in srgb, var(--muted) 35%, transparent);

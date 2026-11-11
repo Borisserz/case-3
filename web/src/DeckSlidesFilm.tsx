@@ -8,6 +8,7 @@ type Props = {
   downloadHref?: string | null;
   /** Unsaved deck edits: the file on disk is behind the screen. */
   downloadBlocked?: boolean;
+  onBlockedClick?: () => void;
   title?: string;
 };
 
@@ -15,6 +16,7 @@ export function DeckSlidesFilm({
   slides,
   downloadHref = null,
   downloadBlocked = false,
+  onBlockedClick,
   title = "Презентация · PDF",
 }: Props) {
   const labelId = useId();
@@ -91,8 +93,8 @@ export function DeckSlidesFilm({
             <button
               type="button"
               className="deck-slides-film-dl"
-              disabled
-              title="Сначала нажмите Готово — в файле ещё нет этих правок"
+              title="Сначала сохраните или отмените изменения"
+              onClick={onBlockedClick}
             >
               Сначала Готово
             </button>

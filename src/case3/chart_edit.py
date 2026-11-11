@@ -17,6 +17,10 @@ from case3.chart_style import (
     normalize_palette_id,
 )
 from case3.chart_coerce import apply_type_to_chart
+from case3.chart_type_fit import (
+    chart_number_change_warning,
+    chart_type_change_warning,
+)
 from case3.chart_donut import enhance_donut_html
 from case3.chart_harden import harden_chart_html
 from case3.charts import _DEFAULT_RENDER_CHART_PNG, render_chart_png, render_charts_batch
@@ -32,6 +36,14 @@ _FENCE = re.compile(r"```(?:html|javascript|js)?\s*([\s\S]*?)```", re.I)
 
 class ChartEditError(RuntimeError):
     pass
+
+
+class ChartNumberChange(ChartEditError):
+    """Style rewrite changed data numbers. Nothing was written."""
+
+    def __init__(self, message: str, html: str) -> None:
+        super().__init__(message)
+        self.html = html
 
 
 def _extract_html_fragment(raw: str) -> str:
@@ -236,6 +248,9 @@ def preview_chart_html(
     palette_id = normalize_palette_id(effective_palette)
     current_type = str(chart.get("type") or "").strip()
     want_type = (chart_type or "").strip() or current_type
+    type_warning = ""
+    if want_type and want_type != current_type:
+        type_warning = chart_type_change_warning(chart, want_type)
     new_html, final_type, modes = _local_restyle_html(
         chart, palette_id=palette_id, want_type=want_type
     )
@@ -253,6 +268,7 @@ def preview_chart_html(
         "modes": modes,
         "caption": str(chart.get("caption") or "").strip(),
         "style_deferred": True,
+        "type_warning": type_warning,
     }
 
 
@@ -265,13 +281,11 @@ def edit_chart_in_run(
     chart_type: str | None = None,
     formats: set[str] | None = None,
     llm: LLMClient | None = None,
+    accepted_html: str | None = None,
 ) -> dict[str, Any]:
     """Update one chart PNG + figures.json and rebuild PDF/DOCX in out_dir."""
     out_dir = out_dir.resolve()
     fj, chart, idx = _load_chart_from_run(out_dir, chart_id)
-    from case3.run_undo import capture_before_edit
-
-    capture_before_edit(out_dir, kind="chart", target=chart_id)
     charts = list(fj.get("charts") or [])
     html = str(chart.get("html") or "").strip()
 
@@ -279,6 +293,7 @@ def edit_chart_in_run(
     effective_palette = (palette or "").strip() or stored_palette or "editorial"
     palette_id = normalize_palette_id(effective_palette)
     style_notes = (style or "").strip()
+    accepted = (accepted_html or "").strip()
     current_type = str(chart.get("type") or "").strip()
     want_type = (chart_type or "").strip() or current_type
     type_changed = bool(want_type) and want_type != current_type
@@ -299,6 +314,10 @@ def edit_chart_in_run(
             # KPI cards use CSS vars from palette (frame .kpi / --kpi-value).
             new_html = apply_kpi_palette_vars(new_html, palette_id)
             modes.append("local_palette")
+    elif bool(style_notes) and accepted:
+        modes.append("llm_style")
+        modes.append("numbers_accepted")
+        new_html = accepted
     elif bool(style_notes):
         # Free-text restyle always needs the model.
         modes.append("llm_style")
@@ -373,6 +392,15 @@ def edit_chart_in_run(
     )
     if new_html and not user_style:
         new_html = paint_deck_chart_html(out_dir, new_html, final_type)
+    if style_notes and not type_changed and not accepted:
+        number_warning = chart_number_change_warning(
+            html, new_html, chart_type=current_type
+        )
+        if number_warning:
+            raise ChartNumberChange(number_warning, new_html)
+    from case3.run_undo import capture_before_edit
+
+    capture_before_edit(out_dir, kind="chart", target=chart_id)
     chart["html"] = new_html
     chart["type"] = final_type
     # G2: persist so Liber edit sheet seeds this figure's palette next open.

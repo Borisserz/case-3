@@ -486,3 +486,162 @@ def harden_russian_typography(tex: str) -> str:
         body = body.replace(f"\x00TYPO{idx}\x00", stashed[idx])
 
     return prefix + body + suffix
+
+
+_CYR_RUN = re.compile(r"[А-Яа-яЁё]+(?:[ \t~]*[А-Яа-яЁё]+)*")
+_BARE_MATH_CMD = (
+    ("div", "÷"),
+    ("times", "×"),
+    ("cdot", "·"),
+    ("pm", "±"),
+    ("leq", "≤"),
+    ("le", "≤"),
+    ("geq", "≥"),
+    ("ge", "≥"),
+    ("neq", "≠"),
+    ("ne", "≠"),
+    ("approx", "≈"),
+    ("infty", "∞"),
+    ("ldots", "…"),
+    ("dots", "…"),
+    ("rightarrow", "→"),
+    ("leftarrow", "←"),
+    ("to", "→"),
+    ("gets", "←"),
+)
+
+
+def _unmask_text(chunk: str, texts: list[str]) -> str:
+    def _one(m: re.Match[str]) -> str:
+        return texts[int(m.group(1))]
+
+    return re.sub(r"\x00T(\d+)\x00", _one, chunk)
+
+
+def _lift_math_inner(inner: str) -> tuple[str, str] | None:
+    """Return (kind, payload). kind is ``inner`` (same delimiters) or ``flat``.
+
+    None means the span is already safe. Cyrillic in cmmi/cmr has no glyphs.
+    """
+    original = inner
+
+    def _as_text(m: re.Match[str]) -> str:
+        cmd, body = m.group(1), m.group(2)
+        if cmd != "text" and re.search(r"[А-Яа-яЁё]", body):
+            return r"\text{" + body + "}"
+        return m.group(0)
+
+    inner = re.sub(
+        r"\\(mathrm|textrm|mbox|operatorname|text)\{([^{}]*)\}",
+        _as_text,
+        inner,
+    )
+    texts: list[str] = []
+
+    def _mask(m: re.Match[str]) -> str:
+        texts.append(m.group(0))
+        return f"\x00T{len(texts) - 1}\x00"
+
+    masked = re.sub(r"\\text\{([^{}]*)\}", _mask, inner)
+    if not re.search(r"[А-Яа-яЁё]", masked):
+        restored = _unmask_text(masked, texts)
+        if restored == original:
+            return None
+        return ("inner", restored)
+
+    parts = re.split(f"({_CYR_RUN.pattern})", masked)
+    chunks: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        shown = _unmask_text(part, texts)
+        if re.search(r"[А-Яа-яЁё]", shown):
+            piece = shown
+        elif shown.strip():
+            piece = f"${shown.strip()}$"
+        else:
+            piece = shown
+        if (
+            chunks
+            and piece
+            and not chunks[-1].endswith((" ", "\n", "~"))
+            and not piece.startswith((" ", "\n", "~"))
+        ):
+            chunks.append(" ")
+        chunks.append(piece)
+    return ("flat", "".join(chunks))
+
+
+def _rewrite_math_spans(body: str) -> str:
+    def _apply(pattern: str, opener: str, closer: str, src: str) -> str:
+        def _repl(m: re.Match[str]) -> str:
+            lifted = _lift_math_inner(m.group(1))
+            if lifted is None:
+                return m.group(0)
+            kind, payload = lifted
+            if kind == "inner":
+                return opener + payload + closer
+            return payload
+
+        return re.sub(pattern, _repl, src)
+
+    body = _apply(r"\\\[([\s\S]*?)\\\]", r"\[", r"\]", body)
+    body = _apply(r"(?<!\\)\$\$([\s\S]*?)(?<!\\)\$\$", "$$", "$$", body)
+    body = _apply(r"\\\(([\s\S]*?)\\\)", r"\(", r"\)", body)
+    return _apply(r"(?<!\\)\$(?!\$)([^$]*?)(?<!\\)\$", "$", "$", body)
+
+
+def _drop_unbalanced_dollar(body: str) -> str:
+    idxs = [m.start() for m in re.finditer(r"(?<!\\)\$", body)]
+    if len(idxs) % 2 == 0:
+        return body
+    i = idxs[-1]
+    return body[:i] + body[i + 1 :]
+
+
+def _replace_bare_math(body: str) -> str:
+    """Math-only commands in prose are an undefined control sequence."""
+    stashed: list[str] = []
+
+    def _stash(m: re.Match[str]) -> str:
+        stashed.append(m.group(0))
+        return f"\x00M{len(stashed) - 1}\x00"
+
+    body = re.sub(r"\\\[[\s\S]*?\\\]", _stash, body)
+    body = re.sub(r"(?<!\\)\$\$[\s\S]*?(?<!\\)\$\$", _stash, body)
+    body = re.sub(r"\\\([\s\S]*?\\\)", _stash, body)
+    body = re.sub(r"(?<!\\)\$(?!\$)[^$]*?(?<!\\)\$", _stash, body)
+    body = re.sub(r"\\text\{([^{}]*)\}", r"\1", body)
+    body = re.sub(
+        r"\\(?:d?frac|tfrac)\{([^{}]*)\}\{([^{}]*)\}",
+        lambda m: f"${m.group(0)}$",
+        body,
+    )
+    for name, glyph in _BARE_MATH_CMD:
+        body = re.sub(rf"\\{name}\b", glyph, body)
+    for idx in range(len(stashed) - 1, -1, -1):
+        body = body.replace(f"\x00M{idx}\x00", stashed[idx])
+    return body
+
+
+def harden_math_prose(tex: str) -> str:
+    """Keep Russian out of Computer Modern math and bare \\\\div out of prose.
+
+    cmr/cmmi have no Cyrillic, and latexmk treats those missing glyphs as a
+    failed run. ``\\div`` outside ``$...$`` is an undefined control sequence.
+    """
+    if not tex:
+        return tex
+    begin_doc = tex.find(r"\begin{document}")
+    end_doc = tex.rfind(r"\end{document}")
+    if begin_doc != -1 and end_doc != -1 and end_doc > begin_doc:
+        prefix = tex[: begin_doc + len(r"\begin{document}")]
+        body = tex[begin_doc + len(r"\begin{document}") : end_doc]
+        suffix = tex[end_doc:]
+    else:
+        prefix, body, suffix = "", tex, ""
+    body = _drop_unbalanced_dollar(body)
+    body = _rewrite_math_spans(body)
+    body = _replace_bare_math(body)
+    return prefix + body + suffix
+

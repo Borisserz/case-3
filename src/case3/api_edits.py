@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from case3.chart_edit import (
     ChartEditError,
+    ChartNumberChange,
     edit_chart_in_run,
     preview_chart_html,
     recolor_all_charts_in_run,
@@ -60,6 +61,7 @@ class ChartEditBody(BaseModel):
     style: str | None = Field(default="")
     chart_type: str | None = Field(default="")
     formats: str = Field(default="both")
+    accepted_html: str | None = Field(default="")
 
 
 class ChartPreviewBody(BaseModel):
@@ -391,8 +393,18 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
                 style=style or None,
                 chart_type=chart_type or None,
                 formats=fmt_set,
+                accepted_html=(body.accepted_html or "").strip() or None,
             )
         )
+    except ChartNumberChange as exc:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "numbers_changed",
+                "message": str(exc),
+                "html": exc.html,
+            },
+        ) from exc
     except ChartEditError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
     except (LLMError, LLMConfigError) as exc:

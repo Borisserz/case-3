@@ -613,13 +613,14 @@ async def rebuild_slides_docs(run_id: str) -> JSONResponse:
 async def post_slides_structure(
     run_id: str,
     body: SlidesStructureBody,
+    rebuild: str | None = None,
 ) -> JSONResponse:
-    """Reorder / duplicate / delete slides — IR patch + rebuild twin/PPTX (no LLM)."""
+    """Reorder / duplicate / delete. Twin/PPTX only unless ``rebuild=0``."""
     out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
     base, ir_path = _load_deck_for_patch(run_id, out_dir)
 
     from case3.slides_ir import DeckIrError
-    from case3.slides_patch import apply_deck_structure
+    from case3.slides_patch import apply_deck_structure, structure_focus_ids
 
     op_body: dict[str, Any] = {"op": body.op}
     if body.id is not None:
@@ -634,15 +635,30 @@ async def post_slides_structure(
     except DeckIrError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
 
+    do_rebuild = _parse_rebuild_q(rebuild)
     already, undo_desc = _enqueue_deck_rebuild(
         run_id,
         out_dir,
         ir_path,
         patched,
         undo_kind="slides_structure",
-        undo_target=str(body.op or "*"),
+        undo_target=structure_focus_ids(base, patched, op_body),
+        rebuild=do_rebuild,
     )
-    payload: dict[str, Any] = {
+    if not do_rebuild:
+        payload: dict[str, Any] = {
+            "run_id": run_id,
+            "status": "ok",
+            "slides_status": "ok",
+            "slides_stage": "ir",
+            "rebuilt": False,
+            "op": body.op,
+            "deck": patched,
+        }
+        if undo_desc:
+            payload["undo"] = undo_desc
+        return JSONResponse(payload, status_code=200)
+    payload = {
         "run_id": run_id,
         "status": "started",
         "slides_status": "running",

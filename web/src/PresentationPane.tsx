@@ -10,6 +10,7 @@ import {
 import { DeckCanvas, mediaUrl, type DeckMediaKind } from "./DeckCanvas";
 import { DeckGallery } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+import { recallDeckPlace, rememberDeckPlace, type DeckPlace } from "./domain/deckPlace";
 import { slideIndexForUndoTarget } from "./domain/deckUndo";
 import {
   parseEditHistory,
@@ -21,6 +22,10 @@ import {
   type ImageEditRequest,
 } from "./ImageEditModal";
 import { useConfirm } from "./ConfirmModal";
+import {
+  chartNumberEditConfirm,
+  numberChangeFromEditError,
+} from "./domain/chartTypeFit";
 import { IconUndo, IconRedo } from "./icons";
 const DiagramVisualEditor = lazy(() =>
   import("./DiagramVisualEditor").then((m) => ({
@@ -99,6 +104,8 @@ type Props = {
   onDocsDirtyChange?: (dirty: boolean) => void;
   /** Parent copy of the unsaved-edit flag. Survives this pane unmounting. */
   downloadsBlocked?: boolean;
+  /** Click on a file that is behind the screen (PNG / copy). */
+  onStaleDownload?: () => void;
 };
 
 export function PresentationPane({
@@ -128,6 +135,7 @@ export function PresentationPane({
   showEditChrome = true,
   onDocsDirtyChange,
   downloadsBlocked = false,
+  onStaleDownload,
 }: Props) {
   const confirm = useConfirm();
   const reduce = useReducedMotion();
@@ -135,11 +143,13 @@ export function PresentationPane({
   const [dir, setDir] = useState(0);
   const [full, setFull] = useState(false);
   /**
-   * Julius gallery contract (lock):
-   * - mount / run change → grid, editing=false
+   * Julius gallery contract:
+   * - a different run → grid, editing=false
+   * - same run remount (tab switch) → the slide of the last edit or undo
    * - gallery thumbnail click → Slide + editing=false (never Edit)
    * - Edit only via Edit segment or E key
    * - leaving Edit → Slide turns editing off
+   * - twin/PPTX rebuild only on «Готово», not on each IR edit
    */
   const [editingLocal, setEditingLocal] = useState(false);
   const controlledEdit = editingProp !== undefined;
@@ -190,9 +200,13 @@ export function PresentationPane({
   }, [deckProp]);
 
   const runSeen = useRef<string | null>(null);
+  /** undefined = not read yet; null = nothing to restore. */
+  const pendingPlace = useRef<DeckPlace | null | undefined>(undefined);
   useEffect(() => {
     const switched = runSeen.current != null && runSeen.current !== runId;
     runSeen.current = runId;
+    if (!switched) return;
+    pendingPlace.current = undefined;
     setIdx(0);
     setDir(0);
     setEditing(false);
@@ -200,13 +214,43 @@ export function PresentationPane({
     setSaveError(null);
     setDocsDirty(false);
     dirtyRef.current = false;
-    if (switched) onDocsDirtyChange?.(false);
+    onDocsDirtyChange?.(false);
     setOpenMediaId(null);
     setOpenMediaKind(null);
     setChartPreview(null);
     setChartIndex({});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on run only
   }, [runId]);
+
+  useEffect(() => {
+    if (pendingPlace.current === undefined) {
+      pendingPlace.current = recallDeckPlace(runId);
+    }
+    const place = pendingPlace.current;
+    if (!place) return;
+    const slides = deck?.slides;
+    if (!slides?.length) return;
+    const i = slides.findIndex((s) => s.id === place.slideId);
+    if (i < 0) {
+      pendingPlace.current = null;
+      return;
+    }
+    if (i !== idx || view !== place.view || editing !== place.editing) {
+      setDir(i >= idx ? 1 : -1);
+      setIdx(i);
+      setView(place.view);
+      setEditing(place.editing);
+      return;
+    }
+    pendingPlace.current = null;
+  }, [deck, editing, idx, runId, setEditing, view]);
+
+  useEffect(() => {
+    if (pendingPlace.current) return;
+    const id = deck?.slides?.[safeIdx]?.id;
+    if (!id) return;
+    rememberDeckPlace(runId, { slideId: id, view, editing });
+  }, [deck, editing, runId, safeIdx, view]);
 
   useEffect(() => {
     setDiagrams(diagramsProp ?? []);
@@ -284,9 +328,13 @@ export function PresentationPane({
     setIdx(idx);
   }, [safeIdx]);
 
+  const markDirty = useCallback(() => {
+    setDocsDirty(true);
+    onDocsDirtyChange?.(true);
+  }, [onDocsDirtyChange]);
+
   const postDeckHistory = useCallback(
     async (path: "undo" | "redo") => {
-      setSaving(true);
       setSaveError(null);
       try {
         const r = await fetch(
@@ -299,29 +347,27 @@ export function PresentationPane({
             typeof data.detail === "string" ? data.detail : `${path} ${r.status}`,
           );
         }
-        onEditHistory?.(
-          parseEditHistory(data.undo as Parameters<typeof parseEditHistory>[0]),
+        const hist = parseEditHistory(
+          data.undo as Parameters<typeof parseEditHistory>[0],
         );
+        onEditHistory?.(hist);
         const action = path === "undo" ? data.undone : data.redone;
         const target =
           action && typeof action === "object"
             ? (action as { target?: unknown }).target
             : "";
-        // Server already rebuilt PPTX/PDF from the restored deck.json.
-        dirtyRef.current = false;
-        setDocsDirty(false);
-        onDocsDirtyChange?.(false);
+        // IR moved. PPTX stays until «Готово».
+        if (hist.canUndo || hist.canRedo) {
+          dirtyRef.current = true;
+          markDirty();
+        }
         const next = await refreshSlidesNow();
         jumpToUndoTarget(next, target);
-        setSaveFlash(true);
-        window.setTimeout(() => setSaveFlash(false), 1200);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setSaving(false);
       }
     },
-    [jumpToUndoTarget, onDocsDirtyChange, onEditHistory, refreshSlidesNow, runId],
+    [jumpToUndoTarget, markDirty, onEditHistory, refreshSlidesNow, runId],
   );
 
   const historyUndo = useCallback(async () => {
@@ -418,10 +464,11 @@ export function PresentationPane({
     [diagrams, onDeckUpdated, runId],
   );
 
-  const markDirty = useCallback(() => {
-    setDocsDirty(true);
-    onDocsDirtyChange?.(true);
-  }, [onDocsDirtyChange]);
+  useEffect(() => {
+    if (downloadsBlocked) return;
+    dirtyRef.current = false;
+    setDocsDirty(false);
+  }, [downloadsBlocked]);
 
   const inFlightPatchRef = useRef<Promise<void> | null>(null);
 
@@ -473,6 +520,24 @@ export function PresentationPane({
       /* stay in edit — error already shown */
     }
   }, [docsDirty, downloadsBlocked, flushDeckRebuild, setEditing]);
+
+  const stopEditing = useCallback(async () => {
+    if (
+      typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.classList.contains("deck-ed")
+    ) {
+      document.activeElement.blur();
+    }
+    await Promise.resolve();
+    if (inFlightPatchRef.current) {
+      await inFlightPatchRef.current;
+    }
+    setOpenMediaId(null);
+    setOpenMediaKind(null);
+    setChartPreview(null);
+    setEditing(false);
+  }, [setEditing]);
 
   useEffect(() => {
     if (full) return;
@@ -534,11 +599,11 @@ export function PresentationPane({
         // no plain-letter shortcuts with modifiers
       } else if ((e.key === "g" || e.key === "G") && slidePngs.length > 0) {
         setView("grid");
-        if (editing) void leaveEdit();
+        if (editing) void stopEditing();
         return;
       } else if (e.key === "s" || e.key === "S") {
         setView("slide");
-        if (editing) void leaveEdit();
+        if (editing) void stopEditing();
         return;
       }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "f" || e.key === "F")) {
@@ -552,11 +617,10 @@ export function PresentationPane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [full, go, editing, leaveEdit, historyUndo, historyRedo, setEditing, slidePngs.length]);
+  }, [full, go, editing, leaveEdit, stopEditing, historyUndo, historyRedo, setEditing, slidePngs.length]);
 
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
-      setSaving(true);
       setSaveError(null);
       const task = (async () => {
         try {
@@ -574,7 +638,11 @@ export function PresentationPane({
               typeof body.detail === "string" ? body.detail : `patch ${r.status}`,
             );
           }
-          if (body.deck) setDeck(body.deck as DeckIR);
+          if (body.deck) {
+            const next = body.deck as DeckIR;
+            setDeck(next);
+            onDeckUpdated?.(next, slidePngs);
+          }
           if (body.undo) {
             onEditHistory?.(
               parseEditHistory(
@@ -589,8 +657,6 @@ export function PresentationPane({
           // Server rejected the shape (or the write failed). Drop the
           // optimistic table/text so the slide matches deck.json.
           await refreshSlidesNow();
-        } finally {
-          setSaving(false);
         }
       })();
       inFlightPatchRef.current = task;
@@ -599,7 +665,7 @@ export function PresentationPane({
         inFlightPatchRef.current = null;
       }
     },
-    [markDirty, onEditHistory, refreshSlidesNow, runId],
+    [markDirty, onDeckUpdated, onEditHistory, refreshSlidesNow, runId, slidePngs],
   );
 
   const mediaSheetRef = useRef<HTMLDivElement | null>(null);
@@ -646,43 +712,62 @@ export function PresentationPane({
       setSaving(true);
       setSaveError(null);
       try {
-        const res = await fetch(
-          `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(req.figureId)}/edit`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chart_type: req.chartType,
-              palette: req.palette,
-              style: req.styleNotes,
-            }),
-          },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(
-            typeof data.detail === "string"
-              ? data.detail
-              : `chart edit ${res.status}`,
+        let accepted = req.acceptedHtml || "";
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await fetch(
+            `/api/runs/${encodeURIComponent(runId)}/charts/${encodeURIComponent(req.figureId)}/edit`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chart_type: req.chartType,
+                palette: req.palette,
+                style: req.styleNotes,
+                accepted_html: accepted,
+              }),
+            },
           );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const changed =
+              attempt === 0
+                ? numberChangeFromEditError({ detail: data.detail })
+                : null;
+            if (changed) {
+              const ask = chartNumberEditConfirm(changed.message);
+              const ok = ask ? await confirm(ask) : false;
+              if (!ok) return;
+              accepted = changed.html;
+              continue;
+            }
+            const detail = data.detail;
+            const message =
+              typeof detail === "string"
+                ? detail
+                : detail && typeof detail === "object" && typeof detail.message === "string"
+                  ? detail.message
+                  : `chart edit ${res.status}`;
+            throw new Error(message);
+          }
+          if (data.undo) {
+            onEditHistory?.(
+              parseEditHistory(
+                data.undo as Parameters<typeof parseEditHistory>[0],
+              ),
+            );
+          }
+          setMediaVersion(Date.now());
+          await refreshSlidesNow();
+          closeMediaSheet();
+          return;
         }
-        if (data.undo) {
-          onEditHistory?.(
-            parseEditHistory(
-              data.undo as Parameters<typeof parseEditHistory>[0],
-            ),
-          );
-        }
-        setMediaVersion(Date.now());
-        await refreshSlidesNow();
-        closeMediaSheet();
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
       } finally {
         setSaving(false);
       }
     },
-    [closeMediaSheet, onEditFigure, onEditHistory, refreshSlidesNow, runId],
+    [closeMediaSheet, confirm, onEditFigure, onEditHistory, refreshSlidesNow, runId],
   );
 
   const submitImage = useCallback(
@@ -838,19 +923,8 @@ export function PresentationPane({
             ),
           );
         }
-        const reb = await fetch(
-          `/api/runs/${encodeURIComponent(runId)}/slides/rebuild`,
-          { method: "POST" },
-        );
-        if (!reb.ok) {
-          const body = await reb.json().catch(() => ({}));
-          throw new Error(
-            typeof body.detail === "string"
-              ? body.detail
-              : `rebuild ${reb.status}`,
-          );
-        }
-        await waitPatchRebuild();
+        dirtyRef.current = true;
+        markDirty();
         closeMediaSheet();
       } catch (err) {
         setDiagramError(err instanceof Error ? err.message : String(err));
@@ -858,7 +932,7 @@ export function PresentationPane({
         setSaving(false);
       }
     },
-    [closeMediaSheet, onEditHistory, openMediaId, runId, waitPatchRebuild],
+    [closeMediaSheet, markDirty, onEditHistory, openMediaId, runId],
   );
 
   const structureOp = useCallback(
@@ -872,11 +946,10 @@ export function PresentationPane({
         setSaveError("Нет данных презентации — соберите презентацию");
         return;
       }
-      setSaving(true);
       setSaveError(null);
       try {
         const r = await fetch(
-          `/api/runs/${encodeURIComponent(runId)}/slides/structure`,
+          `/api/runs/${encodeURIComponent(runId)}/slides/structure?rebuild=0`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -892,12 +965,20 @@ export function PresentationPane({
           );
         }
         const next = body.deck as DeckIR | undefined;
+        if (next) {
+          setDeck(next);
+          onDeckUpdated?.(next, slidePngs);
+        }
         if (next?.slides && payload.op === "delete") {
           setIdx((i) => Math.min(i, Math.max(0, next.slides.length - 1)));
+          setView("slide");
         }
         if (next?.slides && payload.op === "duplicate" && payload.id) {
           const at = next.slides.findIndex((s) => s.id === payload.id);
-          if (at >= 0) setIdx(Math.min(at + 1, next.slides.length - 1));
+          if (at >= 0) {
+            setIdx(Math.min(at + 1, next.slides.length - 1));
+            setView("slide");
+          }
         }
         if (next?.slides && payload.op === "insert") {
           let target = next.slides.length - 1;
@@ -916,14 +997,13 @@ export function PresentationPane({
             ),
           );
         }
-        await waitPatchRebuild(next);
+        dirtyRef.current = true;
+        markDirty();
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setSaving(false);
       }
     },
-    [deck, onEditHistory, runId, waitPatchRebuild, setEditing],
+    [deck, markDirty, onDeckUpdated, onEditHistory, runId, setEditing, slidePngs],
   );
 
   const onReorderIndices = useCallback(
@@ -1139,7 +1219,7 @@ export function PresentationPane({
                 className={`presentation-seg-btn${view === "grid" ? " is-on" : ""}`}
                 onClick={() => {
                   setView("grid");
-                  if (editing) void leaveEdit();
+                  if (editing) void stopEditing();
                   else setEditing(false);
                 }}
                 title="Сетка слайдов (G)"
@@ -1152,7 +1232,7 @@ export function PresentationPane({
               className={`presentation-seg-btn${view === "slide" && !editing ? " is-on" : ""}`}
               onClick={() => {
                 setView("slide");
-                if (editing) void leaveEdit();
+                if (editing) void stopEditing();
                 else setEditing(false);
               }}
               title="Просмотр слайда (S)"
@@ -1581,11 +1661,16 @@ export function PresentationPane({
               <button
                 type="button"
                 className="presentation-nav"
-                disabled={fileBehind}
-                onClick={() => void handleCopyPng()}
+                onClick={() => {
+                  if (fileBehind) {
+                    onStaleDownload?.();
+                    return;
+                  }
+                  void handleCopyPng();
+                }}
                 title={
                   fileBehind
-                    ? "Сначала нажмите Готово — картинка слайда ещё старая"
+                    ? "Сначала сохраните или отмените изменения"
                     : "Скопировать PNG слайда в буфер обмена"
                 }
               >
@@ -1594,14 +1679,16 @@ export function PresentationPane({
               <button
                 type="button"
                 className="presentation-nav"
-                disabled={fileBehind}
                 onClick={() => {
-                  if (fileBehind) return;
+                  if (fileBehind) {
+                    onStaleDownload?.();
+                    return;
+                  }
                   void handleDownloadPng();
                 }}
                 title={
                   fileBehind
-                    ? "Сначала нажмите Готово — в файле ещё нет этих правок"
+                    ? "Сначала сохраните или отмените изменения"
                     : "Скачать текущий слайд как PNG"
                 }
               >
