@@ -45,4 +45,4 @@ Figure/chart `width`: prefer `0.85\\textwidth`; if **2+ charts** use `0.82\\text
 
 If {{MAX_IMAGES}} is 0 → `"figures": []`. If {{MAX_CHARTS}} is 0 → `"charts": []`. If {{MAX_DIAGRAMS}} is 0 → `"diagrams": []`.
 
-**Diagrams in TeX:** place each diagram using `%CASE3_DIAG:dia_NN%` on its own line (or let the pipeline auto-slot). Never write `\includegraphics` for diagrams and never put Mermaid inside TeX.
+**Diagrams in TeX:** `%CASE3_DIAG:dia_NN%` on its own line (or auto-slot). Slot / no-includegraphics rules → Hard rules.

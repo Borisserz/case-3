@@ -34,7 +34,7 @@ Customization is encouraged: layout chrome, legend placement, radius, cutout, he
 
 ### Hard rails (must)
 
-- Whitelist `charts[].type` only; Chart.js `type` / markup must match (`donut` → `doughnut`, `horizontal_bar` → `indexAxis:'y'`, `kpi` → `.kpi` cards).
+- Whitelist `charts[].type` only; Chart.js markup must match the Rules mapping above.
 - Numbers / % / absolutes in chart **only from Source** (simple share math OK).
 - Unique element ids (`c1`, `c2`, …). Fragment only — no `<html>` / CDN / `fetch` / plugins.
 - `options.animation = false`. End with `window.__CASE3_CHART_READY=true;`.

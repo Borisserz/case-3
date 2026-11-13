@@ -66,9 +66,9 @@
 
 In prose you may write «см. рисунок» without `\ref` to a chart label (labels are assigned at inject).
 IDs: `^[a-z][a-z0-9_]*$`. Chart ids prefer `cht_NN`; diagram ids prefer `dia_NN`. IDs unique across figures+charts+diagrams.
-7. Figure `prompt`: English, photographic subject; no Cyrillic; no stock handshake/team clichés; no purple neon; no watermarks; no tiny unreadable text.
-8. Chart `html`: **fragment only** (no `<html>`/`<head>`/`<!DOCTYPE>`). Offline Chart.js global `Chart` is already loaded. No CDN, no `fetch`/XHR, no external URLs. End with `window.__CASE3_CHART_READY = true;`.
+7. Figure `prompt`: English photographic subject; anti-slop / brand rules live in the Image API figures section when that budget is on.
+8. Chart `html`: fragment rails in **Chart types** (no CDN/`fetch`; READY flag; animation false).
 9. At most {{MAX_IMAGES}} figures, {{MAX_CHARTS}} charts (`CASE3_MAX_CHARTS`), {{MAX_DIAGRAMS}} diagrams (`CASE3_MAX_DIAGRAMS`).
 10. No Times New Roman, no `extreport`, no BSUIR STP-only packages.
 11. End with `\end{document}`.
-12. Diagrams are defined in JSON (Mermaid) and placed via `%CASE3_DIAG:dia_NN%` slots (or auto-slotted by pipeline). Never write `\includegraphics` or paste Mermaid code directly into TeX.
+12. Diagrams: JSON Mermaid + `%CASE3_DIAG:dia_NN%` slots (or auto-slot). Never paste Mermaid into TeX / never `\includegraphics` for diagrams.
