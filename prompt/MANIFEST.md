@@ -5,13 +5,13 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 
 | id | file / parts | caller | vars |
 |----|--------------|--------|------|
-| `system_tex` | **`parts/tex/*.md`** (composed; stub `system_tex.md`) | `generate.load_system_prompt` | `MAX_IMAGES` `MAX_CHARTS` `MAX_DIAGRAMS` `PALETTE_TABLE` |
+| `system_tex` | **`parts/tex/*.md`** (composed; stub `system_tex.md`) | `generate.load_system_prompt` | `MAX_IMAGES` `MAX_CHARTS` `MAX_DIAGRAMS` `PALETTE_TABLE` · kw `has_user_photos` |
 | `user_tex` | `user_tex.md` | `generate.build_user_prompt` | `INTENT_BLOCK` `MAX_*` `DIAGRAM_COLOR_TABLE` `SOURCE` |
 | `continuation_tex` | `continuation_tex.md` | `generate.build_continuation_prompt` | `MAX_CHARTS` `PARTIAL_TAIL` `SOURCE` |
 | `summary_system` | `summary_system.md` | `chat_summary` (system role) | — |
 | `system_slides` | `system_slides.md` | `slides_job.load_slides_system_prompt` | `PALETTE` `THEME_OVERLAY` `STRUCTURE_OVERLAY` `CHART_IDS` `FIGURE_IDS` `DIAGRAM_IDS` `MEDIA_CATALOG` `INTENT` `SOURCE` |
-| `diagram_generate` | `diagram_generate.md` | `diagram_edit` regenerate | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |
-| `diagram_repair` | `diagram_repair.md` | pipeline `diagram_repair` stage | color table appended in code |
+| `diagram_generate` | `diagram_generate.md` | `diagram_edit` / `diagram_generate` | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |
+| `diagram_repair` | `diagram_repair.md` | pipeline `diagram_repair` stage | `DIAGRAM_COLOR_TABLE` |
 | `diagram_refine` | `diagram_refine.md` | `diagram_edit` refine (AI Copilot) | `DIAGRAM_COLOR_TABLE` |
 
 ## `system_tex` parts (edit these)
@@ -48,8 +48,17 @@ Set **`CASE3_DUMP_PROMPTS=1`** → after generate, writes `out/prompts_used/syst
 
 ## Not prompt files (code policy)
 
-- `src/case3/image_prompt.py` — brand-safe / pack style-lock / banned n-grams.
-- `chart_style.palette_fallback_table` / `diagram_style.format_diagram_color_prompt` — injected tables.
+- `src/case3/image_prompt.py` — brand-safe / pack style-lock / banned n-grams; inline `image_prompt` RU→EN `_TRANSLATE_SYSTEM`.
+- `chart_style.palette_fallback_table` / `diagram_style.format_diagram_color_prompt` — injected tables (`DIAGRAM_COLOR_TABLE` / `PALETTE_TABLE`).
+
+## Inline LLM prompts (not catalog md — document here)
+
+| name | where | note |
+|------|-------|------|
+| `chart_edit` | `chart_edit.py` restyle system string | Chart.js fragment restyle |
+| `schema_redraw` | `schema_redraw.py` `_SYSTEM` | photo → Mermaid |
+| `latex_recovery` | `generate._build_latex_recovery_prompt` | JSON ok, missing ```latex |
+| `image_prompt` translate | `image_prompt.py` `_TRANSLATE_SYSTEM` | RU caption → EN photo prompt |
 
 ## How to add a prompt
 
