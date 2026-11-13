@@ -19,6 +19,8 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
+**Source ingest:** в Liber можно кидать `.pdf` / `.docx` / `.doc` / `.rtf` / `.txt` / `.md` → Markdown в Source draft (правка) → «Поехали». Цифровой PDF с таблицами — через `pdfplumber`; скан без текста → отказ. `.doc`/`.rtf` нужен LibreOffice (`soffice`). OCR нет.
+
 **Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. Слот `%CASE3_DIAG:dia_NN%` попадает в PDF и DOCX как `figures/dia_NN.png` (ADR-0009). Битый Mermaid не валит TeX. print-truth = PDF.
 
 **Презентация:** слайдов 6–24 (настройка «Слайдов в презе»). До 5 своих PNG/JPEG. В тексте: `1. логотип …`, `2. схема …`, `3. интерфейс …`. Логотип и скрин встают как фото. Схема перерисовывается в Mermaid и стоит на слайде. Длинный текст сжимается в карту; из листинга на слайд берётся одна строка кода. Правка схемы: `E` → клик по схеме → «Сохранить». Подробно: `docs/knowledge/deck.md`.

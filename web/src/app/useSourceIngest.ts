@@ -10,6 +10,10 @@ import type { ActiveArtifact } from "../ArtifactRail";
 import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
 import { readTextFile } from "../domain/runHelpers";
+import {
+  ingestOfficeSource,
+  isOfficeSourceFile,
+} from "../domain/sourceOfficeIngest";
 
 type Deps = {
   setFile: Dispatch<SetStateAction<File | null>>;
@@ -65,6 +69,29 @@ export function useSourceIngest({
     ],
   );
 
+  const applySourceDraft = useCallback(
+    (draft: SourceDraft) => {
+      setFile(null);
+      setSourceDraft(draft);
+      setPlaqueDismissed(false);
+      setDeckApplyHint(null);
+      setActiveArtifact({
+        kind: "source",
+        tab: "source",
+        title: draft.title,
+        text: draft.text,
+        fileName: draft.fileName,
+      });
+    },
+    [
+      setFile,
+      setSourceDraft,
+      setPlaqueDismissed,
+      setDeckApplyHint,
+      setActiveArtifact,
+    ],
+  );
+
   const ingestFiles = useCallback(
     (list: FileList | File[]) => {
       const arr = Array.from(list);
@@ -74,30 +101,47 @@ export function useSourceIngest({
           f.type === "text/plain" ||
           f.type === "text/markdown"
         ) {
-          setFile(f);
           setPlaqueDismissed(false);
           setDeckApplyHint(null);
           void (async () => {
             try {
               const text = await readTextFile(f);
-              const draft = {
+              applySourceDraft({
                 title: f.name,
                 text,
                 fileName: f.name,
-              };
-              setSourceDraft(draft);
-              setActiveArtifact({
-                kind: "source",
-                tab: "source",
-                title: draft.title,
-                text: draft.text,
-                fileName: draft.fileName,
               });
             } catch (err) {
               showToast(
                 err instanceof Error
                   ? err.message
                   : "Не удалось прочитать файл",
+              );
+            }
+          })();
+          continue;
+        }
+        if (isOfficeSourceFile(f)) {
+          showToast(`Читаю ${f.name}…`, 6000);
+          void (async () => {
+            try {
+              const out = await ingestOfficeSource(f);
+              applySourceDraft({
+                title: out.filename,
+                text: out.markdown,
+                fileName: out.filename,
+              });
+              if (out.warnings?.length) {
+                showToast(out.warnings[0], 5000);
+              } else {
+                showToast(`Source: ${out.filename}`, 2800);
+              }
+            } catch (err) {
+              showToast(
+                err instanceof Error
+                  ? err.message
+                  : "Не удалось разобрать документ",
+                6000,
               );
             }
           })();
@@ -111,11 +155,9 @@ export function useSourceIngest({
       }
     },
     [
-      setFile,
+      applySourceDraft,
       setPlaqueDismissed,
       setDeckApplyHint,
-      setSourceDraft,
-      setActiveArtifact,
       setAttachPhotos,
       setForbidImages,
       setMaxImages,

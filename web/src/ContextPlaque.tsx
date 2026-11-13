@@ -2,7 +2,7 @@
 
 import { IconSourceDoc } from "./icons";
 
-export type SourcePlaqueKind = "md" | "txt" | "paste";
+export type SourcePlaqueKind = "md" | "txt" | "pdf" | "docx" | "paste";
 
 type Props = {
   title: string;
@@ -22,6 +22,8 @@ export function resolveSourceKind(
   const name = (fileName || title || "").trim();
   if (/\.(md|markdown)$/i.test(name)) return "md";
   if (/\.txt$/i.test(name)) return "txt";
+  if (/\.pdf$/i.test(name)) return "pdf";
+  if (/\.(docx?|docm|rtf)$/i.test(name)) return "docx";
   if (
     !fileName &&
     (/^текст(\s+запроса)?$/i.test(name) || name === "Текст" || name === "Текст запроса")
@@ -35,6 +37,8 @@ export function resolveSourceKind(
 function kindLabel(kind: SourcePlaqueKind): string {
   if (kind === "md") return "MD";
   if (kind === "txt") return "TXT";
+  if (kind === "pdf") return "PDF";
+  if (kind === "docx") return "DOC";
   return "Текст";
 }
 

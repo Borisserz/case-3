@@ -33,6 +33,15 @@ from case3.api_photo import quick_photo_edit
 from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image, is_docker_warmed
+from case3.source_ingest import (
+    DEFAULT_MAX_MARKDOWN_BYTES,
+    IngestDependencyError,
+    OfficeConvertError,
+    ScanPdfError,
+    SourceIngestError,
+    UnsupportedSourceFormatError,
+    file_to_markdown,
+)
 from case3.user_photos import (
     UserPhotoError,
     captions_from_intent,
@@ -53,9 +62,11 @@ from case3.run_store import (
 log = logging.getLogger("case3.api")
 
 # FastAPI calls Request.form() with Starlette's 1 MiB default, so the 2 MiB
-# source check never ran. Parts must fit the largest accepted upload (photos).
+# source check never ran. Parts must fit the largest accepted upload
+# (photos or born-digital PDF/DOCX ingest).
 _SOURCE_MAX_BYTES = 2 * 1024 * 1024
-_FORM_PART_MAX_BYTES = 4 * 1024 * 1024
+_INGEST_MAX_BYTES = 20 * 1024 * 1024
+_FORM_PART_MAX_BYTES = _INGEST_MAX_BYTES
 
 
 def _raise_form_part_limit() -> None:
@@ -810,6 +821,47 @@ def _bg_run_pipeline(
             log.exception("could not publish crash terminal run_id=%s", run_id)
     finally:
         _release_pipeline_slot(run_id, generation=slot_gen)
+
+
+@app.post("/api/source/ingest")
+async def api_source_ingest(
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Born-digital PDF/DOCX/TXT/RTF → Markdown for Source draft (no OCR)."""
+    name = Path(file.filename or "upload.bin").name
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, detail="пустой файл")
+    if len(raw) > _INGEST_MAX_BYTES:
+        raise HTTPException(400, detail="файл слишком большой (>20 MiB)")
+
+    upload_dir = run_store.ROOT / "runs" / "uploads" / "ingest" / datetime_stamp()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / name
+    dest.write_bytes(raw)
+
+    try:
+        result = file_to_markdown(dest, max_markdown_bytes=DEFAULT_MAX_MARKDOWN_BYTES)
+    except IngestDependencyError as exc:
+        raise HTTPException(503, detail=exc.message) from exc
+    except (ScanPdfError, UnsupportedSourceFormatError, OfficeConvertError) as exc:
+        raise HTTPException(422, detail=exc.message) from exc
+    except SourceIngestError as exc:
+        raise HTTPException(422, detail=exc.message) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        log.exception("source ingest failed name=%s", name)
+        raise HTTPException(500, detail=f"не удалось разобрать файл: {exc}") from exc
+
+    return JSONResponse(
+        {
+            "markdown": result.markdown,
+            "filename": result.filename,
+            "format": result.format,
+            "warnings": result.warnings,
+        }
+    )
 
 
 @app.post("/api/run")

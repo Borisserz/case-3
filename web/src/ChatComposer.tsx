@@ -169,7 +169,7 @@ export function ChatComposer({
             ref={fileRef}
             className="composer-file-input"
             type="file"
-            accept=".txt,.md,text/plain,text/markdown,image/png,image/jpeg,.png,.jpg,.jpeg"
+            accept=".txt,.md,.pdf,.docx,.doc,.docm,.rtf,text/plain,text/markdown,application/pdf,image/png,image/jpeg,.png,.jpg,.jpeg"
             multiple
             onChange={(e) => {
               const files = takeInputFiles(e.target);
@@ -197,9 +197,12 @@ export function ChatComposer({
                 const hasMediaOrDoc = Array.from(files).some(
                   (f) =>
                     /^image\//.test(f.type) ||
-                    /\.(txt|md|png|jpe?g)$/i.test(f.name) ||
+                    /\.(txt|md|pdf|docx|docm|doc|rtf|png|jpe?g)$/i.test(
+                      f.name,
+                    ) ||
                     f.type === "text/plain" ||
-                    f.type === "text/markdown",
+                    f.type === "text/markdown" ||
+                    f.type === "application/pdf",
                 );
                 if (hasMediaOrDoc) {
                   e.preventDefault();
@@ -224,7 +227,7 @@ export function ChatComposer({
               type="button"
               className="composer-attach"
               disabled={busy}
-              title="Прикрепить .txt / .md или фото"
+              title="Прикрепить PDF/DOCX/TXT/MD или фото"
               aria-label="Прикрепить файл"
               onClick={() => fileRef.current?.click()}
             >
