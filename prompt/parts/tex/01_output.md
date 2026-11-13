@@ -9,7 +9,7 @@ Never put only a fragment (`\section` without `\documentclass`). Never omit `\do
 Always finish the closing ``` of **both** fences — do not stop mid-table.
 Prefer a compact body (short sections) over a truncated draft. **Aim for up to {{MAX_CHARTS}} charts** when Source has numbers — shorten prose / fewer photos before dropping charts. Never soft-cap at 2 when the budget is higher.
 
-JSON schema (key order mandatory):
+JSON schema (key order mandatory). Chart `html` is a **full** Chart.js fragment (rails in Chart types); example uses a stub:
 
 ```json
 {
@@ -19,7 +19,7 @@ JSON schema (key order mandatory):
       "type": "bar",
       "caption": "Клиенты по годам, 2024–2025",
       "width": "0.85\\textwidth",
-      "html": "<canvas id=\"c1\" width=\"1100\" height=\"560\"></canvas><script>new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['2024','2025'],datasets:[{label:'Клиенты',data:[12,28],backgroundColor:['#E85D04','#2A9D8F'],borderRadius:6}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}},animation:false}});window.__CASE3_CHART_READY=true;</script>"
+      "html": "<canvas id=\"c1\" width=\"1100\" height=\"560\"></canvas><script>/* full Chart.js: type matches charts[].type; Source numbers; palette; animation:false */ window.__CASE3_CHART_READY=true;</script>"
     }
   ],
   "diagrams": [
@@ -27,14 +27,14 @@ JSON schema (key order mandatory):
       "id": "dia_01",
       "title": "Процесс согласования",
       "type": "flowchart",
-      "mermaid": "flowchart TD\n  A[Заявка]:::start --> B{ОК?}:::decision\n  B -->|да| C[Готово]:::ok\n  B -->|нет| A\n  classDef start fill:…,stroke:…,color:#1a2e22\n  classDef decision fill:…,stroke:…,color:#1a2e22\n  classDef ok fill:…,stroke:…,color:#1a2e22"
+      "mermaid": "flowchart TD\\n  A[Заявка]:::start --> B{ОК?}:::decision\\n  classDef start fill:…,stroke:…,color:#1a2e22"
     }
   ],
   "figures": [
     {
       "id": "fig_01",
       "caption": "Подпись на русском",
-      "prompt": "English photo prompt: sharp detailed photograph, natural light, no text overlays, no watermark",
+      "prompt": "English photo prompt: sharp detailed photograph, natural light, no text overlays",
       "width": "0.85\\textwidth"
     }
   ]

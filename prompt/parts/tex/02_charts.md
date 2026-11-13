@@ -45,25 +45,11 @@ Customization is encouraged: layout chrome, legend placement, radius, cutout, he
 
 ### Visual freedom (do invent layout; don’t invent colors outside palette)
 
-Aim for **print magazine** charts: saturated multi-hue accents from the table (not a single-blue wash), crisp edges, calm whitespace.
+Print-magazine charts: multi-hue accents from the palette table, crisp edges, calm whitespace. RU labels when Source is RU.
 
-**You may vary:**
+**May vary:** `.chart-card` / `.chart-kpi-header`; donut `.donut-layout` + `.valued-legend` (`cutout` ~55–68%, short `labels`); bar `borderRadius` 4–10 + hue-contrast fills; stacked ≤6 series + white gaps; line `tension` 0.15–0.35. Legend bottom when ≥2 series (donut → valued-legend). Tooltips `enabled:true`.
 
-- Wrapper: bare canvas · `.chart-card` · optional `.chart-kpi-header` (eyebrow / big / context from Source).
-- Donut: prefer `.donut-layout` + `.valued-legend` (host CSS) + center `.pct`/`.lbl`; `cutout` ~55–68%; slice `borderWidth` 2–3 white; Chart.js `legend.display:false` when valued list is present. **`labels` = short names only** (`Retail`, not `Retail 42% (210)` — %/abs go in valued-legend columns).
-- Bars: `borderRadius` 4–10; category or series colors from **different** palette accents (hue contrast, not luminance-only steps).
-- Stacked: `stack` + `scales.*.stacked`; white borders between segments; prefer ≤6 series (merge «прочее» if Source allows).
-- Line/area: `tension` 0.15–0.35, `borderWidth` 2–4, optional soft `area` fill from palette.
-- **Legend (required when ≥2 series):** `plugins.legend: {display:true, position:'bottom'}` and named `datasets[].label`. Donut → HTML `.valued-legend` instead.
-- **Tooltips:** always `plugins.tooltip: {enabled:true}` (Liber hover shows values; print still has the legend).
-- Language: Russian labels when Source is RU.
-
-**Don’t:**
-
-- Purple / indigo / violet / neon pink-blue gradients.
-- Default Chart.js blue only (`#0b5fff` / `#36a2eb`) on every chart.
-- Same-hue pastel ladders for 5+ series (unreadable in print).
-- Glow, glassmorphism, invented KPI numbers, paste of prior-run HTML.
+**Don’t:** purple/neon gradients; default Chart.js blue-only wash; same-hue pastel ladders; glow/glass; invented numbers; paste prior-run HTML.
 
 ### Type → Chart.js mapping (structure only)
 
