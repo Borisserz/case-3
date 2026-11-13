@@ -41,10 +41,14 @@ describe("ingestOfficeSource", () => {
       assert.ok(init?.body instanceof FormData);
       return new Response(
         JSON.stringify({
-          markdown: "# Hi\n\n42\n",
+          markdown: "A\tB\n1\t42\n",
+          text: "A\tB\n1\t42\n",
           filename: "report.pdf",
           format: "pdf",
           warnings: [],
+          ingest_id: "20261113T100000Z_abcdef",
+          view_mode: "document",
+          preview_url: "/api/source/files/20261113T100000Z_abcdef/preview",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -52,6 +56,8 @@ describe("ingestOfficeSource", () => {
     const out = await ingestOfficeSource(file, fetchImpl);
     assert.equal(out.markdown.includes("42"), true);
     assert.equal(out.filename, "report.pdf");
+    assert.equal(out.view_mode, "document");
+    assert.ok(out.preview_url?.includes("/preview"));
   });
 
   it("surfaces API detail on failure", async () => {

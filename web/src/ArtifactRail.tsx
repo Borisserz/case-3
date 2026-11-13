@@ -70,6 +70,10 @@ export type ActiveArtifact =
       title: string;
       text: string;
       fileName?: string;
+      viewMode?: "text" | "document";
+      previewUrl?: string | null;
+      originalUrl?: string | null;
+      format?: string;
     }
   | {
       kind: "intent";
@@ -1070,8 +1074,26 @@ export function ArtifactRail({
                   title={displaySourceTitle}
                   text={displaySource}
                   fileName={sourceFileName}
-                  editable={sourceEditable}
+                  editable={
+                    sourceEditable &&
+                    !(
+                      artifact.kind === "source" &&
+                      artifact.viewMode === "document"
+                    )
+                  }
                   onTextChange={onSourceTextChange}
+                  viewMode={
+                    artifact.kind === "source"
+                      ? artifact.viewMode || "text"
+                      : "text"
+                  }
+                  previewUrl={
+                    artifact.kind === "source" ? artifact.previewUrl : null
+                  }
+                  originalUrl={
+                    artifact.kind === "source" ? artifact.originalUrl : null
+                  }
+                  format={artifact.kind === "source" ? artifact.format : undefined}
                 />
               ) : null}
 

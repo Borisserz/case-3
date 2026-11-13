@@ -1,6 +1,8 @@
-/** Source / intent viewer: light markdown, search, copy; draft click-to-edit. */
+/** Source viewer: editable text/md, or read-only native PDF for office files. */
 
 import {
+  Suspense,
+  lazy,
   useEffect,
   useMemo,
   useRef,
@@ -15,13 +17,22 @@ import {
 } from "./domain/sourceDraftEdit";
 import { renderLightMd } from "./lightMd";
 
+const PdfFirstPage = lazy(() =>
+  import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
+);
+
 type Props = {
   title: string;
   text: string;
   fileName?: string;
-  /** Pre-run sourceDraft only — enables click-to-edit. */
+  /** Pre-run sourceDraft only — enables click-to-edit for text mode. */
   editable?: boolean;
   onTextChange?: (text: string) => void;
+  /** document = native PDF preview; text = markdown/plain. */
+  viewMode?: "text" | "document";
+  previewUrl?: string | null;
+  originalUrl?: string | null;
+  format?: string;
 };
 
 export function SourcePane({
@@ -30,17 +41,24 @@ export function SourcePane({
   fileName,
   editable = false,
   onTextChange,
+  viewMode = "text",
+  previewUrl = null,
+  originalUrl = null,
+  format,
 }: Props) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<SourceViewMode>("preview");
+  const [pdfPage, setPdfPage] = useState(1);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const editing = editable && mode === "editing";
+  const isDocument = viewMode === "document";
+  const canEdit = editable && !isDocument;
+  const editing = canEdit && mode === "editing";
 
   useEffect(() => {
-    if (!editable && mode === "editing") setMode("preview");
-  }, [editable, mode]);
+    if (!canEdit && mode === "editing") setMode("preview");
+  }, [canEdit, mode]);
 
   useEffect(() => {
     if (!editing) return;
@@ -52,8 +70,9 @@ export function SourcePane({
   }, [editing]);
 
   const looksMd =
-    /\.(md|markdown)$/i.test(fileName || title) ||
-    /^#{1,3}\s|```|\*\*/m.test(text);
+    !isDocument &&
+    (/\.(md|markdown)$/i.test(fileName || title) ||
+      /^#{1,3}\s|```|\*\*/m.test(text));
 
   const html = useMemo(
     () => (looksMd ? renderLightMd(text, query) : null),
@@ -80,7 +99,7 @@ export function SourcePane({
   }
 
   function startEdit() {
-    setMode(enterSourceEdit(editable, mode));
+    setMode(enterSourceEdit(canEdit, mode));
   }
 
   function onEditorKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -98,6 +117,63 @@ export function SourcePane({
 
   const emptyLabel = "Нет текста источника.";
   const bodyText = text || "";
+  const fmtLabel = (format || fileName || "").toUpperCase().replace(/^\./, "");
+
+  if (isDocument) {
+    return (
+      <div className="artifact-source artifact-source-doc">
+        <div className="artifact-source-toolbar">
+          <h2 className="artifact-source-title">{title}</h2>
+          <div className="artifact-source-tools">
+            <span className="artifact-source-doc-badge muted">
+              Просмотр · без правки
+            </span>
+            {originalUrl ? (
+              <a
+                className="artifact-source-copy"
+                href={originalUrl}
+                download={fileName || true}
+              >
+                Скачать
+              </a>
+            ) : null}
+          </div>
+        </div>
+        {previewUrl ? (
+          <div className="artifact-source-pdf">
+            <Suspense
+              fallback={
+                <div className="pdf-skeleton pdf-skeleton-solo" aria-busy>
+                  <div className="pdf-skeleton-shine" />
+                  <p className="artifact-rail-loading">Загружаю документ…</p>
+                </div>
+              }
+            >
+              <PdfFirstPage
+                key={previewUrl}
+                url={previewUrl}
+                page={pdfPage}
+                onPageChange={(p) => setPdfPage(p)}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="artifact-source-doc-card">
+            <p className="artifact-source-doc-name">{fileName || title}</p>
+            <p className="muted">
+              {fmtLabel || "Документ"} прикреплён. Текст для сборки извлечён
+              скрыто; откройте файл скачиванием — LibreOffice не дал PDF-превью.
+            </p>
+            {originalUrl ? (
+              <a className="btn btn-ghost" href={originalUrl} download={fileName || true}>
+                Скачать оригинал
+              </a>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`artifact-source${editing ? " is-editing" : ""}`}>
@@ -143,12 +219,12 @@ export function SourcePane({
         />
       ) : html ? (
         <div
-          className={`artifact-source-md${editable ? " is-editable" : ""}`}
-          role={editable ? "button" : undefined}
-          tabIndex={editable ? 0 : undefined}
-          onClick={editable ? startEdit : undefined}
+          className={`artifact-source-md${canEdit ? " is-editable" : ""}`}
+          role={canEdit ? "button" : undefined}
+          tabIndex={canEdit ? 0 : undefined}
+          onClick={canEdit ? startEdit : undefined}
           onKeyDown={
-            editable
+            canEdit
               ? (e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
@@ -161,12 +237,12 @@ export function SourcePane({
         />
       ) : (
         <pre
-          className={`artifact-source-pre${editable ? " is-editable" : ""}`}
-          role={editable ? "button" : undefined}
-          tabIndex={editable ? 0 : undefined}
-          onClick={editable ? startEdit : undefined}
+          className={`artifact-source-pre${canEdit ? " is-editable" : ""}`}
+          role={canEdit ? "button" : undefined}
+          tabIndex={canEdit ? 0 : undefined}
+          onClick={canEdit ? startEdit : undefined}
           onKeyDown={
-            editable
+            canEdit
               ? (e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();

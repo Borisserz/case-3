@@ -409,9 +409,14 @@ export default function App() {
   const plaqueDraft = sourceDraft
     ? {
         title: sourceDraft.title,
-        subtitle: file
-          ? formatBytes(file.size)
-          : `${sourceDraft.text.length.toLocaleString("ru-RU")} символов`,
+        subtitle:
+          sourceDraft.viewMode === "document"
+            ? sourceDraft.previewUrl
+              ? "Документ · просмотр"
+              : "Документ · без PDF-превью"
+            : file
+              ? formatBytes(file.size)
+              : `${sourceDraft.text.length.toLocaleString("ru-RU")} символов`,
         fileName: sourceDraft.fileName,
       }
     : null;
@@ -707,12 +712,18 @@ export default function App() {
                 sourceText={railSourceText}
                 sourceTitle={railSourceTitle}
                 sourceEditable={
-                  Boolean(sourceDraft) && railArtifact.kind !== "intent"
+                  Boolean(sourceDraft) &&
+                  railArtifact.kind !== "intent" &&
+                  sourceDraft?.viewMode !== "document"
                 }
                 onSourceTextChange={(next) => {
-                  setSourceDraft((d) => (d ? { ...d, text: next } : d));
+                  setSourceDraft((d) =>
+                    d && d.viewMode !== "document" ? { ...d, text: next } : d,
+                  );
                   setActiveArtifact((a) =>
-                    a?.kind === "source" ? { ...a, text: next } : a,
+                    a?.kind === "source" && a.viewMode !== "document"
+                      ? { ...a, text: next }
+                      : a,
                   );
                 }}
                 palettes={palettes}

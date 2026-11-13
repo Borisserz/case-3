@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useRef,
   type Dispatch,
   type DragEvent,
   type SetStateAction,
@@ -28,6 +29,20 @@ type Deps = {
   showToast: (message: string, ms?: number) => void;
 };
 
+function artifactFromDraft(draft: SourceDraft): ActiveArtifact {
+  return {
+    kind: "source",
+    tab: "source",
+    title: draft.title,
+    text: draft.text,
+    fileName: draft.fileName,
+    viewMode: draft.viewMode || "text",
+    previewUrl: draft.previewUrl,
+    originalUrl: draft.originalUrl,
+    format: draft.format,
+  };
+}
+
 export function useSourceIngest({
   setFile,
   setSourceDraft,
@@ -40,25 +55,22 @@ export function useSourceIngest({
   setDrag,
   showToast,
 }: Deps) {
-  const capturePastedSource = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (trimmed.length <= LONG_TEXT_CHARS) return false;
-      const draft = {
-        title: "Текст",
-        text: trimmed,
-      };
+  const blobUrlRef = useRef<string | null>(null);
+
+  const revokeBlob = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }, []);
+
+  const applySourceDraft = useCallback(
+    (draft: SourceDraft) => {
       setFile(null);
       setSourceDraft(draft);
       setPlaqueDismissed(false);
       setDeckApplyHint(null);
-      setActiveArtifact({
-        kind: "source",
-        tab: "source",
-        title: draft.title,
-        text: draft.text,
-      });
-      return true;
+      setActiveArtifact(artifactFromDraft(draft));
     },
     [
       setFile,
@@ -69,27 +81,19 @@ export function useSourceIngest({
     ],
   );
 
-  const applySourceDraft = useCallback(
-    (draft: SourceDraft) => {
-      setFile(null);
-      setSourceDraft(draft);
-      setPlaqueDismissed(false);
-      setDeckApplyHint(null);
-      setActiveArtifact({
-        kind: "source",
-        tab: "source",
-        title: draft.title,
-        text: draft.text,
-        fileName: draft.fileName,
+  const capturePastedSource = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed.length <= LONG_TEXT_CHARS) return false;
+      revokeBlob();
+      applySourceDraft({
+        title: "Текст",
+        text: trimmed,
+        viewMode: "text",
       });
+      return true;
     },
-    [
-      setFile,
-      setSourceDraft,
-      setPlaqueDismissed,
-      setDeckApplyHint,
-      setActiveArtifact,
-    ],
+    [applySourceDraft, revokeBlob],
   );
 
   const ingestFiles = useCallback(
@@ -101,6 +105,7 @@ export function useSourceIngest({
           f.type === "text/plain" ||
           f.type === "text/markdown"
         ) {
+          revokeBlob();
           setPlaqueDismissed(false);
           setDeckApplyHint(null);
           void (async () => {
@@ -110,6 +115,7 @@ export function useSourceIngest({
                 title: f.name,
                 text,
                 fileName: f.name,
+                viewMode: "text",
               });
             } catch (err) {
               showToast(
@@ -122,21 +128,47 @@ export function useSourceIngest({
           continue;
         }
         if (isOfficeSourceFile(f)) {
-          showToast(`Читаю ${f.name}…`, 6000);
+          showToast(`Читаю ${f.name}…`, 8000);
+          const localPreview =
+            /\.pdf$/i.test(f.name) || f.type === "application/pdf"
+              ? URL.createObjectURL(f)
+              : null;
+          if (localPreview) {
+            revokeBlob();
+            blobUrlRef.current = localPreview;
+          }
           void (async () => {
             try {
               const out = await ingestOfficeSource(f);
+              const serverPreview = out.preview_url || null;
+              // Prefer local PDF blob for instant viewer; DOCX uses server PDF.
+              const previewUrl =
+                localPreview || serverPreview || null;
+              if (serverPreview && localPreview) {
+                // keep local blob — already shown; server extract is enough
+              }
               applySourceDraft({
                 title: out.filename,
                 text: out.markdown,
                 fileName: out.filename,
+                viewMode: "document",
+                previewUrl,
+                originalUrl: out.original_url || null,
+                ingestId: out.ingest_id,
+                format: out.format,
               });
               if (out.warnings?.length) {
                 showToast(out.warnings[0], 5000);
               } else {
-                showToast(`Source: ${out.filename}`, 2800);
+                showToast(
+                  previewUrl
+                    ? `Документ: ${out.filename}`
+                    : `Документ: ${out.filename} (без PDF-превью)`,
+                  2800,
+                );
               }
             } catch (err) {
+              if (localPreview) revokeBlob();
               showToast(
                 err instanceof Error
                   ? err.message
@@ -156,6 +188,7 @@ export function useSourceIngest({
     },
     [
       applySourceDraft,
+      revokeBlob,
       setPlaqueDismissed,
       setDeckApplyHint,
       setAttachPhotos,

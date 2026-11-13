@@ -37,6 +37,9 @@ def test_ingest_txt_via_api(
     assert "A 10" in data["markdown"]
     assert data["format"] == "txt"
     assert data["filename"] == "facts.txt"
+    assert data["view_mode"] == "text"
+    assert data["ingest_id"]
+    assert data.get("preview_url") is None
 
 
 def test_ingest_scan_pdf_returns_422(

@@ -142,7 +142,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   );
 
   const openSourceArtifact = useCallback(
-    (draft: Pick<SourceDraft, "title" | "text"> & { fileName?: string }) => {
+    (draft: SourceDraft) => {
       setRailExiting(false);
       setRailCollapsed(false);
       setActiveArtifact({
@@ -151,6 +151,10 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
         title: draft.title,
         text: draft.text,
         fileName: draft.fileName,
+        viewMode: draft.viewMode || "text",
+        previewUrl: draft.previewUrl,
+        originalUrl: draft.originalUrl,
+        format: draft.format,
       });
     },
     [],

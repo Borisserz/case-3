@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -67,6 +68,7 @@ log = logging.getLogger("case3.api")
 _SOURCE_MAX_BYTES = 2 * 1024 * 1024
 _INGEST_MAX_BYTES = 20 * 1024 * 1024
 _FORM_PART_MAX_BYTES = _INGEST_MAX_BYTES
+_INGEST_ID_OK = re.compile(r"^[0-9]{8}T[0-9]{6}Z_[0-9a-f]{6}$")
 
 
 def _raise_form_part_limit() -> None:
@@ -823,11 +825,46 @@ def _bg_run_pipeline(
         _release_pipeline_slot(run_id, generation=slot_gen)
 
 
+def _ingest_dir(ingest_id: str) -> Path:
+    if not _INGEST_ID_OK.match(ingest_id):
+        raise HTTPException(400, detail="bad ingest id")
+    path = (run_store.ROOT / "runs" / "uploads" / "ingest" / ingest_id).resolve()
+    root = (run_store.ROOT / "runs" / "uploads" / "ingest").resolve()
+    if path != root and root not in path.parents:
+        raise HTTPException(400, detail="bad ingest id")
+    if not path.is_dir():
+        raise HTTPException(404, detail="ingest not found")
+    return path
+
+
+def _write_office_preview(upload_dir: Path, src: Path, fmt: str) -> str | None:
+    """Return preview.pdf basename when a viewable PDF is available."""
+    preview = upload_dir / "preview.pdf"
+    if fmt == "pdf":
+        if src.resolve() != preview.resolve():
+            shutil.copy2(src, preview)
+        return preview.name
+    if fmt in {"docx", "doc", "docm", "rtf"}:
+        try:
+            from case3.office_convert import LibreOfficeNotFoundError, convert_to_pdf
+
+            made = convert_to_pdf(src, output_dir=upload_dir)
+            if made.resolve() != preview.resolve():
+                made.replace(preview)
+            return preview.name if preview.is_file() else None
+        except LibreOfficeNotFoundError:
+            return None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("office preview pdf failed: %s", exc)
+            return None
+    return None
+
+
 @app.post("/api/source/ingest")
 async def api_source_ingest(
     file: UploadFile = File(...),
 ) -> JSONResponse:
-    """Born-digital PDF/DOCX/TXT/RTF → Markdown for Source draft (no OCR)."""
+    """Born-digital PDF/DOCX/TXT/RTF → silent extract + optional PDF preview."""
     name = Path(file.filename or "upload.bin").name
     raw = await file.read()
     if not raw:
@@ -835,7 +872,8 @@ async def api_source_ingest(
     if len(raw) > _INGEST_MAX_BYTES:
         raise HTTPException(400, detail="файл слишком большой (>20 MiB)")
 
-    upload_dir = run_store.ROOT / "runs" / "uploads" / "ingest" / datetime_stamp()
+    ingest_id = datetime_stamp()
+    upload_dir = run_store.ROOT / "runs" / "uploads" / "ingest" / ingest_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     dest = upload_dir / name
     dest.write_bytes(raw)
@@ -854,14 +892,60 @@ async def api_source_ingest(
         log.exception("source ingest failed name=%s", name)
         raise HTTPException(500, detail=f"не удалось разобрать файл: {exc}") from exc
 
-    return JSONResponse(
-        {
-            "markdown": result.markdown,
-            "filename": result.filename,
-            "format": result.format,
-            "warnings": result.warnings,
-        }
+    (upload_dir / "source.txt").write_text(result.markdown, encoding="utf-8")
+    preview_name = _write_office_preview(upload_dir, dest, result.format)
+    office = result.format in {"pdf", "docx", "doc", "docm", "rtf"}
+    payload: dict[str, Any] = {
+        "markdown": result.markdown,
+        "text": result.markdown,
+        "filename": result.filename,
+        "format": result.format,
+        "warnings": result.warnings,
+        "ingest_id": ingest_id,
+        "view_mode": "document" if office else "text",
+        "original_url": f"/api/source/files/{ingest_id}/original",
+    }
+    if preview_name:
+        payload["preview_url"] = f"/api/source/files/{ingest_id}/preview"
+    return JSONResponse(payload)
+
+
+@app.get("/api/source/files/{ingest_id}/preview")
+def api_source_preview(ingest_id: str) -> FileResponse:
+    folder = _ingest_dir(ingest_id)
+    path = folder / "preview.pdf"
+    if not path.is_file():
+        raise HTTPException(404, detail="preview pdf not available")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename="preview.pdf",
+        content_disposition_type="inline",
     )
+
+
+@app.get("/api/source/files/{ingest_id}/original")
+def api_source_original(ingest_id: str) -> FileResponse:
+    folder = _ingest_dir(ingest_id)
+    meta_txt = folder / "source.txt"
+    originals = [
+        p
+        for p in folder.iterdir()
+        if p.is_file() and p.name not in {"source.txt", "preview.pdf"}
+    ]
+    if not originals:
+        raise HTTPException(404, detail="original file not found")
+    path = originals[0]
+    suf = path.suffix.lower()
+    media = "application/octet-stream"
+    if suf == ".pdf":
+        media = "application/pdf"
+    elif suf == ".docx":
+        media = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    _ = meta_txt  # extract sibling; keep for debugging
+    return FileResponse(path, media_type=media, filename=path.name)
 
 
 @app.post("/api/run")

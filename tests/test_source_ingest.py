@@ -84,7 +84,10 @@ def test_docx_tables_and_numbers(tmp_path: Path) -> None:
     assert result.format == "docx"
     assert "Отчёт" in result.markdown
     assert "42" in result.markdown
-    assert "| Метрика | Значение |" in result.markdown
+    assert "Метрика\tЗначение" in result.markdown
+    assert not any(
+        line.strip().startswith("|") for line in result.markdown.splitlines()
+    )
 
 
 def test_pdf_missing_pypdfium2(

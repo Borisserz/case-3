@@ -957,6 +957,33 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
+.artifact-source-doc-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.artifact-source-pdf {
+  min-height: min(28rem, 62vh);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--rule);
+  overflow: auto;
+  background: color-mix(in srgb, var(--paper) 55%, var(--sheet));
+}
+
+.artifact-source-doc-card {
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed color-mix(in srgb, var(--primary) 28%, var(--rule));
+  background: color-mix(in srgb, var(--secondary) 35%, var(--sheet));
+}
+
+.artifact-source-doc-name {
+  margin: 0 0 0.55rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
 .artifact-source-edit-hint {
   font-size: 0.78rem;
 }

@@ -89,7 +89,7 @@ export function IconSourceDoc({
   kind = "txt",
   size = 18,
   className,
-}: IconProps & { kind?: "md" | "txt" | "paste" }) {
+}: IconProps & { kind?: "md" | "txt" | "paste" | "pdf" | "docx" }) {
   return (
     <svg {...base({ size, className })}>
       <path
@@ -106,6 +106,11 @@ export function IconSourceDoc({
         <>
           <path {...stroke} d="M9 12h6M9 15h4.5" />
           <path {...stroke} d="M9 9.2h2.2" />
+        </>
+      ) : kind === "pdf" || kind === "docx" ? (
+        <>
+          <path {...stroke} d="M9 11.2h6M9 14h6M9 16.8h4" />
+          <path {...stroke} d="M16.2 11.2v5.6" opacity="0.45" />
         </>
       ) : (
         <>

@@ -19,7 +19,7 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 
 **Файл + Intent** → Qwen (LaTeX + HTML-графики + фото) → PDF/DOCX (Docker TeX).
 
-**Source ingest:** в Liber можно кидать `.pdf` / `.docx` / `.doc` / `.rtf` / `.txt` / `.md` → Markdown в Source draft (правка) → «Поехали». Цифровой PDF с таблицами — через `pdfplumber`; скан без текста → отказ. `.doc`/`.rtf` нужен LibreOffice (`soffice`). OCR нет.
+**Source ingest:** `.pdf` / `.docx` — просмотр в Source (pdf.js), без правки MD; текст для модели извлекается скрыто (таблицы → TSV). `.txt` / `.md` / длинная вставка — редактируемый draft. Скан-PDF → отказ. `.doc`/`.rtf`/PDF-превью DOCX — LibreOffice. OCR нет.
 
 **Liber Schema (Mermaid):** вкладка «Схема» — процессы с числами из Source (annotated flow), легенда, PNG. Слот `%CASE3_DIAG:dia_NN%` попадает в PDF и DOCX как `figures/dia_NN.png` (ADR-0009). Битый Mermaid не валит TeX. print-truth = PDF.
 

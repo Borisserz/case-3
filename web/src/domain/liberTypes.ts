@@ -108,8 +108,17 @@ export type SourceAttachment = {
 
 export type SourceDraft = {
   title: string;
+  /** Extract for /api/run. Hidden in UI when viewMode === "document". */
   text: string;
   fileName?: string;
+  /** text = editable; document = native PDF/office preview only. */
+  viewMode?: "text" | "document";
+  /** pdf.js URL (blob: or /api/source/files/.../preview). */
+  previewUrl?: string | null;
+  /** Download original office file. */
+  originalUrl?: string | null;
+  ingestId?: string;
+  format?: string;
 };
 
 export type UserMsg = {

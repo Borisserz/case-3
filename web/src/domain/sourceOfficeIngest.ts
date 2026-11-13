@@ -1,4 +1,4 @@
-/** Born-digital office/PDF → Source markdown via Liber API (no OCR). */
+/** Born-digital office/PDF → silent extract + optional PDF preview URL. */
 
 import { formatApiDetailError } from "./runHelpers";
 
@@ -7,9 +7,14 @@ export const OFFICE_SOURCE_RE =
 
 export type OfficeIngestResponse = {
   markdown: string;
+  text?: string;
   filename: string;
   format: string;
   warnings?: string[];
+  ingest_id?: string;
+  view_mode?: "text" | "document";
+  preview_url?: string | null;
+  original_url?: string | null;
 };
 
 export function isOfficeSourceFile(file: File): boolean {
@@ -41,12 +46,18 @@ export async function ingestOfficeSource(
       formatApiDetailError(data, res.statusText || `HTTP ${res.status}`),
     );
   }
-  const markdown = typeof data.markdown === "string" ? data.markdown : "";
+  const markdown =
+    typeof data.text === "string" && data.text.trim()
+      ? data.text
+      : typeof data.markdown === "string"
+        ? data.markdown
+        : "";
   if (!markdown.trim()) {
     throw new Error("Сервер вернул пустой Source");
   }
   return {
     markdown,
+    text: markdown,
     filename:
       typeof data.filename === "string" && data.filename
         ? data.filename
@@ -55,5 +66,17 @@ export async function ingestOfficeSource(
     warnings: Array.isArray(data.warnings)
       ? data.warnings.filter((w): w is string => typeof w === "string")
       : [],
+    ingest_id:
+      typeof data.ingest_id === "string" ? data.ingest_id : undefined,
+    view_mode:
+      data.view_mode === "document" || data.view_mode === "text"
+        ? data.view_mode
+        : OFFICE_SOURCE_RE.test(file.name)
+          ? "document"
+          : "text",
+    preview_url:
+      typeof data.preview_url === "string" ? data.preview_url : null,
+    original_url:
+      typeof data.original_url === "string" ? data.original_url : null,
   };
 }

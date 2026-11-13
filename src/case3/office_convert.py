@@ -54,11 +54,20 @@ def find_soffice() -> str | None:
 
 
 def convert_doc_to_docx(src: Path, *, output_dir: Path) -> Path:
+    return _soffice_convert(src, "docx", output_dir)
+
+
+def convert_to_pdf(src: Path, *, output_dir: Path) -> Path:
+    """DOCX/DOC/RTF → PDF for Liber Source preview."""
+    return _soffice_convert(src, "pdf", output_dir)
+
+
+def _soffice_convert(src: Path, target: str, output_dir: Path) -> Path:
     soffice = find_soffice()
     if soffice is None:
         raise LibreOfficeNotFoundError(
-            "LibreOffice (soffice) не найден — нужен для .doc/.rtf. "
-            "Установите LibreOffice или сохраните файл как .docx."
+            "LibreOffice (soffice) не найден — нужен для .doc/.rtf и PDF-превью DOCX. "
+            "Установите LibreOffice или сохраните файл как .docx / .pdf."
         )
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -68,17 +77,17 @@ def convert_doc_to_docx(src: Path, *, output_dir: Path) -> Path:
         "--nologo",
         "--nofirststartwizard",
         "--convert-to",
-        "docx",
+        target,
         "--outdir",
         str(output_dir),
         str(src),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    out = output_dir / f"{src.stem}.docx"
+    out = output_dir / f"{src.stem}.{target}"
     if proc.returncode != 0 or not out.is_file():
         detail = (proc.stderr or proc.stdout or "").strip()[:400]
         raise RuntimeError(
-            f"LibreOffice не смог конвертировать {src.name} → docx"
+            f"LibreOffice не смог конвертировать {src.name} → {target}"
             + (f": {detail}" if detail else "")
         )
     return out

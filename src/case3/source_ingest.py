@@ -43,6 +43,9 @@ _WS = re.compile(r"[ \t]+\n")
 
 DEFAULT_MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+# Wide tables: TSV for the model (UI shows native PDF, not this text).
+MAX_TABLE_COLS = 12
+MAX_TABLE_ROWS = 80
 
 
 class SourceIngestError(Exception):
@@ -188,9 +191,9 @@ def _docx_to_markdown(path: Path) -> str:
             else:
                 parts.append(text)
         elif isinstance(block, Table):
-            md = _table_to_markdown(block)
-            if md:
-                parts.append(md)
+            tsv = _table_to_tsv(block)
+            if tsv:
+                parts.append(tsv)
     # Fallback if body XML order failed but paragraphs exist
     if not parts:
         for p in document.paragraphs:
@@ -198,9 +201,9 @@ def _docx_to_markdown(path: Path) -> str:
             if text:
                 parts.append(text)
         for table in document.tables:
-            md = _table_to_markdown(table)
-            if md:
-                parts.append(md)
+            tsv = _table_to_tsv(table)
+            if tsv:
+                parts.append(tsv)
     return "\n\n".join(parts) + ("\n" if parts else "")
 
 
@@ -218,29 +221,17 @@ def _iter_docx_blocks(document: object) -> Iterator[object]:
             yield Table(child, document)
 
 
-def _table_to_markdown(table: object) -> str:
-    rows: list[list[str]] = []
+def _table_to_tsv(table: object) -> str:
+    rows: list[list[object | None]] = []
     for row in table.rows:  # type: ignore[attr-defined]
         cells = [" ".join((c.text or "").split()) for c in row.cells]
-        # python-docx repeats merged cell text — collapse adjacent dupes lightly
-        cleaned: list[str] = []
+        cleaned: list[object | None] = []
         for cell in cells:
             if cleaned and cleaned[-1] == cell:
                 continue
             cleaned.append(cell)
         rows.append(cleaned)
-    if not rows:
-        return ""
-    width = max(len(r) for r in rows)
-    norm = [r + [""] * (width - len(r)) for r in rows]
-    header = norm[0]
-    lines = [
-        "| " + " | ".join(header) + " |",
-        "| " + " | ".join("---" for _ in header) + " |",
-    ]
-    for row in norm[1:]:
-        lines.append("| " + " | ".join(row) + " |")
-    return "\n".join(lines)
+    return _cells_to_tsv(rows)
 
 
 def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
@@ -310,39 +301,42 @@ def _is_plausible_table(rows: list[list[object | None]]) -> bool:
     return True
 
 
-def _cells_to_markdown(rows: list[list[object | None]]) -> str:
-    norm: list[list[str]] = []
+def _cells_to_tsv(rows: list[list[object | None]]) -> str:
+    """Compact TSV for the model — humans see native PDF, not this block."""
     width = max((len(r) for r in rows), default=0)
-    if width == 0:
+    if width == 0 or not rows:
         return ""
-    for row in rows:
+    orig_rows, orig_cols = len(rows), width
+    use_cols = min(width, MAX_TABLE_COLS)
+    use_rows = rows[:MAX_TABLE_ROWS]
+    norm: list[list[str]] = []
+    for row in use_rows:
         cells = [
-            " ".join(str(c).replace("\n", " ").split()) if c is not None else ""
+            " ".join(str(c).replace("\n", " ").replace("\t", " ").split())
+            if c is not None
+            else ""
             for c in row
         ]
-        if len(cells) < width:
-            cells.extend([""] * (width - len(cells)))
-        # collapse adjacent duplicate merged cells
+        if len(cells) < use_cols:
+            cells.extend([""] * (use_cols - len(cells)))
         cleaned: list[str] = []
-        for cell in cells[:width]:
+        for cell in cells[:use_cols]:
             if cleaned and cleaned[-1] == cell and cell != "":
                 continue
             cleaned.append(cell)
-        while len(cleaned) < width:
+        while len(cleaned) < use_cols:
             cleaned.append("")
-        norm.append(cleaned[:width])
-    header = norm[0]
-    lines = [
-        "| " + " | ".join(header) + " |",
-        "| " + " | ".join("---" for _ in header) + " |",
-    ]
-    for row in norm[1:]:
-        lines.append("| " + " | ".join(row) + " |")
+        norm.append(cleaned[:use_cols])
+    lines = ["\t".join(r) for r in norm]
+    if orig_cols > MAX_TABLE_COLS or orig_rows > MAX_TABLE_ROWS:
+        lines.append(
+            f"… truncated table {orig_cols}×{orig_rows} → {use_cols}×{len(norm)}"
+        )
     return "\n".join(lines)
 
 
 def _pdf_text_layer_markdown(path: Path) -> str:
-    """Prefer pdfplumber (tables → md); fall back to pypdfium2 text."""
+    """Prefer pdfplumber (tables → TSV); fall back to pypdfium2 text."""
     try:
         return _pdf_via_pdfplumber(path)
     except ImportError:
@@ -364,9 +358,9 @@ def _pdf_via_pdfplumber(path: Path) -> str:
                 rows = table.extract()
                 if not rows or not _is_plausible_table(rows):
                     continue
-                md = _cells_to_markdown(rows)
-                if md:
-                    table_mds.append(md)
+                tsv = _cells_to_tsv(rows)
+                if tsv:
+                    table_mds.append(tsv)
                     if getattr(table, "bbox", None):
                         bboxes.append(tuple(table.bbox))  # type: ignore[arg-type]
 
