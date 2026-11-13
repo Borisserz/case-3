@@ -38,7 +38,7 @@ Root shims (`liberTypes.ts`, `liberRunHelpers.ts`, …) → prefer importing fro
 
 - Report **PDF** = print truth (rail).
 - Preview / live Chart.js ≈ TeX blocks (may differ).
-- Mermaid diagrams = Liber UI only (not in PDF).
+- Mermaid diagrams → PNG via `%CASE3_DIAG:dia_NN%` in PDF/DOCX (ADR-0009; supersedes ADR-0007 UI-only). Liber rail shows the same figures + visual editor.
 - Deck **PPTX** = presentation truth; Liber twin ≈ tokens.
 
 ## Angular later
