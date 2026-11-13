@@ -36,6 +36,7 @@ import type {
   Health,
   Msg,
   PaletteInfo,
+  SourceAttachment,
   SourceDraft,
 } from "../domain/liberTypes";
 import { useArtifactHost } from "./useArtifactHost";
@@ -483,6 +484,18 @@ export default function App() {
     activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
       ? activeArtifact.title
       : sourceDraft?.title ?? null;
+  /** User Source plaque for this report — keep PDF on «Документ» tab after send. */
+  const reportSourceAttachment = useMemo((): SourceAttachment | null => {
+    if (railArtifact?.kind !== "report") return null;
+    const idx = msgs.findIndex((m) => m.id === railArtifact.msgId);
+    if (idx < 0) return null;
+    for (let i = idx - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "user" && m.attachment) return m.attachment;
+      if (m.role === "bot") break;
+    }
+    return null;
+  }, [railArtifact, msgs]);
 
   // Visual QA all chart types: http://127.0.0.1:5173/?preview=charts-qa
   if (/preview=charts-qa/.test(window.location.search)) {
@@ -711,6 +724,7 @@ export default function App() {
                 }
                 sourceText={railSourceText}
                 sourceTitle={railSourceTitle}
+                sourceAttachment={reportSourceAttachment}
                 sourceEditable={
                   Boolean(sourceDraft) &&
                   railArtifact.kind !== "intent" &&

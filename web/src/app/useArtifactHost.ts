@@ -12,9 +12,15 @@ import type {
   ArtifactTab,
 } from "../ArtifactRail";
 import type { CraftFilmFrame } from "../domain/craftSteps";
-import type { Msg, RunResult, SourceDraft, UserPhotoThumb } from "../domain/liberTypes";
+import type {
+  Msg,
+  RunResult,
+  SourceAttachment,
+  SourceDraft,
+  UserPhotoThumb,
+} from "../domain/liberTypes";
 import { reportTitle } from "../domain/runHelpers";
-import { loadRailWidth } from "../domain/railWidth";
+import { loadRailWidth, saveRailWidth } from "../domain/railWidth";
 
 type Deps = {
   msgs: Msg[];
@@ -45,6 +51,24 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
       lastArtifactRef.current = activeArtifact;
     }
   }, [activeArtifact, railExiting]);
+
+  // Source PDF/DOCX needs a wide rail — bump once when document opens.
+  useEffect(() => {
+    if (
+      activeArtifact?.kind !== "source" ||
+      activeArtifact.viewMode !== "document"
+    ) {
+      return;
+    }
+    setRailWidthPct((w) => {
+      if (w >= 70) return w;
+      saveRailWidth(70);
+      return 70;
+    });
+  }, [
+    activeArtifact?.kind,
+    activeArtifact?.kind === "source" ? activeArtifact.viewMode : null,
+  ]);
 
   const openReportArtifact = useCallback(
     (msgId: string, result: RunResult, tab?: ArtifactTab) => {
@@ -142,20 +166,41 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
   );
 
   const openSourceArtifact = useCallback(
-    (draft: SourceDraft) => {
+    (draft: SourceDraft | SourceAttachment) => {
       setRailExiting(false);
       setRailCollapsed(false);
+      const isDoc =
+        draft.viewMode === "document" || Boolean(draft.ingestId);
+      const viewMode = isDoc ? "document" : draft.viewMode || "text";
+      const previewUrl =
+        draft.previewUrl ||
+        (draft.ingestId
+          ? `/api/source/files/${encodeURIComponent(draft.ingestId)}/preview`
+          : null);
+      const originalUrl =
+        draft.originalUrl ||
+        (draft.ingestId
+          ? `/api/source/files/${encodeURIComponent(draft.ingestId)}/original`
+          : null);
       setActiveArtifact({
         kind: "source",
         tab: "source",
         title: draft.title,
         text: draft.text,
         fileName: draft.fileName,
-        viewMode: draft.viewMode || "text",
-        previewUrl: draft.previewUrl,
-        originalUrl: draft.originalUrl,
+        viewMode,
+        previewUrl,
+        originalUrl,
         format: draft.format,
       });
+      // Document needs room — bump rail if still at a narrow preset.
+      if (isDoc) {
+        setRailWidthPct((w) => {
+          if (w >= 70) return w;
+          saveRailWidth(70);
+          return 70;
+        });
+      }
     },
     [],
   );

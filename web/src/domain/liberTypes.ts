@@ -104,6 +104,12 @@ export type SourceAttachment = {
   title: string;
   text: string;
   fileName?: string;
+  /** Office PDF/DOCX: open as viewer, not extract text. */
+  viewMode?: "text" | "document";
+  previewUrl?: string | null;
+  originalUrl?: string | null;
+  ingestId?: string;
+  format?: string;
 };
 
 export type SourceDraft = {

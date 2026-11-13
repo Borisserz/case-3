@@ -186,11 +186,32 @@ async () => {
   }
 
   const attachment: SourceAttachment | undefined = draftSnap?.text
-    ? {
-        title: draftSnap.title,
-        text: draftSnap.text,
-        fileName: draftSnap.fileName,
-      }
+    ? (() => {
+        const isDoc =
+          draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
+        const previewUrl = isDoc
+          ? draftSnap.previewUrl ||
+            (draftSnap.ingestId
+              ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/preview`
+              : null)
+          : draftSnap.previewUrl;
+        const originalUrl = isDoc
+          ? draftSnap.originalUrl ||
+            (draftSnap.ingestId
+              ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/original`
+              : null)
+          : draftSnap.originalUrl;
+        return {
+          title: draftSnap.title,
+          text: draftSnap.text,
+          fileName: draftSnap.fileName,
+          viewMode: (isDoc ? "document" : "text") as "document" | "text",
+          previewUrl,
+          originalUrl,
+          ingestId: draftSnap.ingestId,
+          format: draftSnap.format,
+        };
+      })()
     : undefined;
   const userBody = chatTrim
     ? chatTrim
@@ -282,11 +303,38 @@ async () => {
   const photosSnapshot = [...attachPhotos];
   setAttachPhotos([]);
   // Paste-source consumed; keep attached File for re-send until user clears.
+  // Document PDF: keep viewer open (durable URLs) so send never flips to extract text.
   if (!file && draftSnap) {
     setSourceDraft(null);
-    setActiveArtifact((a) =>
-      a?.kind === "source" || a?.kind === "intent" ? null : a,
-    );
+    const isDoc =
+      draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
+    if (isDoc) {
+      const previewUrl =
+        draftSnap.previewUrl ||
+        (draftSnap.ingestId
+          ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/preview`
+          : null);
+      const originalUrl =
+        draftSnap.originalUrl ||
+        (draftSnap.ingestId
+          ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/original`
+          : null);
+      setActiveArtifact({
+        kind: "source",
+        tab: "source",
+        title: draftSnap.title,
+        text: draftSnap.text,
+        fileName: draftSnap.fileName,
+        viewMode: "document",
+        previewUrl,
+        originalUrl,
+        format: draftSnap.format,
+      });
+    } else {
+      setActiveArtifact((a) =>
+        a?.kind === "source" || a?.kind === "intent" ? null : a,
+      );
+    }
   }
 
   const fd = buildRunFormData({

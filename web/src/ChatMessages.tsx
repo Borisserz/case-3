@@ -139,7 +139,11 @@ export function ChatMessages({
                     <div className="msg-attach-row">
                       <ContextPlaque
                         title={m.attachment.title}
-                        subtitle={`${m.attachment.text.length.toLocaleString("ru-RU")} символов`}
+                        subtitle={
+                          m.attachment.viewMode === "document"
+                            ? "Документ · просмотр"
+                            : `${m.attachment.text.length.toLocaleString("ru-RU")} символов`
+                        }
                         fileName={m.attachment.fileName}
                         onOpen={() => onOpenSource(m.attachment!)}
                       />

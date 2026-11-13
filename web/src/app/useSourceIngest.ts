@@ -141,11 +141,13 @@ export function useSourceIngest({
             try {
               const out = await ingestOfficeSource(f);
               const serverPreview = out.preview_url || null;
-              // Prefer local PDF blob for instant viewer; DOCX uses server PDF.
-              const previewUrl =
-                localPreview || serverPreview || null;
+              // Prefer durable server preview (survives send); blob only as fallback.
+              const previewUrl = serverPreview || localPreview || null;
               if (serverPreview && localPreview) {
-                // keep local blob — already shown; server extract is enough
+                URL.revokeObjectURL(localPreview);
+                if (blobUrlRef.current === localPreview) {
+                  blobUrlRef.current = null;
+                }
               }
               applySourceDraft({
                 title: out.filename,

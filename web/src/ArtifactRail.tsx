@@ -121,6 +121,8 @@ type Props = {
   report: ReportBundle | null;
   sourceText?: string | null;
   sourceTitle?: string | null;
+  /** Prior user-message Source (PDF/DOCX) — report «Текст» tab shows viewer. */
+  sourceAttachment?: import("./domain/liberTypes").SourceAttachment | null;
   /** Pre-run sourceDraft — Source tab click-to-edit. */
   sourceEditable?: boolean;
   onSourceTextChange?: (text: string) => void;
@@ -190,6 +192,7 @@ export function ArtifactRail({
   report,
   sourceText,
   sourceTitle,
+  sourceAttachment = null,
   sourceEditable = false,
   onSourceTextChange,
   palettes = [],
@@ -357,10 +360,22 @@ export function ArtifactRail({
       (report?.slidePngs && report.slidePngs.length > 0) ||
         report?.downloads?.deck_pdf,
     );
+  const reportSourceDoc =
+    artifact.kind === "report" &&
+    sourceAttachment &&
+    (sourceAttachment.viewMode === "document" ||
+      Boolean(sourceAttachment.ingestId))
+      ? sourceAttachment
+      : null;
+  const sourceAsDocument =
+    (artifact.kind === "source" && artifact.viewMode === "document") ||
+    Boolean(reportSourceDoc);
+
   const hasSource =
     surfaces.showSource &&
     Boolean(
       (sourceText && sourceText.length > 0) ||
+        reportSourceDoc ||
         artifact.kind === "source" ||
         artifact.kind === "intent",
     );
@@ -368,13 +383,15 @@ export function ArtifactRail({
   const displaySource =
     artifact.kind === "source" || artifact.kind === "intent"
       ? artifact.text
-      : sourceText || "";
+      : reportSourceDoc?.text || sourceText || "";
   const displaySourceTitle =
     artifact.kind === "source" || artifact.kind === "intent"
       ? artifact.title
-      : sourceTitle || "Текст";
+      : reportSourceDoc?.title || sourceTitle || "Текст";
   const sourceFileName =
-    artifact.kind === "source" ? artifact.fileName : undefined;
+    artifact.kind === "source"
+      ? artifact.fileName
+      : reportSourceDoc?.fileName;
 
   const [pdfPage, setPdfPage] = useState(1);
   /** Caption/id search after figure→PDF click (TeX page hints miss natural breaks). */
@@ -417,7 +434,11 @@ export function ArtifactRail({
         label: slidesFilmTabLabel(),
         show: Boolean(hasSlidesFilmTab),
       },
-      { id: "source", label: "Текст", show: hasSource },
+      {
+        id: "source",
+        label: sourceAsDocument ? "Документ" : "Текст",
+        show: hasSource,
+      },
     ];
     return all.filter((t) => t.show);
   }, [
@@ -430,6 +451,7 @@ export function ArtifactRail({
     hasPresentationTab,
     hasSlidesFilmTab,
     hasSource,
+    sourceAsDocument,
     diagrams.length,
   ]);
 
@@ -446,6 +468,7 @@ export function ArtifactRail({
       // Diagram fullscreen owns Esc while open.
       if (document.querySelector(".diagram-fullscreen")) return;
       if (document.querySelector(".presentation-fullscreen")) return;
+      if (document.querySelector(".source-doc-fullscreen")) return;
       // Source draft click-to-edit: Esc exits editor first (not rail).
       if (document.querySelector(".artifact-source.is-editing")) return;
       onClose();
@@ -1074,26 +1097,34 @@ export function ArtifactRail({
                   title={displaySourceTitle}
                   text={displaySource}
                   fileName={sourceFileName}
-                  editable={
-                    sourceEditable &&
-                    !(
-                      artifact.kind === "source" &&
-                      artifact.viewMode === "document"
-                    )
-                  }
+                  editable={sourceEditable && !sourceAsDocument}
                   onTextChange={onSourceTextChange}
-                  viewMode={
-                    artifact.kind === "source"
-                      ? artifact.viewMode || "text"
-                      : "text"
-                  }
+                  viewMode={sourceAsDocument ? "document" : "text"}
                   previewUrl={
-                    artifact.kind === "source" ? artifact.previewUrl : null
+                    artifact.kind === "source"
+                      ? artifact.previewUrl
+                      : reportSourceDoc
+                        ? reportSourceDoc.previewUrl ||
+                          (reportSourceDoc.ingestId
+                            ? `/api/source/files/${encodeURIComponent(reportSourceDoc.ingestId)}/preview`
+                            : null)
+                        : null
                   }
                   originalUrl={
-                    artifact.kind === "source" ? artifact.originalUrl : null
+                    artifact.kind === "source"
+                      ? artifact.originalUrl
+                      : reportSourceDoc
+                        ? reportSourceDoc.originalUrl ||
+                          (reportSourceDoc.ingestId
+                            ? `/api/source/files/${encodeURIComponent(reportSourceDoc.ingestId)}/original`
+                            : null)
+                        : null
                   }
-                  format={artifact.kind === "source" ? artifact.format : undefined}
+                  format={
+                    artifact.kind === "source"
+                      ? artifact.format
+                      : reportSourceDoc?.format
+                  }
                 />
               ) : null}
 

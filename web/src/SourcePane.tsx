@@ -16,6 +16,7 @@ import {
   type SourceViewMode,
 } from "./domain/sourceDraftEdit";
 import { renderLightMd } from "./lightMd";
+import { SourceDocFullscreen } from "./SourceDocFullscreen";
 
 const PdfFirstPage = lazy(() =>
   import("./PdfFirstPage").then((m) => ({ default: m.PdfFirstPage })),
@@ -50,6 +51,7 @@ export function SourcePane({
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<SourceViewMode>("preview");
   const [pdfPage, setPdfPage] = useState(1);
+  const [pdfFullscreen, setPdfFullscreen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isDocument = viewMode === "document";
@@ -128,6 +130,15 @@ export function SourcePane({
             <span className="artifact-source-doc-badge muted">
               Просмотр · без правки
             </span>
+            {previewUrl ? (
+              <button
+                type="button"
+                className="artifact-source-copy"
+                onClick={() => setPdfFullscreen(true)}
+              >
+                На весь экран
+              </button>
+            ) : null}
             {originalUrl ? (
               <a
                 className="artifact-source-copy"
@@ -171,6 +182,17 @@ export function SourcePane({
             ) : null}
           </div>
         )}
+        {pdfFullscreen && previewUrl ? (
+          <SourceDocFullscreen
+            title={title}
+            url={previewUrl}
+            page={pdfPage}
+            onPageChange={setPdfPage}
+            originalUrl={originalUrl}
+            fileName={fileName}
+            onClose={() => setPdfFullscreen(false)}
+          />
+        ) : null}
       </div>
     );
   }
