@@ -27,7 +27,6 @@ def diagram_prompts(
 ) -> tuple[str, str]:
     """System + user text. Source is clipped to ``DIAGRAM_SOURCE_LIMIT``."""
     from case3.diagram_edit import _load_generate_system
-    from case3.diagram_style import format_diagram_color_prompt
 
     budget = max(1, int(max_diagrams))
     system = _load_generate_system(max_diagrams=budget, palette=palette)
@@ -35,7 +34,6 @@ def diagram_prompts(
     user = (
         f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
         f"## Source\n{clipped}\n\n"
-        f"{format_diagram_color_prompt(palette)}\n\n"
         "Return ONLY one ```json fence with a diagrams array "
         f"(1–{budget} Mermaid). No prose before the fence."
     )

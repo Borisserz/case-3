@@ -227,7 +227,6 @@ def regenerate_diagrams_in_run(
     user = (
         f"## Intent\n{intent.strip() or '(none)'}\n\n"
         f"## Source\n{source[:12000]}\n\n"
-        f"{format_diagram_color_prompt(palette)}\n"
     )
     try:
         raw = client.complete(system=system, user_text=user)
@@ -398,8 +397,10 @@ def refine_diagram_in_run(
 
     from case3.prompts import load as load_prompt
 
-    system = load_prompt("diagram_refine")
-    color_hint = format_diagram_color_prompt(palette)
+    system = load_prompt(
+        "diagram_refine",
+        DIAGRAM_COLOR_TABLE=format_diagram_color_prompt(palette),
+    )
     user = (
         f"## User Instruction\n{instr}\n\n"
         f"## Current Diagram to Modify\n"
@@ -408,8 +409,7 @@ def refine_diagram_in_run(
         f"Type: {item.get('type') or 'flowchart'}\n"
         f"Mermaid:\n{item.get('mermaid') or ''}\n\n"
         f"## Source Context\n{source[:10000] if source else '(none)'}\n\n"
-        f"## Intent Context\n{intent if intent else '(none)'}\n\n"
-        f"{color_hint}\n"
+        f"## Intent Context\n{intent if intent else '(none)'}\n"
     )
 
     try:

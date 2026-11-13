@@ -30,16 +30,13 @@ class _Completer(Protocol):
 
 
 def load_repair_system(palette: str | None = None) -> str:
+    from case3.diagram_style import format_diagram_color_prompt
     from case3.prompts import load as load_prompt
 
-    text = load_prompt("diagram_repair")
-    try:
-        from case3.diagram_style import format_diagram_color_prompt
-
-        text = text.rstrip() + "\n\n" + format_diagram_color_prompt(palette)
-    except Exception:
-        pass
-    return text
+    return load_prompt(
+        "diagram_repair",
+        DIAGRAM_COLOR_TABLE=format_diagram_color_prompt(palette),
+    )
 
 
 def looks_like_linear_slop(mermaid: str) -> bool:

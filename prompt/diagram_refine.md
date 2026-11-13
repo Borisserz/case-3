@@ -20,15 +20,17 @@ Return ONLY valid JSON inside a ```json ``` code fence — no LaTeX, no markdown
 3. **Role classes & colors (mandatory)**:
    - Every node must have a `:::role` and classDef.
    - Roles: `start`, `process`, `decision`, `ok`, `warn`, `data`.
-   - Keep existing `classDef` lines. If adding new node types, assign appropriate role:
+   - Keep existing `classDef` lines when they already match the Liber diagram colors table below. If adding new node types, assign appropriate role:
      - `start` (entry/trigger)
      - `process` (regular step)
      - `decision` (condition/fork `{ромб}`)
      - `ok` (approval/success)
      - `warn` (rejection/risk)
      - `data` (document/system/data)
-   - Hex colors: start `#dce8df`/`#6b8f76`, process `#eef3ef`/`#5a7a64`, decision `#f3e6c8`/`#b8893a`, ok `#cfe6d4`/`#3d7a4a`, warn `#f0ddd8`/`#a85a4a`, data `#d9e6f0`/`#4a6f8c`, text `color:#1a2e22`.
+   - Hex: **only** from the Liber diagram colors table below. Text `color:#1a2e22`.
    - Never use purple / violet / neon colors. Soft editorial only.
 4. **Factual grounding**: If new facts, roles, or conditions are added, align them with the provided Source / Intent context.
 5. **No markdown fences inside the mermaid string**: `mermaid` must be a plain newline-separated string.
 6. **Valid Mermaid syntax**: First line must start with `flowchart TD` or `flowchart LR` (matching the existing diagram type). Edges must be valid (`-->`, `-->|label|`).
+
+{{DIAGRAM_COLOR_TABLE}}

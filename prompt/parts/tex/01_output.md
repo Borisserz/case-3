@@ -27,7 +27,7 @@ JSON schema (key order mandatory):
       "id": "dia_01",
       "title": "Процесс согласования",
       "type": "flowchart",
-      "mermaid": "flowchart TD\n  A[Заявка]:::start --> B{ОК?}:::decision\n  B -->|да| C[Готово]:::ok\n  B -->|нет| A\n  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22\n  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22\n  classDef ok fill:#cfe6d4,stroke:#3d7a4a,color:#1a2e22"
+      "mermaid": "flowchart TD\n  A[Заявка]:::start --> B{ОК?}:::decision\n  B -->|да| C[Готово]:::ok\n  B -->|нет| A\n  classDef start fill:…,stroke:…,color:#1a2e22\n  classDef decision fill:…,stroke:…,color:#1a2e22\n  classDef ok fill:…,stroke:…,color:#1a2e22"
     }
   ],
   "figures": [

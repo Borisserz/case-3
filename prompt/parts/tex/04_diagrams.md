@@ -40,15 +40,15 @@ flowchart TD
   A[Заявка · 340]:::start --> B{Проверка}:::decision
   B -->|да · 88%| C[Отгрузка · 1 090]:::ok
   B -->|нет · 12%| D[Отказ]:::warn
-  classDef start fill:#dce8df,stroke:#6b8f76,color:#1a2e22
-  classDef process fill:#eef3ef,stroke:#5a7a64,color:#1a2e22
-  classDef decision fill:#f3e6c8,stroke:#b8893a,color:#1a2e22
-  classDef ok fill:#cfe6d4,stroke:#3d7a4a,color:#1a2e22
-  classDef warn fill:#f0ddd8,stroke:#a85a4a,color:#1a2e22
-  classDef data fill:#d9e6f0,stroke:#4a6f8c,color:#1a2e22
+  classDef start fill:…,stroke:…,color:#1a2e22
+  classDef process fill:…,stroke:…,color:#1a2e22
+  classDef decision fill:…,stroke:…,color:#1a2e22
+  classDef ok fill:…,stroke:…,color:#1a2e22
+  classDef warn fill:…,stroke:…,color:#1a2e22
+  classDef data fill:…,stroke:…,color:#1a2e22
 ```
 
-(Example numbers must come from Source — never invent.)
+(Example numbers must come from Source — never invent. Fill/stroke hex come from the Liber diagram colors table in the user message — do not invent a second palette.)
 
 ```text
 sequenceDiagram
@@ -62,23 +62,23 @@ sequenceDiagram
 
 The **model** assigns roles and colors via Mermaid `:::class` + `classDef` (or `style NodeId …`). Liber does not invent colors on the client.
 
-| Role class | Use when | Liber hex (prefer these) |
-|------------|----------|---------------------------|
-| `start` | entry / trigger | fill `#dce8df` stroke `#6b8f76` |
-| `process` | action / step | fill `#eef3ef` stroke `#5a7a64` |
-| `decision` | `{ромб}` branch | fill `#f3e6c8` stroke `#b8893a` |
-| `ok` | success / approve / done | fill `#cfe6d4` stroke `#3d7a4a` |
-| `warn` | reject / return / risk | fill `#f0ddd8` stroke `#a85a4a` |
-| `data` | document / system / data | fill `#d9e6f0` stroke `#4a6f8c` |
+| Role class | Use when |
+|------------|----------|
+| `start` | entry / trigger |
+| `process` | action / step |
+| `decision` | `{ромб}` branch |
+| `ok` | success / approve / done |
+| `warn` | reject / return / risk |
+| `data` | document / system / data |
 
 Rules for colors:
 
 - Every flowchart node gets a `:::role` (or `style`) — do **not** leave all nodes the same default fill.
 - Styles go on **`classDef name fill:…`** — never `class name fill:…` (that is invalid). Assign nodes with `class A,B process` or `:::process`.
 - `color:#1a2e22` text on every classDef.
+- **Hex values:** only from the **Liber diagram colors** table in the user message (live palette). Do not hardcode a second palette.
 - **No purple / violet / neon** fills (no `#7c3aed`, `#a855f7`, glow). Soft editorial only.
 - sequence / mindmap / timeline: color when Mermaid allows; flowchart is the showcase for roles.
-- Prefer the hex table above; custom hex OK if same soft mood (sage / sand / coral / slate).
 
 ### Rules
 

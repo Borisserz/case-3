@@ -31,8 +31,7 @@ Return **only** one JSON fence — no LaTeX, no commentary.
 11. Keep draft `id`s when possible. At most the budget given in the user message. Prefer **1 strong** diagram.
 12. `mermaid`: plain text, **no** ``` fences inside the string.
 13. Title ≤80 chars, specific (not «Универсальная схема процесса»).
-14. **Colors (model owns them):** every flowchart node gets `:::role` + `classDef` (or `style`). Roles: `start` | `process` | `decision` | `ok` | `warn` | `data`. Prefer Liber hex:
-    - start `#dce8df`/`#6b8f76` · process `#eef3ef`/`#5a7a64` · decision `#f3e6c8`/`#b8893a`
-    - ok `#cfe6d4`/`#3d7a4a` · warn `#f0ddd8`/`#a85a4a` · data `#d9e6f0`/`#4a6f8c`
-    - text `color:#1a2e22`. **No purple/neon.** If draft is monochrome sage, **add** role colors by meaning.
+14. **Colors (model owns them):** every flowchart node gets `:::role` + `classDef` (or `style`). Roles: `start` | `process` | `decision` | `ok` | `warn` | `data`. Use **only** the Liber diagram colors table below. Text `color:#1a2e22`. **No purple/neon.** If draft is monochrome, **add** role colors by meaning.
 15. No `click` / external links in Mermaid.
+
+{{DIAGRAM_COLOR_TABLE}}
