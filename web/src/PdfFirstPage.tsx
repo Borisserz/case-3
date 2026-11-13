@@ -92,15 +92,45 @@ export function PdfFirstPage({
         const pdfPage = await doc.getPage(n);
         if (gen !== renderGen.current) return;
         const base = pdfPage.getViewport({ scale: 1 });
-        const parentW = canvas.parentElement?.clientWidth || 0;
-        const maxW = Math.min(840, Math.max(480, parentW || 680));
-        const scale = maxW / base.width;
-        const viewport = pdfPage.getViewport({ scale: Math.max(0.75, scale) });
-        const ctx = canvas.getContext("2d");
+        const stage = canvas.parentElement;
+        // Leave room for prev/next nav buttons inside .report-pdf-stage
+        const navSlack = stage?.querySelectorAll(".report-pdf-nav").length
+          ? 56
+          : 0;
+        const parentW = Math.max(
+          320,
+          (stage?.clientWidth || canvas.parentElement?.clientWidth || 680) -
+            navSlack,
+        );
+        // Fit container width; no artificial 840px soft-cap (blurred upscale).
+        const cssScale = Math.max(0.85, parentW / base.width);
+        const dpr = Math.min(
+          typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1,
+          3,
+        );
+        // Render denser than CSS pixels so Retina stays sharp.
+        let renderScale = cssScale * dpr;
+        const maxPx = 4096;
+        if (base.width * renderScale > maxPx) {
+          renderScale = maxPx / base.width;
+        }
+        const viewport = pdfPage.getViewport({ scale: renderScale });
+        const cssW = Math.floor(base.width * cssScale);
+        const cssH = Math.floor(base.height * cssScale);
+        const ctx = canvas.getContext("2d", { alpha: false });
         if (!ctx) throw new Error("no canvas");
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
-        const task = pdfPage.render({ canvasContext: ctx, viewport });
+        canvas.style.width = `${cssW}px`;
+        canvas.style.height = `${cssH}px`;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        const task = pdfPage.render({
+          canvasContext: ctx,
+          viewport,
+          // intent improves glyph hinting in recent pdf.js
+          intent: "display",
+        } as Parameters<typeof pdfPage.render>[0]);
         renderTaskRef.current = task;
         await task.promise;
         if (gen !== renderGen.current) return;
@@ -237,6 +267,29 @@ export function PdfFirstPage({
       cancelRender();
     };
   }, [page, pageCount, renderPage, cancelRender]);
+
+  // Re-render sharp when the rail / Source pane is resized (HiDPI fit).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const stage = canvas?.parentElement;
+    if (!stage || pageCount < 1) return;
+    let timer: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const doc = docRef.current;
+        if (!doc) return;
+        void renderPage(doc, page).catch(() => {
+          /* keep last frame */
+        });
+      }, 120);
+    });
+    ro.observe(stage);
+    return () => {
+      ro.disconnect();
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [page, pageCount, renderPage]);
 
   const go = useCallback(
     (delta: number) => {

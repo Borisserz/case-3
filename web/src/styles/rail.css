@@ -968,6 +968,19 @@
   border: 1px solid var(--rule);
   overflow: auto;
   background: color-mix(in srgb, var(--paper) 55%, var(--sheet));
+  padding: 0.35rem;
+}
+
+.artifact-source-pdf .report-pdf-page {
+  margin: 0;
+  padding: 0.35rem;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.artifact-source-pdf .report-pdf-stage {
+  justify-content: center;
 }
 
 .artifact-source-doc-card {
