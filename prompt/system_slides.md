@@ -54,6 +54,8 @@ The color pack changes chrome. It does not assign a story. Use the menu in the o
 {{STRUCTURE_OVERLAY}}
 # JSON schema
 
+Sketch only — **Layout guide** below is the authority for every layout’s fields. Emit 6–24 slides; include only layouts Source supports.
+
 ```json
 {
   "version": 1,
@@ -64,70 +66,20 @@ The color pack changes chrome. It does not assign a story. Use the menu in the o
     {"id": "s01", "layout": "title", "title": "…", "subtitle": "…", "kicker": "…", "takeaway": "…"},
     {
       "id": "s02",
-      "layout": "section",
-      "chapter": 1,
-      "title": "…",
-      "subtitle": "…"
+      "layout": "scorecard",
+      "kicker": "Цифры",
+      "title": "…insight from Source…",
+      "takeaway": "…",
+      "kpis": [{"label": "…", "value": "…", "delta": "+12%", "status": "up", "hint": "…"}]
     },
     {
       "id": "s03",
-      "layout": "scorecard",
-      "kicker": "Цифры",
-      "title": "Ключевые показатели",
-      "takeaway": "…",
-      "kpis": [
-        {"label": "…", "value": "…", "delta": "+12%", "status": "up", "hint": "…"}
-      ]
-    },
-    {
-      "id": "s04",
       "layout": "chart_hero",
-      "kicker": "График",
       "title": "…",
       "caption": "…",
       "chart_id": "cht_01"
     },
-    {
-      "id": "s05",
-      "layout": "callout",
-      "kicker": "Смысл",
-      "title": "Определение",
-      "term": "…",
-      "definition": "…",
-      "body": "…"
-    },
-    {
-      "id": "s06",
-      "layout": "table_hero",
-      "kicker": "Таблица",
-      "title": "…",
-      "caption": "…",
-      "rows": [["Col A", "Col B"], ["…", "…"]]
-    },
-    {
-      "id": "s07",
-      "layout": "media_hero",
-      "kicker": "ФОТО / ОБЪЕКТ",
-      "title": "Интерфейс системы",
-      "caption": "Панель управления и мониторинга процессов",
-      "media_id": "usr_01"
-    },
-    {
-      "id": "s08",
-      "layout": "media_split",
-      "kicker": "СХЕМА",
-      "title": "Архитектура процесса",
-      "media_id": "dia_01",
-      "caption": "Взаимодействие ключевых узлов",
-      "body": "Центральный узел маршрутизирует потоки данных между сервисами.",
-      "bullets": ["Отказоустойчивая обработка запросов", "Минимальная задержка передачи"]
-    },
-    {
-      "id": "s09",
-      "layout": "closing",
-      "title": "Итог",
-      "bullets": ["…", "…"]
-    }
+    {"id": "s04", "layout": "closing", "title": "Итог", "bullets": ["…", "…"], "takeaway": "…"}
   ]
 }
 ```
