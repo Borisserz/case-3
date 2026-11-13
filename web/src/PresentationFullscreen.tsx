@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { DeckCanvas } from "./DeckCanvas";
 import type { DeckIR } from "./deckTypes";
+import { fullscreenCount } from "./domain/slideStrip";
 import { DiagramFullscreen, type DiagramInfo } from "./DiagramFullscreen";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -38,11 +39,13 @@ export function PresentationFullscreen({
   diagramPalette,
 }: Props) {
   const reduce = useReducedMotion();
-  const hasPngs = slides.length > 0;
-  const live = Boolean(deck?.slides?.length) && !hasPngs;
-  const n = hasPngs ? slides.length : live ? deck!.slides.length : 0;
+  const mode = fullscreenCount({
+    liveSlides: deck?.slides?.length || 0,
+    pngs: slides.length,
+  });
+  const n = mode.n;
   const safe = n ? Math.min(Math.max(index, 0), n - 1) : 0;
-  const src = hasPngs && n ? slides[safe] : null;
+  const src = !mode.useDeck && n ? slides[safe] : null;
   const [dir, setDir] = useState(0);
   const [chromeOn, setChromeOn] = useState(true);
   const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
@@ -162,7 +165,7 @@ export function PresentationFullscreen({
         >
           <AnimatePresence mode="wait" custom={dir}>
             <motion.div
-              key={live ? deck!.slides[safe]?.id : src || safe}
+              key={mode.useDeck ? deck!.slides[safe]?.id : src || safe}
               className="presentation-fullscreen-frame"
               custom={dir}
               variants={variants}
@@ -171,7 +174,7 @@ export function PresentationFullscreen({
               exit="exit"
               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             >
-              {live && deck && runId ? (
+              {mode.useDeck && deck && runId ? (
                 <DeckCanvas
                   runId={runId}
                   deck={deck}

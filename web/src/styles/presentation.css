@@ -613,6 +613,10 @@
 }
 .presentation-thumb.is-dragging {
   opacity: 0.5;
+  cursor: grabbing;
+}
+.presentation-thumb[draggable="true"] {
+  cursor: grab;
 }
 .presentation-nav.is-danger {
   color: #9f1239;

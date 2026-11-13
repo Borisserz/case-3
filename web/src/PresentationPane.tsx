@@ -8,8 +8,13 @@ import {
   type PaletteInfo,
 } from "./ChartEditSheet";
 import { DeckCanvas, mediaUrl, type DeckMediaKind } from "./DeckCanvas";
-import { DeckGallery } from "./DeckGallery";
+import { DeckGallery, type DeckGalleryItem } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
+import {
+  addedSlideIndex,
+  bindSlidePngs,
+  retargetSlidePngs,
+} from "./domain/slideStrip";
 import { recallDeckPlace, rememberDeckPlace, type DeckPlace } from "./domain/deckPlace";
 import { slideIndexForUndoTarget } from "./domain/deckUndo";
 import {
@@ -183,11 +188,24 @@ export function PresentationPane({
   const [pickerAfterId, setPickerAfterId] = useState<string | null>(null);
   const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
   const [copiedPng, setCopiedPng] = useState(false);
+  const pngKey = `${runId}\n${slidePngs.join("\n")}`;
+  const [pngSession, setPngSession] = useState<{
+    key: string;
+    map: Record<string, string | null>;
+  } | null>(null);
   const dirtyRef = useRef(false);
   const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
-  const currentPng = slidePngs.length ? slidePngs[safeIdx] : null;
   const live = Boolean(deck?.slides?.length);
+  const pngById =
+    pngSession && pngSession.key === pngKey
+      ? pngSession.map
+      : bindSlidePngs(deck?.slides || [], slidePngs);
+  const currentSlideId = deck?.slides?.[safeIdx]?.id;
+  const currentPng =
+    live && currentSlideId
+      ? (pngById[currentSlideId] ?? null)
+      : slidePngs[safeIdx] || null;
   const slideTitle =
     deck?.slides?.[safeIdx]?.title ||
     (n ? `Слайд ${safeIdx + 1}` : "Презентация");
@@ -597,7 +615,7 @@ export function PresentationPane({
       }
       if (e.metaKey || e.ctrlKey || e.altKey) {
         // no plain-letter shortcuts with modifiers
-      } else if ((e.key === "g" || e.key === "G") && slidePngs.length > 0) {
+      } else if ((e.key === "g" || e.key === "G") && n > 0) {
         setView("grid");
         if (editing) void stopEditing();
         return;
@@ -617,7 +635,7 @@ export function PresentationPane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [full, go, editing, leaveEdit, stopEditing, historyUndo, historyRedo, setEditing, slidePngs.length]);
+  }, [full, go, editing, leaveEdit, stopEditing, historyUndo, historyRedo, setEditing, n]);
 
   const patchSlides = useCallback(
     async (slides: (Partial<DeckSlide> & { id: string })[]) => {
@@ -946,6 +964,7 @@ export function PresentationPane({
         setSaveError("Нет данных презентации — соберите презентацию");
         return;
       }
+      const before = deck.slides;
       setSaveError(null);
       try {
         const r = await fetch(
@@ -965,30 +984,25 @@ export function PresentationPane({
           );
         }
         const next = body.deck as DeckIR | undefined;
-        if (next) {
+        if (next?.slides) {
           setDeck(next);
+          setPngSession({
+            key: pngKey,
+            map: retargetSlidePngs(pngById, before, next.slides, payload.op),
+          });
           onDeckUpdated?.(next, slidePngs);
-        }
-        if (next?.slides && payload.op === "delete") {
-          setIdx((i) => Math.min(i, Math.max(0, next.slides.length - 1)));
-          setView("slide");
-        }
-        if (next?.slides && payload.op === "duplicate" && payload.id) {
-          const at = next.slides.findIndex((s) => s.id === payload.id);
-          if (at >= 0) {
-            setIdx(Math.min(at + 1, next.slides.length - 1));
+          if (payload.op === "delete") {
+            setIdx((i) => Math.min(i, Math.max(0, next.slides.length - 1)));
             setView("slide");
           }
-        }
-        if (next?.slides && payload.op === "insert") {
-          let target = next.slides.length - 1;
-          if (payload.id) {
-            const at = next.slides.findIndex((s) => s.id === payload.id);
-            if (at >= 0) target = Math.min(at + 1, next.slides.length - 1);
+          if (payload.op === "duplicate" || payload.op === "insert") {
+            const at = addedSlideIndex(before, next.slides);
+            if (at >= 0) {
+              setIdx(at);
+              setView("slide");
+              if (payload.op === "insert") setEditing(true);
+            }
           }
-          setIdx(target);
-          setView("slide");
-          setEditing(true);
         }
         if (body.undo) {
           onEditHistory?.(
@@ -1000,24 +1014,43 @@ export function PresentationPane({
         dirtyRef.current = true;
         markDirty();
       } catch (err) {
+        setPngSession(null);
         setSaveError(err instanceof Error ? err.message : String(err));
+        await refreshSlidesNow();
       }
     },
-    [deck, markDirty, onDeckUpdated, onEditHistory, runId, setEditing, slidePngs],
+    [
+      deck,
+      markDirty,
+      onDeckUpdated,
+      onEditHistory,
+      pngById,
+      pngKey,
+      refreshSlidesNow,
+      runId,
+      setEditing,
+      slidePngs,
+    ],
   );
 
   const onReorderIndices = useCallback(
     (from: number, to: number) => {
       if (!deck?.slides?.length || from === to || saving) return;
-      const ids = deck.slides.map((s) => s.id);
-      if (from < 0 || to < 0 || from >= ids.length || to >= ids.length) return;
-      const next = [...ids];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
+      const slides = [...deck.slides];
+      if (from < 0 || to < 0 || from >= slides.length || to >= slides.length) {
+        return;
+      }
+      const [moved] = slides.splice(from, 1);
+      slides.splice(to, 0, moved);
+      setPngSession({
+        key: pngKey,
+        map: retargetSlidePngs(pngById, deck.slides, slides, "reorder"),
+      });
+      setDeck({ ...deck, slides });
       setIdx(to);
-      void structureOp({ op: "reorder", order: next });
+      void structureOp({ op: "reorder", order: slides.map((s) => s.id) });
     },
-    [deck, saving, structureOp],
+    [deck, pngById, pngKey, saving, structureOp],
   );
 
   const fileBehind = docsDirty || downloadsBlocked;
@@ -1196,6 +1229,19 @@ export function PresentationPane({
         }),
       };
 
+  const galleryItems: DeckGalleryItem[] =
+    live && deck?.slides?.length
+      ? deck.slides.map((s) => ({
+          id: s.id,
+          url: pngById[s.id] ?? null,
+          title: s.title || "",
+        }))
+      : slidePngs.map((url, i) => ({
+          id: `png-${i}`,
+          url,
+          title: deck?.slides?.[i]?.title || "",
+        }));
+
   return (
     <div
       className={`presentation-pane is-ready${editing ? " is-editing" : ""}${
@@ -1340,11 +1386,10 @@ export function PresentationPane({
         </div>
       </header>
 
-      {view === "grid" && slidePngs.length > 0 ? (
+      {view === "grid" && galleryItems.length > 0 ? (
         <DeckGallery
-          slidePngs={slidePngs}
+          items={galleryItems}
           activeIndex={safeIdx}
-          titles={(deck?.slides || []).map((s) => s.title || "")}
           canStructure={Boolean(live) && !saving}
           onSelect={(i) => {
             // Gallery → Slide only (never Edit). Edit is the Edit segment.
@@ -1500,7 +1545,76 @@ export function PresentationPane({
             />
           </div>
 
-          {slidePngs.length > 0 ? (
+          {live && deck?.slides?.length ? (
+            <div
+              className="presentation-filmstrip"
+              role="tablist"
+              aria-label="Слайды"
+            >
+              {deck.slides.map((s, i) => {
+                const t = (s.title || "").trim();
+                const url = pngById[s.id];
+                const label = t || `Слайд ${i + 1}`;
+                return (
+                  <div
+                    key={s.id}
+                    role="tab"
+                    tabIndex={0}
+                    draggable={!saving}
+                    aria-selected={i === safeIdx}
+                    className={`presentation-thumb${i === safeIdx ? " is-active" : ""}${!url ? " is-ghost" : ""}${dragFrom === i ? " is-dragging" : ""}`}
+                    title={`${label} · перетащите для порядка`}
+                    onDragStart={(e) => {
+                      if (saving) return;
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", String(i));
+                      setDragFrom(i);
+                    }}
+                    onDragEnd={() => setDragFrom(null)}
+                    onDragOver={(e) => {
+                      if (!saving) e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const raw = e.dataTransfer.getData("text/plain");
+                      const from =
+                        raw !== "" && Number.isFinite(Number(raw))
+                          ? Number(raw)
+                          : dragFrom;
+                      if (from != null) onReorderIndices(from, i);
+                      setDragFrom(null);
+                    }}
+                    onClick={() => {
+                      setDir(i > safeIdx ? 1 : -1);
+                      setIdx(i);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setDir(i > safeIdx ? 1 : -1);
+                        setIdx(i);
+                      }
+                    }}
+                  >
+                    {url ? (
+                      <img
+                        src={
+                          mediaVersion
+                            ? `${url}${url.includes("?") ? "&" : "?"}mv=${mediaVersion}`
+                            : url
+                        }
+                        alt=""
+                        draggable={false}
+                      />
+                    ) : (
+                      <span className="presentation-thumb-ghost">{label}</span>
+                    )}
+                    <span>{String(i + 1).padStart(2, "0")}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : slidePngs.length > 0 ? (
             <div
               className="presentation-filmstrip"
               role="tablist"
@@ -1510,68 +1624,22 @@ export function PresentationPane({
                 const t = (deck?.slides?.[i]?.title || "").trim();
                 return (
                   <button
-                    key={deck?.slides?.[i]?.id || url}
+                    key={url}
                     type="button"
                     role="tab"
-                    draggable={live && !saving}
                     aria-selected={i === safeIdx}
-                    className={`presentation-thumb${i === safeIdx ? " is-active" : ""}${dragFrom === i ? " is-dragging" : ""}`}
-                    title={
-                      live
-                        ? `${t || `Слайд ${i + 1}`} · перетащите для порядка`
-                        : t || `Слайд ${i + 1}`
-                    }
-                    onDragStart={() => setDragFrom(i)}
-                    onDragEnd={() => setDragFrom(null)}
-                    onDragOver={(e) => {
-                      if (live) e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragFrom != null) onReorderIndices(dragFrom, i);
-                      setDragFrom(null);
-                    }}
+                    className={`presentation-thumb${i === safeIdx ? " is-active" : ""}`}
+                    title={t || `Слайд ${i + 1}`}
                     onClick={() => {
                       setDir(i > safeIdx ? 1 : -1);
                       setIdx(i);
                     }}
                   >
-                    <img
-                      src={
-                        mediaVersion
-                          ? `${url}${url.includes("?") ? "&" : "?"}mv=${mediaVersion}`
-                          : url
-                      }
-                      alt=""
-                      draggable={false}
-                    />
+                    <img src={url} alt="" draggable={false} />
                     <span>{String(i + 1).padStart(2, "0")}</span>
                   </button>
                 );
               })}
-            </div>
-          ) : live && deck ? (
-            <div
-              className="presentation-filmstrip"
-              role="tablist"
-              aria-label="Слайды"
-            >
-              {deck.slides.map((s, i) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={i === safeIdx}
-                  className={`presentation-thumb is-ghost${i === safeIdx ? " is-active" : ""}`}
-                  onClick={() => {
-                    setDir(i > safeIdx ? 1 : -1);
-                    setIdx(i);
-                  }}
-                >
-                  <span className="presentation-thumb-ghost">{s.layout}</span>
-                  <span>{i + 1}</span>
-                </button>
-              ))}
             </div>
           ) : null}
         </>
