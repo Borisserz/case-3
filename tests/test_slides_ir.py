@@ -478,6 +478,61 @@ def test_scrub_demotes_broken_table_hero() -> None:
     assert deck["slides"][1]["layout"] == "section"
 
 
+def test_scrub_invented_table_cell_then_parse() -> None:
+    """Win desk: invented ``979,72`` → scrub ``—`` → clean ate dash → rows[i][j] required."""
+    raw = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Итоги"},
+            {
+                "id": "s02",
+                "layout": "table_hero",
+                "title": "Сводка",
+                "rows": [
+                    ["Метрика", "Факт", "План", "Факт2"],
+                    ["Выручка", "120", "35%", "979,72"],
+                ],
+            },
+            {"id": "s03", "layout": "closing", "title": "Далее", "bullets": ["План 120"]},
+        ],
+    }
+    with pytest.raises(DeckIrError, match="979,72"):
+        parse_deck_ir(raw, source=SOURCE)
+    healed = scrub_invented_numbers(raw, source=SOURCE)
+    assert healed["slides"][1]["layout"] == "table_hero"
+    assert healed["slides"][1]["rows"][1][3] == "—"
+    deck = parse_deck_ir(healed, source=SOURCE)
+    assert deck["slides"][1]["rows"][1][3] == "—"
+
+
+def test_empty_table_cell_soft_fills() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "table_hero",
+                    "title": "Сводка",
+                    "rows": [
+                        ["Метрика", "A", "B", "C"],
+                        ["Выручка", "120", "35%", ""],
+                        ["Доля", "35%", None, "120"],
+                    ],
+                },
+                {"id": "s03", "layout": "closing", "title": "Далее", "bullets": ["План"]},
+            ],
+        },
+        source=SOURCE,
+    )
+    rows = ir["slides"][1]["rows"]
+    assert rows[1][3] == "—"
+    assert rows[2][2] == "—"
+
+
 def test_number_not_allowed_as_substring_of_larger() -> None:
     with pytest.raises(DeckIrError, match="number"):
         parse_deck_ir(

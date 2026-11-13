@@ -681,8 +681,11 @@ def _parse_table_rows(raw: Any) -> list[list[str]]:
         if not isinstance(row, list) or not row:
             raise DeckIrError(f"rows[{i}] must be non-empty list")
         trimmed = row[:_MAX_TABLE_COLS]
+        # Empty / scrubbed cells soft-fill. scrub_invented_numbers writes "—",
+        # but clean_source_placeholders strips a lone dash — do not fail the deck.
         cells = [
-            _clip_str(c, field=f"rows[{i}][{j}]", max_len=_MAX_CELL, required=True)
+            _clip_str(c, field=f"rows[{i}][{j}]", max_len=_MAX_CELL, required=False)
+            or "—"
             for j, c in enumerate(trimmed)
         ]
         if i == 0:
