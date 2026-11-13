@@ -155,7 +155,11 @@ def max_images_from_env() -> int:
 
 
 def load_system_prompt(
-    *, max_images: int, max_charts: int, max_diagrams: int = 0
+    *,
+    max_images: int,
+    max_charts: int,
+    max_diagrams: int = 0,
+    has_user_photos: bool = False,
 ) -> str:
     from case3.prompts import load as load_prompt
 
@@ -165,6 +169,7 @@ def load_system_prompt(
         MAX_CHARTS=max_charts,
         MAX_DIAGRAMS=max_diagrams,
         PALETTE_TABLE=palette_fallback_table(),
+        has_user_photos=has_user_photos,
     )
 
 
@@ -867,7 +872,10 @@ def generate_document(
 
     gold_paths = select_gold(gold_dir, intent_text, max_items=3, max_images=max_images)
     system = load_system_prompt(
-        max_images=max_images, max_charts=max_charts, max_diagrams=max_diagrams
+        max_images=max_images,
+        max_charts=max_charts,
+        max_diagrams=max_diagrams,
+        has_user_photos=bool(user_figures),
     ) + format_gold_appendix(gold_paths)
     user = build_user_prompt(
         intent=intent_text,

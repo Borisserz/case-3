@@ -16,12 +16,16 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 
 ## `system_tex` parts (edit these)
 
+Runtime compose (`prompts.system_tex_part_rels`): omit `03b` unless `MAX_IMAGES≥1`; omit `03c` unless user photos; omit `04` unless `MAX_DIAGRAMS≥1`.
+
 | part | topic |
 |------|--------|
 | `parts/tex/00_role.md` | Role + budgets |
 | `parts/tex/01_output.md` | JSON + LaTeX fences |
 | `parts/tex/02_charts.md` | Chart.js types / HTML rails |
-| `parts/tex/03_when_media.md` | When charts + Image API figures |
+| `parts/tex/03_when_media.md` | When charts (always) |
+| `parts/tex/03b_figures.md` | Image API `fig_*` (opt-in budget) |
+| `parts/tex/03c_user_photos.md` | Uploaded `usr_*` Vision placement |
 | `parts/tex/04_diagrams.md` | Mermaid diagrams |
 | `parts/tex/05_hard_rules.md` | TeX hard rules / citations / landscape |
 
