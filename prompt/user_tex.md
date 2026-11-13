@@ -9,7 +9,7 @@
 - Finish BOTH fences — never stop mid-table. Prefer short prose. **Fill chart budget first** (up to max_charts) when Source has numbers — do not soft-cap at 2; drop/extra photos before dropping charts.
 - If max_charts≥1 and Source has numbers → emit charts with variety of types (aim near max_charts, not 1–2).
 - If max_diagrams≥1 → DEFAULT-ON: emit Mermaid when Source has steps/roles/branches/structure/≥3 sections (JSON diagrams[] + `%CASE3_DIAG:dia_NN%` slot in TeX); aim near max_diagrams. Skip only if Intent says «без схем» or Source is pure numbers with no structure.
-- If max_images≥1 → emit figures when Source has place/object/scene/process/product, but **after** charts/diagrams in the JSON. Skip if Intent says «без фото» or Source is pure numbers with no visual scene.
+- If max_images≥1 → opt-in already detected: emit up to max_images strong photos (explicit ask in Intent/Source), **after** charts/diagrams in the JSON. If max_images=0 → no generated fig_*; still place usr_* uploads when attached.
 - Mermaid: ASCII node ids; RU labels in []; first line matches type (flowchart/sequenceDiagram/…); flowchart nodes need :::role + classDef colors.
 - Chart colors: follow Intent palette hexes; captions RU; photo prompts EN (sharp, high quality); place FIG slots next to related prose.
 - User photos (usr_*): look at the attached image, describe its visible content in prose, place %CASE3_FIG:usr_*% in the matching section, and provide an informative Russian caption in figures[].

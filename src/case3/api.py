@@ -1086,16 +1086,41 @@ async def api_run(
                 user_figures = save_user_photos(upload_dir, blobs, captions=cap_list)
             except UserPhotoError as exc:
                 raise HTTPException(400, detail=str(exc)) from exc
-            # Attached photos force image budget on
-            max_images = max(max_images, len(user_figures))
+            # Uploads keep usr_* placement; do not alone unlock generated fig_*.
             no_images = False
+
+        src_path = upload_dir / "source.txt"
+        source_body = ""
+        if source is not None and source.filename:
+            name = Path(source.filename).name
+            if not name.lower().endswith((".txt", ".md")):
+                raise HTTPException(400, detail="source file must be .txt or .md")
+            data = await source.read()
+            if len(data) > _SOURCE_MAX_BYTES:
+                raise HTTPException(400, detail="source file too large (>2 MiB)")
+            src_path.write_bytes(data)
+            source_body = data.decode("utf-8", errors="replace")
+        elif source_text and source_text.strip():
+            source_body = source_text.strip()
+            src_path.write_text(source_body, encoding="utf-8")
+        else:
+            raise HTTPException(400, detail="provide source file or source_text")
+
+        from case3.image_opt_in import wants_generated_images
+
+        images_opt_in = (not no_images) and wants_generated_images(intent, source_body)
+        gen_max_images = int(max_images) if images_opt_in else 0
+        if user_figures:
+            max_images = max(gen_max_images, len(user_figures))
+        else:
+            max_images = gen_max_images
 
         types = [] if is_auto else _parse_chart_types(chart_types)
         full_intent = build_intent_from_ui(
             chat=intent,
             chart_types=types,
             max_charts=max_charts,
-            max_images=max_images,
+            max_images=gen_max_images,
             max_diagrams=max_diagrams,
             forbid_charts=no_charts,
             forbid_images=no_images,
@@ -1110,7 +1135,6 @@ async def api_run(
         full_intent = insert_prior_turn(full_intent, prior_block)
         if user_figures:
             ids = ", ".join(f["id"] for f in user_figures)
-            caps = "; ".join(f"{f['id']}: {f['caption']}" for f in user_figures)
             if out_mode == "presentation":
                 full_intent = (
                     full_intent
@@ -1123,6 +1147,12 @@ async def api_run(
                     + "- Используй каждое фото ровно ОДИН раз (не дублируй на нескольких слайдах)."
                 )
             else:
+                fig_extra = (
+                    "- Дополнительные fig_* через Image API — только если Intent/Source "
+                    "явно просили картинку и остался бюджет."
+                    if gen_max_images > 0
+                    else "- Не создавай дополнительные fig_* через Image API — только usr_* из вложений."
+                )
                 full_intent = (
                     full_intent
                     + "\n\nПрикреплённые фото пользователя (переданы как изображения, файлы PNG уже сохранены):\n"
@@ -1132,24 +1162,8 @@ async def api_run(
                     + f"- Вставь слот %CASE3_FIG:id% (ровно с id из {ids}) в LaTeX рядом с соответствующим абзацем текста (не в конце отчёта!).\n"
                     + "- ВАЖНО: используй каждый слот %CASE3_FIG:id% ровно ОДИН раз во всём отчёте (не дублируй фото).\n"
                     + "- В JSON figures[] укажи для каждого id конкретный осмысленный caption на русском языке с описанием того, что реально видно на фото.\n"
-                    + "- Дополнительные fig_* через Image API создавай только если остался свободный бюджет картинок."
+                    + fig_extra
                 )
-
-        src_path = upload_dir / "source.txt"
-
-        if source is not None and source.filename:
-            name = Path(source.filename).name
-            if not name.lower().endswith((".txt", ".md")):
-                raise HTTPException(400, detail="source file must be .txt or .md")
-            data = await source.read()
-            if len(data) > _SOURCE_MAX_BYTES:
-                raise HTTPException(400, detail="source file too large (>2 MiB)")
-            src_path.write_bytes(data)
-        elif source_text and source_text.strip():
-            src_path.write_text(source_text.strip(), encoding="utf-8")
-        else:
-            raise HTTPException(400, detail="provide source file or source_text")
-
         # Reserve run_id + write stage=llm BEFORE kick (Win: 2nd run sat on queued while
         # prior LLM thread still held the desk; Liber must not wait on thread scheduling).
         run_id, _, _, out_dir, logs_dir = prepare_run_dirs(src_path, project_root=run_store.ROOT)
@@ -1200,6 +1214,7 @@ async def api_run(
         "max_images": max_images,
         "max_charts": max_charts,
         "max_diagrams": max_diagrams,
+        "images_opt_in": images_opt_in,
         "user_figures": [f.get("id") for f in user_figures],
         "deck_pack": pack0,
         "slides_theme_pack": pack0,

@@ -117,14 +117,20 @@ def build_intent_from_ui(
             )
         if hints:
             req.append(f"- пожелания по виду/типу: {hints} (сведи к whitelist или пропусти)")
-    if forbid_images or max_images <= 0:
+    if forbid_images:
         req.append("- без фото/иллюстраций (figures: [])")
-    else:
+    elif max_images <= 0:
         req.append(
-            f"- до {max_images} фото/иллюстраций (figures); DEFAULT-ON: если в Source "
-            "есть место/объект/сцена/процесс/продукт — сделай ≥1 фото (лучше до "
-            f"{max_images}, если визуальных зацепок хватает); пустой figures[] только "
-            "при «без фото» в Intent или чисто числовом Source без сцены"
+            "- без сгенерированных fig_* (Image API); figures[] только usr_* "
+            "если прикреплены, иначе figures: []"
+        )
+    else:
+        # max_images > 0 only when API/pipeline already detected opt-in.
+        req.append(
+            f"- до {max_images} фото/иллюстраций (figures); DEFAULT-OFF, но сейчас "
+            f"явный запрос на картинку — сделай до {max_images} сильных фото "
+            "(лучше заполнить бюджет, если визуальных зацепок хватает); "
+            "не выдумывай fig_* без запроса"
         )
         req.append(
             "- figures[].caption — русская подпись; "

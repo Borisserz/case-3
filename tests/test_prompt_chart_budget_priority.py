@@ -11,6 +11,8 @@ def test_system_prompt_puts_charts_before_figures_in_schema() -> None:
     assert fence.index('"charts"') < fence.index('"diagrams"') < fence.index('"figures"')
     assert "≤2 charts" not in text
     assert "Aim for up to 5 charts" in text
+    assert "opt-in only" in text.lower()
+    assert "Image API `figures`" in text or "opt-in only" in text.lower()
 
 
 def test_user_prompt_does_not_cap_at_two_charts() -> None:

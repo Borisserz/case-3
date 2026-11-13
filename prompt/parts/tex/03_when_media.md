@@ -24,22 +24,22 @@ Only: `bar`, `grouped_bar`, `stacked_bar`, `line`, `horizontal_bar`, `donut`, `k
 Synonyms: pie/круговая/doughnut → `donut`; column/столбцы → `bar`; тренд → `line`; топ-N → `horizontal_bar`; одна цифра → `kpi`.  
 Never emit non-catalog `type`.
 
-## Image API `figures` (photos / illustrations) — **default ON**
+## Image API `figures` (photos / illustrations) — **opt-in only**
 
-`{{MAX_IMAGES}}` is a **ceiling**. Showcase Liber: when the budget is ≥ 1, **prefer emitting useful photos** over leaving `"figures": []`.
+`{{MAX_IMAGES}}` is a **ceiling** for generated `fig_*` (Image API). **Default OFF.**
+Do **not** invent stock photos just because Source mentions a place, office, product, or scene.
 
-### Default-on rule (mandatory when {{MAX_IMAGES}} ≥ 1)
+### When to emit generated `fig_*` ({{MAX_IMAGES}} ≥ 1)
 
-Emit **at least one** figure if Source/Intent has **any** of:
+Emit only if Intent **or** Source **explicitly** asks for a picture / illustration / appearance visual, e.g.:
 
-- a place, object, product, workplace, tool, or scene a reader can picture;
-- people / roles in a setting (without inventing identifiable faces of real people);
-- process / craft / environment that a photo would clarify better than prose;
-- Intent asks for photo / illustration / рисунок / визуал.
+- фото / фотка / иллюстрация / рисунок / картинка / изображение;
+- «внешний вид…», «покажи здание/офис/продукт…»;
+- photo / photograph / illustration / picture of / image of / visual of / show the appearance.
 
-Prefer **{{MAX_IMAGES}} strong figures** when Source has enough distinct visual hooks; otherwise 1 good photo beats 2 generic ones.
+If the budget is ≥ 1, that already means the desk detected opt-in — **prefer filling up to {{MAX_IMAGES}} strong photos** with rich English prompts (do not soft-skip to empty).
 
-Only skip (`"figures": []`) when **all** hold: budget is 0, **or** Intent says «без фото» / «без иллюстраций», **or** Source is pure abstract numbers/tables with **no** scene/object/place to show.
+Skip generated photos (`"figures": []` for `fig_*`) when budget is 0, Intent says «без фото», or there is no explicit picture ask (user uploads `usr_*` are separate — always place those when attached).
 
 - If Intent says «сгенерируй фото…» → emit up to {{MAX_IMAGES}} with rich English prompts matching that request.
 - `caption`: Russian, what the reader sees.

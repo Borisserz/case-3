@@ -27,7 +27,6 @@ from case3.user_photos import (
     ensure_user_slots_in_tex,
     materialize_user_figures,
     merge_user_figures,
-    split_image_budget,
 )
 log = logging.getLogger("case3.pipeline")
 
@@ -1086,9 +1085,22 @@ def run_pipeline(
     if mode not in {"report", "diagram", "presentation", "auto"}:
         mode = "auto"
     user_figs = list(user_figures or [])
+    # Opt-in for generated fig_*; uploads (usr_*) still merge when attached.
+    source_peek = ""
+    if text_path.is_file():
+        try:
+            source_peek = text_path.read_text(encoding="utf-8")
+        except OSError:
+            source_peek = ""
+    from case3.image_opt_in import apply_gen_image_budget, wants_generated_images
+
+    images_opt_in = wants_generated_images(intent, source_peek)
     # Presentation + uploads: do not leave budget for invented fig_*.
-    llm_image_budget, images_budget = split_image_budget(
-        images_budget, len(user_figs), mode=mode
+    llm_image_budget, images_budget = apply_gen_image_budget(
+        images_budget,
+        len(user_figs),
+        mode=mode,
+        opt_in=images_opt_in,
     )
 
     # Heartbeat BEFORE FileHandler / load_timings: on Win those can stall (AV lock)
@@ -1107,6 +1119,7 @@ def run_pipeline(
         "max_images": images_budget,
         "max_charts": charts_budget,
         "max_diagrams": diagrams_budget,
+        "images_opt_in": images_opt_in,
         "user_figures": [f.get("id") for f in user_figs],
         "started_at": stamp,
         "status": "running",
