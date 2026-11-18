@@ -6,6 +6,7 @@ import {
   reportTitle,
   uid,
 } from "../domain/runHelpers";
+import { clearOpenChat } from "../domain/openChat";
 import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
 import type { ActiveArtifact } from "../ArtifactRail";
 import type { EditError } from "./useLiberEdits";
@@ -61,6 +62,7 @@ export function useReportSession({
   }
 
   function startNewReport() {
+    clearOpenChat();
     setMsgs([]);
     setChatTitle(null);
     setChat("");

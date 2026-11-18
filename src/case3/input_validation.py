@@ -109,6 +109,11 @@ _TRIGGER_WORDS = {
 
 def _format_refusal_message(output_mode: str) -> str:
     mode = (output_mode or "report").strip().lower()
+    if mode == "chat":
+        return (
+            "Напишите, что разобрать: вопрос, текст или документ с фактами. "
+            "Пустое сообщение и случайный набор букв я не берусь разбирать."
+        )
     if mode == "presentation":
         target = "презентации"
     elif mode == "diagram":

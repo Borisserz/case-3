@@ -359,6 +359,7 @@ def _run_result_payload(
         "previews": _media_previews(run_id, out_dir, media),
         "preview": _build_preview_payload(run_id, out_dir, media),
         "chat_summary": chat_summary,
+        "chat_opening": str(meta.get("chat_opening") or ""),
         "summary_status": summary_status or None,
         "slides_status": "running" if patch_active else (meta.get("slides_status") or "idle"),
         "slides_stage": "patch" if patch_active else meta.get("slides_stage"),
@@ -367,6 +368,7 @@ def _run_result_payload(
         # Twin thumbs for Liber chat/rail — without these, pptx-ready runs look empty.
         "slide_pngs": slide_pngs,
         "output_mode": meta.get("output_mode") or "auto",
+        "prior_run_id": str(meta.get("prior_run_id") or ""),
         "user_text": user_text,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),
@@ -968,6 +970,7 @@ async def api_run(
     dry_run: str = Form("false"),
     photo_mode: str = Form("document"),
     output_mode: str = Form("auto"),
+    artifact_bias: str = Form(""),
     deck_pack: str = Form(""),
     deck_structure_id: str = Form(""),
     deck_style_json: str = Form(""),
@@ -987,9 +990,19 @@ async def api_run(
         raise HTTPException(400, detail="source text too large (>2 MiB)")
 
     out_mode = (output_mode or "auto").strip().lower()
-    if out_mode not in {"report", "diagram", "presentation", "auto"}:
+    bias = (artifact_bias or "").strip().lower()
+    if bias not in {"", "report", "diagram", "presentation"}:
         raise HTTPException(
-            400, detail="output_mode must be report|diagram|presentation|auto"
+            400, detail="artifact_bias must be report|diagram|presentation"
+        )
+    if out_mode == "auto":
+        from case3.input_validation import user_text_before_ui
+        from case3.turn_route import resolve_turn
+
+        out_mode = resolve_turn(user_text_before_ui(intent), bias or None)
+    if out_mode not in {"report", "diagram", "presentation", "chat"}:
+        raise HTTPException(
+            400, detail="output_mode must be report|diagram|presentation|chat|auto"
         )
 
     if max_charts is None:
@@ -1006,6 +1019,14 @@ async def api_run(
     max_images = max(0, min(int(max_images), 8))
     # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
     max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
+    # Chat: answer in the thread. No TeX, charts, or photos.
+    if out_mode == "chat":
+        max_charts = 0
+        max_images = 0
+        no_charts = True
+        no_images = True
+        max_diagrams = 0
+        formats = "none"
     # Composer «Схема»: Mermaid + short prose only — no charts/photos/PDF.
     if out_mode == "diagram":
         max_charts = 0
@@ -1018,6 +1039,7 @@ async def api_run(
     # Diagrams stay on the deck (dia_*), they are not a separate report.
     if out_mode == "presentation":
         formats = "none"
+        max_diagrams = 0
 
     # FastAPI may pass a single UploadFile when the client sends one file.
     if isinstance(photos, list):
@@ -1067,6 +1089,33 @@ async def api_run(
         prior_block = prior_block_for_form(prior_run_id, root=run_store.ROOT)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+
+    from case3.chat_revise import continue_or_limit
+    from case3.input_validation import user_text_before_ui as _user_line
+
+    revised = continue_or_limit(
+        _user_line(intent),
+        prior_run_id,
+        root=run_store.ROOT,
+        bias=bias or None,
+    )
+    if revised is not None:
+        return JSONResponse(revised)
+
+    from case3.chat_act import resolve_act
+
+    unclear = resolve_act(_user_line(intent), bias=bias or None)
+    if unclear.kind == "revise" and unclear.op == "ask":
+        return JSONResponse(
+            {
+                "mode": "chat_revise",
+                "status": "ok",
+                "run_id": (prior_run_id or "").strip(),
+                "chat": unclear.say,
+                "op": "ask",
+                "output_mode": "chat",
+            }
+        )
 
     turn, waiting_for = _reserve_run_turn()
     if turn == "busy":
@@ -1194,6 +1243,7 @@ async def api_run(
                 }
         except json.JSONDecodeError:
             style_settings0 = None
+    from case3.chat_memory import newest_edit
     from case3.slides_beat_planner import clamp_slide_target
 
     slides_target0 = clamp_slide_target(target_slides)
@@ -1207,6 +1257,10 @@ async def api_run(
         "run_id": run_id,
         "source": str(resolve_text_file(src_path)),
         "chat_prompt": (intent or "").strip(),
+        "prior_run_id": (prior_run_id or "").strip(),
+        "last_edit": newest_edit(run_store.ROOT, (prior_run_id or "").strip())
+        if (prior_run_id or "").strip()
+        else {},
         "intent": full_intent,
         "formats": sorted(fmt_set),
         "output_mode": out_mode,
@@ -1299,6 +1353,19 @@ async def api_run(
             "max_diagrams": max_diagrams,
         },
     )
+
+
+@app.get("/api/runs/{run_id}/memory")
+def get_run_memory(run_id: str) -> dict[str, Any]:
+    """Turns of this chat, oldest first, and the documents still attached."""
+    if not _RUN_ID_OK.match(run_id):
+        raise HTTPException(400, detail="invalid run_id")
+    from case3.chat_memory import memory_view
+
+    payload = memory_view(run_store.ROOT, run_id)
+    if not payload:
+        raise HTTPException(404, detail="run not found")
+    return payload
 
 
 @app.get("/api/runs/{run_id}/status")

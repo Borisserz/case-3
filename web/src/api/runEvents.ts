@@ -28,6 +28,8 @@ export type RunEventsHandlers = {
     hint?: string,
     recap?: CraftRecap | null,
   ) => void;
+  /** Agent line: opening before an artifact, or the chat answer. */
+  onChat?: (phase: string, text: string, mode: string) => void;
   /** SSE failed — caller should fall back to status poll. */
   onFallback?: () => void;
 };
@@ -157,6 +159,22 @@ export function openRunEvents(
     void ev;
   };
 
+  const onChat = (ev: Event) => {
+    gotEvent = true;
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        phase?: string;
+        text?: string;
+        mode?: string;
+      };
+      if (data.text) {
+        handlers.onChat?.(data.phase || "answer", data.text, data.mode || "");
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
   const onErrorEv = (ev: Event) => {
     // Server `event: error` is MessageEvent with JSON {status|error}.
     // Bare EventSource transport errors must NOT be treated as run failure.
@@ -189,6 +207,7 @@ export function openRunEvents(
   es.addEventListener("step", onStep);
   es.addEventListener("film", onFilm);
   es.addEventListener("artifact", onArtifact);
+  es.addEventListener("chat", onChat);
   es.addEventListener("done", onDone);
   es.addEventListener("cancelled", onCancelled);
   es.addEventListener("error", onErrorEv);
@@ -199,6 +218,7 @@ export function openRunEvents(
     es.removeEventListener("step", onStep);
     es.removeEventListener("film", onFilm);
     es.removeEventListener("artifact", onArtifact);
+    es.removeEventListener("chat", onChat);
     es.removeEventListener("done", onDone);
     es.removeEventListener("cancelled", onCancelled);
     es.removeEventListener("error", onErrorEv);

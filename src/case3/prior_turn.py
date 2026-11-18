@@ -86,4 +86,7 @@ def prior_block_for_form(raw: str | None, *, root: Path) -> str:
         return ""
     if not isinstance(meta, dict):
         return ""
-    return format_prior_turn(meta)
+    from case3.chat_memory import format_thread, load_chain
+
+    chain = load_chain(root, rid)
+    return format_thread(chain) or format_prior_turn(meta)

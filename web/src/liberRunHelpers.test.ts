@@ -119,6 +119,14 @@ describe("liberRunHelpers", () => {
       reportTitle({ run_id: "r2", output_mode: "diagram" } as never),
       "Схема · r2",
     );
+    assert.equal(
+      reportTitle({
+        run_id: "r3",
+        output_mode: "chat",
+        chat_summary: "Выручка выросла с 10 до 12.\n\n| a | b |",
+      } as never),
+      "Выручка выросла с 10 до 12.",
+    );
   });
 
   it("provisionalSessionTitle by mode", () => {

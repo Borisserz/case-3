@@ -1,0 +1,90 @@
+"""Decide chat vs artifact from the user's words and an optional plaque.
+
+The plaque is a default, not a gate. A named action in the message wins.
+"""
+
+from __future__ import annotations
+
+import re
+
+TurnKind = str  # chat | report | diagram | presentation
+
+_MAKE = re.compile(
+    r"\b("
+    r"сделай|сделать|собери|собрать|подготовь|подготовить|"
+    r"оформи|оформить|сверстай|нарисуй|построй|построить|"
+    r"сгенерируй|сгенерировать|напиши|написать|выгрузи|экспортируй"
+    r")\b",
+    re.IGNORECASE,
+)
+_ANALYZE = re.compile(
+    r"\b("
+    r"проанализируй|проанализировать|разбери|разобрать|разложи|разложить|"
+    r"сравни|сравнить|объясни|объяснить|посчитай|посчитать|"
+    r"расскажи|рассказать|поясни|пояснить|оцени|оценить|"
+    r"перескажи|почему|зачем|"
+    r"опиши|описать|выдели|выделить|"
+    r"суммируй|суммировать|перечисли|кратко"
+    r")\b",
+    re.IGNORECASE,
+)
+_PRESENTATION = re.compile(
+    r"презентац|презу|преза|слайд|pptx|\bdeck\b",
+    re.IGNORECASE,
+)
+_DIAGRAM = re.compile(
+    r"схем|диаграмм|блок-схем|flowchart|mermaid",
+    re.IGNORECASE,
+)
+_REPORT = re.compile(
+    r"отч[её]т|\bpdf\b|\bdocx\b",
+    re.IGNORECASE,
+)
+# «не делай отчёт», «без схемы» — noun is present, the request is not.
+_NEG_BEFORE = re.compile(
+    r"(?:^|\s)(?:не|без)(?:\s+(?:надо|нужно|нужен|нужна|делай|сделай|собери|хочу))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _norm(text: str) -> str:
+    return (text or "").replace("ё", "е").replace("Ё", "Е")
+
+
+def _live_kinds(raw: str) -> list[str]:
+    found: list[str] = []
+    for kind, pattern in (
+        ("presentation", _PRESENTATION),
+        ("diagram", _DIAGRAM),
+        ("report", _REPORT),
+    ):
+        for match in pattern.finditer(raw):
+            window = raw[max(0, match.start() - 32) : match.start()]
+            if _NEG_BEFORE.search(window):
+                continue
+            found.append(kind)
+            break
+    return found
+
+
+def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
+    """Return chat, report, diagram, or presentation."""
+    raw = _norm(text or "")
+    plaque = (bias or "").strip().lower()
+    if plaque not in {"report", "diagram", "presentation"}:
+        plaque = ""
+
+    kinds = _live_kinds(raw)
+
+    make = bool(_MAKE.search(raw))
+    analyze = bool(_ANALYZE.search(raw))
+
+    if kinds and (make or not analyze):
+        return kinds[0]
+    if analyze:
+        return "chat"
+    if plaque:
+        return plaque
+    if kinds:
+        return kinds[0]
+    return "chat"

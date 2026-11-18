@@ -24,7 +24,8 @@ describe("buildRunFormData", () => {
     assert.equal(fd.get("formats"), "both");
     assert.equal(fd.get("dry_run"), "true");
     assert.equal(fd.get("source_text"), "hello");
-    assert.equal(fd.get("output_mode"), "report");
+    assert.equal(fd.get("output_mode"), "auto");
+    assert.equal(fd.get("artifact_bias"), "report");
     assert.equal(fd.get("target_slides"), "12");
     assert.equal(fd.get("prior_run_id"), null);
   });
@@ -67,10 +68,12 @@ describe("buildRunFormData", () => {
       targetSlides: 40,
     });
     assert.equal(fd.get("target_slides"), "24");
-    assert.equal(fd.get("formats"), "none");
+    assert.equal(fd.get("formats"), "both");
+    assert.equal(fd.get("artifact_bias"), "presentation");
+    assert.equal(fd.get("output_mode"), "auto");
   });
 
-  it("zeros charts/images for diagram mode", () => {
+  it("sends the diagram plaque as a bias and leaves budgets to the server", () => {
     const fd = buildRunFormData({
       file: null,
       draftSnap: null,
@@ -86,10 +89,10 @@ describe("buildRunFormData", () => {
       workMode: "diagram",
       deckStyle: DEFAULT_DECK_STYLE,
     });
-    assert.equal(fd.get("max_charts"), "0");
-    assert.equal(fd.get("max_images"), "0");
-    assert.equal(fd.get("forbid_charts"), "true");
-    assert.equal(fd.get("formats"), "none");
+    assert.equal(fd.get("artifact_bias"), "diagram");
+    assert.equal(fd.get("output_mode"), "auto");
+    assert.equal(fd.get("max_charts"), "2");
+    assert.equal(fd.get("formats"), "both");
   });
 
   it("passes dynamic chart_palette when provided", () => {

@@ -10,6 +10,7 @@ import {
 import type { ActiveArtifact } from "../ArtifactRail";
 import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
+import { mergeSourcePack } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
 import {
   ingestOfficeSource,
@@ -67,7 +68,7 @@ export function useSourceIngest({
   const applySourceDraft = useCallback(
     (draft: SourceDraft) => {
       setFile(null);
-      setSourceDraft(draft);
+      setSourceDraft((current) => mergeSourcePack(current, draft));
       setPlaqueDismissed(false);
       setDeckApplyHint(null);
       setActiveArtifact(artifactFromDraft(draft));

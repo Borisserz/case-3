@@ -218,5 +218,20 @@ describe("reportHistory folders + pin", () => {
     assert.equal(netFail.ok, false);
     if (!netFail.ok) assert.match(netFail.error, /offline/);
   });
+
+  it("pushHistory keeps one row for a continued chat", () => {
+    pushHistory({ id: "a", runId: "a", title: "Отчёт", savedAt: 1 });
+    const next = pushHistory({
+      id: "b",
+      runId: "b",
+      title: "Ещё",
+      savedAt: 2,
+      priorRunId: "a",
+    });
+    assert.deepEqual(
+      next.map((item) => item.runId),
+      ["b"],
+    );
+  });
 });
 

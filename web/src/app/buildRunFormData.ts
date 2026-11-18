@@ -2,7 +2,6 @@
 
 import { deckStyleToApiPayload, type DeckStyle } from "../deckStyle";
 import type { LiberWorkMode } from "../domain/liberModes";
-import { modeToOutputMode } from "../domain/liberModes";
 import type { SourceDraft } from "../domain/liberTypes";
 
 /** Fixed run defaults — chart type/style/title come from model + ChartEditSheet. */
@@ -54,7 +53,6 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     targetSlides,
     priorRunId,
   } = args;
-  const outMode = modeToOutputMode(workMode);
 
   const fd = new FormData();
   // Photo-edit UI parked; Liber desk always posts document runs.
@@ -108,7 +106,8 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     "forbid_images",
     String(forbidImages && photosSnapshot.length === 0),
   );
-  fd.append("output_mode", outMode);
+  fd.append("output_mode", "auto");
+  fd.append("artifact_bias", workMode ?? "");
   fd.append("deck_pack", deckStyle.themePack || "atelier");
   const deckPayload = deckStyleToApiPayload(deckStyle);
   if (deckPayload.structure_id) {
@@ -117,23 +116,9 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   fd.append("deck_style_json", JSON.stringify(deckPayload.style_settings || {}));
   const slidesWish = Math.max(6, Math.min(24, Math.round(targetSlides || 12)));
   fd.append("target_slides", String(slidesWish));
-  fd.append(
-    "formats",
-    outMode === "diagram" || outMode === "presentation" ? "none" : "both",
-  );
+  fd.append("formats", "both");
   fd.append("dry_run", String(dryRun));
   const prior = (priorRunId || "").trim();
   if (prior) fd.append("prior_run_id", prior);
-  if (outMode === "diagram") {
-    fd.set("max_charts", "0");
-    fd.set("max_images", "0");
-    fd.set("forbid_charts", "true");
-    fd.set("forbid_images", "true");
-    fd.set("max_diagrams", String(Math.max(maxDiagrams, 1)));
-  }
-  if (outMode === "presentation") {
-    // Liber Mermaid UI schemas off — deck only (PPTX + PDF twin).
-    fd.set("max_diagrams", "0");
-  }
   return fd;
 }

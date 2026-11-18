@@ -81,6 +81,8 @@ export type RunResult = {
   warnings: string[];
   media_status?: Record<string, unknown>;
   chat_summary?: string;
+  /** Line spoken before an artifact job. Same as chat_summary for a chat turn. */
+  chat_opening?: string;
   summary_status?: string | null;
   slides_status?: string | null;
   slides_stage?: string | null;
@@ -88,6 +90,10 @@ export type RunResult = {
   slide_pngs?: string[];
   /** How deck PDF was built: `lo` (LibreOffice) or `png_stitch`. */
   deck_pdf_mode?: string | null;
+  /** Previous run in this same chat. */
+  prior_run_id?: string;
+  /** Conversation head when this payload is an older file shown in the rail. */
+  chain_head?: string;
   /** Live deck IR for editable twin canvas */
   deck?: import("../deckTypes").DeckIR | null;
   /** Liber composer mode that produced this run */
@@ -125,6 +131,8 @@ export type SourceDraft = {
   originalUrl?: string | null;
   ingestId?: string;
   format?: string;
+  /** Documents kept in this chat. The joined text is what /api/run receives. */
+  parts?: { name: string; text: string }[];
 };
 
 export type UserMsg = {
@@ -150,6 +158,8 @@ export type BotMsg = {
   id: string;
   role: "bot";
   text: string;
+  /** Full-width agent line: opening before an artifact, or the chat answer. */
+  lead?: string;
   result?: RunResult;
   pending?: boolean;
   pendingStage?: string;

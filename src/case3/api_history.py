@@ -131,7 +131,7 @@ def _sync_history_index(out_dir: Path) -> dict[str, Any]:
             except OSError:
                 continue
             prev = entries.get(run_dir.name)
-            if isinstance(prev, dict) and str(prev.get("meta_mtime_ns")) == str(mtime_ns):
+            if isinstance(prev, dict) and str(prev.get("meta_mtime_ns")) == str(mtime_ns) and "prior_run_id" in prev:
                 continue
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -143,6 +143,7 @@ def _sync_history_index(out_dir: Path) -> dict[str, Any]:
                 "title": _title_from_meta(meta, run_dir.name),
                 "savedAt": _parse_timestamp(meta.get("started_at"), fallback=mtime),
                 "status": meta.get("status", "ok"),
+                "prior_run_id": str(meta.get("prior_run_id") or ""),
                 "meta_mtime_ns": str(mtime_ns),
             }
             changed = True
@@ -153,6 +154,32 @@ def _sync_history_index(out_dir: Path) -> dict[str, Any]:
     if changed:
         _save_history_index(entries)
     return entries
+
+
+def collapse_chat_heads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One sidebar row per chat: the latest run in a prior_run_id chain."""
+    by_id = {str(item.get("runId") or ""): item for item in items}
+    continued = {
+        str(item.get("priorRunId") or "")
+        for item in items
+        if str(item.get("priorRunId") or "")
+    }
+    heads: list[dict[str, Any]] = []
+    for item in items:
+        run_id = str(item.get("runId") or "")
+        if run_id in continued:
+            continue
+        head = dict(item)
+        seen: set[str] = set()
+        cursor: dict[str, Any] | None = item
+        while cursor and str(cursor.get("runId") or "") not in seen:
+            seen.add(str(cursor.get("runId") or ""))
+            if cursor.get("pinned"):
+                head["pinned"] = True
+            parent = str(cursor.get("priorRunId") or "")
+            cursor = by_id.get(parent)
+        heads.append(head)
+    return heads
 
 
 def _cap_history_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -232,11 +259,12 @@ def get_history() -> dict[str, Any]:
                 "pinned": is_pinned,
                 "folderId": item_folders.get(run_id),
                 "status": ent.get("status", "ok"),
+                "priorRunId": str(ent.get("prior_run_id") or ""),
             }
         )
 
     return {
-        "items": _cap_history_items(items),
+        "items": _cap_history_items(collapse_chat_heads(items)),
         "folders": folders,
     }
 

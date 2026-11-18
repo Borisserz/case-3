@@ -7,7 +7,15 @@ import { ContextPlaque } from "./ContextPlaque";
 import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
 import { ModeStarterGrid } from "./ModeStarterGrid";
-import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
+import {
+  IconDiagram,
+  IconPalette,
+  IconPaperclip,
+  IconReport,
+  IconSend,
+  IconSlides,
+  IconStop,
+} from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
@@ -100,12 +108,14 @@ export function ChatComposer({
   const galleryRef = useRef<HTMLDivElement>(null);
   const placeholder =
     workMode === "diagram"
-      ? "Опишите процесс или прикрепите текст для схемы…"
+      ? "Опишите процесс — или просто спросите"
       : workMode === "presentation"
-        ? "Прикрепите материал или коротко опишите задачу…"
+        ? "Материал для презентации — или вопрос по тексту"
+        : workMode === "report"
+          ? "Материал для отчёта — или вопрос по тексту"
         : sourceDraft || file
-          ? "Спросить Liber…"
-          : "Опишите отчёт или прикрепите материал…";
+          ? "Спросите по этому тексту или попросите отчёт, схему, презентацию"
+          : "Напишите вопрос или попросите отчёт, схему, презентацию";
 
   useEffect(() => {
     if (!showPackPresets) return;
@@ -246,28 +256,7 @@ export function ChatComposer({
                 <IconPalette size={18} />
               </button>
             ) : null}
-            {!busy ? (
-              <div className="composer-modes" role="group" aria-label="Режим">
-                {LIBER_MODE_PILLS.map((p) => {
-                  const on = workMode === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`composer-mode-pill${on ? " is-on" : ""}`}
-                      disabled={busy}
-                      title={p.hint}
-                      aria-pressed={on}
-                      onClick={() => onWorkMode(on ? null : p.id)}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <span className="composer-inner-spacer" aria-hidden />
-            )}
+            <span className="composer-inner-spacer" aria-hidden />
             {busy && onStop ? (
               <button
                 className={`send is-stop${stopping ? " is-stopping" : ""}`}
@@ -285,19 +274,39 @@ export function ChatComposer({
                 type="button"
                 disabled={!canSend}
                 onClick={onSend}
-                aria-label={
-                  workMode === "diagram"
-                    ? "Собрать схему"
-                    : workMode === "presentation"
-                      ? "Собрать презентацию"
-                      : "Собрать отчёт"
-                }
-                title="Собрать"
+                aria-label={workMode ? "Собрать" : "Отправить"}
+                title={workMode ? "Собрать" : "Отправить"}
               >
                 <IconSend size={16} />
               </button>
             )}
           </div>
+        </div>
+
+        <div className="chat-bias" role="group" aria-label="Собрать сразу">
+          {LIBER_MODE_PILLS.map((p) => {
+            const on = workMode === p.id;
+            const Icon =
+              p.id === "diagram"
+                ? IconDiagram
+                : p.id === "presentation"
+                  ? IconSlides
+                  : IconReport;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={on ? "is-on" : ""}
+                disabled={busy}
+                title={p.hint}
+                aria-pressed={on}
+                onClick={() => onWorkMode(on ? null : p.id)}
+              >
+                <Icon size={15} />
+                <span>{p.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

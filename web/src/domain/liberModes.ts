@@ -20,12 +20,17 @@ export function modeToOutputMode(mode: LiberWorkMode): string {
   return mode ?? "auto";
 }
 
-export type LiberOutputMode = "report" | "diagram" | "presentation" | "auto";
+export type LiberOutputMode = "report" | "diagram" | "presentation" | "auto" | "chat";
 
 export function normalizeOutputMode(
   mode?: string | null,
 ): LiberOutputMode {
-  if (mode === "diagram" || mode === "presentation" || mode === "report") {
+  if (
+    mode === "diagram" ||
+    mode === "presentation" ||
+    mode === "report" ||
+    mode === "chat"
+  ) {
     return mode;
   }
   return "auto";
@@ -44,7 +49,7 @@ export function modeSurfaces(mode?: string | null) {
     showDiagram: m === "diagram" || m === "report" || m === "auto",
     /** PPTX + deck PDF twin */
     showPresentation: m === "presentation" || m === "auto",
-    /** Diagram mode: schema only in rail (no Source clutter). */
-    showSource: m !== "diagram",
+    /** Diagram mode: schema only in rail (no Source clutter). Chat has no rail. */
+    showSource: m !== "diagram" && m !== "chat",
   };
 }

@@ -19,6 +19,9 @@ PROMPT_FILES: dict[str, str] = {
     "diagram_generate": "diagram_generate.md",
     "diagram_repair": "diagram_repair.md",
     "diagram_refine": "diagram_refine.md",
+    "chat_opening": "chat_opening.md",
+    "chat_answer": "chat_answer.md",
+    "chat_section": "chat_section.md",
 }
 
 # Full catalog of system_tex parts (existence / MANIFEST). Runtime order may omit

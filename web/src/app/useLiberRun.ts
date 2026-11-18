@@ -38,6 +38,7 @@ import {
   uid,
 } from "../domain/runHelpers";
 import { priorRunIdFromMessages } from "../domain/priorRun";
+import { refreshRevisedArtifact, reviseSurface } from "../domain/reviseRefresh";
 import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
   attachSlidesPayload,
@@ -221,6 +222,7 @@ async () => {
         ? `Файл: ${file.name}`
         : chatTrim;
   const outMode = modeToOutputMode(workMode);
+  let liveMode = outMode;
   const userChips = [
     outMode === "diagram"
       ? "схема"
@@ -230,17 +232,19 @@ async () => {
           ? "отчёт"
           : null,
     attachPhotos.length ? `фото ×${attachPhotos.length}` : null,
-    outMode !== "diagram" && forbidCharts
+    workMode && outMode !== "diagram" && forbidCharts
       ? "без графиков"
-      : outMode !== "diagram"
+      : workMode && outMode !== "diagram"
         ? `≤${maxCharts} гр.`
         : null,
-    outMode !== "diagram"
+    workMode && outMode !== "diagram"
       ? forbidImages && !attachPhotos.length
         ? "без фото"
         : `≤${Math.max(maxImages, attachPhotos.length)} фото`
       : null,
-    `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`,
+    workMode
+      ? `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`
+      : null,
     dryRun ? "dry-run" : null,
   ].filter((x): x is string => Boolean(x));
 
@@ -279,12 +283,7 @@ async () => {
       {
         id: pendingId,
         role: "bot",
-        text:
-          outMode === "diagram"
-            ? "Собираю схему…"
-            : outMode === "presentation"
-              ? "Собираю презентацию…"
-              : "Генерирую документ…",
+        text: "",
         pending: true,
         pendingStage: "queued",
         pendingDetail: null,
@@ -297,15 +296,13 @@ async () => {
   ]);
   setBusy(true);
   setStopping(false);
-  setChatTitle(provisionalSessionTitle(workMode));
+  setChatTitle(workMode ? provisionalSessionTitle(workMode) : null);
   setChat("");
   if (chatRef.current) chatRef.current.style.height = "44px";
   const photosSnapshot = [...attachPhotos];
   setAttachPhotos([]);
-  // Paste-source consumed; keep attached File for re-send until user clears.
-  // Document PDF: keep viewer open (durable URLs) so send never flips to extract text.
+  // The document stays in this chat until the user dismisses it.
   if (!file && draftSnap) {
-    setSourceDraft(null);
     const isDoc =
       draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
     if (isDoc) {
@@ -392,6 +389,45 @@ async () => {
       return;
     }
 
+    if (data.mode === "chat_revise") {
+      const line = asString(data.chat, "Сделал.");
+      const runId = asString(data.run_id);
+      const surface =
+        asString(data.surface) === "deck" || asString(data.surface) === "report"
+          ? (asString(data.surface) as "deck" | "report")
+          : reviseSurface(asString(data.op));
+      setMsgs((m) =>
+        m.map((msg) => {
+          if (msg.id !== pendingId || msg.role !== "bot") return msg;
+          return {
+            ...msg,
+            lead: line,
+            text: line,
+            pending: false,
+            result: runId
+              ? ({ run_id: runId, output_mode: asString(data.output_mode, "chat"), chat_summary: line } as RunResult)
+              : msg.result,
+          };
+        }),
+      );
+      if (!runId || !surface) {
+        setBusy(false);
+        return;
+      }
+      void refreshRevisedArtifact(
+        runId,
+        surface,
+        pendingId,
+        {
+          setMsgs,
+          rememberRun,
+          openReportArtifact,
+        },
+        asString(data.artifact_run_id),
+      ).finally(() => setBusy(false));
+      return;
+    }
+
     let result = data as unknown as RunResult;
 
     // 202 async job: poll until ok/error
@@ -450,7 +486,6 @@ async () => {
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== pendingId || msg.role !== "bot") return msg;
-            const mode = msg.thinkingMode || "report";
             return appendBotThinking(
               {
                 ...msg,
@@ -459,10 +494,6 @@ async () => {
                 pendingDetail: detail,
                 etaSec:
                   etaSec != null && etaSec > 0 ? etaSec : msg.etaSec ?? null,
-                text:
-                  msg.streamingSummary && msg.text.trim()
-                    ? msg.text
-                    : stageLabel(stage || "queued", detail, mode),
               },
               stage,
               detail,
@@ -701,7 +732,7 @@ async () => {
               applyStage(uiStage, detail, etaSec);
               // Presentation: after pipeline_ok, kick slides while SSE stays open
               if (
-                outMode === "presentation" &&
+                liveMode === "presentation" &&
                 (stage === "pipeline_ok" || stage === "ok") &&
                 scope === "pipeline" &&
                 !slidesKicked &&
@@ -745,6 +776,27 @@ async () => {
               );
             },
             onFilm: applyFilm,
+            onChat: (phase, text, mode) => {
+              if (mode) liveMode = mode;
+              setMsgs((m) =>
+                m.map((msg) => {
+                  if (msg.id !== pendingId || msg.role !== "bot") return msg;
+                  const lead = `${msg.lead || ""}${text}`;
+                  return {
+                    ...msg,
+                    lead,
+                    text: phase === "answer" ? lead : msg.text,
+                    streamingSummary: phase === "answer" || msg.streamingSummary,
+                    thinkingMode:
+                      mode === "diagram" ||
+                      mode === "presentation" ||
+                      mode === "report"
+                        ? mode
+                        : msg.thinkingMode,
+                  };
+                }),
+              );
+            },
             onTerminal: (kind, _err, hint, recap) => {
               if (kind === "cancelled") {
                 setMsgs((m) =>
@@ -889,11 +941,11 @@ async () => {
     // Pipeline may omit output_mode if an older worker rewrote meta — stamp from send.
     result = {
       ...result,
-      output_mode: result.output_mode || outMode || "auto",
+      output_mode: result.output_mode || liveMode || "auto",
     };
 
-    const isPresentationOnly =
-      outMode === "presentation" || result.output_mode === "presentation";
+    const resolvedMode = result.output_mode || liveMode || outMode || "auto";
+    const isPresentationOnly = resolvedMode === "presentation";
     const slidesAlreadyDone =
       result.slides_status === "ok" || Boolean(result.downloads?.pptx);
     const slidesFailed =
@@ -982,6 +1034,12 @@ async () => {
           id: pendingId,
           role: "bot" as const,
           text: reportReadyText(result, streamed),
+          lead:
+            msg.lead ||
+            (result.chat_opening &&
+            result.chat_opening.trim() !== reportReadyText(result, streamed).trim()
+              ? result.chat_opening
+              : msg.lead),
           result,
           thinking: msg.thinking,
           thinkingStartedAt: msg.thinkingStartedAt,

@@ -206,6 +206,50 @@ export function IconPalette(p: IconProps) {
   );
 }
 
+export function IconHelp(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle {...stroke} cx="12" cy="12" r="8.25" />
+      <path {...stroke} d="M9.6 9.3a2.4 2.4 0 1 1 3.3 2.2c-.7.4-1.1.9-1.1 1.7" />
+      <path {...stroke} d="M12 17.2h.01" />
+    </svg>
+  );
+}
+
+export function IconReport(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M7 3.5h7.2L19.5 9v11.5a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20.5v-15A1.5 1.5 0 0 1 7 3.5z" />
+      <path {...stroke} d="M14 3.5V9h5.5" />
+      <path {...stroke} d="M8.5 13h7" />
+      <path {...stroke} d="M8.5 16.5h5" />
+    </svg>
+  );
+}
+
+export function IconDiagram(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect {...stroke} x="3.5" y="4" width="6.2" height="4.6" rx="1.2" />
+      <rect {...stroke} x="14.3" y="4" width="6.2" height="4.6" rx="1.2" />
+      <rect {...stroke} x="8.9" y="15.4" width="6.2" height="4.6" rx="1.2" />
+      <path {...stroke} d="M6.6 8.6v2.2a2 2 0 0 0 2 2h6.8a2 2 0 0 1 2 2V15" />
+      <path {...stroke} d="M12 12.8v2.6" />
+    </svg>
+  );
+}
+
+export function IconSlides(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect {...stroke} x="3.5" y="5" width="17" height="11.5" rx="1.6" />
+      <path {...stroke} d="M12 16.5v3" />
+      <path {...stroke} d="M8.5 19.5h7" />
+      <path {...stroke} d="M10 10.2l4.2 2.3-4.2 2.3z" />
+    </svg>
+  );
+}
+
 export function IconLiberMark({ size = 28 }: { size?: number }) {
   return (
     <svg

@@ -1,6 +1,6 @@
 /** Sidebar history + folders owner (out of App shell). */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   needsSlidesHydrate,
@@ -27,7 +27,11 @@ import {
   type HistoryItem,
 } from "../domain/reportHistory";
 import { reportReadyText, reportTitle, uid } from "../domain/runHelpers";
-import type { Msg, RunResult } from "../domain/liberTypes";
+import { draftFromDocuments } from "../domain/sourcePack";
+import { loadOpenChat, rememberOpenChat } from "../domain/openChat";
+import { messagesFromMemory } from "../domain/priorRun";
+import { chatToReopen, historyRailRun } from "../domain/reviseRefresh";
+import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
 
 type Deps = {
   busy: boolean;
@@ -36,6 +40,7 @@ type Deps = {
   showToast: (message: string, ms?: number) => void;
   openReportArtifact?: (msgId: string, result: RunResult) => void;
   onResetSurface?: () => void;
+  onRestoreSource?: (draft: SourceDraft | null) => void;
 };
 
 export function useReportHistory({
@@ -45,10 +50,13 @@ export function useReportHistory({
   showToast,
   openReportArtifact,
   onResetSurface,
+  onRestoreSource,
 }: Deps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [folders, setFolders] = useState<HistoryFolder[]>(() => loadFolders());
+  const [historyReady, setHistoryReady] = useState(false);
+  const restored = useRef(false);
 
   // Hydrate history from server on mount
   useEffect(() => {
@@ -70,6 +78,8 @@ export function useReportHistory({
         }
       } catch {
         /* ignore offline/server not ready */
+      } finally {
+        if (!cancelled) setHistoryReady(true);
       }
     })();
     return () => {
@@ -89,6 +99,7 @@ export function useReportHistory({
   const rememberRun = useCallback(
     (result: RunResult) => {
       saveRunPayload(result);
+      rememberOpenChat(result.run_id);
       const title = reportTitle(result);
       setChatTitle(title);
       const next = pushHistory({
@@ -96,6 +107,7 @@ export function useReportHistory({
         title,
         runId: result.run_id,
         savedAt: Date.now(),
+        priorRunId: result.prior_run_id || undefined,
       });
       setHistory(next);
       void persistServer(next, folders);
@@ -139,6 +151,7 @@ export function useReportHistory({
           }
         }
         saveRunPayload(result);
+        rememberOpenChat(item.runId);
         const turn = loadUserTurn(item.runId);
         const userText = (turn?.text || result.user_text || "").trim();
         const photos = turn?.photos?.length
@@ -153,14 +166,71 @@ export function useReportHistory({
             result.deck?.slides?.length ||
             result.slide_pngs?.length,
         );
-        if (!hasArtifact && !userText && !photos.length) {
+        const hasChat =
+          Boolean((result.chat_summary || "").trim()) ||
+          result.output_mode === "chat";
+        if (!hasArtifact && !hasChat && !userText && !photos.length) {
           showToast("Отчёт недоступен в этой сессии");
           return;
         }
         onResetSurface?.();
         setChatTitle(item.title || reportTitle(result));
-        const next: Msg[] = [];
-        if (userText || photos.length) {
+        let memory: {
+          turns?: Parameters<typeof messagesFromMemory>[0];
+          documents?: { name?: string; text?: string }[];
+          artifact_run_id?: string;
+        } | null = null;
+        try {
+          const mr = await fetch(
+            `/api/runs/${encodeURIComponent(item.runId)}/memory`,
+          );
+          if (mr.ok) memory = await mr.json();
+        } catch {
+          memory = null;
+        }
+        let shown = result;
+        const railId = historyRailRun(result, memory?.artifact_run_id || "");
+        if (railId && railId !== result.run_id) {
+          try {
+            const ar = await fetch(`/api/runs/${encodeURIComponent(railId)}/status`);
+            if (ar.ok) {
+              shown = {
+                ...((await ar.json()) as RunResult),
+                chain_head: result.run_id,
+              };
+            }
+          } catch {
+            shown = result;
+          }
+        }
+        const shownHasArtifact = Boolean(
+          shown.preview?.blocks?.length ||
+            shown.downloads?.pdf ||
+            shown.downloads?.pptx ||
+            shown.downloads?.deck_pdf ||
+            shown.diagrams?.length ||
+            shown.deck?.slides?.length ||
+            shown.slide_pngs?.length,
+        );
+        const remembered = messagesFromMemory(memory?.turns || [], uid);
+        const next: Msg[] = remembered.length
+          ? remembered.map((line) =>
+              line.role === "user"
+                ? {
+                    id: line.id,
+                    role: "user" as const,
+                    text: line.text,
+                    photos: line.photos,
+                  }
+                : {
+                    id: line.id,
+                    role: "bot" as const,
+                    text: line.text,
+                    lead: line.lead,
+                  },
+            )
+          : [];
+        if (!next.length && (userText || photos.length)) {
           next.push({
             id: uid(),
             role: "user",
@@ -168,31 +238,62 @@ export function useReportHistory({
             photos,
           });
         }
-        let botMsgId: string | null = null;
-        if (hasArtifact) {
-          botMsgId = uid();
+        if (!remembered.length && (hasArtifact || hasChat)) {
           next.push({
-            id: botMsgId,
+            id: uid(),
             role: "bot",
             text: reportReadyText(result),
-            result,
+            lead:
+              result.chat_opening &&
+              result.chat_opening.trim() !== reportReadyText(result).trim()
+                ? result.chat_opening
+                : undefined,
+            result: shown,
           });
         }
+        let botMsgId: string | null = null;
+        if (remembered.length && (hasArtifact || hasChat || shownHasArtifact)) {
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            const line = next[i];
+            if (line.role !== "bot") continue;
+            line.result = shown;
+            botMsgId = line.id;
+            break;
+          }
+        } else {
+          const bot = [...next].reverse().find((line) => line.role === "bot");
+          botMsgId = bot?.id ?? null;
+        }
         setMsgs(next);
-        if (botMsgId && hasArtifact) {
-          openReportArtifact?.(botMsgId, result);
+        onRestoreSource?.(
+          memory ? draftFromDocuments(memory.documents) : null,
+        );
+        if (botMsgId && shownHasArtifact) {
+          openReportArtifact?.(botMsgId, shown);
         }
       })();
     },
     [
       busy,
       onResetSurface,
+      onRestoreSource,
       openReportArtifact,
       setChatTitle,
       setMsgs,
       showToast,
     ],
   );
+
+  useEffect(() => {
+    if (!historyReady || restored.current) return;
+    restored.current = true;
+    if (typeof window !== "undefined" && /preview=/.test(window.location.search)) {
+      return;
+    }
+    const id = chatToReopen(history, loadOpenChat(), false);
+    const item = history.find((row) => row.runId === id);
+    if (item) openHistoryItem(item);
+  }, [history, historyReady, openHistoryItem]);
 
   const onTogglePin = useCallback(
     (runId: string) => {

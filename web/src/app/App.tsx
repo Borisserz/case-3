@@ -13,6 +13,7 @@ import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
+import { LiberHelp } from "../LiberHelp";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../lazyChartsQa";
 import { IconPanelRight } from "../icons";
@@ -127,7 +128,7 @@ export default function App() {
   );
   const [deckStyle, setDeckStyle] = useState<DeckStyle>(() => loadDeckStyle());
   const [deckStyleOpen, setDeckStyleOpen] = useState(false);
-  const [workMode, setWorkMode] = useState<LiberWorkMode>("report");
+  const [workMode, setWorkMode] = useState<LiberWorkMode>(null);
   /** Julius chat rename — column head only; seeded then → preview.title */
   const [chatTitle, setChatTitle] = useState<string | null>(null);
   const [deckApplyHint, setDeckApplyHint] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export default function App() {
     showToast,
     openReportArtifact,
     onResetSurface: resetSurfaceForHistory,
+    onRestoreSource: setSourceDraft,
   });
 
   const catalog = useMemo(() => {
@@ -538,8 +540,16 @@ export default function App() {
           imageChipHint={imageChip.hint}
           history={history}
           folders={folders}
-          onNew={startNewReport}
-          onOpenHistory={openHistoryItem}
+          onNew={() => {
+            startNewReport();
+            setWorkMode(null);
+            setDeckApplyHint(null);
+          }}
+          onOpenHistory={(item) => {
+            setWorkMode(null);
+            setDeckApplyHint(null);
+            openHistoryItem(item);
+          }}
           onTogglePin={onTogglePin}
           onMoveToFolder={onMoveToFolder}
           onCreateFolder={onCreateFolder}
@@ -557,6 +567,7 @@ export default function App() {
               <div
                 className={`desk chat-desk${msgs.length === 0 ? " is-empty-home" : ""}`}
               >
+                <LiberHelp />
                 <ChatMessages
                   msgs={msgs}
                   reduceMotion={reduceMotion}

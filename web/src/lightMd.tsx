@@ -9,6 +9,58 @@ export function escapeHtml(s: string): string {
 }
 
 /** Light markdown for Liber chat / Source pane. */
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isTableRow(line: string): boolean {
+  return /^\s*\|.+\|\s*$/.test(line);
+}
+
+function isTableSep(line: string): boolean {
+  return /^\s*\|[\s:|-]+\|\s*$/.test(line) && line.includes("-");
+}
+
+function renderTables(src: string): string {
+  const lines = src.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (
+      isTableRow(lines[i]) &&
+      i + 1 < lines.length &&
+      isTableSep(lines[i + 1])
+    ) {
+      const head = splitTableRow(lines[i]);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && isTableRow(lines[i])) {
+        rows.push(splitTableRow(lines[i]));
+        i += 1;
+      }
+      const th = head.map((cell) => `<th>${cell}</th>`).join("");
+      const body = rows
+        .map((row) => {
+          const cells = head.map((_, idx) => `<td>${row[idx] || ""}</td>`).join("");
+          return `<tr>${cells}</tr>`;
+        })
+        .join("");
+      out.push(
+        `<table class="msg-table"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`,
+      );
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+  return out.join("\n");
+}
+
 export function renderLightMd(raw: string, query = ""): string {
   let s = escapeHtml(raw);
   s = s.replace(/```([\s\S]*?)```/g, (_m, code: string) => {
@@ -19,6 +71,7 @@ export function renderLightMd(raw: string, query = ""): string {
   s = s.replace(/^# (.+)$/gm, '<h2 class="src-h">$1</h2>');
   s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+  s = renderTables(s);
   s = s.replace(/^- (.+)$/gm, '<li class="src-li">$1</li>');
   s = s.replace(/(?:<li class="src-li">.*<\/li>\n?)+/g, (block) => {
     return `<ul class="src-ul">${block}</ul>`;
@@ -26,7 +79,19 @@ export function renderLightMd(raw: string, query = ""): string {
   s = s
     .split(/\n{2,}/)
     .map((chunk) => {
-      if (/^<(h[2-4]|ul|pre)/.test(chunk.trim())) return chunk;
+      if (/^<(h[2-4]|ul|pre|table)/.test(chunk.trim())) return chunk;
+      if (chunk.includes("<table")) {
+        return chunk
+          .split(/(<table[\s\S]*?<\/table>)/)
+          .map((part) => {
+            if (part.startsWith("<table")) return part;
+            const trimmed = part.trim();
+            if (!trimmed) return "";
+            if (/^<(h[2-4]|ul|pre)/.test(trimmed)) return part;
+            return `<p class="src-p">${part.replace(/\n/g, "<br/>")}</p>`;
+          })
+          .join("");
+      }
       return `<p class="src-p">${chunk.replace(/\n/g, "<br/>")}</p>`;
     })
     .join("");

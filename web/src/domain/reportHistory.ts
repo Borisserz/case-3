@@ -17,6 +17,8 @@ export type HistoryItem = {
   savedAt: number;
   pinned?: boolean;
   folderId?: string | null;
+  /** Run this chat continues. Hidden from the sidebar when the child is listed. */
+  priorRunId?: string;
 };
 
 /** Items assigned to a folder, including pinned ones. */
@@ -96,6 +98,15 @@ function writeHistory(list: HistoryItem[]): HistoryItem[] {
   return next;
 }
 
+export function collapseChatHeads(items: HistoryItem[]): HistoryItem[] {
+  const continued = new Set(
+    items
+      .map((item) => item.priorRunId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return items.filter((item) => !continued.has(item.runId));
+}
+
 export function pushHistory(item: HistoryItem): HistoryItem[] {
   const prev = loadHistory();
   const existing = prev.find((h) => h.runId === item.runId);
@@ -108,7 +119,7 @@ export function pushHistory(item: HistoryItem): HistoryItem[] {
         : (existing?.folderId ?? null),
   };
   const rest = prev.filter((h) => h.runId !== item.runId);
-  return writeHistory([merged, ...rest]);
+  return writeHistory(collapseChatHeads([merged, ...rest]));
 }
 
 export function updateHistoryItem(
@@ -148,10 +159,11 @@ export function mergeServerHistory(
     } else {
       if (s.pinned && !existing.pinned) existing.pinned = true;
       if (s.folderId && !existing.folderId) existing.folderId = s.folderId;
+      if (s.priorRunId) existing.priorRunId = s.priorRunId;
     }
   }
 
-  return writeHistory(result);
+  return writeHistory(collapseChatHeads(result));
 }
 
 export function mergeServerFolders(

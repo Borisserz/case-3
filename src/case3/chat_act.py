@@ -1,0 +1,742 @@
+"""What a follow-up in one chat is asking for.
+
+Talk stays in the thread. Build uses the existing pipeline. Revise edits the
+artifact already on the table, the same one the rail buttons edit.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from case3.turn_route import resolve_turn
+
+_UNDO = re.compile(r"\b(отмени|отменить)\b", re.IGNORECASE)
+_REDO = re.compile(r"верни правку|повтори правку", re.IGNORECASE)
+_RECOLOR = re.compile(
+    r"перекрась|перекрасить|измени цвет|поменяй цвет|смени цвет|смени стиль|смени тему|другой цвет",
+    re.IGNORECASE,
+)
+_CHARTS = re.compile(r"график", re.IGNORECASE)
+_REWRITE = re.compile(
+    r"перепиши|переписать|переформулируй|сократи раздел|сократи абзац",
+    re.IGNORECASE,
+)
+_PROSE = re.compile(
+    r"переделай|переделать|точнее|не нравится|улучши|улучшить|поправь|"
+    r"слабо|размыт|перефразир|короче|сократи",
+    re.IGNORECASE,
+)
+_VISUAL = re.compile(r"красивее|покрасивее", re.IGNORECASE)
+_REPORT_WORD = re.compile(r"отч[её]т|раздел|абзац", re.IGNORECASE)
+_STOP_NAME = frozenset(
+    {
+        "тот",
+        "этот",
+        "эта",
+        "это",
+        "мне",
+        "его",
+        "ее",
+        "её",
+        "так",
+        "уже",
+        "тут",
+        "там",
+        "мой",
+        "моя",
+        "мое",
+        "моё",
+        "отчет",
+        "презентация",
+        "преза",
+        "презу",
+        "схема",
+        "схему",
+        "график",
+        "графики",
+        "это",
+        "вот",
+        "все",
+        "короче",
+        "точнее",
+        "красивее",
+        "текст",
+        "файл",
+        "слайд",
+        "слайды",
+    }
+)
+_EDIT = re.compile(
+    r"измени|изменить|исправь|исправить|замени|заменить|удали|удалить|"
+    r"убери|убрать|добавь|добавить|поправь",
+    re.IGNORECASE,
+)
+_QUESTION = re.compile(r"\?|(?:^|\s)(?:почему|зачем)\b", re.IGNORECASE)
+_REF = re.compile(
+    r"тот раздел|этот раздел|эту часть|там же|то же место",
+    re.IGNORECASE,
+)
+_AGAIN = re.compile(r"^(?:ещё|еще|снова)\b", re.IGNORECASE)
+_BARE_AGAIN = re.compile(r"^(?:ещё|еще|снова)[.!?\s]*$", re.IGNORECASE)
+_BRIEF_ONLY = re.compile(
+    r"^(?:еще\s+)?(?:короче|точнее|не нравится)[.!?\s]*$",
+    re.IGNORECASE,
+)
+_SECTION_PATTERNS = (
+    re.compile(
+        r"(?:раздел\w*|абзац\w*|глав\w*)\s+[«\"]?([A-Za-zА-Яа-яЁё0-9][^:.\n,!?]{1,48})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|уточни|сократи)\s+"
+        r"(?:раздел\w*\s+|абзац\w*\s+|глав\w*\s+)?[«\"]?"
+        r"([A-Za-zА-Яа-яЁё0-9][^:.\n,!?]{1,48})",
+        re.IGNORECASE,
+    ),
+)
+_KNOWN_SECTION = re.compile(
+    r"\b(введени\w*|заключени\w*|вывод\w*|обзор\w*|результат\w*|методик\w*)\b",
+    re.IGNORECASE,
+)
+_PACK_CYCLE = (
+    "atelier",
+    "board",
+    "signal",
+    "relay",
+    "ink",
+    "voltage",
+    "studio",
+    "botanical",
+)
+
+# Deck skins. Order matters: longer phrases before short ones.
+_PACKS: tuple[tuple[str, str], ...] = (
+    ("botanical", r"ботаническ|dark botanical|botanical"),
+    ("voltage", r"voltage|вольт"),
+    ("studio", r"workshop|мастерск|studio"),
+    ("ink", r"\bink\b|чернил"),
+    ("relay", r"relay|пастел"),
+    ("signal", r"signal|оранж"),
+    ("board", r"northstar|сапфир|\bboard\b|\bсиний\b|\bсиняя\b|\bсинее\b|\bсиние\b|\bголубой\b"),
+    ("atelier", r"atelier|ателье|олив"),
+)
+_PALETTES: tuple[tuple[str, str], ...] = (
+    ("editorial", r"editorial|редакц"),
+    ("ocean", r"ocean|океан|морск"),
+    ("sunset", r"sunset|закат"),
+    ("mono", r"\bmono\b|моно|чёрно-бел|черно-бел"),
+    ("atelier", r"atelier|ателье"),
+)
+
+PACK_LABELS = {
+    "atelier": "Atelier Olive",
+    "board": "Northstar",
+    "signal": "Bold Signal",
+    "relay": "Split Pastel",
+    "ink": "Relay Ink",
+    "voltage": "Creative Voltage",
+    "studio": "Workshop Studio",
+    "botanical": "Dark Botanical",
+}
+PALETTE_LABELS = {
+    "editorial": "editorial",
+    "ocean": "ocean",
+    "sunset": "sunset",
+    "mono": "mono",
+    "atelier": "atelier",
+}
+
+
+@dataclass(frozen=True)
+class ChatAct:
+    kind: str  # talk | build | revise
+    op: str = ""  # undo | redo | recolor_deck | recolor_charts | rewrite | ask
+    pack: str = ""
+    palette: str = ""
+    build: str = ""
+    say: str = ""
+    section: str = ""
+    brief: str = ""  # supplied | clearer | tighter | dislike | prettier
+    slide: int = 0
+    slide_to: int = 0
+    title: str = ""
+    title_on: str = ""  # report | deck
+    chart: str = ""
+
+
+def _norm(text: str) -> str:
+    return (text or "").replace("ё", "е").replace("Ё", "Е")
+
+
+def _named(raw: str, table: tuple[tuple[str, str], ...]) -> str:
+    for key, pattern in table:
+        if re.search(pattern, raw, re.IGNORECASE):
+            return key
+    return ""
+
+
+def next_deck_pack(current: str) -> str:
+    """Next real deck skin. Empty and unknown start from Atelier."""
+    cur = (current or "").strip().lower()
+    if cur == "pastel":
+        cur = "relay"
+    if cur not in _PACK_CYCLE:
+        cur = "atelier"
+    return _PACK_CYCLE[(_PACK_CYCLE.index(cur) + 1) % len(_PACK_CYCLE)]
+
+
+def _clean_name(name: str) -> str:
+    cleaned = " ".join((name or "").split()).strip(" «»\"")
+    cleaned = re.split(r"\s+(?:мне|пожалуйста)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    cleaned = cleaned.strip(" «»\"")
+    if not cleaned:
+        return ""
+    if cleaned.split()[0].casefold() in _STOP_NAME:
+        return ""
+    if cleaned.islower():
+        return cleaned[:1].upper() + cleaned[1:]
+    return cleaned
+
+
+def section_target(text: str | None) -> str:
+    """Heading named in a loose edit request. Empty when none is named."""
+    raw = _norm(text or "")
+    parsed = parse_rewrite(raw)
+    if parsed:
+        return parsed[0]
+    for pattern in _SECTION_PATTERNS:
+        match = pattern.search(raw)
+        if not match:
+            continue
+        name = _clean_name(match.group(1))
+        if name:
+            return name
+    known = _KNOWN_SECTION.search(raw)
+    if not known:
+        return ""
+    word = known.group(1)
+    return word[:1].upper() + word[1:]
+
+
+_SLIDE_N = (
+    (10, "десят"),
+    (9, "девят"),
+    (8, "восьм"),
+    (7, "седьм"),
+    (6, "шест"),
+    (5, "пят"),
+    (4, "четверт"),
+    (3, "трет"),
+    (2, "втор"),
+    (1, "перв"),
+)
+
+
+def slide_index(text: str | None) -> int:
+    """1-based slide named in «убери второй слайд». 0 when it is not a delete."""
+    raw = _norm(text or "")
+    if not re.search(r"слайд", raw, re.IGNORECASE):
+        return 0
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return 0
+    number = re.search(r"\b(\d{1,2})\b", raw)
+    if number:
+        value = int(number.group(1))
+        return value if 1 <= value <= 24 else 0
+    for index, stem in _SLIDE_N:
+        if re.search(stem, raw, re.IGNORECASE):
+            return index
+    return 0
+
+
+_CHART_WORDS = (
+    ("stacked_bar", r"накоплен|stacked"),
+    ("grouped_bar", r"группир|grouped"),
+    ("horizontal_bar", r"горизонтал"),
+    ("donut", r"пончик|кольц|donut"),
+    ("line", r"лине|лини|\bline\b"),
+    ("area", r"площад|\barea\b"),
+    ("scatter", r"точк|scatter|рассеян"),
+    ("kpi", r"\bkpi\b"),
+    ("bar", r"столбц|столбчат|\bbar\b"),
+)
+CHART_SAY = {
+    "line": "линии",
+    "bar": "столбцы",
+    "donut": "пончик",
+    "horizontal_bar": "горизонтальные столбцы",
+    "area": "площадь",
+    "scatter": "точки",
+    "kpi": "kpi",
+    "stacked_bar": "накопленные столбцы",
+    "grouped_bar": "групповые столбцы",
+}
+
+
+def slide_move(text: str | None) -> tuple[int, int]:
+    """«Переставь слайд 3 на место 1» → (3, 1). (0, 0) when it is not a move."""
+    raw = _norm(text or "")
+    if not re.search(r"слайд", raw, re.IGNORECASE):
+        return 0, 0
+    if re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return 0, 0
+    if not re.search(r"перестав|перемест|подвинь|поставь", raw, re.IGNORECASE):
+        return 0, 0
+    found: list[int] = []
+    for match in re.finditer(r"\b(\d{1,2})\b", raw):
+        value = int(match.group(1))
+        if 1 <= value <= 24:
+            found.append(value)
+    if len(found) < 2:
+        for match in re.finditer(
+            r"перв\w*|втор\w*|трет\w*|четверт\w*|пят\w*|шест\w*|седьм\w*|восьм\w*|девят\w*|десят\w*",
+            raw,
+            re.IGNORECASE,
+        ):
+            index = _ord_index(match.group(0))
+            if index:
+                found.append(index)
+    if len(found) < 2:
+        return 0, 0
+    return found[0], found[1]
+
+
+def _ord_index(token: str) -> int:
+    stems = (
+        (10, "десят"),
+        (9, "девят"),
+        (8, "восьм"),
+        (7, "седьм"),
+        (6, "шест"),
+        (5, "пят"),
+        (4, "четверт"),
+        (3, "трет"),
+        (2, "втор"),
+        (1, "перв"),
+    )
+    folded = token.casefold()
+    for index, stem in stems:
+        if folded.startswith(stem):
+            return index
+    return 0
+
+
+def chart_type_named(text: str | None) -> str:
+    """A whitelist chart type named next to the word «график»."""
+    raw = _norm(text or "")
+    if not re.search(r"график", raw, re.IGNORECASE):
+        return ""
+    for key, pattern in _CHART_WORDS:
+        if re.search(pattern, raw, re.IGNORECASE):
+            return key
+    return ""
+
+
+def parse_title(text: str | None) -> str:
+    """«Поменяй заголовок на Гомель» → Гомель. Empty when no new title."""
+    raw = _norm(text or "")
+    match = re.search(
+        r"(?:поменяй|смени|измени|переименуй)\s+заголовок(?:\s+(?:на|в))?\s*[:—–-]?\s*(.+)",
+        raw,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    title = match.group(1).strip()
+    title = re.sub(
+        r"^(?:презентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?)\s+(?:на|в)\s+",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    title = title.strip(" «».")
+    if len(title) < 2:
+        return ""
+    return title[:120]
+
+
+def title_target(text: str | None) -> str:
+    """deck when the message names the presentation, report when it names the report."""
+    raw = _norm(text or "")
+    if re.search(r"презентац|презу|преза|слайд", raw, re.IGNORECASE):
+        return "deck"
+    if re.search(r"отч[её]т|документ", raw, re.IGNORECASE):
+        return "report"
+    return ""
+
+
+def _brief_for(raw: str) -> str:
+    if "точн" in raw.casefold():
+        return "clearer"
+    if re.search(r"короче|сократ", raw, re.IGNORECASE):
+        return "tighter"
+    if re.search(r"не нравится|слаб|размыт", raw, re.IGNORECASE):
+        return "dislike"
+    return "prettier"
+
+
+def parse_rewrite(text: str | None) -> tuple[str, str] | None:
+    """«Перепиши раздел Введение: новый текст» → (name, body)."""
+    raw = _norm(text or "")
+    match = re.search(
+        r"(?:раздел|абзац)\s+[«\"]?(.{2,80}?)[»\"]?\s*[:—–-]\s*(.{8,})",
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    name = " ".join(match.group(1).split())
+    body = match.group(2).strip()
+    if not name or not body:
+        return None
+    return name, body
+
+
+def _clarify(
+    *,
+    has_deck: bool,
+    has_report: bool,
+    has_diagram: bool,
+    last_section: str,
+) -> str:
+    bits: list[str] = []
+    if last_section and has_report:
+        bits.append(f"продолжить раздел «{last_section}»")
+    elif has_report:
+        bits.append("назвать раздел")
+    if has_deck:
+        bits.append("назвать стиль презентации")
+    if has_report or has_deck:
+        bits.append("назвать цвет графиков")
+    if has_deck or has_report or has_diagram:
+        bits.append("написать «отмени», чтобы вернуть прошлый вид")
+    if not bits:
+        return "Пока нечего править. Спроси по тексту или напиши, что собрать."
+    return "Не взял правку, нужно точнее. Можно " + ", ".join(bits) + "."
+
+
+def resolve_act(
+    text: str | None,
+    *,
+    bias: str | None = None,
+    has_deck: bool = False,
+    has_report: bool = False,
+    has_diagram: bool = False,
+    last_section: str = "",
+    last_op: str = "",
+) -> ChatAct:
+    """Classify one user message. Build wins when they name a new artifact."""
+    raw = _norm(text or "").strip()
+    has_any = has_deck or has_report or has_diagram
+
+    if has_any and _REDO.search(raw) and len(raw) < 80:
+        return ChatAct(kind="revise", op="redo", say="Вернул последнюю правку.")
+    if has_any and _UNDO.search(raw) and len(raw) < 80:
+        return ChatAct(kind="revise", op="undo", say="Отменил последнюю правку.")
+
+    if _RECOLOR.search(raw):
+        charts = bool(_CHARTS.search(raw))
+        if charts:
+            palette = _named(raw, _PALETTES)
+            if not palette:
+                names = ", ".join(PALETTE_LABELS)
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say=f"Какой цвет графиков: {names}? Фиолетового нет.",
+                )
+            if not has_report and not has_deck:
+                return ChatAct(
+                    kind="talk",
+                    say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
+                )
+            return ChatAct(
+                kind="revise",
+                op="recolor_charts",
+                palette=palette,
+                say=f"Перекрашиваю графики в {PALETTE_LABELS[palette]}.",
+            )
+        pack = _named(raw, _PACKS)
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if not pack:
+            names = ", ".join(PACK_LABELS.values())
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say=f"Какой стиль презентации: {names}?",
+            )
+        return ChatAct(
+            kind="revise",
+            op="recolor_deck",
+            pack=pack,
+            say=f"Перекрашиваю презентацию в {PACK_LABELS[pack]}. Слайды соберутся заново, текст тот же.",
+        )
+
+    supplied = parse_rewrite(raw) if has_report else None
+    if supplied:
+        return ChatAct(
+            kind="revise",
+            op="rewrite",
+            section=supplied[0],
+            brief="supplied",
+            say=f"Перепишу раздел «{supplied[0]}» твоим текстом.",
+        )
+
+    if _VISUAL.search(raw):
+        about_report = bool(_REPORT_WORD.search(raw))
+        if about_report and has_report:
+            return ChatAct(
+                kind="revise",
+                op="rewrite",
+                section=section_target(raw),
+                brief="prettier",
+                say="Поправлю текст отчёта по документам. Новых чисел не добавлю.",
+            )
+        if has_deck and has_report and not about_report:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Сделать красивее текст или стиль презентации? Напиши «текст» или имя стиля.",
+            )
+        if has_deck and not about_report:
+            return ChatAct(
+                kind="revise",
+                op="recolor_deck",
+                say="Соберу презентацию в следующем стиле. Текст слайдов тот же.",
+            )
+        if has_report:
+            return ChatAct(
+                kind="revise",
+                op="rewrite",
+                brief="prettier",
+                say="Поправлю введение по документам. Новых чисел не добавлю.",
+            )
+        return ChatAct(
+            kind="talk",
+            say="Пока нечего менять. Сначала собери отчёт или презентацию.",
+        )
+
+    question = bool(_QUESTION.search(raw))
+    remembered = (last_section or "").strip()
+    if not question and _BARE_AGAIN.match(raw):
+        if last_op == "recolor_deck" and has_deck and not remembered:
+            return ChatAct(
+                kind="revise",
+                op="recolor_deck",
+                say="Соберу презентацию в следующем стиле. Текст слайдов тот же.",
+            )
+        if last_op == "recolor_deck" and has_deck and remembered:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say=f"Продолжить стиль презентации или раздел «{remembered}»?",
+            )
+        if remembered and has_report:
+            return ChatAct(
+                kind="revise",
+                op="rewrite",
+                section=remembered,
+                brief="prettier",
+                say=f"Перепишу раздел «{remembered}» по документам. Новых чисел не добавлю.",
+            )
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say=_clarify(
+                has_deck=has_deck,
+                has_report=has_report,
+                has_diagram=has_diagram,
+                last_section=remembered,
+            ),
+        )
+    if (
+        not question
+        and remembered
+        and has_report
+        and (_REF.search(raw) or _AGAIN.search(raw))
+    ):
+        return ChatAct(
+            kind="revise",
+            op="rewrite",
+            section=remembered,
+            brief=_brief_for(raw),
+            say=f"Перепишу раздел «{remembered}» по документам. Новых чисел не добавлю.",
+        )
+
+    if not question and remembered and has_report and _BRIEF_ONLY.match(raw):
+        return ChatAct(
+            kind="revise",
+            op="rewrite",
+            section=remembered,
+            brief=_brief_for(raw),
+            say=f"Перепишу раздел «{remembered}» по документам. Новых чисел не добавлю.",
+        )
+
+    if not question and (_REWRITE.search(raw) or _PROSE.search(raw)):
+        if not has_report:
+            return ChatAct(
+                kind="talk",
+                say="Отчёта в этом чате ещё нет, переписывать нечего.",
+            )
+        name = section_target(raw)
+        if not name:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какой раздел переделать? Напиши название, например «переделай введение».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="rewrite",
+            section=name,
+            brief=_brief_for(raw),
+            say=f"Перепишу раздел «{name}» по документам. Новых чисел не добавлю.",
+        )
+
+    if not question and re.search(r"слайд", raw, re.IGNORECASE) and re.search(
+        r"убери|удали|убрать|удалить", raw, re.IGNORECASE
+    ):
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        index = slide_index(raw)
+        if not index:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какой слайд убрать? Напиши номер, например «убери слайд 2».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="delete_slide",
+            slide=index,
+            say=f"Убираю слайд {index}. Остальные соберутся заново.",
+        )
+
+    if not question and re.search(r"заголовок", raw, re.IGNORECASE) and re.search(
+        r"поменяй|смени|измени|переименуй", raw, re.IGNORECASE
+    ):
+        if not (has_report or has_deck):
+            return ChatAct(
+                kind="talk",
+                say="Пока нечего переименовать. Сначала собери отчёт или презентацию.",
+            )
+        title = parse_title(raw)
+        if not title:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какой заголовок поставить?",
+            )
+        target = title_target(raw)
+        if target == "deck" and not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if target == "report" and not has_report:
+            return ChatAct(
+                kind="talk",
+                say="Отчёта в этом чате ещё нет. Напиши «сделай отчёт», если его собрать.",
+            )
+        if not target and has_report and has_deck:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Заголовок отчёта или презентации? Напиши «заголовок отчёта» или «заголовок презентации».",
+            )
+        if not target:
+            target = "deck" if has_deck and not has_report else "report"
+        place = "слайда" if target == "deck" else "отчёта"
+        return ChatAct(
+            kind="revise",
+            op="retitle",
+            title=title,
+            title_on=target,
+            say=f"Меняю заголовок {place} на «{title}».",
+        )
+
+    if not question and re.search(r"слайд", raw, re.IGNORECASE) and re.search(
+        r"перестав|перемест|подвинь|поставь", raw, re.IGNORECASE
+    ) and not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        source, dest = slide_move(raw)
+        if not source or not dest:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какой слайд и на какое место? Например «переставь слайд 3 на место 1».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="reorder_slide",
+            slide=source,
+            slide_to=dest,
+            say=f"Переставляю слайд {source} на место {dest}.",
+        )
+
+    if not question and re.search(r"график", raw, re.IGNORECASE) and re.search(
+        r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE
+    ):
+        if not (has_report or has_deck):
+            return ChatAct(
+                kind="talk",
+                say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
+            )
+        chart = chart_type_named(raw)
+        if not chart:
+            names = ", ".join(CHART_SAY[key] for key in ("line", "bar", "donut", "horizontal_bar", "area", "scatter"))
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say=f"Какой вид графика: {names}?",
+            )
+        return ChatAct(
+            kind="revise",
+            op="retype_charts",
+            chart=chart,
+            say=f"Меняю графики на {CHART_SAY[chart]}. Числа те же.",
+        )
+
+    if not question and _EDIT.search(raw):
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say=_clarify(
+                has_deck=has_deck,
+                has_report=has_report,
+                has_diagram=has_diagram,
+                last_section=remembered,
+            ),
+        )
+
+    if raw == "текст" and has_report:
+        return ChatAct(
+            kind="revise",
+            op="rewrite",
+            section=remembered,
+            brief="prettier",
+            say="Поправлю текст по документам. Новых чисел не добавлю.",
+        )
+    if raw == "стиль" and has_deck:
+        return ChatAct(
+            kind="revise",
+            op="recolor_deck",
+            say="Соберу презентацию в следующем стиле. Текст слайдов тот же.",
+        )
+
+    route = resolve_turn(raw, bias)
+    if route != "chat":
+        return ChatAct(kind="build", build=route)
+    return ChatAct(kind="talk")

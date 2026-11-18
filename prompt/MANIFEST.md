@@ -9,6 +9,9 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 | `user_tex` | `user_tex.md` | `generate.build_user_prompt` | `INTENT_BLOCK` `MAX_*` `DIAGRAM_COLOR_TABLE` `SOURCE` |
 | `continuation_tex` | `continuation_tex.md` | `generate.build_continuation_prompt` | `MAX_CHARTS` `PARTIAL_TAIL` `SOURCE` |
 | `summary_system` | `summary_system.md` | `chat_summary` (system role) | — |
+| `chat_opening` | `chat_opening.md` | `chat_turn.try_opening` | — |
+| `chat_answer` | `chat_answer.md` | `chat_turn.try_chat_answer` | — |
+| `chat_section` | `chat_section.md` | `chat_turn.draft_section` | — |
 | `system_slides` | `system_slides.md` | `slides_job.load_slides_system_prompt` | `PALETTE` `THEME_OVERLAY` `STRUCTURE_OVERLAY` `CHART_IDS` `FIGURE_IDS` `DIAGRAM_IDS` `MEDIA_CATALOG` `INTENT` `SOURCE` |
 | `diagram_generate` | `diagram_generate.md` | `diagram_edit` / `diagram_generate` | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |
 | `diagram_repair` | `diagram_repair.md` | pipeline `diagram_repair` stage | `DIAGRAM_COLOR_TABLE` |

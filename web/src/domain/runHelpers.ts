@@ -128,6 +128,14 @@ export function reportTitle(result: RunResult): string {
   if (result.output_mode === "presentation") {
     return `Презентация · ${result.run_id}`;
   }
+  if (result.output_mode === "chat") {
+    const line = (result.chat_summary || "")
+      .split("\n")
+      .map((s) => s.trim())
+      .find((s) => s && !s.startsWith("|"));
+    const short = (line || "").replace(/\*\*/g, "").slice(0, 52).trim();
+    return short || "Ответ";
+  }
   return `Отчёт · ${result.run_id}`;
 }
 

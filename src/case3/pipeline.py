@@ -343,6 +343,18 @@ def carry_chat_prompt(meta: dict[str, Any], previous: dict[str, Any] | None) -> 
     incoming = str(prev.get("chat_prompt") or "").strip()
     if incoming and not str(meta.get("chat_prompt") or "").strip():
         meta["chat_prompt"] = incoming
+    prior = str(prev.get("prior_run_id") or "").strip()
+    if prior and not str(meta.get("prior_run_id") or "").strip():
+        meta["prior_run_id"] = prior
+    prev_edit = prev.get("last_edit")
+    if isinstance(prev_edit, dict) and prev_edit and not meta.get("last_edit"):
+        kept = {
+            key: str(prev_edit.get(key) or "").strip()
+            for key in ("op", "section", "pack", "palette")
+            if str(prev_edit.get(key) or "").strip()
+        }
+        if kept:
+            meta["last_edit"] = kept
 
 
 def merge_desk_slides_fields(
@@ -832,7 +844,7 @@ def resume_pipeline(
     images_budget = int(meta.get("max_images") if meta.get("max_images") is not None else max_images_from_env())
     charts_budget = int(meta.get("max_charts") if meta.get("max_charts") is not None else max_charts_from_env())
     mode = str(meta.get("output_mode") or "auto").strip().lower()
-    if mode not in {"report", "diagram", "presentation", "auto"}:
+    if mode not in {"report", "diagram", "presentation", "auto", "chat"}:
         mode = "auto"
     dry_run = bool(meta.get("dry_run"))
 
@@ -1082,7 +1094,7 @@ def run_pipeline(
 
     diagrams_budget = clamp_diagram_budget(max_diagrams)
     mode = (output_mode or "auto").strip().lower()
-    if mode not in {"report", "diagram", "presentation", "auto"}:
+    if mode not in {"report", "diagram", "presentation", "auto", "chat"}:
         mode = "auto"
     user_figs = list(user_figures or [])
     # Opt-in for generated fig_*; uploads (usr_*) still merge when attached.
@@ -1175,6 +1187,60 @@ def run_pipeline(
         EVENTS.publish_terminal(run_id, "ok", recap={"headline": "Недостаточно данных", "body": msg})
         return out
 
+    def _emit_chat(phase: str, text: str, kind: str) -> None:
+        if text:
+            EVENTS.publish(
+                run_id,
+                {"event": "chat", "phase": phase, "text": text, "mode": kind},
+            )
+
+    def _finish_chat_answer(user_text: str, source_text: str) -> Path:
+        bump("chat", "отвечаю…")
+        from case3.chat_turn import try_chat_answer
+
+        if user_figs:
+            materialize_user_figures(user_figs, out / "figures")
+        if dry_run:
+            answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
+            _emit_chat("answer", answer, "chat")
+        else:
+            answer = try_chat_answer(
+                source_text,
+                user_text,
+                on_delta=lambda piece: _emit_chat("answer", piece, "chat"),
+            )
+        meta["output_mode"] = "chat"
+        meta["chat_summary"] = answer
+        meta["chat_opening"] = answer
+        meta["summary_status"] = "ok"
+        meta["status"] = "ok"
+        meta["stage"] = "ok"
+        meta["artifacts"] = {}
+        meta.pop("stage_detail", None)
+        _write_meta(meta, out, logs)
+        (out / "chat_summary.txt").write_text(answer, encoding="utf-8")
+        (logs / "chat_summary.txt").write_text(answer, encoding="utf-8")
+        BUS.start(run_id)
+        BUS.finish(run_id, answer, "ok")
+        EVENTS.publish_stage(run_id, "ok", detail="Ответ в чате", scope="pipeline")
+        EVENTS.publish_terminal(run_id, "ok")
+        return out
+
+    def _speak_before_artifact(kind: str, user_text: str) -> None:
+        from case3.chat_turn import opening_fallback, try_opening
+
+        if dry_run:
+            spoken = opening_fallback(kind, user_text)
+            _emit_chat("opening", spoken, kind)
+        else:
+            spoken = try_opening(
+                kind,
+                user_text,
+                on_delta=lambda piece: _emit_chat("opening", piece, kind),
+            )
+        meta["chat_opening"] = spoken
+        _write_meta(meta, out, logs)
+
     try:
         # Tier 1: Fast input validation (intercept empty / data-free requests early).
         source_raw = text_path.read_text(encoding="utf-8") if text_path.is_file() else ""
@@ -1189,6 +1255,21 @@ def run_pipeline(
             return _handle_insufficient_data(refusal_msg or "В запросе недостаточно данных.")
         if not user_intent.strip():
             intent = with_default_brief(intent, user_intent)
+
+        if mode == "chat":
+            from case3.chat_memory import focus_source
+
+            asked = str(meta.get("chat_prompt") or user_intent)
+            return _finish_chat_answer(user_intent, focus_source(source_raw, asked))
+        if mode in {"report", "diagram", "presentation"}:
+            spoken_about = user_intent.strip()
+            attached = source_raw.strip()
+            if attached and attached != spoken_about:
+                clip = " ".join(attached.split())
+                if len(clip) > 420:
+                    clip = clip[:419].rstrip() + "…"
+                spoken_about = f"{spoken_about}\n\nМатериал:\n{clip}".strip()
+            _speak_before_artifact(mode, spoken_about or attached[:800])
 
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
@@ -1241,8 +1322,16 @@ def run_pipeline(
             )
         else:
             try:
+                from case3.chat_memory import focus_source
+
+                asked = str(meta.get("chat_prompt") or "")
+                focused = focus_source(source_raw, asked)
+                gen_path = text_path
+                if focused and focused != source_raw:
+                    gen_path = work / "focus_source.txt"
+                    gen_path.write_text(focused, encoding="utf-8")
                 _, figures, charts, diagrams = generate_document(
-                    text_path,
+                    gen_path,
                     out_tex=tex_path,
                     intent=intent,
                     gold_dir=root / "prompt" / "gold",

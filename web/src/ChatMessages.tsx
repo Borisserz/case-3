@@ -178,6 +178,9 @@ export function ChatMessages({
                     <IconLiberMark size={28} />
                   </span>
                   <div className="msg-bot-stack">
+                    {(m.lead || "").trim() ? (
+                      <MsgMarkdown text={m.lead || ""} />
+                    ) : null}
                     {m.thinking?.length ||
                     m.craftFilm?.length ||
                     m.craftSubsteps?.length ||
@@ -216,7 +219,10 @@ export function ChatMessages({
                         }
                       />
                     ) : null}
-                    <MsgMarkdown text={m.text || "Отчёт готов"} />
+                    {(m.lead || "").trim() &&
+                    (m.lead || "").trim() !== (m.text || "").trim() ? null : (
+                      <MsgMarkdown text={m.text || "Отчёт готов"} />
+                    )}
                     <ArtifactCard
                       title={reportTitle(m.result)}
                       thumbUrl={reportThumb(m.result)}
@@ -263,6 +269,11 @@ export function ChatMessages({
                           : undefined
                       }
                     />
+                    {(m.lead || "").trim() &&
+                    (m.text || "").trim() &&
+                    (m.lead || "").trim() !== (m.text || "").trim() ? (
+                      <MsgMarkdown text={m.text} />
+                    ) : null}
                     {(() => {
                       const displayWarns = (m.result.warnings || []).filter(
                         (w) =>
@@ -299,12 +310,21 @@ export function ChatMessages({
                     <IconLiberMark size={28} />
                   </span>
                   <div className="msg-bot-stack">
-                    <ReportPending
-                      label={thinkingLabel || m.text || undefined}
-                      stage={m.pendingStage || "queued"}
-                      detail={m.pendingDetail}
-                      mode={m.thinkingMode || workMode || "report"}
-                    />
+                    {(m.lead || "").trim() ? (
+                      <MsgMarkdown
+                        text={m.lead || ""}
+                        streaming={m.streamingSummary}
+                      />
+                    ) : workMode ? (
+                      <ReportPending
+                        label={thinkingLabel || m.text || undefined}
+                        stage={m.pendingStage || "queued"}
+                        detail={m.pendingDetail}
+                        mode={m.thinkingMode || workMode || "report"}
+                      />
+                    ) : (
+                      <p className="agent-wait">Отвечаю…</p>
+                    )}
                     <ThinkingFold
                       lines={m.thinking || []}
                       live
@@ -334,9 +354,10 @@ export function ChatMessages({
                           : undefined
                       }
                     />
-                    {m.streamingSummary && m.text.trim() ? (
+                    {m.text.trim() &&
+                    m.text.trim() !== (m.lead || "").trim() ? (
                       <div className="msg-stream-wrap">
-                        <MsgMarkdown text={m.text} streaming />
+                        <MsgMarkdown text={m.text} streaming={m.streamingSummary} />
                       </div>
                     ) : null}
                   </div>
@@ -375,7 +396,17 @@ export function ChatMessages({
                       />
                     ) : null}
                     {m.role === "bot" && !m.error ? (
-                      <MsgMarkdown text={m.text} />
+                      <>
+                        {(m.lead || "").trim() ? (
+                          <MsgMarkdown text={m.lead || ""} />
+                        ) : null}
+                        {(m.text || "").trim() &&
+                        (m.text || "").trim() !== (m.lead || "").trim() ? (
+                          <MsgMarkdown text={m.text} />
+                        ) : !(m.lead || "").trim() ? (
+                          <MsgMarkdown text={m.text} />
+                        ) : null}
+                      </>
                     ) : (
                       <div className="msg-body">{m.text}</div>
                     )}
