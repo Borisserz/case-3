@@ -363,9 +363,11 @@ def parse_slide_body(text: str | None) -> tuple[int, str]:
         return 0, ""
     match = re.search(r"слайд\w*\s+(\d{1,2})", raw, re.IGNORECASE)
     if not match:
+        match = re.search(r"(\d{1,2})\s*слайд\w*", raw, re.IGNORECASE)
+    if not match:
         return 0, ""
     body = re.sub(
-        r"^[\s:—\-]*(?:напиши|поставь|текст)?\s*",
+        r"^[\s:—\-]*(?:напиши|поставь|текст|на)?\s*",
         "",
         raw[match.end() :],
         flags=re.IGNORECASE,
@@ -864,6 +866,27 @@ def resolve_act(
             kind="revise",
             op="recolor_deck",
             say="Соберу презентацию в следующем стиле. Текст слайдов тот же.",
+        )
+
+    named_pack = _named(raw, _PACKS)
+    if (
+        has_deck
+        and named_pack
+        and re.search(r"презентац|презу|преза", raw, re.IGNORECASE)
+        and not re.search(
+            r"сделай|собрать|подготовь|оформи|сверстай|нарисуй|построй|сгенерируй|новую|новый",
+            raw,
+            re.IGNORECASE,
+        )
+    ):
+        return ChatAct(
+            kind="revise",
+            op="recolor_deck",
+            pack=named_pack,
+            say=(
+                f"Перекрашиваю презентацию в {PACK_LABELS[named_pack]}. "
+                "Слайды соберутся заново, текст тот же."
+            ),
         )
 
     route = resolve_turn(raw, bias)

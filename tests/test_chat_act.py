@@ -248,6 +248,23 @@ def test_rename_section_is_not_a_document_title():
     assert missing.kind == "talk"
 
 
+def test_slide_text_allows_the_number_before_the_word():
+    text = resolve_act("напиши на 2 слайде KPI", has_deck=True)
+    assert text.op == "slide_text"
+    assert text.slide == 2
+    assert "KPI" in text.title
+    assert resolve_act("напиши на 2 слайде KPI").kind == "talk"
+
+
+def test_a_named_color_recolors_the_deck_already_on_the_table():
+    act = resolve_act("презу в сапфир пж", has_deck=True)
+    assert act.op == "recolor_deck"
+    assert act.pack == "board"
+    fresh = resolve_act("сделай презу в сапфир", has_deck=True)
+    assert fresh.kind == "build"
+    assert fresh.build == "presentation"
+
+
 def test_slide_text_and_a_new_slide_stay_on_the_deck():
     text = resolve_act("на слайде 2 напиши Риски выросли", has_deck=True)
     assert text.op == "slide_text"
