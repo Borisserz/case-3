@@ -18,7 +18,8 @@ export function reviseSurface(
     op === "delete_slide" ||
     op === "reorder_slide" ||
     op === "add_slide" ||
-    op === "slide_text"
+    op === "slide_text" ||
+    op === "slide_bullets"
   ) {
     return "deck";
   }
@@ -31,7 +32,11 @@ export function reviseSurface(
     op === "undo" ||
     op === "redo" ||
     op === "retitle" ||
-    op === "rename_heading"
+    op === "rename_heading" ||
+    op === "replace_cell" ||
+    op === "replace_item" ||
+    op === "add_item" ||
+    op === "refine_diagram"
   ) {
     return "report";
   }

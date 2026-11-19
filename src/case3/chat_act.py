@@ -164,6 +164,8 @@ class ChatAct:
     title_on: str = ""  # report | deck
     chart: str = ""
     chart_at: int = 0
+    slot: int = 0
+    items: tuple[str, ...] = ()
 
 
 def _norm(text: str) -> str:
@@ -373,6 +375,108 @@ def parse_slide_body(text: str | None) -> tuple[int, str]:
         flags=re.IGNORECASE,
     ).strip(" .")
     return int(match.group(1)), body
+
+
+def _slot_index(raw: str, noun: str) -> int:
+    numbered = re.search(rf"(\d{{1,2}})\s*{noun}|{noun}\w*\s+(\d{{1,2}})", raw, re.IGNORECASE)
+    if numbered:
+        value = int(numbered.group(1) or numbered.group(2))
+        return value if 1 <= value <= 20 else 0
+    for stem, index in (("перв", 1), ("втор", 2), ("трет", 3), ("четвер", 4)):
+        if re.search(rf"{stem}\w*\s+{noun}", raw, re.IGNORECASE):
+            return index
+    return 0
+
+
+def _swap(raw: str) -> tuple[str, str] | None:
+    match = re.search(r"замени\s+(.+?)\s+на\s+(.+)$", raw, re.IGNORECASE)
+    if not match:
+        return None
+    old = match.group(1).strip(" «».")
+    new = match.group(2).strip(" «».")
+    if not old or not new:
+        return None
+    return old, new
+
+
+def parse_cell_replace(text: str | None) -> tuple[int, str, str] | None:
+    """«В таблице замени Гомель на Брест» → (0, old, new). None when it is not a cell edit."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"таблиц", raw, re.IGNORECASE):
+        return None
+    swapped = _swap(raw)
+    if not swapped:
+        return None
+    return _slot_index(raw, "таблиц"), swapped[0], swapped[1]
+
+
+def parse_item_replace(text: str | None) -> tuple[int, str, str] | None:
+    raw = _norm(text or "").strip()
+    if not re.search(r"спис", raw, re.IGNORECASE):
+        return None
+    swapped = _swap(raw)
+    if not swapped:
+        return None
+    return _slot_index(raw, "спис"), swapped[0], swapped[1]
+
+
+def parse_item_add(text: str | None) -> tuple[int, str] | None:
+    raw = _norm(text or "").strip()
+    if not re.search(r"спис", raw, re.IGNORECASE) or not re.search(r"добав", raw, re.IGNORECASE):
+        return None
+    if re.search(r"слайд", raw, re.IGNORECASE):
+        return None
+    match = re.search(r"пункт\s+(.+)$", raw, re.IGNORECASE)
+    if not match:
+        return None
+    item = re.sub(r"\s+в\s+список\w*$", "", match.group(1), flags=re.IGNORECASE).strip(" .")
+    if not item:
+        return None
+    return _slot_index(raw, "спис"), item
+
+
+def parse_diagram_edit(text: str | None) -> str | None:
+    """None when this is not an edit of a scheme already on the table.
+
+    Empty string means the user named the scheme but not the change.
+    """
+    raw = _norm(text or "").strip()
+    if not re.search(r"схем", raw, re.IGNORECASE):
+        return None
+    if re.search(
+        r"сделай|собери|нарисуй|построй|сгенерируй|новую|новый",
+        raw,
+        re.IGNORECASE,
+    ):
+        return None
+    match = re.search(r"на\s+схеме\s+(.+)$", raw, re.IGNORECASE)
+    if match and match.group(1).strip(" ."):
+        return match.group(1).strip(" .")
+    match = re.search(
+        r"(?:поправь|измени|убери|перерисуй|уточни)\s+схем\w*\s*[:—-]?\s*(.*)$",
+        raw,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip(" .")
+
+
+def parse_slide_bullets(text: str | None) -> tuple[int, tuple[str, ...]] | None:
+    """«На слайде 2 пункты: риски; сроки» → (2, (...)). None when it is not points."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"слайд", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"пункт|тезис", raw, re.IGNORECASE):
+        return None
+    number = re.search(r"слайд\w*\s+(\d{1,2})|(\d{1,2})\s*слайд", raw, re.IGNORECASE)
+    if not number:
+        return 0, ()
+    index = int(number.group(1) or number.group(2))
+    tail = re.search(r"(?:пункт\w*|тезис\w*)\s*[:—-]?\s*(.*)$", raw, re.IGNORECASE)
+    body = (tail.group(1) if tail else "").strip()
+    parts = [part.strip(" .") for part in re.split(r"\s*[;•]\s*|\n+", body) if part.strip(" .")]
+    return index, tuple(parts)
 
 
 def parse_new_slide(text: str | None) -> str | None:
@@ -639,6 +743,82 @@ def resolve_act(
             say=f"Перепишу раздел «{remembered}» по документам. Новых чисел не добавлю.",
         )
 
+    if not question:
+        cell = parse_cell_replace(raw)
+        if cell:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, таблицу править негде.")
+            return ChatAct(
+                kind="revise",
+                op="replace_cell",
+                slot=cell[0],
+                section=cell[1],
+                title=cell[2],
+                say=f"Меняю «{cell[1]}» на «{cell[2]}» в таблице.",
+            )
+        item = parse_item_replace(raw)
+        if item:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, список править негде.")
+            return ChatAct(
+                kind="revise",
+                op="replace_item",
+                slot=item[0],
+                section=item[1],
+                title=item[2],
+                say=f"Меняю «{item[1]}» на «{item[2]}» в списке.",
+            )
+        added_item = parse_item_add(raw)
+        if added_item:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, список править негде.")
+            return ChatAct(
+                kind="revise",
+                op="add_item",
+                slot=added_item[0],
+                title=added_item[1],
+                say=f"Добавляю в список пункт «{added_item[1]}».",
+            )
+        if re.search(r"таблиц", raw, re.IGNORECASE) and re.search(
+            r"поправь|измени|замени", raw, re.IGNORECASE
+        ):
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, таблицу править негде.")
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Что заменить в таблице? Напиши «в таблице замени 10 на 12».",
+            )
+        if re.search(r"спис", raw, re.IGNORECASE) and re.search(
+            r"поправь|измени|замени", raw, re.IGNORECASE
+        ):
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, список править негде.")
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Что заменить в списке? Напиши «в списке замени кассу на выручку».",
+            )
+        diagram_edit = parse_diagram_edit(raw)
+        if diagram_edit is not None:
+            if not has_diagram:
+                return ChatAct(
+                    kind="talk",
+                    say="Схемы в этом чате ещё нет. Напиши «сделай схему», если её собрать.",
+                )
+            if not diagram_edit:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Что изменить на схеме? Напиши «на схеме убери кассу».",
+                )
+            return ChatAct(
+                kind="revise",
+                op="refine_diagram",
+                title=diagram_edit,
+                say="Меняю схему по твоей фразе. Новых чисел не добавлю.",
+            )
+
     if not question and (_REWRITE.search(raw) or _PROSE.search(raw)):
         if not has_report:
             return ChatAct(
@@ -798,6 +978,40 @@ def resolve_act(
             op="retype_charts",
             chart=chart,
             say=f"Меняю графики на {CHART_SAY[chart]}. Числа те же.",
+        )
+
+    points = parse_slide_bullets(raw) if not question else None
+    if points is not None:
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if not points[0]:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="На каком слайде пункты? Например «на слайде 2 пункты: риски; сроки».",
+            )
+        if not points[1]:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какие пункты поставить? Раздели их точкой с запятой.",
+            )
+        if len(points[1]) > 5:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="На слайде не больше 5 пунктов. Оставь пять и раздели их точкой с запятой.",
+            )
+        shown = "; ".join(points[1])
+        return ChatAct(
+            kind="revise",
+            op="slide_bullets",
+            slide=points[0],
+            items=points[1],
+            say=f"Ставлю на слайд {points[0]} пункты: {shown}.",
         )
 
     slide_body = parse_slide_body(raw) if not question else (0, "")

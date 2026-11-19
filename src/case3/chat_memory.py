@@ -10,6 +10,10 @@ from typing import Any
 _FULL_TURNS = 4
 _MAX_HOPS = 48
 _LINE = 280
+_PREV = 1200
+_TAIL = 2000
+_NOTE = 300
+_NOTE_SHORT = 160
 
 
 def _clip(value: object, limit: int) -> str:
@@ -21,6 +25,37 @@ def _clip(value: object, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def _clip_prose(value: object, limit: int) -> str:
+    """Keep paragraphs. Cut near a break when the tail is long."""
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    if len(text) <= limit:
+        return text
+    if limit <= 1:
+        return ""
+    cut = text[: limit - 1]
+    floor = int(limit * 0.6)
+    for sep in ("\n\n", "\n", ". "):
+        spot = cut.rfind(sep)
+        if spot >= floor:
+            cut = cut[:spot].rstrip()
+            break
+    else:
+        cut = cut.rstrip()
+    return cut + "…"
+
+
+def _turn_budget(offset: int) -> tuple[int, int, int]:
+    """Prompt, answer, edit-note. Offset 0 is the latest turn."""
+    if offset <= 0:
+        return _TAIL, _TAIL, _NOTE
+    if offset == 1:
+        return _PREV, _PREV, _NOTE
+    return _LINE, _LINE, _NOTE_SHORT
+
+
 def _one_line(meta: dict[str, Any]) -> str:
     summary = _clip(meta.get("chat_summary") or meta.get("chat_opening"), 120)
     prompt = _clip(meta.get("chat_prompt"), 80)
@@ -30,7 +65,7 @@ def _one_line(meta: dict[str, Any]) -> str:
 
 
 def format_thread(turns: list[dict[str, Any]] | None) -> str:
-    """Oldest first. Recent turns stay readable. Older ones shrink to one line."""
+    """Oldest first. The last answer matches the screen. Older turns shrink."""
     rows = [t for t in (turns or []) if isinstance(t, dict)]
     if not rows:
         return ""
@@ -48,9 +83,13 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
         brief = "; ".join(bit for bit in (_one_line(t) for t in older[1:]) if bit)
         if brief:
             lines.append("Раньше: " + _clip(brief, 400))
-    for index, turn in enumerate(recent, start=len(older) + 1):
-        prompt = _clip(turn.get("chat_prompt"), _LINE)
-        summary = _clip(turn.get("chat_summary") or turn.get("chat_opening"), _LINE)
+    for pos, turn in enumerate(recent):
+        offset = len(recent) - 1 - pos
+        index = len(older) + pos + 1
+        prompt_cap, answer_cap, note_cap = _turn_budget(offset)
+        clip = _clip_prose if offset <= 1 else _clip
+        prompt = clip(turn.get("chat_prompt"), prompt_cap)
+        summary = clip(turn.get("chat_summary") or turn.get("chat_opening"), answer_cap)
         mode = _clip(turn.get("output_mode"), 20)
         if prompt:
             lines.append(f"Ход {index}. Запрос: {prompt}")
@@ -60,8 +99,8 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
         for note in turn.get("dialogue") or []:
             if not isinstance(note, dict):
                 continue
-            user = _clip(note.get("user"), 160)
-            agent = _clip(note.get("assistant"), 160)
+            user = clip(note.get("user"), note_cap)
+            agent = clip(note.get("assistant"), note_cap)
             if user:
                 lines.append(f"Дальше: {user}")
             if agent:
@@ -212,8 +251,8 @@ def recall_block(turns: list[dict[str, Any]] | None, text: str | None) -> str:
             match = turn
     if match is None:
         return "Один прошлый ход (не Source): такого ответа в этом чате не видно."
-    prompt = _clip(match.get("chat_prompt"), _LINE)
-    summary = _clip(match.get("chat_summary") or match.get("chat_opening"), _LINE)
+    prompt = _clip_prose(match.get("chat_prompt"), _TAIL)
+    summary = _clip_prose(match.get("chat_summary") or match.get("chat_opening"), _TAIL)
     lines = ["Один прошлый ход (не Source)."]
     if prompt:
         lines.append("Запрос: " + prompt)
@@ -404,20 +443,23 @@ def load_chain_dirs(root: Path, run_id: str, *, hops: int = _MAX_HOPS) -> list[t
     return found
 
 
+def merge_edit(found: dict[str, str], raw: object) -> dict[str, str]:
+    """Keep a section when a later note, such as undo, does not name one."""
+    if not isinstance(raw, dict):
+        return found
+    nxt = dict(found)
+    for key in ("op", "section", "pack", "palette"):
+        val = str(raw.get(key) or "").strip()
+        if val:
+            nxt[key] = val
+    return nxt
+
+
 def newest_edit(root: Path, run_id: str) -> dict[str, str]:
     """Latest section or style remembered anywhere in this chat."""
     found: dict[str, str] = {}
     for _run_id, _path, meta in load_chain_dirs(root, run_id):
-        raw = meta.get("last_edit")
-        if not isinstance(raw, dict):
-            continue
-        edit = {
-            key: str(raw.get(key) or "").strip()
-            for key in ("op", "section", "pack", "palette")
-            if str(raw.get(key) or "").strip()
-        }
-        if edit.get("section") or edit.get("op"):
-            found = edit
+        found = merge_edit(found, meta.get("last_edit"))
     return found
 
 

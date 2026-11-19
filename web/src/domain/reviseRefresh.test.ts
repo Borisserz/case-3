@@ -19,6 +19,10 @@ test("a renamed section and a new slide open the right rail", () => {
   assert.equal(reviseSurface("retype_chart"), "report");
   assert.equal(reviseSurface("add_slide"), "deck");
   assert.equal(reviseSurface("slide_text"), "deck");
+  assert.equal(reviseSurface("slide_bullets"), "deck");
+  assert.equal(reviseSurface("replace_cell"), "report");
+  assert.equal(reviseSurface("add_item"), "report");
+  assert.equal(reviseSurface("refine_diagram"), "report");
 });
 
 test("a deck edit refreshes the presentation rail", () => {

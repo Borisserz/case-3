@@ -1138,9 +1138,14 @@ async def api_run(
             }
         )
 
-    turn, waiting_for = _reserve_run_turn()
-    if turn == "busy":
-        raise HTTPException(409, detail=_busy_detail(waiting_for))
+    # A chat answer does not take the build slot. A report can keep running,
+    # and the one queued report stays queued.
+    if out_mode == "chat":
+        turn, waiting_for = "aside", None
+    else:
+        turn, waiting_for = _reserve_run_turn()
+        if turn == "busy":
+            raise HTTPException(409, detail=_busy_detail(waiting_for))
 
     try:
         # Persist as .../uploads/<stamp>/source.txt so run_id stem stays "source_*"
@@ -1242,7 +1247,7 @@ async def api_run(
     except BaseException:
         if turn == "queue":
             _cancel_queue_reservation()
-        else:
+        elif turn == "run":
             _release_pipeline_slot("pending")
         raise
 

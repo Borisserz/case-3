@@ -147,6 +147,72 @@ def test_post_run_persists_waiter(tmp_path: Path, monkeypatch) -> None:
             _release_pipeline_slot(run_id)
 
 
+def test_two_runs_in_the_same_second_get_different_ids(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    from case3.pipeline import prepare_run_dirs
+
+    class _Frozen:
+        @staticmethod
+        def now(tz=None):
+            return datetime(2026, 11, 19, 6, 55, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("case3.pipeline.datetime", _Frozen)
+    src = _source(tmp_path)
+    first, *_ = prepare_run_dirs(src, project_root=tmp_path)
+    second, *_ = prepare_run_dirs(src, project_root=tmp_path)
+    assert first == "source_20261119T065500Z"
+    assert second == "source_20261119T065500Z_2"
+    assert (tmp_path / "runs" / "out" / first).is_dir()
+    assert (tmp_path / "runs" / "out" / second).is_dir()
+
+
+def test_chat_question_starts_beside_a_queued_report(tmp_path: Path, monkeypatch) -> None:
+    """A question must not take the build slot or the single waiter."""
+    from case3.api import _pipeline_active_run
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    monkeypatch.setattr("case3.api._bg_run_pipeline", lambda **kwargs: None)
+    assert _claim_pipeline_slot("holder_run") is None
+    try:
+        client = TestClient(app)
+        report = client.post(
+            "/api/run",
+            data={"source_text": "Выручка была 12.", "intent": "Сделай отчёт", "output_mode": "report"},
+        )
+        assert report.status_code == 202
+        assert report.json()["status"] == "queued"
+        third = client.post(
+            "/api/run",
+            data={"source_text": "Выручка была 12.", "intent": "Сделай ещё отчёт", "output_mode": "report"},
+        )
+        assert third.status_code == 409
+        chat = client.post(
+            "/api/run",
+            data={
+                "source_text": "Выручка была 12.",
+                "intent": "почему выручка такая",
+                "output_mode": "chat",
+            },
+        )
+        assert chat.status_code == 202
+        body = chat.json()
+        assert body["status"] == "started"
+        assert body["output_mode"] == "chat"
+        assert body["run_id"] != report.json()["run_id"]
+        assert _pipeline_active_run() == "holder_run"
+        stored = load_waiter(tmp_path)
+        assert stored is not None
+        assert stored["run_id"] == report.json()["run_id"]
+    finally:
+        from case3.api import _pipeline_active_run
+
+        _release_pipeline_slot("holder_run")
+        active = _pipeline_active_run()
+        if active:
+            _release_pipeline_slot(active)
+
+
 def test_recover_starts_queued_job_after_restart(tmp_path: Path, monkeypatch) -> None:
     from case3.api import recover_persisted_pipeline
 

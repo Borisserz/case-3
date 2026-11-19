@@ -190,6 +190,87 @@ def test_carry_keeps_the_chat_notice():
     assert meta["chat_notice"] == "Остался один ход после этого."
 
 
+def _marked(marker: str, at: int, tail: str = "КОНЕЦ") -> str:
+    gap = max(0, at - len(marker))
+    return marker + ("н" * gap) + tail
+
+
+def test_latest_answer_keeps_the_analysis_the_screen_shows():
+    body = (
+        "Абзац один про кассу.\n\nАбзац два про долю.\n\n"
+        + ("н" * 360)
+        + "СЕРЕДИНАРАЗБОРА"
+        + ("н" * 1700)
+        + "ЛИШНЕЕ"
+    )
+    text = format_thread(
+        [{"chat_prompt": "разбери", "chat_summary": body, "output_mode": "chat"}]
+    )
+    assert "Абзац один про кассу.\n\nАбзац два про долю." in text
+    assert "СЕРЕДИНАРАЗБОРА" in text
+    assert "ЛИШНЕЕ" not in text
+    assert "не Source" in text
+
+
+def test_thread_budget_shrinks_as_turns_get_older():
+    """Archive is one line. Four turns back stays short. The previous turn keeps ~1200."""
+    turns = [
+        {"chat_prompt": "старт", "chat_summary": "начало разговора"},
+        {"chat_prompt": "давно", "chat_summary": "давний ответ"},
+        {"chat_prompt": "далеко", "chat_summary": _marked("ДАЛЕКО", 400, "СРЕЗДАЛЕКО")},
+        {"chat_prompt": "середина", "chat_summary": _marked("СЕРЕДИНА", 400, "СРЕЗСЕРЕДИНА")},
+        {
+            "chat_prompt": "прошлый",
+            "chat_summary": "ПРОШЛЫЙ" + ("н" * 400) + "ДЕРЖУПРОШЛЫЙ" + ("н" * 900) + "СРЕЗПРОШЛЫЙ",
+        },
+        {"chat_prompt": "сейчас", "chat_summary": "короткий текущий"},
+    ]
+    text = format_thread(turns)
+    assert "начало разговора" in text
+    assert "Раньше:" in text
+    assert "ДАЛЕКО" in text
+    assert "СРЕЗДАЛЕКО" not in text
+    assert "СРЕЗСЕРЕДИНА" not in text
+    assert "ПРОШЛЫЙ" in text
+    assert "ДЕРЖУПРОШЛЫЙ" in text
+    assert "СРЕЗПРОШЛЫЙ" not in text
+    assert "сейчас" in text
+
+
+def test_recall_returns_the_old_analysis_not_a_stub():
+    from case3.chat_memory import recall_block
+
+    summary = (
+        "Касса выросла в тексте.\n\n"
+        + ("н" * 400)
+        + "ПАМЯТЬ"
+        + ("н" * 1700)
+        + "ХВОСТПАМЯТИ"
+    )
+    hit = recall_block(
+        [{"chat_prompt": "разбор кассы", "chat_summary": summary}],
+        "что ты говорил про кассу",
+    )
+    assert "Касса выросла в тексте." in hit
+    assert "ПАМЯТЬ" in hit
+    assert "ХВОСТПАМЯТИ" not in hit
+
+
+def test_latest_edit_note_is_not_cut_at_the_old_limit():
+    note = "а" * 180 + "КОНЕЦЗАМЕТКИ"
+    text = format_thread(
+        [
+            {
+                "chat_prompt": "поправь",
+                "chat_summary": "Переписал",
+                "dialogue": [{"user": note, "assistant": "Сделал правку в разделе"}],
+            }
+        ]
+    )
+    assert "КОНЕЦЗАМЕТКИ" in text
+    assert "Сделал правку в разделе" in text
+
+
 def test_long_thread_keeps_the_start_and_one_edit_line():
     turns = []
     for i in range(12):
@@ -246,6 +327,30 @@ def test_newest_edit_walks_past_a_chat_turn(tmp_path: Path):
         )
     found = newest_edit(root, chat)
     assert found.get("section") == "Введение"
+
+
+def test_undo_keeps_the_section_it_followed(tmp_path: Path):
+    from case3.chat_memory import newest_edit
+
+    root = tmp_path
+    report = "source_20261118T100000Z"
+    chat = "source_20261118T110000Z"
+    for run_id, prior, edit in (
+        (report, "", {"op": "rewrite", "section": "Введение"}),
+        (chat, report, {"op": "undo"}),
+    ):
+        out = root / "runs" / "out" / run_id
+        out.mkdir(parents=True)
+        (out / "meta.json").write_text(
+            json.dumps(
+                {"run_id": run_id, "prior_run_id": prior, "last_edit": edit},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    found = newest_edit(root, chat)
+    assert found.get("section") == "Введение"
+    assert found.get("op") == "undo"
 
 
 def test_twelve_turns_still_find_the_report_and_the_edit(tmp_path: Path):

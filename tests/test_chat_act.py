@@ -265,6 +265,59 @@ def test_a_named_color_recolors_the_deck_already_on_the_table():
     assert fresh.build == "presentation"
 
 
+def test_table_cell_replace_names_both_sides():
+    act = resolve_act("в таблице замени Гомель на Брест", has_report=True)
+    assert act.op == "replace_cell"
+    assert act.section == "Гомель"
+    assert act.title == "Брест"
+    assert act.slot == 0
+    second = resolve_act("во второй таблице замени 10 на 12", has_report=True)
+    assert second.op == "replace_cell"
+    assert second.slot == 2
+    assert second.section == "10"
+    assert second.title == "12"
+    missing = resolve_act("в таблице замени 10 на 12")
+    assert missing.kind == "talk"
+    vague = resolve_act("поправь таблицу", has_report=True)
+    assert vague.op == "ask"
+    assert "таблиц" in vague.say
+
+
+def test_list_item_can_be_replaced_or_added():
+    changed = resolve_act("в списке замени кассу на выручку", has_report=True)
+    assert changed.op == "replace_item"
+    assert changed.section == "кассу"
+    assert changed.title == "выручку"
+    added = resolve_act("добавь в список пункт риски поставки", has_report=True)
+    assert added.op == "add_item"
+    assert "риски поставки" in added.title
+    assert resolve_act("добавь в список пункт риски").kind == "talk"
+
+
+def test_diagram_edit_is_not_a_new_diagram():
+    act = resolve_act("на схеме убери кассу", has_diagram=True)
+    assert act.kind == "revise"
+    assert act.op == "refine_diagram"
+    assert "кассу" in act.title
+    vague = resolve_act("поправь схему", has_diagram=True, has_report=True)
+    assert vague.op == "ask"
+    assert "схем" in vague.say
+    built = resolve_act("сделай схему про кассу", has_diagram=True)
+    assert built.kind == "build"
+    assert built.build == "diagram"
+
+
+def test_slide_points_are_not_the_title():
+    act = resolve_act("на слайде 2 пункты: риски; сроки", has_deck=True)
+    assert act.op == "slide_bullets"
+    assert act.slide == 2
+    assert act.items == ("риски", "сроки")
+    title = resolve_act("на слайде 2 напиши Риски выросли", has_deck=True)
+    assert title.op == "slide_text"
+    assert title.title == "Риски выросли"
+    assert resolve_act("на слайде 2 пункты: риски", has_deck=False).kind == "talk"
+
+
 def test_slide_text_and_a_new_slide_stay_on_the_deck():
     text = resolve_act("на слайде 2 напиши Риски выросли", has_deck=True)
     assert text.op == "slide_text"

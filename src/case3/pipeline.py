@@ -387,6 +387,10 @@ def prepare_run_dirs(
     if run_id is None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         run_id = f"{stem}_{stamp}"
+        extra = 2
+        while (root / "runs" / "out" / run_id).exists():
+            run_id = f"{stem}_{stamp}_{extra}"
+            extra += 1
     work = root / "runs" / "work" / run_id
     out = root / "runs" / "out" / run_id
     logs = root / "runs" / "logs" / run_id

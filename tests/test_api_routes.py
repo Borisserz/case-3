@@ -103,7 +103,7 @@ def test_run_returns_202_and_status_poll(
 
 
 def test_run_rejects_second_while_busy(client: TestClient) -> None:
-    """One executing run. The next request waits. A third gets 409."""
+    """One executing build. The next build waits. A third build gets 409."""
     assert api_mod._claim_pipeline_slot("holder_test") is None
     started: list[str] = []
 
@@ -116,8 +116,9 @@ def test_run_rejects_second_while_busy(client: TestClient) -> None:
         r = client.post(
             "/api/run",
             data={
-                "source_text": "x",
-                "intent": "t",
+                "source_text": "Выручка 10",
+                "intent": "Сделай отчёт",
+                "output_mode": "report",
                 "max_charts": "0",
                 "max_images": "0",
                 "forbid_charts": "true",
@@ -132,7 +133,12 @@ def test_run_rejects_second_while_busy(client: TestClient) -> None:
         assert started == []
         third = client.post(
             "/api/run",
-            data={"source_text": "y", "intent": "t", "dry_run": "true"},
+            data={
+                "source_text": "Выручка 20",
+                "intent": "Сделай второй отчёт",
+                "output_mode": "report",
+                "dry_run": "true",
+            },
         )
         assert third.status_code == 409, third.text
         assert "holder_test" in (third.json().get("detail") or "")
