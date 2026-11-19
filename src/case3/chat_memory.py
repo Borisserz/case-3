@@ -78,10 +78,178 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
     return "\n".join(lines)
 
 
+def _strip_digits(value: object) -> str:
+    return re.sub(r"\d+", "", str(value or "")).strip()
+
+
+def memory_card(turns: list[dict[str, Any]] | None, source_text: str = "") -> dict[str, Any]:
+    """Labels for this chat. The open question keeps no digits."""
+    rows = [t for t in (turns or []) if isinstance(t, dict)]
+    section = ""
+    style = ""
+    for turn in reversed(rows):
+        edit = turn.get("last_edit")
+        if not isinstance(edit, dict):
+            continue
+        if not section:
+            section = str(edit.get("section") or "").strip()
+        if not style:
+            style = str(edit.get("pack") or edit.get("palette") or "").strip()
+    question = ""
+    if rows:
+        last = rows[-1]
+        prompt = str(last.get("chat_prompt") or "")
+        summary = str(last.get("chat_summary") or last.get("chat_opening") or "")
+        folded = prompt.casefold()
+        asks = "?" in prompt or folded.startswith("почему") or "зачем" in folded
+        if asks and "?" in summary:
+            question = _clip(_strip_digits(summary), 160)
+    return {
+        "documents": [name for name, _body in split_sources(source_text)],
+        "section": section,
+        "style": style,
+        "open_question": question,
+        "turn_count": len(rows),
+    }
+
+
+def format_card(card: dict[str, Any] | None) -> str:
+    data = card or {}
+    docs = [str(name).strip() for name in (data.get("documents") or []) if str(name).strip()]
+    section = str(data.get("section") or "").strip()
+    style = str(data.get("style") or "").strip()
+    question = _clip(_strip_digits(data.get("open_question")), 160)
+    if not docs and not section and not style and not question:
+        return ""
+    lines = ["Карточка этого чата (не Source)."]
+    bits: list[str] = []
+    if docs:
+        bits.append("документы: " + ", ".join(docs))
+    if section:
+        bits.append("раздел: " + section)
+    if style:
+        bits.append("стиль: " + style)
+    if bits:
+        lines.append(". ".join(bits) + ".")
+    if question:
+        lines.append("Открытый вопрос: " + question)
+    return "\n".join(lines)
+
+
+_ENDINGS = (
+    "ами",
+    "ями",
+    "ого",
+    "ему",
+    "ому",
+    "ыми",
+    "ими",
+    "ах",
+    "ях",
+    "ов",
+    "ев",
+    "ам",
+    "ям",
+    "ом",
+    "ем",
+    "ой",
+    "ей",
+    "ый",
+    "ий",
+    "ая",
+    "ое",
+    "ее",
+    "ую",
+    "юю",
+    "ие",
+    "ые",
+    "у",
+    "ю",
+    "а",
+    "я",
+    "ы",
+    "и",
+    "е",
+    "о",
+)
+
+
+def _stem(word: str) -> str:
+    """Cut a Russian ending so «кассу» meets «касса». Stems stay at least 3 letters."""
+    token = word.casefold().replace("ё", "е")
+    for ending in _ENDINGS:
+        if token.endswith(ending) and len(token) - len(ending) >= 3:
+            return token[: -len(ending)]
+    return token
+
+
+_RECALL = re.compile(
+    r"как ты (отвечал|писал|говорил)|что ты (отвечал|писал|говорил|сказал)|вспомни|вернись к",
+    re.IGNORECASE,
+)
+
+
+def recall_block(turns: list[dict[str, Any]] | None, text: str | None) -> str:
+    """One older turn when the user asks what was said. Empty if this is not a recall."""
+    raw = (text or "").replace("ё", "е").replace("Ё", "Е")
+    if not _RECALL.search(raw):
+        return ""
+    found = re.search(r"\bпро\s+(.+)$", raw, re.IGNORECASE)
+    topic = re.sub(r"[?.!]+", "", found.group(1) if found else "").strip()
+    words = re.findall(r"[0-9a-zа-я]{4,}", topic.casefold())
+    if not words:
+        return "Один прошлый ход (не Source): напиши, про какой ответ вспомнить."
+    match: dict[str, Any] | None = None
+    for turn in turns or []:
+        if not isinstance(turn, dict):
+            continue
+        blob = " ".join(
+            str(turn.get(key) or "")
+            for key in ("chat_prompt", "chat_summary", "chat_opening")
+        ).casefold()
+        stems = {_stem(token) for token in re.findall(r"[0-9a-zа-я]{3,}", blob)}
+        if all(_stem(word) in stems or word in blob for word in words):
+            match = turn
+    if match is None:
+        return "Один прошлый ход (не Source): такого ответа в этом чате не видно."
+    prompt = _clip(match.get("chat_prompt"), _LINE)
+    summary = _clip(match.get("chat_summary") or match.get("chat_opening"), _LINE)
+    lines = ["Один прошлый ход (не Source)."]
+    if prompt:
+        lines.append("Запрос: " + prompt)
+    if summary:
+        lines.append("Ответ: " + summary)
+    return "\n".join(lines)
+
+
+def chain_notice(turns_after: int) -> str:
+    """Short warning on the 40th, 47th, and last turn. Empty otherwise."""
+    if turns_after == 40:
+        return (
+            "В этом чате 40 ходов из 48. "
+            "Потом новый вопрос попросит открыть «Новый чат»."
+        )
+    if turns_after == 47:
+        return "Остался один ход после этого. Дальше открой «Новый чат»."
+    if turns_after == _MAX_HOPS:
+        return (
+            "Этот ход последний в чате. "
+            "Следующий вопрос попросит открыть «Новый чат»."
+        )
+    return ""
+
+
+def chain_notice_for_prior(root: Path, prior_run_id: str | None) -> str:
+    rid = (prior_run_id or "").strip()
+    already = len(load_chain(root, rid)) if rid else 0
+    return chain_notice(already + 1)
+
+
 def chain_limit_say() -> str:
     return (
         f"В этом чате уже {_MAX_HOPS} ходов, дальше контекст не помещается. "
-        "Нажми «Новый чат» и продолжи там. Этот чат останется в списке слева."
+        "«Пустой» начнёт новый разговор. «С этими документами» заберёт файлы без старых ответов. "
+        "Этот чат останется в списке слева."
     )
 
 

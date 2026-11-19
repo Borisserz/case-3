@@ -94,6 +94,14 @@ export type RunResult = {
   prior_run_id?: string;
   /** Conversation head when this payload is an older file shown in the rail. */
   chain_head?: string;
+  /** Quiet warning when this chat is near the 48-turn cap. */
+  chat_notice?: string;
+  /** How many pipeline turns this chat already holds. */
+  turn_count?: number;
+  /** Last report section this chat edited. */
+  memory_section?: string;
+  /** This run is a file from another chat. Do not continue its transcript. */
+  isolated?: boolean;
   /** Live deck IR for editable twin canvas */
   deck?: import("../deckTypes").DeckIR | null;
   /** Liber composer mode that produced this run */
@@ -160,6 +168,8 @@ export type BotMsg = {
   text: string;
   /** Full-width agent line: opening before an artifact, or the chat answer. */
   lead?: string;
+  /** Chat is full: show a button that starts an empty chat. */
+  offerNewChat?: boolean;
   result?: RunResult;
   pending?: boolean;
   pendingStage?: string;

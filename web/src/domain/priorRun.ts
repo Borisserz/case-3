@@ -55,12 +55,15 @@ export function messagesFromMemory(
 }
 
 export function priorRunIdFromMessages(
-  msgs: Array<{ role: string; result?: { run_id?: string } | null }>,
+  msgs: Array<{
+    role: string;
+    result?: { run_id?: string; chain_head?: string; isolated?: boolean } | null;
+  }>,
 ): string | null {
   for (let i = msgs.length - 1; i >= 0; i -= 1) {
     const msg = msgs[i];
-    if (msg.role !== "bot") continue;
-    const head = (msg.result as { chain_head?: string } | null | undefined)?.chain_head?.trim();
+    if (msg.role !== "bot" || msg.result?.isolated) continue;
+    const head = msg.result?.chain_head?.trim();
     if (head) return head;
     const id = msg.result?.run_id?.trim();
     if (id) return id;

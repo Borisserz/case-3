@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chatToReopen, historyRailRun, revisedRailPlan, reviseSurface } from "./reviseRefresh";
+import {
+  chatToReopen,
+  historyRailRun,
+  offersNewChat,
+  revisedRailPlan,
+  reviseSurface,
+} from "./reviseRefresh";
+
+test("only a full chat offers a new-chat button", () => {
+  assert.equal(offersNewChat("full"), true);
+  assert.equal(offersNewChat("ask"), false);
+  assert.equal(offersNewChat("rewrite"), false);
+});
+
+test("a renamed section and a new slide open the right rail", () => {
+  assert.equal(reviseSurface("rename_heading"), "report");
+  assert.equal(reviseSurface("retype_chart"), "report");
+  assert.equal(reviseSurface("add_slide"), "deck");
+  assert.equal(reviseSurface("slide_text"), "deck");
+});
 
 test("a deck edit refreshes the presentation rail", () => {
   assert.equal(reviseSurface("reorder_slide"), "deck");

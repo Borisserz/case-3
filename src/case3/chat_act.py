@@ -163,6 +163,7 @@ class ChatAct:
     title: str = ""
     title_on: str = ""  # report | deck
     chart: str = ""
+    chart_at: int = 0
 
 
 def _norm(text: str) -> str:
@@ -193,6 +194,8 @@ def _clean_name(name: str) -> str:
     if not cleaned:
         return ""
     if cleaned.split()[0].casefold() in _STOP_NAME:
+        return ""
+    if cleaned.casefold() in {"раздел", "абзац", "глава", "часть", "текст"}:
         return ""
     if cleaned.islower():
         return cleaned[:1].upper() + cleaned[1:]
@@ -320,6 +323,63 @@ def _ord_index(token: str) -> int:
         if folded.startswith(stem):
             return index
     return 0
+
+
+def chart_at(text: str | None) -> int:
+    """1-based chart when the user names one. Zero means every chart."""
+    raw = _norm(text or "")
+    match = re.search(r"график\w*\s+(\d{1,2})|(\d{1,2})\s*график", raw, re.IGNORECASE)
+    if match:
+        return int(match.group(1) or match.group(2))
+    for stem, index in (
+        ("перв", 1),
+        ("втор", 2),
+        ("трет", 3),
+        ("четвер", 4),
+        ("пят", 5),
+    ):
+        if re.search(rf"{stem}\w*\s+график", raw, re.IGNORECASE):
+            return index
+    return 0
+
+
+def parse_section_rename(text: str | None) -> tuple[str, str] | None:
+    raw = _norm(text or "").strip()
+    match = re.search(r"переименуй(?:те)?\s+раздел\s+(.+?)\s+в\s+(.+)$", raw, re.IGNORECASE)
+    if not match:
+        return None
+    old = match.group(1).strip()
+    new = match.group(2).strip(" .")
+    if not old or not new:
+        return None
+    return old, new
+
+
+def parse_slide_body(text: str | None) -> tuple[int, str]:
+    raw = _norm(text or "").strip()
+    if re.search(r"добав|перестав|перемест|подвинь|убери|удали", raw, re.IGNORECASE):
+        return 0, ""
+    if not re.search(r"напиши|текст", raw, re.IGNORECASE):
+        return 0, ""
+    match = re.search(r"слайд\w*\s+(\d{1,2})", raw, re.IGNORECASE)
+    if not match:
+        return 0, ""
+    body = re.sub(
+        r"^[\s:—\-]*(?:напиши|поставь|текст)?\s*",
+        "",
+        raw[match.end() :],
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    return int(match.group(1)), body
+
+
+def parse_new_slide(text: str | None) -> str | None:
+    """None when this is not a new slide. Empty string asks for a topic."""
+    raw = _norm(text or "").strip()
+    match = re.search(r"добав(?:ь|ить)\s+слайд(?:\s+про)?\s*(.*)$", raw, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).strip(" .")
 
 
 def chart_type_named(text: str | None) -> str:
@@ -620,6 +680,26 @@ def resolve_act(
             say=f"Убираю слайд {index}. Остальные соберутся заново.",
         )
 
+    renamed = parse_section_rename(raw) if (not question and has_report) else None
+    if renamed and not has_report:
+        return ChatAct(
+            kind="talk",
+            say="Отчёта в этом чате ещё нет, переименовать нечего.",
+        )
+    if renamed:
+        return ChatAct(
+            kind="revise",
+            op="rename_heading",
+            section=renamed[0],
+            title=renamed[1],
+            say=f"Переименую раздел «{renamed[0]}» в «{renamed[1]}». Текст раздела тот же.",
+        )
+    if not question and parse_section_rename(raw) and not has_report:
+        return ChatAct(
+            kind="talk",
+            say="Отчёта в этом чате ещё нет, переименовать нечего.",
+        )
+
     if not question and re.search(r"заголовок", raw, re.IGNORECASE) and re.search(
         r"поменяй|смени|измени|переименуй", raw, re.IGNORECASE
     ):
@@ -695,6 +775,7 @@ def resolve_act(
                 say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
             )
         chart = chart_type_named(raw)
+        index = chart_at(raw)
         if not chart:
             names = ", ".join(CHART_SAY[key] for key in ("line", "bar", "donut", "horizontal_bar", "area", "scatter"))
             return ChatAct(
@@ -702,11 +783,60 @@ def resolve_act(
                 op="ask",
                 say=f"Какой вид графика: {names}?",
             )
+        if index:
+            return ChatAct(
+                kind="revise",
+                op="retype_chart",
+                chart=chart,
+                chart_at=index,
+                say=f"Меняю график {index} на {CHART_SAY[chart]}. Числа те же.",
+            )
         return ChatAct(
             kind="revise",
             op="retype_charts",
             chart=chart,
             say=f"Меняю графики на {CHART_SAY[chart]}. Числа те же.",
+        )
+
+    slide_body = parse_slide_body(raw) if not question else (0, "")
+    if slide_body[0]:
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if not slide_body[1]:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Что написать на слайде? Например «на слайде 2 напиши риски».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="slide_text",
+            slide=slide_body[0],
+            title=slide_body[1],
+            say=f"Меняю заголовок слайда {slide_body[0]}. Новых чисел нет.",
+        )
+
+    topic = parse_new_slide(raw) if not question else None
+    if topic is not None:
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if not topic:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="О чём слайд? Напиши «добавь слайд про …». Новых чисел не добавлю.",
+            )
+        return ChatAct(
+            kind="revise",
+            op="add_slide",
+            title=topic,
+            say=f"Добавляю слайд «{topic}». Новых чисел нет.",
         )
 
     if not question and _EDIT.search(raw):

@@ -41,6 +41,8 @@ type Props = {
   onWorkMode: (mode: LiberWorkMode) => void;
   /** Mode pills — empty home only (hide once chat has messages). */
   showModes: boolean;
+  /** Documents, last section, and turn count for this chat. */
+  memoryLine?: string;
   /** Empty chat + presentation — show template gallery. */
   showPackPresets: boolean;
   /** Empty presentation home only — palette / style sheet. */
@@ -87,6 +89,7 @@ export function ChatComposer({
   workMode,
   onWorkMode,
   showModes,
+  memoryLine = "",
   showPackPresets,
   showDeckStyleBtn = false,
   deckStyle,
@@ -172,6 +175,12 @@ export function ChatComposer({
               </button>
             ) : null}
           </div>
+        ) : null}
+
+        {memoryLine ? (
+          <p className="chat-memory" role="status">
+            {memoryLine}
+          </p>
         ) : null}
 
         <div className="composer">

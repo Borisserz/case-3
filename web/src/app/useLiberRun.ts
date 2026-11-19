@@ -37,8 +37,13 @@ import {
   stageLabel,
   uid,
 } from "../domain/runHelpers";
+import { loadCarriedRun } from "../domain/carriedRun";
 import { priorRunIdFromMessages } from "../domain/priorRun";
-import { refreshRevisedArtifact, reviseSurface } from "../domain/reviseRefresh";
+import {
+  offersNewChat,
+  refreshRevisedArtifact,
+  reviseSurface,
+} from "../domain/reviseRefresh";
 import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
   attachSlidesPayload,
@@ -351,6 +356,7 @@ async () => {
     deckStyle,
     chartPalette,
     priorRunId,
+    carriedRunId: loadCarriedRun(),
   });
 
   try {
@@ -392,6 +398,7 @@ async () => {
     if (data.mode === "chat_revise") {
       const line = asString(data.chat, "Сделал.");
       const runId = asString(data.run_id);
+      const isolated = data.isolate === true;
       const surface =
         asString(data.surface) === "deck" || asString(data.surface) === "report"
           ? (asString(data.surface) as "deck" | "report")
@@ -404,8 +411,14 @@ async () => {
             lead: line,
             text: line,
             pending: false,
+            offerNewChat: offersNewChat(asString(data.op)),
             result: runId
-              ? ({ run_id: runId, output_mode: asString(data.output_mode, "chat"), chat_summary: line } as RunResult)
+              ? ({
+                  run_id: runId,
+                  isolated,
+                  output_mode: asString(data.output_mode, "chat"),
+                  chat_summary: line,
+                } as RunResult)
               : msg.result,
           };
         }),
@@ -424,6 +437,7 @@ async () => {
           openReportArtifact,
         },
         asString(data.artifact_run_id),
+        { remember: !isolated, isolated },
       ).finally(() => setBusy(false));
       return;
     }

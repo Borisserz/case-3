@@ -185,9 +185,67 @@ def test_a_full_chat_asks_for_a_new_one_but_still_edits(tmp_path: Path, monkeypa
     blocked = continue_or_limit("что это значит", head, root=root)
     assert blocked is not None
     assert blocked["op"] == "full"
-    assert "Новый чат" in blocked["chat"]
+    assert "Пустой" in blocked["chat"]
+    assert "С этими документами" in blocked["chat"]
     assert blocked["run_id"] == head
     assert not (root / "runs" / "out").joinpath("source_20261119T999999Z").exists()
+
+
+def test_carried_file_can_be_edited_without_joining_its_chat(tmp_path: Path, monkeypatch):
+    old = "source_20261118T100000Z"
+    old_dir = tmp_path / "runs" / "out" / old
+    old_dir.mkdir(parents=True)
+    (old_dir / "note.tex").write_text("\\section{Введение}\nБыло 10.\n", encoding="utf-8")
+    (old_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": old,
+                "output_mode": "report",
+                "chat_prompt": "секретный старый вопрос",
+                "artifacts": {"pdf": "a.pdf"},
+                "last_edit": {"op": "rewrite", "section": "Введение"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_rewrite(out_dir: Path, text: str, act) -> str:
+        assert out_dir.name == old
+        return "Переписал раздел «Введение» по документам. Новых чисел нет."
+
+    monkeypatch.setattr("case3.chat_revise._rewrite", fake_rewrite)
+    result = try_chat_revise("короче", "", root=tmp_path, carried_run_id=old)
+    assert result is not None
+    assert result["isolate"] is True
+    assert result["run_id"] == old
+    meta = json.loads((old_dir / "meta.json").read_text(encoding="utf-8"))
+    assert "dialogue" not in meta
+    assert meta["chat_prompt"] == "секретный старый вопрос"
+
+
+def test_rename_heading_uses_the_report_dir(tmp_path: Path, monkeypatch):
+    report = "source_20261118T100000Z"
+    report_dir = tmp_path / "runs" / "out" / report
+    report_dir.mkdir(parents=True)
+    (report_dir / "note.tex").write_text("\\section{Введение}\nТекст.\n", encoding="utf-8")
+    (report_dir / "meta.json").write_text(
+        json.dumps({"run_id": report, "output_mode": "report", "artifacts": {"pdf": "a.pdf"}}),
+        encoding="utf-8",
+    )
+    seen: dict[str, str] = {}
+
+    def fake_rename(out_dir: Path, old: str, new: str) -> str:
+        seen["dir"] = out_dir.name
+        seen["old"] = old
+        seen["new"] = new
+        return "Переименовал раздел «Введение» в «Контекст»."
+
+    monkeypatch.setattr("case3.chat_revise._rename_heading", fake_rename)
+    result = try_chat_revise("переименуй раздел Введение в Контекст", report, root=tmp_path)
+    assert result is not None
+    assert result["surface"] == "report"
+    assert seen == {"dir": report, "old": "Введение", "new": "Контекст"}
 
 
 def test_unclear_edit_lists_the_real_headings(tmp_path: Path):

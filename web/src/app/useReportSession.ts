@@ -6,6 +6,7 @@ import {
   reportTitle,
   uid,
 } from "../domain/runHelpers";
+import { rememberCarriedRun } from "../domain/carriedRun";
 import { clearOpenChat } from "../domain/openChat";
 import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
 import type { ActiveArtifact } from "../ArtifactRail";
@@ -61,14 +62,19 @@ export function useReportSession({
     }
   }
 
-  function startNewReport() {
+  function startNewReport(options?: { keepSource?: boolean; carryRunId?: string }) {
     clearOpenChat();
     setMsgs([]);
     setChatTitle(null);
     setChat("");
-    setFile(null);
-    setSourceDraft(null);
     setAttachPhotos([]);
+    if (options?.keepSource) {
+      rememberCarriedRun(options.carryRunId || "");
+    } else {
+      rememberCarriedRun("");
+      setFile(null);
+      setSourceDraft(null);
+    }
     setRailExiting(false);
     setRailCollapsed(false);
     setActiveArtifact(null);

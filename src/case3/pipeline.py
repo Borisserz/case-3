@@ -355,6 +355,12 @@ def carry_chat_prompt(meta: dict[str, Any], previous: dict[str, Any] | None) -> 
         }
         if kept:
             meta["last_edit"] = kept
+    notice = str(prev.get("chat_notice") or "").strip()
+    if notice and not str(meta.get("chat_notice") or "").strip():
+        meta["chat_notice"] = notice
+    carried = str(prev.get("carried_run_id") or "").strip()
+    if carried and not str(meta.get("carried_run_id") or "").strip():
+        meta["carried_run_id"] = carried
 
 
 def merge_desk_slides_fields(

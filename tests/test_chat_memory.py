@@ -67,6 +67,129 @@ def test_thread_names_the_last_edit_as_dialogue_not_fact():
     assert text.count("Последняя правка") == 1
 
 
+def test_memory_card_keeps_labels_and_drops_numbers_from_the_open_question():
+    from case3.chat_memory import format_card, memory_card
+
+    card = memory_card(
+        [
+            {
+                "chat_prompt": "почему так?",
+                "chat_summary": "Уточни, это про 20 процентов?",
+                "last_edit": {"section": "Введение", "pack": "board"},
+            }
+        ],
+        "===== a.txt =====\nбыло 10\n===== b.txt =====\nстало 12\n",
+    )
+    assert card["documents"] == ["a.txt", "b.txt"]
+    assert card["section"] == "Введение"
+    assert card["style"] == "board"
+    assert card["turn_count"] == 1
+    assert "20" not in card["open_question"]
+    text = format_card(card)
+    assert "не Source" in text
+    assert "a.txt" in text
+    assert "20" not in text
+
+
+def test_recall_finds_the_same_word_in_another_case():
+    from case3.chat_memory import recall_block
+
+    hit = recall_block(
+        [{"chat_prompt": "касса выросла", "chat_summary": "КАССАСЕМЬ"}],
+        "что ты говорил про кассу",
+    )
+    assert "КАССАСЕМЬ" in hit
+    other = recall_block(
+        [{"chat_prompt": "доля в тексте", "chat_summary": "ДОЛЯСТАРТ"}],
+        "что ты говорил про долю",
+    )
+    assert "ДОЛЯСТАРТ" in other
+
+
+def test_recall_lifts_one_older_turn_and_says_when_it_is_missing():
+    from case3.chat_memory import recall_block
+
+    turns = [
+        {"chat_prompt": "про долю", "chat_summary": "Доля в тексте есть."},
+        {"chat_prompt": "про кассу", "chat_summary": "Касса отдельно."},
+    ]
+    hit = recall_block(turns, "как ты отвечал про долю")
+    assert "Один прошлый ход" in hit
+    assert "не Source" in hit
+    assert "Доля в тексте есть." in hit
+    assert "Касса" not in hit
+    miss = recall_block(turns, "что ты говорил про маржу")
+    assert "не видно" in miss
+    assert recall_block(turns, "что такое доля") == ""
+
+
+def test_prior_block_shows_the_card_and_not_the_carried_chat(tmp_path: Path):
+    from case3.prior_turn import prior_block_for_form
+
+    old = "source_20261118T100000Z"
+    new = "source_20261118T110000Z"
+    old_dir = tmp_path / "runs" / "out" / old
+    new_dir = tmp_path / "runs" / "out" / new
+    source = tmp_path / "runs" / "out" / new / "source.txt"
+    old_dir.mkdir(parents=True)
+    new_dir.mkdir(parents=True)
+    source.write_text("===== a.txt =====\nбыло 10\n", encoding="utf-8")
+    (old_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": old,
+                "chat_prompt": "секретный старый вопрос",
+                "chat_summary": "старый ответ про долю",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (new_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": new,
+                "chat_prompt": "новый вопрос",
+                "chat_summary": "новый ответ",
+                "source": str(source),
+                "carried_run_id": old,
+                "last_edit": {"section": "Введение"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    block = prior_block_for_form(new, root=tmp_path, user_text="как ты отвечал про долю")
+    assert "Карточка этого чата" in block
+    assert "a.txt" in block
+    assert "Введение" in block
+    assert "новый вопрос" in block
+    assert "секретный" not in block
+    assert "Один прошлый ход" in block
+    assert "не видно" in block
+
+
+def test_chain_notice_only_on_the_turns_that_matter():
+    from case3.chat_memory import chain_notice
+
+    assert chain_notice(39) == ""
+    assert "40" in chain_notice(40)
+    assert "Новый чат" in chain_notice(40)
+    assert chain_notice(46) == ""
+    assert "один ход" in chain_notice(47)
+    last = chain_notice(48)
+    assert "последний" in last
+    assert "Новый чат" in last
+
+
+def test_carry_keeps_the_chat_notice():
+    from case3.pipeline import carry_chat_prompt
+
+    meta: dict = {}
+    carry_chat_prompt(meta, {"chat_notice": "Остался один ход после этого."})
+    assert meta["chat_notice"] == "Остался один ход после этого."
+
+
 def test_long_thread_keeps_the_start_and_one_edit_line():
     turns = []
     for i in range(12):

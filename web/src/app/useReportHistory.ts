@@ -6,6 +6,7 @@ import {
   needsSlidesHydrate,
   type SlidesPayload,
 } from "../domain/attachSlidesPayload";
+import { rememberCarriedRun } from "../domain/carriedRun";
 import {
   createFolder,
   deleteFolder,
@@ -118,6 +119,7 @@ export function useReportHistory({
   const openHistoryItem = useCallback(
     (item: HistoryItem) => {
       if (busy) return;
+      rememberCarriedRun("");
       void (async () => {
         const stored = loadHistoryPayload(item.runId);
         let remote: RunResult | null = null;

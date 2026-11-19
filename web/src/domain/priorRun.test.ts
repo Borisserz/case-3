@@ -22,6 +22,18 @@ test("priorRunIdFromMessages stays on the chat head after the rail shows an olde
   assert.equal(id, "chat_head");
 });
 
+test("an isolated carried file does not become the next chat", () => {
+  assert.equal(
+    priorRunIdFromMessages([
+      {
+        role: "bot",
+        result: { run_id: "source_old", isolated: true },
+      },
+    ]),
+    null,
+  );
+});
+
 test("priorRunIdFromMessages is empty on a fresh chat", () => {
   assert.equal(priorRunIdFromMessages([]), null);
   assert.equal(

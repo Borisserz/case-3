@@ -58,6 +58,10 @@ def _remembered(act: Any, say: str) -> dict[str, str] | None:
         return {"op": "recolor_deck", "pack": str(getattr(act, "pack", "") or "")}
     if act.op == "recolor_charts" and "Перекрасил" in say:
         return {"op": "recolor_charts", "palette": str(getattr(act, "palette", "") or "")}
+    if act.op == "rename_heading" and "Переименовал" in say:
+        section = str(getattr(act, "title", "") or "").strip()
+        if section:
+            return {"op": "rename_heading", "section": section}
     if act.op in {"undo", "redo"} and ("Отменил" in say or "Вернул" in say):
         return {"op": str(act.op)}
     return None
@@ -65,11 +69,20 @@ def _remembered(act: Any, say: str) -> dict[str, str] | None:
 
 def _surface(act: Any) -> str:
     op = str(getattr(act, "op", "") or "")
-    if op in {"recolor_deck", "delete_slide", "reorder_slide"}:
+    if op in {"recolor_deck", "delete_slide", "reorder_slide", "add_slide", "slide_text"}:
         return "deck"
     if op == "retitle" and str(getattr(act, "title_on", "") or "") == "deck":
         return "deck"
-    if op in {"rewrite", "recolor_charts", "retype_charts", "undo", "redo", "retitle"}:
+    if op in {
+        "rewrite",
+        "recolor_charts",
+        "retype_charts",
+        "retype_chart",
+        "undo",
+        "redo",
+        "retitle",
+        "rename_heading",
+    }:
         return "report"
     return ""
 
@@ -82,8 +95,9 @@ def _payload(
     output_mode: str = "chat",
     surface: str = "",
     artifact_run_id: str = "",
+    isolate: bool = False,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "mode": "chat_revise",
         "status": "ok",
         "run_id": run_id,
@@ -93,6 +107,9 @@ def _payload(
         "surface": surface,
         "output_mode": output_mode or "chat",
     }
+    if isolate:
+        payload["isolate"] = True
+    return payload
 
 
 def continue_or_limit(
@@ -101,14 +118,32 @@ def continue_or_limit(
     *,
     root: Path,
     bias: str | None = None,
+    carried_run_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Edit in place, or stop a new turn when this chat is already full."""
-    revised = try_chat_revise(text, prior_run_id, root=root, bias=bias)
+    revised = try_chat_revise(
+        text,
+        prior_run_id,
+        root=root,
+        bias=bias,
+        carried_run_id=carried_run_id,
+    )
     if revised is not None:
         return revised
     from case3.chat_memory import chain_limit_payload
 
     return chain_limit_payload(root, prior_run_id)
+
+
+def _run_dir(root: Path, run_id: str) -> Path | None:
+    rid = (run_id or "").strip()
+    if not rid or not RUN_ID_OK.match(rid):
+        return None
+    path = (Path(root) / "runs" / "out" / rid).resolve()
+    base = (Path(root) / "runs" / "out").resolve()
+    if not str(path).startswith(str(base)) or not (path / "meta.json").is_file():
+        return None
+    return path
 
 
 def try_chat_revise(
@@ -117,20 +152,22 @@ def try_chat_revise(
     *,
     root: Path,
     bias: str | None = None,
+    carried_run_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Return a chat response when the message edits the current artifact.
 
     None means the normal pipeline should run (talk or a new build).
     """
     rid = (prior_run_id or "").strip()
-    if not rid or not RUN_ID_OK.match(rid):
-        return None
-    out_dir = (Path(root) / "runs" / "out" / rid).resolve()
-    out_root = (Path(root) / "runs" / "out").resolve()
-    if not str(out_dir).startswith(str(out_root)):
-        return None
-    rows = load_chain_dirs(root, rid)
-    if not rows:
+    rows = load_chain_dirs(root, rid) if rid and RUN_ID_OK.match(rid) else []
+    carried_id = (carried_run_id or "").strip()
+    if rows and not carried_id:
+        carried_id = str(rows[-1][2].get("carried_run_id") or "").strip()
+    carried_path = _run_dir(root, carried_id)
+    if carried_path and any(run_id == carried_id for run_id, _path, _row in rows):
+        carried_path = None
+        carried_id = ""
+    if not rows and carried_path is None:
         return None
     has_deck = has_report = has_diagram = False
     edit: dict[str, Any] = {}
@@ -142,7 +179,24 @@ def try_chat_revise(
         raw_edit = row.get("last_edit")
         if isinstance(raw_edit, dict) and (raw_edit.get("section") or raw_edit.get("op")):
             edit = raw_edit
-    head_id, head_dir, head_meta = rows[-1]
+    carried_meta: dict[str, Any] = _read(carried_path) if carried_path else {}
+    if carried_path is not None:
+        deck, report, diagram = _flags(carried_meta)
+        has_deck = has_deck or deck
+        has_report = has_report or report or any(carried_path.glob("*.tex"))
+        has_diagram = has_diagram or diagram
+        raw_edit = carried_meta.get("last_edit")
+        if (
+            not edit
+            and isinstance(raw_edit, dict)
+            and (raw_edit.get("section") or raw_edit.get("op"))
+        ):
+            edit = raw_edit
+    if rows:
+        head_id, head_dir, head_meta = rows[-1]
+    else:
+        head_id, head_dir, head_meta = carried_id, carried_path, carried_meta
+    isolate = not rows
     act = resolve_act(
         text,
         bias=bias,
@@ -156,17 +210,17 @@ def try_chat_revise(
         return None
 
     work_id, work_dir = head_id, head_dir
-    if act.op in {"undo", "redo", "rewrite", "recolor_charts"}:
+    if act.op in {"undo", "redo", "rewrite", "recolor_charts", "rename_heading"}:
         for run_id, path, _row in reversed(rows):
             if any(path.glob("*.tex")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op == "recolor_deck" or act.op in {"delete_slide", "reorder_slide"}:
+    elif act.op in {"recolor_deck", "delete_slide", "reorder_slide", "add_slide", "slide_text"}:
         for run_id, path, row in reversed(rows):
             if _flags(row)[0]:
                 work_id, work_dir = run_id, path
                 break
-    elif act.op == "retype_charts":
+    elif act.op in {"retype_charts", "retype_chart"}:
         for run_id, path, row in reversed(rows):
             planned = row.get("charts_planned")
             if (path / "figures.json").is_file() or (isinstance(planned, list) and planned):
@@ -188,6 +242,24 @@ def try_chat_revise(
                     if _flags(row)[0]:
                         work_id, work_dir = run_id, path
                         break
+    if carried_path is not None and work_id != carried_id:
+        tex_ops = {"undo", "redo", "rewrite", "recolor_charts", "rename_heading"}
+        deck_ops = {"recolor_deck", "delete_slide", "reorder_slide", "add_slide", "slide_text"}
+        if act.op in tex_ops and not any(work_dir.glob("*.tex")) and any(carried_path.glob("*.tex")):
+            work_id, work_dir = carried_id, carried_path
+        elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
+            work_id, work_dir = carried_id, carried_path
+        elif act.op in {"retype_charts", "retype_chart"}:
+            planned = _read(work_dir).get("charts_planned")
+            has_here = (work_dir / "figures.json").is_file() or (
+                isinstance(planned, list) and bool(planned)
+            )
+            planned_carried = carried_meta.get("charts_planned")
+            has_carried = (carried_path / "figures.json").is_file() or (
+                isinstance(planned_carried, list) and bool(planned_carried)
+            )
+            if not has_here and has_carried:
+                work_id, work_dir = carried_id, carried_path
     work_meta = _read(work_dir) or head_meta
 
     say = act.say
@@ -208,6 +280,14 @@ def try_chat_revise(
         say = _reorder_slide(work_id, work_dir, act.slide, act.slide_to) or say
     elif act.op == "retype_charts" and act.chart:
         say = _retype_charts(work_dir, act.chart) or say
+    elif act.op == "retype_chart" and act.chart and act.chart_at:
+        say = _retype_one(work_dir, act.chart, act.chart_at) or say
+    elif act.op == "rename_heading" and act.section and act.title:
+        say = _rename_heading(work_dir, act.section, act.title) or say
+    elif act.op == "slide_text" and act.slide and act.title:
+        say = _slide_text(work_id, work_dir, act.slide, act.title) or say
+    elif act.op == "add_slide" and act.title:
+        say = _add_slide(work_id, work_dir, act.title) or say
     elif act.op == "retitle" and act.title:
         if act.title_on == "deck":
             say = _retitle_slide(work_id, work_dir, act.title, act.slide or 1) or say
@@ -216,9 +296,15 @@ def try_chat_revise(
     elif act.op == "ask":
         say = _with_headings(say, work_dir)
 
-    if work_dir.is_dir():
+    chain_ids = {run_id for run_id, _path, _row in rows}
+    if work_id in chain_ids and work_dir.is_dir():
         _note(work_dir, text, say, act)
-    if head_dir != work_dir and head_dir.is_dir():
+    if (
+        rows
+        and head_id in chain_ids
+        and head_dir != work_dir
+        and head_dir.is_dir()
+    ):
         _note(head_dir, text, say, act)
     return _payload(
         head_id,
@@ -227,6 +313,7 @@ def try_chat_revise(
         output_mode=str(head_meta.get("output_mode") or "chat"),
         surface=_surface(act),
         artifact_run_id=work_id,
+        isolate=isolate,
     )
 
 
@@ -312,6 +399,123 @@ def _reorder_slide(run_id: str, out_dir: Path, source: int, dest: int) -> str:
         undo_target=moved or "*",
     )
     return f"Переставляю слайд {source} на место {dest}."
+
+
+def _rename_heading(out_dir: Path, old: str, new: str) -> str:
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "Отчёта в этом чате ещё нет, переименовать нечего."
+    try:
+        titles = _heading_titles(texs[0].read_text(encoding="utf-8"))
+    except OSError:
+        return "Не смог прочитать разделы отчёта."
+    want = old.casefold()
+    hits = [
+        index
+        for index, title in enumerate(titles, start=1)
+        if want in title.casefold() or title.casefold() in want
+    ]
+    if len(hits) != 1:
+        shown = ", ".join(titles[:8])
+        if shown:
+            return f"Какой раздел переименовать? Сейчас в отчёте: {shown}."
+        return "Такого раздела нет."
+    from case3.heading_edit import HeadingEditError, edit_heading_in_run
+
+    try:
+        edit_heading_in_run(out_dir, hits[0], text=new, formats={"pdf", "docx"})
+    except HeadingEditError as exc:
+        return str(exc)
+    return f"Переименовал раздел «{titles[hits[0] - 1]}» в «{new}». Текст тот же."
+
+
+def _slide_text(run_id: str, out_dir: Path, index: int, text: str) -> str:
+    from fastapi import HTTPException
+
+    from case3.api_slides import _enqueue_deck_rebuild, _load_deck_for_patch
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_text_patch
+
+    try:
+        base, ir_path = _load_deck_for_patch(run_id, out_dir)
+    except HTTPException as exc:
+        return str(exc.detail)
+    slides = base.get("slides") if isinstance(base, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return "В этой презентации нет слайдов."
+    if index < 1 or index > len(slides):
+        return f"Слайда {index} нет. Сейчас их {len(slides)}."
+    slide_id = str((slides[index - 1] or {}).get("id") or "")
+    try:
+        patched = apply_deck_text_patch(
+            base, {"slides": [{"id": slide_id, "title": text}]}
+        )
+    except DeckIrError as exc:
+        return str(exc)
+    _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        patched,
+        undo_kind="slides_patch",
+        undo_target=slide_id or "*",
+    )
+    return f"Меняю заголовок слайда {index}. Новых чисел нет."
+
+
+def _add_slide(run_id: str, out_dir: Path, title: str) -> str:
+    from fastapi import HTTPException
+
+    from case3.api_slides import _enqueue_deck_rebuild, _load_deck_for_patch
+    from case3.slides_patch import _fresh_slide_id
+
+    try:
+        base, ir_path = _load_deck_for_patch(run_id, out_dir)
+    except HTTPException as exc:
+        return str(exc.detail)
+    slides = base.get("slides") if isinstance(base, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return "В этой презентации нет слайдов."
+    if len(slides) >= 24:
+        return "В презентации уже 24 слайда."
+    topic = " ".join(title.split())[:120]
+    new_id = _fresh_slide_id({str(slide.get("id") or "") for slide in slides if isinstance(slide, dict)})
+    slides.append(
+        {
+            "id": new_id,
+            "layout": "bullets",
+            "title": topic,
+            "bullets": [topic],
+        }
+    )
+    base["slides"] = slides
+    _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        base,
+        undo_kind="slides_structure",
+        undo_target=new_id,
+    )
+    return f"Добавляю слайд «{topic}». Новых чисел нет."
+
+
+def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
+    from case3.chart_edit import ChartEditError, edit_chart_in_run
+    from case3.chat_act import CHART_SAY
+
+    label = CHART_SAY.get(chart_type, chart_type)
+    ids = _chart_ids(out_dir)
+    if not ids:
+        return "Графиков в этом материале нет."
+    if index < 1 or index > len(ids):
+        return f"Графика {index} нет. Сейчас их {len(ids)}."
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    try:
+        edit_chart_in_run(out_dir, ids[index - 1], chart_type=chart_type, formats=formats)
+    except ChartEditError as exc:
+        return str(exc)
+    return f"Меняю график {index} на {label}. Числа те же."
 
 
 def _retype_charts(out_dir: Path, chart_type: str) -> str:

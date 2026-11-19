@@ -62,7 +62,12 @@ def insert_prior_turn(intent: str, block: str) -> str:
     return f"{base}\n\n{text}"
 
 
-def prior_block_for_form(raw: str | None, *, root: Path) -> str:
+def prior_block_for_form(
+    raw: str | None,
+    *,
+    root: Path,
+    user_text: str = "",
+) -> str:
     """Load the prior block. Missing runs yield an empty string.
 
     A malformed id is a client bug and raises ValueError (API → 400).
@@ -86,7 +91,24 @@ def prior_block_for_form(raw: str | None, *, root: Path) -> str:
         return ""
     if not isinstance(meta, dict):
         return ""
-    from case3.chat_memory import format_thread, load_chain
+    from case3.chat_memory import (
+        _source_file,
+        format_card,
+        format_thread,
+        load_chain,
+        memory_card,
+        recall_block,
+    )
 
     chain = load_chain(root, rid)
-    return format_thread(chain) or format_prior_turn(meta)
+    source = ""
+    for turn in reversed(chain):
+        source = _source_file(root, turn)
+        if source.strip():
+            break
+    parts = [
+        format_card(memory_card(chain, source)),
+        format_thread(chain) or format_prior_turn(meta),
+        recall_block(chain, user_text),
+    ]
+    return "\n\n".join(part for part in parts if part)

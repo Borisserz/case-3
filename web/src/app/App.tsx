@@ -13,6 +13,7 @@ import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
+import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../lazyChartsQa";
@@ -206,6 +207,18 @@ export default function App() {
     onResetSurface: resetSurfaceForHistory,
     onRestoreSource: setSourceDraft,
   });
+
+  const memoryLine = useMemo(() => {
+    let turn = 0;
+    let section = "";
+    for (const msg of msgs) {
+      if (msg.role !== "bot" || !msg.result || msg.result.isolated) continue;
+      if (typeof msg.result.turn_count === "number") turn = msg.result.turn_count;
+      if (msg.result.memory_section) section = msg.result.memory_section;
+    }
+    const documents = sourceDraft?.parts?.length || (sourceDraft?.text?.trim() ? 1 : 0);
+    return memoryStripLine({ documents, section, turn });
+  }, [msgs, sourceDraft]);
 
   const catalog = useMemo(() => {
     const fromApi = health?.chart_types?.filter(Boolean);
@@ -588,6 +601,14 @@ export default function App() {
                   onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
+                  onNewChat={(kind) => {
+                    startNewReport({
+                      keepSource: kind === "documents",
+                      carryRunId: kind === "documents" ? carriedArtifactId(msgs) : "",
+                    });
+                    setWorkMode(null);
+                    setDeckApplyHint(null);
+                  }}
                   deckDownloadsBlockedMsgId={
                     deckDocsDirty && activeReportMsg?.role === "bot"
                       ? activeReportMsg.id
@@ -616,6 +637,7 @@ export default function App() {
                     if (mode !== "presentation") setDeckApplyHint(null);
                   }}
                   showModes={msgs.length === 0 && !busy}
+                  memoryLine={memoryLine}
                   showPackPresets={
                     msgs.length === 0 &&
                     !busy &&

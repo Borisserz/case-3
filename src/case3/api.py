@@ -272,6 +272,19 @@ def chart_types() -> dict[str, Any]:
     return {"types": sorted(CHART_TYPES), "palettes": palette_public()}
 
 
+def _turn_count(run_id: str) -> int:
+    from case3.chat_memory import load_chain
+
+    return len(load_chain(run_store.ROOT, run_id))
+
+
+def _memory_section(run_id: str) -> str:
+    from case3.chat_memory import newest_edit
+
+    edit = newest_edit(run_store.ROOT, run_id)
+    return str(edit.get("section") or "")
+
+
 def _run_result_payload(
     run_id: str,
     out_dir: Path,
@@ -360,6 +373,9 @@ def _run_result_payload(
         "preview": _build_preview_payload(run_id, out_dir, media),
         "chat_summary": chat_summary,
         "chat_opening": str(meta.get("chat_opening") or ""),
+        "chat_notice": str(meta.get("chat_notice") or ""),
+        "turn_count": _turn_count(run_id),
+        "memory_section": _memory_section(run_id),
         "summary_status": summary_status or None,
         "slides_status": "running" if patch_active else (meta.get("slides_status") or "idle"),
         "slides_stage": "patch" if patch_active else meta.get("slides_stage"),
@@ -978,6 +994,7 @@ async def api_run(
     photos: list[UploadFile] = File(default_factory=list),
     photo_captions: str = Form(""),
     prior_run_id: str = Form(""),
+    carried_run_id: str = Form(""),
 ) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
     no_images = _as_bool(forbid_images)
@@ -1085,19 +1102,23 @@ async def api_run(
     # Third request must not touch disk. One waiter is reserved before the upload.
     from case3.prior_turn import insert_prior_turn, prior_block_for_form
 
-    try:
-        prior_block = prior_block_for_form(prior_run_id, root=run_store.ROOT)
-    except ValueError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-
     from case3.chat_revise import continue_or_limit
     from case3.input_validation import user_text_before_ui as _user_line
 
+    user_line = _user_line(intent)
+    try:
+        prior_block = prior_block_for_form(
+            prior_run_id, root=run_store.ROOT, user_text=user_line
+        )
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
     revised = continue_or_limit(
-        _user_line(intent),
+        user_line,
         prior_run_id,
         root=run_store.ROOT,
         bias=bias or None,
+        carried_run_id=carried_run_id,
     )
     if revised is not None:
         return JSONResponse(revised)
@@ -1243,7 +1264,7 @@ async def api_run(
                 }
         except json.JSONDecodeError:
             style_settings0 = None
-    from case3.chat_memory import newest_edit
+    from case3.chat_memory import chain_notice_for_prior, newest_edit
     from case3.slides_beat_planner import clamp_slide_target
 
     slides_target0 = clamp_slide_target(target_slides)
@@ -1258,6 +1279,7 @@ async def api_run(
         "source": str(resolve_text_file(src_path)),
         "chat_prompt": (intent or "").strip(),
         "prior_run_id": (prior_run_id or "").strip(),
+        "carried_run_id": (carried_run_id or "").strip(),
         "last_edit": newest_edit(run_store.ROOT, (prior_run_id or "").strip())
         if (prior_run_id or "").strip()
         else {},
@@ -1278,6 +1300,9 @@ async def api_run(
         "status": "running",
         "stage": "llm",
         "stage_detail": "жду модель…",
+        "chat_notice": chain_notice_for_prior(
+            run_store.ROOT, (prior_run_id or "").strip()
+        ),
     }
     from case3.run_events import write_meta_atomic
 

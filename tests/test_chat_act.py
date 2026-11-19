@@ -227,6 +227,50 @@ def test_slide_move_names_both_places():
     assert vague.op == "ask"
 
 
+def test_rewrite_without_a_section_name_asks():
+    bare = resolve_act("перепиши раздел", has_report=True, last_section="Введение")
+    assert bare.op == "ask"
+    named = resolve_act("перепиши раздел Введение", has_report=True)
+    assert named.op == "rewrite"
+    assert named.section.casefold().startswith("введен")
+
+
+def test_rename_section_is_not_a_document_title():
+    act = resolve_act(
+        "переименуй раздел Введение в Контекст",
+        has_report=True,
+        has_deck=True,
+    )
+    assert act.op == "rename_heading"
+    assert act.section == "Введение"
+    assert act.title == "Контекст"
+    missing = resolve_act("переименуй раздел Введение в Контекст")
+    assert missing.kind == "talk"
+
+
+def test_slide_text_and_a_new_slide_stay_on_the_deck():
+    text = resolve_act("на слайде 2 напиши Риски выросли", has_deck=True)
+    assert text.op == "slide_text"
+    assert text.slide == 2
+    assert text.title == "Риски выросли"
+    added = resolve_act("добавь слайд про риски", has_deck=True)
+    assert added.op == "add_slide"
+    assert added.title == "риски"
+    vague = resolve_act("добавь слайд", has_deck=True)
+    assert vague.op == "ask"
+    assert resolve_act("добавь слайд про риски").kind == "talk"
+
+
+def test_one_named_chart_does_not_retype_the_rest():
+    one = resolve_act("второй график сделай линейным", has_report=True)
+    assert one.op == "retype_chart"
+    assert one.chart == "line"
+    assert one.chart_at == 2
+    all_charts = resolve_act("сделай график линейным", has_report=True)
+    assert all_charts.op == "retype_charts"
+    assert all_charts.chart_at == 0
+
+
 def test_chart_word_picks_a_real_type():
     line = resolve_act("сделай график линейным", has_report=True)
     assert line.op == "retype_charts"

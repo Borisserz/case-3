@@ -5,11 +5,21 @@ import type { Msg, RunResult } from "./liberTypes";
 import { slidesJobInFlight } from "./runHelpers";
 import type { ArtifactTab } from "../ArtifactRail";
 
+export function offersNewChat(op: string): boolean {
+  return op === "full";
+}
+
 export function reviseSurface(
   op: string,
   titleOn = "",
 ): "deck" | "report" | null {
-  if (op === "recolor_deck" || op === "delete_slide" || op === "reorder_slide") {
+  if (
+    op === "recolor_deck" ||
+    op === "delete_slide" ||
+    op === "reorder_slide" ||
+    op === "add_slide" ||
+    op === "slide_text"
+  ) {
     return "deck";
   }
   if (op === "retitle" && titleOn === "deck") return "deck";
@@ -17,9 +27,11 @@ export function reviseSurface(
     op === "rewrite" ||
     op === "recolor_charts" ||
     op === "retype_charts" ||
+    op === "retype_chart" ||
     op === "undo" ||
     op === "redo" ||
-    op === "retitle"
+    op === "retitle" ||
+    op === "rename_heading"
   ) {
     return "report";
   }
@@ -94,6 +106,7 @@ export async function refreshRevisedArtifact(
   msgId: string,
   hosts: RefreshHosts,
   artifactRunId = "",
+  options?: { remember?: boolean; isolated?: boolean },
 ): Promise<void> {
   const plan = revisedRailPlan(runId, artifactRunId, surface);
   let result = await readStatus(plan.fetchId);
@@ -113,19 +126,22 @@ export async function refreshRevisedArtifact(
       /* status is enough to open the rail */
     }
   }
-  if (plan.chainHead && plan.chainHead !== result.run_id) {
+  if (!options?.isolated && plan.chainHead && plan.chainHead !== result.run_id) {
     result = { ...result, chain_head: plan.chainHead };
   }
+  if (options?.isolated) result = { ...result, isolated: true };
   hosts.setMsgs((msgs) =>
     msgs.map((msg) => {
       if (msg.id !== msgId || msg.role !== "bot") return msg;
       return { ...msg, result, pending: false };
     }),
   );
-  hosts.rememberRun(
-    plan.chainHead && plan.chainHead !== result.run_id
-      ? { ...result, run_id: plan.chainHead }
-      : result,
-  );
+  if (options?.remember !== false) {
+    hosts.rememberRun(
+      plan.chainHead && plan.chainHead !== result.run_id
+        ? { ...result, run_id: plan.chainHead }
+        : result,
+    );
+  }
   hosts.openReportArtifact(msgId, result, plan.tab);
 }

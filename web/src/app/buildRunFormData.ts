@@ -32,6 +32,8 @@ export type BuildRunFormDataArgs = {
   targetSlides?: number;
   /** Previous bot run in this chat. Empty on the first send. */
   priorRunId?: string | null;
+  /** A file from the previous chat. Its dialogue is not this chat. */
+  carriedRunId?: string | null;
 };
 
 export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
@@ -52,6 +54,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     chartPalette,
     targetSlides,
     priorRunId,
+    carriedRunId,
   } = args;
 
   const fd = new FormData();
@@ -120,5 +123,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   fd.append("dry_run", String(dryRun));
   const prior = (priorRunId || "").trim();
   if (prior) fd.append("prior_run_id", prior);
+  const carried = (carriedRunId || "").trim();
+  if (carried) fd.append("carried_run_id", carried);
   return fd;
 }

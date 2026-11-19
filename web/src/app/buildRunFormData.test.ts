@@ -50,6 +50,27 @@ describe("buildRunFormData", () => {
     assert.equal(fd.get("prior_run_id"), "source_abc");
   });
 
+  it("sends the carried file without making it the transcript", () => {
+    const fd = buildRunFormData({
+      file: null,
+      draftSnap: null,
+      chatTrim: "короче",
+      intentText: "короче",
+      photosSnapshot: [],
+      forbidCharts: false,
+      forbidImages: false,
+      maxCharts: 2,
+      maxImages: 2,
+      maxDiagrams: 2,
+      dryRun: false,
+      workMode: null,
+      deckStyle: DEFAULT_DECK_STYLE,
+      carriedRunId: "source_old",
+    });
+    assert.equal(fd.get("prior_run_id"), null);
+    assert.equal(fd.get("carried_run_id"), "source_old");
+  });
+
   it("clamps a presentation slide wish into 6–24", () => {
     const fd = buildRunFormData({
       file: null,

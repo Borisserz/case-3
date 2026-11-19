@@ -14,6 +14,37 @@ import { MsgMarkdown } from "./lightMd";
 import { ReportPending } from "./ReportView";
 import { ThinkingFold } from "./ThinkingFold";
 
+function ChatTurnNote({
+  msg,
+  onNewChat,
+}: {
+  msg: Msg;
+  onNewChat?: (kind: "empty" | "documents") => void;
+}) {
+  if (msg.role !== "bot") return null;
+  const notice = (msg.result?.chat_notice || "").trim();
+  if (!notice && !(msg.offerNewChat && onNewChat)) return null;
+  return (
+    <>
+      {notice ? <p className="chat-notice">{notice}</p> : null}
+      {msg.offerNewChat && onNewChat ? (
+        <div className="chat-next-row">
+          <button type="button" className="chat-next" onClick={() => onNewChat("empty")}>
+            Пустой
+          </button>
+          <button
+            type="button"
+            className="chat-next is-quiet"
+            onClick={() => onNewChat("documents")}
+          >
+            С этими документами
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 type Props = {
   msgs: Msg[];
   reduceMotion: boolean | null;
@@ -36,6 +67,8 @@ type Props = {
   onOpenPhoto?: (photo: UserPhotoThumb) => void;
   /** Continue failed pipeline from failed_stage (same run_id). */
   onResumeRun?: (msgId: string, runId: string) => void;
+  /** Starts the next chat. Documents can come along; the old transcript does not. */
+  onNewChat?: (kind: "empty" | "documents") => void;
   /** Message whose deck file lags the screen. Its PPTX/PDF stay closed. */
   deckDownloadsBlockedMsgId?: string | null;
 };
@@ -60,6 +93,7 @@ export function ChatMessages({
   onOpenFilm,
   onOpenPhoto,
   onResumeRun,
+  onNewChat,
   deckDownloadsBlockedMsgId = null,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
@@ -274,6 +308,7 @@ export function ChatMessages({
                     (m.lead || "").trim() !== (m.text || "").trim() ? (
                       <MsgMarkdown text={m.text} />
                     ) : null}
+                    <ChatTurnNote msg={m} onNewChat={onNewChat} />
                     {(() => {
                       const displayWarns = (m.result.warnings || []).filter(
                         (w) =>
@@ -406,6 +441,7 @@ export function ChatMessages({
                         ) : !(m.lead || "").trim() ? (
                           <MsgMarkdown text={m.text} />
                         ) : null}
+                        <ChatTurnNote msg={m} onNewChat={onNewChat} />
                       </>
                     ) : (
                       <div className="msg-body">{m.text}</div>
