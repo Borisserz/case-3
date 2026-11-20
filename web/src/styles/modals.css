@@ -918,7 +918,7 @@
 }
 
 .stimul-sheet.is-result .settings-modal-body {
-  overflow: hidden;
+  overflow: auto;
 }
 
 .stimul-result,
@@ -945,10 +945,22 @@
   white-space: pre-wrap;
 }
 
+.stimul-read-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.stimul-read-list li + li {
+  margin-top: 0.18rem;
+}
+
 .stimul-split {
   display: flex;
   align-items: stretch;
-  max-height: min(68vh, 680px);
+  max-height: min(42vh, 440px);
   border: 1px solid var(--rule);
   border-radius: 12px;
   overflow: hidden;
@@ -957,7 +969,7 @@
 
 .stimul-pin {
   flex: 0 0 auto;
-  max-height: min(68vh, 680px);
+  max-height: min(42vh, 440px);
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
@@ -974,7 +986,7 @@
 .stimul-grid-scroll {
   flex: 1 1 auto;
   overflow: auto;
-  max-height: min(68vh, 680px);
+  max-height: min(42vh, 440px);
   background: var(--sheet);
   scroll-snap-type: x proximity;
 }
@@ -1050,8 +1062,7 @@
 
 .stimul-grid thead th.is-num {
   text-align: right;
-  max-width: 9rem;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .stimul-drop {

@@ -60,4 +60,36 @@ describe("splitDashboardBlocks", () => {
     assert.equal(table.numeric[0], false);
     assert.equal(table.numeric[20], true);
   });
+
+  it("shows the screen reading without asterisks", () => {
+    const md = [
+      "## Экран",
+      "",
+      "**Заголовок и фильтры**",
+      "*   **Регион:** Республика Беларусь / Брестская область",
+      "*   **Период:** январь 2025",
+      "",
+      "| Наименование | Факт (руб.) |",
+      "| --- | --- |",
+      "| **Налог на добавленную стоимость, всего** | 105 865,2 |",
+      "| НДС | -20,7% |",
+    ].join("\n");
+    const blocks = splitDashboardBlocks(md);
+    assert.deepEqual(
+      blocks.filter((block) => block.kind === "heading").map((block) => block.text),
+      ["Экран", "Заголовок и фильтры"],
+    );
+    const list = blocks.find((block) => block.kind === "list");
+    assert.ok(list && list.kind === "list");
+    assert.deepEqual(list.items, [
+      "Регион: Республика Беларусь / Брестская область",
+      "Период: январь 2025",
+    ]);
+    const table = blocks.find((block) => block.kind === "table");
+    assert.ok(table && table.kind === "table");
+    assert.equal(table.rows[0][0], "Налог на добавленную стоимость, всего");
+    assert.equal(table.rows[0][1], "105 865,2");
+    assert.equal(table.rows[1][1], "-20,7%");
+    assert.equal(table.numeric[1], true);
+  });
 });

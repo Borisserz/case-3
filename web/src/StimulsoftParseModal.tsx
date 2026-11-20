@@ -158,6 +158,15 @@ function DashboardReadout({ markdown }: { markdown: string }) {
             </h3>
           );
         }
+        if (block.kind === "list") {
+          return (
+            <ul key={index} className="stimul-read-list">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{item}</li>
+              ))}
+            </ul>
+          );
+        }
         if (block.kind === "text") {
           return (
             <p key={index} className="stimul-read-text">

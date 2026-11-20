@@ -65,6 +65,22 @@ def test_ruled_grid_beats_a_noisier_text_split() -> None:
     assert chosen == ruled
 
 
+def test_wider_text_grid_beats_merged_ruled_columns() -> None:
+    ruled = [
+        [
+            ["Налог", "Вид", "Факт (руб.) План (руб.)"],
+            ["НДС", "Респ", "105 865,2 94 073,0"],
+        ]
+    ]
+    text = [
+        [
+            ["Налог", "Вид", "Факт", "План"],
+            ["НДС", "Респ", "105 865,2", "94 073,0"],
+        ]
+    ]
+    assert prefer_ruled_tables(ruled, text) is text
+
+
 def test_png_miss_keeps_the_pdf_table(tmp_path: Path) -> None:
     path = tmp_path / "one.pdf"
     _write_grid_pdf(

@@ -222,10 +222,30 @@ def prefer_ruled_tables(
     line_rows: list[list[list[object | None]]],
     text_rows: list[list[list[object | None]]],
 ) -> list[list[list[object | None]]]:
-    """A ruled Stimulsoft grid wins even when a text-split invents more cells."""
-    if sum(_numeric_cells(table) for table in line_rows) > 0:
+    """Ruled lines win a noisy split of the same width.
+
+    A text grid with more columns wins when the lines glued several
+    headers into one cell. Stimulsoft does that on the numeric side.
+    """
+    line_nums = sum(_numeric_cells(table) for table in line_rows)
+    text_nums = sum(_numeric_cells(table) for table in text_rows)
+    if line_nums <= 0:
+        return text_rows
+    if text_nums <= 0:
         return line_rows
-    return text_rows
+    if _width(text_rows) >= _width(line_rows) + 1 and _row_count(text_rows) >= max(
+        2, _row_count(line_rows) // 2
+    ):
+        return text_rows
+    return line_rows
+
+
+def _width(tables: list[list[list[object | None]]]) -> int:
+    return max((len(row) for table in tables for row in table), default=0)
+
+
+def _row_count(tables: list[list[list[object | None]]]) -> int:
+    return sum(len(table) for table in tables)
 
 
 def join_page_tables(

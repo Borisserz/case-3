@@ -3,6 +3,7 @@
 export type DashboardBlock =
   | { kind: "heading"; text: string }
   | { kind: "text"; text: string }
+  | { kind: "list"; items: string[] }
   | { kind: "table"; header: string[]; rows: string[][]; numeric: boolean[] };
 
 const MACHINE_LINE =
@@ -40,6 +41,21 @@ function isSeparator(line: string): boolean {
   return /^\s*\|[\s:|-]+\|\s*$/.test(line) && line.includes("-");
 }
 
+const BULLET = /^\s*(?:[-*•]|\d+\.)\s+(.+)$/;
+const BOLD_TITLE = /^\s*\*\*[^*]+\*\*\s*$/;
+const RULE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+/** Qwen writes **bold** and * bullets. The window shows the words, not the marks. */
+export function stripInline(value: string): string {
+  return value
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:]|$)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function numericColumns(header: string[], rows: string[][]): boolean[] {
   return header.map((_, column) => {
     if (column === 0) return false;
@@ -61,24 +77,48 @@ export function splitDashboardBlocks(markdown: string): DashboardBlock[] {
   const prose: string[] = [];
 
   function flushProse() {
-    const text = prose.join("\n").trim();
-    prose.length = 0;
-    if (!text) return;
-    for (const paragraph of text.split(/\n{2,}/)) {
-      const clean = paragraph.trim();
-      if (!clean || MACHINE_LINE.test(clean)) continue;
-      const heading = /^(#{1,3}) (.+)$/.exec(clean);
-      if (heading && !clean.includes("\n")) {
-        blocks.push({ kind: "heading", text: heading[2].trim() });
+    const lines = prose.splice(0);
+    let list: string[] = [];
+    let text: string[] = [];
+    function flushList() {
+      if (!list.length) return;
+      blocks.push({ kind: "list", items: list });
+      list = [];
+    }
+    function flushText() {
+      const joined = text.join("\n").trim();
+      text = [];
+      if (joined) blocks.push({ kind: "text", text: joined });
+    }
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || RULE.test(line) || MACHINE_LINE.test(line)) continue;
+      if (BOLD_TITLE.test(line)) {
+        flushList();
+        flushText();
+        blocks.push({ kind: "heading", text: stripInline(line) });
         continue;
       }
-      const kept = clean
-        .split("\n")
-        .filter((line) => !MACHINE_LINE.test(line.trim()))
-        .join("\n")
-        .trim();
-      if (kept) blocks.push({ kind: "text", text: kept });
+      const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+      if (heading) {
+        flushList();
+        flushText();
+        blocks.push({ kind: "heading", text: stripInline(heading[2]) });
+        continue;
+      }
+      const bullet = BULLET.exec(line);
+      if (bullet) {
+        flushText();
+        const item = stripInline(bullet[1]);
+        if (item) list.push(item);
+        continue;
+      }
+      flushList();
+      const plain = stripInline(line);
+      if (plain) text.push(plain);
     }
+    flushList();
+    flushText();
   }
 
   let index = 0;
@@ -90,11 +130,11 @@ export function splitDashboardBlocks(markdown: string): DashboardBlock[] {
       isSeparator(lines[index + 1])
     ) {
       flushProse();
-      const header = splitRow(line);
+      const header = splitRow(line).map(stripInline);
       index += 2;
       const rows: string[][] = [];
       while (index < lines.length && isTableRow(lines[index])) {
-        const cells = splitRow(lines[index]);
+        const cells = splitRow(lines[index]).map(stripInline);
         while (cells.length < header.length) cells.push("");
         rows.push(cells.slice(0, header.length));
         index += 1;
