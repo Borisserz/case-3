@@ -926,6 +926,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   gap: 0.65rem;
 }
 
@@ -960,6 +961,8 @@
 .stimul-split {
   display: flex;
   align-items: stretch;
+  width: 100%;
+  min-width: 0;
   max-height: min(42vh, 440px);
   border: 1px solid var(--rule);
   border-radius: 12px;
@@ -968,7 +971,9 @@
 }
 
 .stimul-pin {
-  flex: 0 0 auto;
+  flex: 0 0 15rem;
+  width: 15rem;
+  max-width: 36%;
   max-height: min(42vh, 440px);
   overflow-x: hidden;
   overflow-y: auto;
@@ -984,7 +989,9 @@
 }
 
 .stimul-grid-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
   overflow: auto;
   max-height: min(42vh, 440px);
   background: var(--sheet);
@@ -1041,14 +1048,14 @@
 }
 
 .stimul-pin .stimul-grid {
-  width: max-content;
-  min-width: 9rem;
-  max-width: 16rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .stimul-pin .is-label {
-  min-width: 9rem;
-  max-width: 16rem;
+  min-width: 0;
+  max-width: none;
 }
 
 .stimul-grid tbody tr:nth-child(even) td {
