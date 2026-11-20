@@ -26,7 +26,13 @@ MAX_TABLE_COLS = 64
 MAX_TABLE_ROWS = 500
 
 _NUM = re.compile(r"\d")
+_COMPLETE_NUM = re.compile(r"^[+\-−]?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?$")
+_SHORT_NUM = re.compile(r"^[+\-−]?\d{1,3}$")
+_THOUSANDS_TAIL = re.compile(r"^\d{3}(?:[.,]\d+)?%?$")
+_NUM_TOKEN = re.compile(r"[+\-−]?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?")
 _FENCE = re.compile(r"^```(?:markdown|md)?[^\n]*\n(.*)\n?```$", re.DOTALL)
+_WORD_GAP = 8.0
+_LINE_BAND = 3.0
 
 _LINE_SETTINGS = {
     "vertical_strategy": "lines",
@@ -373,13 +379,228 @@ def _extract_pdf(path: Path) -> tuple[str, int, int, list[str]]:
     return text + "\n", 0, _numeric_in_text(text), notes
 
 
+def choose_grids(
+    line_rows: list[list[list[object | None]]],
+    word_rows: list[list[list[object | None]]],
+    text_rows: list[list[list[object | None]]],
+) -> list[list[list[object | None]]]:
+    """Prefer the grid that keeps a printed number whole.
+
+    A Stimulsoft pivot often has no vertical rules. The text strategy then
+    puts ``105`` and ``865,2`` in different columns. Word positions put them
+    back. A real ruled grid still wins a tie.
+    """
+    best = line_rows
+    best_score = _grid_score(line_rows)
+    for candidate in (word_rows, text_rows):
+        score = _grid_score(candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best
+
+
+def words_to_rows(words: list[dict[str, object]]) -> list[list[str]]:
+    """One grid from word boxes. A short gap is a space inside a cell."""
+    if not words:
+        return []
+    lines = _word_lines(words)
+    cell_lines = [_join_word_gaps(line) for line in lines]
+    body = [
+        cells
+        for cells in cell_lines
+        if any(_COMPLETE_NUM.fullmatch(cell["text"]) for cell in cells)
+    ]
+    if not body:
+        return []
+    edges = _column_edges(body)
+    if len(edges) < 3:
+        return []
+    assigned = [_assign_cells(cells, edges) for cells in cell_lines]
+    tops = [float(line[0]["top"]) for line in lines]
+    return _clean_rows(_merge_wrapped(assigned, tops))
+
+
 def _page_tables(page: object) -> tuple[list[list[list[object | None]]], list[tuple[float, float, float, float]]]:
     line_rows, line_boxes = _tables_for(page, _LINE_SETTINGS)
+    word_rows, word_boxes = _word_tables(page)
     text_rows, text_boxes = _tables_for(page, _TEXT_SETTINGS)
-    chosen = prefer_ruled_tables(line_rows, text_rows)
-    if chosen is line_rows:
-        return line_rows, line_boxes
-    return text_rows, text_boxes
+    chosen = choose_grids(line_rows, word_rows, text_rows)
+    if chosen is word_rows:
+        return word_rows, word_boxes
+    if chosen is text_rows:
+        return text_rows, text_boxes
+    return line_rows, line_boxes
+
+
+def _word_tables(
+    page: object,
+) -> tuple[list[list[list[str]]], list[tuple[float, float, float, float]]]:
+    words = page.extract_words(x_tolerance=1, y_tolerance=1) or []  # type: ignore[attr-defined]
+    rows = words_to_rows(words)
+    if not _plausible(rows):
+        return [], []
+    return [rows], [_word_bbox(words)]
+
+
+def _grid_score(tables: list[list[list[object | None]]]) -> int:
+    if not tables:
+        return -10_000
+    complete = glued = splits = 0
+    for table in tables:
+        for row in table:
+            cells = [_clean_cell(cell) for cell in row]
+            for index, cell in enumerate(cells):
+                if not cell:
+                    continue
+                if _COMPLETE_NUM.fullmatch(cell):
+                    complete += 1
+                if len(_NUM_TOKEN.findall(cell)) >= 2:
+                    glued += 1
+                nxt = cells[index + 1] if index + 1 < len(cells) else ""
+                if _SHORT_NUM.fullmatch(cell) and _THOUSANDS_TAIL.fullmatch(nxt):
+                    splits += 1
+    return complete - 4 * glued - 4 * splits
+
+
+def _word_lines(words: list[dict[str, object]]) -> list[list[dict[str, object]]]:
+    ordered = sorted(words, key=lambda word: (float(word["top"]), float(word["x0"])))
+    lines: list[list[dict[str, object]]] = []
+    for word in ordered:
+        if lines and abs(float(word["top"]) - float(lines[-1][0]["top"])) <= _LINE_BAND:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+    return lines
+
+
+def _join_word_gaps(words: list[dict[str, object]]) -> list[dict[str, float | str]]:
+    cells: list[dict[str, float | str]] = []
+    for word in sorted(words, key=lambda item: float(item["x0"])):
+        text = str(word["text"])
+        x0 = float(word["x0"])
+        x1 = float(word["x1"])
+        if cells and x0 - float(cells[-1]["x1"]) < _WORD_GAP:
+            cells[-1]["text"] = str(cells[-1]["text"]) + " " + text
+            cells[-1]["x1"] = max(float(cells[-1]["x1"]), x1)
+            continue
+        cells.append({"text": text, "x0": x0, "x1": x1})
+    return cells
+
+
+def _column_edges(body: list[list[dict[str, float | str]]]) -> list[float]:
+    cells = [cell for line in body for cell in line]
+    parent = list(range(len(cells)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for left in range(len(cells)):
+        for right in range(left + 1, len(cells)):
+            if _same_column(cells[left], cells[right]):
+                parent[find(left)] = find(right)
+    groups: dict[int, list[dict[str, float | str]]] = {}
+    for index, cell in enumerate(cells):
+        groups.setdefault(find(index), []).append(cell)
+    columns = []
+    for group in groups.values():
+        columns.append(
+            {
+                "x0": min(float(cell["x0"]) for cell in group),
+                "x1": max(float(cell["x1"]) for cell in group),
+                "n": len(group),
+                "numeric": sum(
+                    1 for cell in group if _COMPLETE_NUM.fullmatch(str(cell["text"]))
+                ),
+            }
+        )
+    columns.sort(key=lambda column: column["x0"])
+    edges = [columns[0]["x0"] - 1]
+    for prev, column in zip(columns, columns[1:]):
+        if column["numeric"] * 2 >= column["n"]:
+            edges.append(prev["x1"] + 0.5)
+        else:
+            edges.append((prev["x1"] + column["x0"]) / 2)
+    edges.append(columns[-1]["x1"] + 40)
+    return edges
+
+
+def _same_column(left: dict[str, float | str], right: dict[str, float | str]) -> bool:
+    overlap = min(float(left["x1"]), float(right["x1"])) - max(
+        float(left["x0"]), float(right["x0"])
+    )
+    if overlap > 0:
+        return True
+    return bool(
+        _COMPLETE_NUM.fullmatch(str(left["text"]))
+        and _COMPLETE_NUM.fullmatch(str(right["text"]))
+        and abs(float(left["x1"]) - float(right["x1"])) <= _WORD_GAP
+    )
+
+
+def _assign_cells(cells: list[dict[str, float | str]], edges: list[float]) -> list[str]:
+    row = [""] * (len(edges) - 1)
+    for cell in cells:
+        center = (float(cell["x0"]) + float(cell["x1"])) / 2
+        index = len(edges) - 2
+        for slot in range(len(edges) - 1):
+            if edges[slot] <= center < edges[slot + 1]:
+                index = slot
+                break
+        text = str(cell["text"])
+        row[index] = f"{row[index]} {text}".strip() if row[index] else text
+    return row
+
+
+def _has_number(row: list[str]) -> bool:
+    return any(_COMPLETE_NUM.fullmatch(cell) for cell in row if cell)
+
+
+def _merge_wrapped(rows: list[list[str]], tops: list[float]) -> list[list[str]]:
+    """Join a wrapped header with the line above it.
+
+    The second line of «Выполнение / плана (%)» sits closer to the first
+    header line than to the first sum. A full data row does not.
+    """
+    if not rows:
+        return []
+    first_num = next((index for index, row in enumerate(rows) if _has_number(row)), len(rows))
+    diffs = [b - a for a, b in zip(tops, tops[1:]) if b > a]
+    pitch = sorted(diffs)[len(diffs) // 2] if diffs else 999.0
+    merged = [list(rows[0])]
+    prev_top = tops[0]
+    for index, (row, top) in enumerate(zip(rows[1:], tops[1:]), start=1):
+        gap = top - prev_top
+        prev_top = top
+        if _has_number(row):
+            merged.append(list(row))
+            continue
+        distance_to_data = (
+            tops[first_num] - top if first_num < len(tops) else pitch
+        )
+        preamble = index < first_num and gap < distance_to_data
+        if preamble or gap < pitch * 0.75:
+            previous = merged[-1]
+            for slot, cell in enumerate(row):
+                if cell:
+                    previous[slot] = (
+                        f"{previous[slot]} {cell}".strip() if previous[slot] else cell
+                    )
+            continue
+        merged.append(list(row))
+    return merged
+
+
+def _word_bbox(words: list[dict[str, object]]) -> tuple[float, float, float, float]:
+    return (
+        min(float(word["x0"]) for word in words),
+        min(float(word["top"]) for word in words),
+        max(float(word["x1"]) for word in words),
+        max(float(word["bottom"]) for word in words),
+    )
 
 
 def _tables_for(

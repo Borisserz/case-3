@@ -9,11 +9,13 @@ import pytest
 from case3 import prompts
 from case3.dashboard_source import (
     DashboardSourceError,
+    choose_grids,
     join_page_tables,
     parse_dashboard,
     prefer_ruled_tables,
     read_dashboard_png,
     table_block,
+    words_to_rows,
 )
 
 
@@ -63,6 +65,56 @@ def test_ruled_grid_beats_a_noisier_text_split() -> None:
     ]
     chosen = prefer_ruled_tables(ruled, noisy)
     assert chosen == ruled
+
+
+def test_word_positions_keep_spaced_numbers_and_a_wrapped_header() -> None:
+    rows = words_to_rows(_pivot_words())
+    assert rows[0] == [
+        "Наименование платежа",
+        "Вид бюджета",
+        "ИМНС",
+        "Факт (руб.)",
+        "План (руб.)",
+        "Выполнение плана (%)",
+        "Выполнение плана (руб.)",
+    ]
+    assert rows[1] == [
+        "Налог на добавленную стоимость, всего",
+        "Республиканский",
+        "216 ИМНС по Пинскому р-ну",
+        "105 865,2",
+        "94 073,0",
+        "-20,7%",
+        "139 289,1",
+    ]
+    assert rows[2][0] == ""
+    assert rows[2][1] == "Консолидированный"
+    assert rows[2][3] == "142 597,4"
+
+
+def test_split_word_grid_loses_to_columns_from_positions() -> None:
+    text = [
+        [
+            ["Налог", "ИМНС", "по", "105", "865,2", "94", "073,0"],
+            ["НДС", "216", "ИМНС", "142", "597,4", "120", "000,0"],
+        ]
+    ]
+    word = [
+        [
+            ["Наименование платежа", "ИМНС", "Факт (руб.)", "План (руб.)"],
+            ["Налог на добавленную стоимость, всего", "216 ИМНС по Пинскому р-ну", "105 865,2", "94 073,0"],
+        ]
+    ]
+    assert choose_grids([], word, text) is word
+
+
+def test_open_pivot_pdf_keeps_the_spaced_number(tmp_path: Path) -> None:
+    path = tmp_path / "open.pdf"
+    _write_open_pivot(path)
+    result = parse_dashboard(pdf=path)
+    assert "105 865,56" in result.markdown
+    assert "| 105 | 865,56 |" not in result.markdown
+    assert "94,1" in result.markdown
 
 
 def test_wider_text_grid_beats_merged_ruled_columns() -> None:
@@ -227,6 +279,95 @@ def _tiny_png() -> bytes:
         + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00"))
         + chunk(b"IEND", b"")
     )
+
+
+def _word(text: str, x0: float, x1: float, top: float) -> dict[str, float | str]:
+    return {"text": text, "x0": x0, "x1": x1, "top": top, "bottom": top + 8}
+
+
+def _pivot_words() -> list[dict[str, float | str]]:
+    """Positions copied from a Stimulsoft-like pivot: wrapped header, right-aligned sums."""
+    words: list[dict[str, float | str]] = []
+
+    def add(top: float, items: list[tuple[str, float, float]]) -> None:
+        for text, x0, x1 in items:
+            words.append(_word(text, x0, x1, top))
+
+    add(78, [
+        ("Наименование", 32, 100),
+        ("Вид", 250, 270),
+        ("ИМНС", 360, 390),
+        ("Факт", 470, 500),
+        ("(руб.)", 502, 545),
+        ("План", 580, 610),
+        ("(руб.)", 612, 655),
+        ("Выполнение", 700, 760),
+        ("Выполнение", 800, 860),
+    ])
+    add(88, [
+        ("платежа", 32, 70),
+        ("бюджета", 250, 300),
+        ("плана", 700, 735),
+        ("(%)", 737, 760),
+        ("плана", 800, 835),
+        ("(руб.)", 837, 880),
+    ])
+    add(112, [
+        ("Налог", 32, 58),
+        ("на", 60, 72),
+        ("добавленную", 74, 140),
+        ("стоимость,", 142, 190),
+        ("всего", 192, 220),
+        ("Республиканский", 250, 330),
+        ("216", 360, 378),
+        ("ИМНС", 380, 410),
+        ("по", 412, 424),
+        ("Пинскому", 426, 470),
+        ("р-ну", 472, 500),
+        ("105", 530, 552),
+        ("865,2", 554, 575),
+        ("94", 630, 648),
+        ("073,0", 650, 670),
+        ("-20,7%", 720, 770),
+        ("139", 840, 862),
+        ("289,1", 864, 890),
+    ])
+    add(134, [
+        ("Консолидированный", 250, 345),
+        ("216", 360, 378),
+        ("ИМНС", 380, 410),
+        ("по", 412, 424),
+        ("Пинскому", 426, 470),
+        ("р-ну", 472, 500),
+        ("142", 530, 552),
+        ("597,4", 554, 575),
+        ("120", 625, 648),
+        ("000,0", 650, 670),
+        ("17,6%", 730, 770),
+        ("22", 850, 862),
+        ("597,4", 864, 890),
+    ])
+    return words
+
+
+def _write_open_pivot(path: Path) -> None:
+    """Horizontal rules only. '105' and '865,56' are separate text objects."""
+    ops = [
+        "0.6 w",
+        "36 80 m 360 80 l S",
+        "36 60 m 360 60 l S",
+        "36 40 m 360 40 l S",
+        "BT /F1 8 Tf",
+        "1 0 0 1 40 66 Tm (Name) Tj",
+        "1 0 0 1 180 66 Tm (Fact) Tj",
+        "1 0 0 1 280 66 Tm (Plan) Tj",
+        "1 0 0 1 40 46 Tm (VAT) Tj",
+        "1 0 0 1 168 46 Tm (105) Tj",
+        "1 0 0 1 186 46 Tm (865,56) Tj",
+        "1 0 0 1 280 46 Tm (94,1) Tj",
+        "ET",
+    ]
+    _finish_pdf(path, "\n".join(ops).encode("latin-1"), width=400, height=140)
 
 
 def _write_blank_pdf(path: Path) -> None:
