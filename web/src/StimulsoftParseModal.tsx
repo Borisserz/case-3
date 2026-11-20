@@ -1,6 +1,6 @@
 /** Settings: drop a Stimulsoft PNG and table PDF, then show the markdown. */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   emptyDashboardDrop,
   parseDashboard,
@@ -23,113 +23,37 @@ function TableGrid({
 }: {
   block: Extract<DashboardBlock, { kind: "table" }>;
 }) {
-  const pinRef = useRef<HTMLDivElement>(null);
-  const restRef = useRef<HTMLDivElement>(null);
-  const syncing = useRef(false);
-  const restHeader = block.header.slice(1);
-
-  useLayoutEffect(() => {
-    const pinRows = pinRef.current?.querySelectorAll("tr");
-    const restRows = restRef.current?.querySelectorAll("tr");
-    if (!pinRows) return;
-    pinRows.forEach((row, index) => {
-      const other = restRows?.[index];
-      row.style.height = "";
-      if (other) other.style.height = "";
-      const height = Math.max(
-        row.getBoundingClientRect().height,
-        other?.getBoundingClientRect().height ?? 0,
-      );
-      const px = `${Math.ceil(height)}px`;
-      row.style.height = px;
-      if (other) other.style.height = px;
-    });
-  }, [block]);
-
-  function syncScroll(from: HTMLDivElement, to: HTMLDivElement | null) {
-    if (!to || syncing.current) return;
-    syncing.current = true;
-    to.scrollTop = from.scrollTop;
-    syncing.current = false;
-  }
-
-  function markRow(index: number | null) {
-    for (const root of [pinRef.current, restRef.current]) {
-      root?.querySelectorAll("tbody tr").forEach((row, rowIndex) => {
-        row.classList.toggle("is-hot", rowIndex === index);
-      });
-    }
-  }
-
   return (
-    <div className={`stimul-split${restHeader.length === 0 ? " is-pin-only" : ""}`}>
-      <div
-        className="stimul-pin"
-        ref={pinRef}
-        onScroll={(event) => syncScroll(event.currentTarget, restRef.current)}
-      >
-        <table className="stimul-grid">
-          <thead>
-            <tr>
-              <th className="is-label" scope="col">
-                {block.header[0] || ""}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.map((row, rowIndex) => (
-              <tr
-                key={rowIndex}
-                onMouseEnter={() => markRow(rowIndex)}
-                onMouseLeave={() => markRow(null)}
+    <div className="stimul-grid-scroll">
+      <table className="stimul-grid">
+        <thead>
+          <tr>
+            {block.header.map((cell, column) => (
+              <th
+                key={column}
+                className={block.numeric[column] ? "is-num" : "is-label"}
+                scope="col"
               >
-                <td className="is-label">{row[0] || ""}</td>
-              </tr>
+                {cell}
+              </th>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {restHeader.length === 0 ? null : (
-        <div
-          className="stimul-grid-scroll"
-          ref={restRef}
-          onScroll={(event) => syncScroll(event.currentTarget, pinRef.current)}
-        >
-          <table className="stimul-grid">
-            <thead>
-              <tr>
-                {restHeader.map((cell, column) => (
-                  <th
-                    key={column}
-                    className={block.numeric[column + 1] ? "is-num" : "is-label"}
-                    scope="col"
-                  >
-                    {cell}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {block.rows.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  onMouseEnter={() => markRow(rowIndex)}
-                  onMouseLeave={() => markRow(null)}
+          </tr>
+        </thead>
+        <tbody>
+          {block.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {block.header.map((_, column) => (
+                <td
+                  key={column}
+                  className={block.numeric[column] ? "is-num" : "is-label"}
                 >
-                  {restHeader.map((_, column) => (
-                    <td
-                      key={column}
-                      className={block.numeric[column + 1] ? "is-num" : "is-label"}
-                    >
-                      {row[column + 1] || ""}
-                    </td>
-                  ))}
-                </tr>
+                  {row[column] || ""}
+                </td>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -147,7 +71,7 @@ function DashboardReadout({ markdown }: { markdown: string }) {
       {tables.length > 0 ? (
         <p className="stimul-meta">
           {tables.length === 1 ? "Одна таблица" : `Таблиц: ${tables.length}`}
-          {`. ${widest} столбцов, ${rowCount} строк. Шапка и первый столбец остаются на месте, остальное листается.`}
+          {`. ${widest} столбцов, ${rowCount} строк. Листай таблицу вправо: там остальные столбцы.`}
         </p>
       ) : null}
       {blocks.map((block, index) => {

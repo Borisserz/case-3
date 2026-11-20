@@ -958,49 +958,15 @@
   margin-top: 0.18rem;
 }
 
-.stimul-split {
-  display: flex;
-  align-items: stretch;
+.stimul-grid-scroll {
+  display: block;
   width: 100%;
-  min-width: 0;
-  max-height: min(42vh, 440px);
+  max-width: 100%;
+  overflow: auto;
+  max-height: min(48vh, 520px);
   border: 1px solid var(--rule);
   border-radius: 12px;
-  overflow: hidden;
   background: var(--sheet);
-}
-
-.stimul-pin {
-  flex: 0 0 15rem;
-  width: 15rem;
-  max-width: 36%;
-  max-height: min(42vh, 440px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-  border-right: 1px solid var(--rule);
-  background: var(--sheet);
-  z-index: 1;
-  box-shadow: 8px 0 16px -12px rgba(20, 22, 18, 0.55);
-}
-
-.stimul-pin::-webkit-scrollbar {
-  display: none;
-}
-
-.stimul-grid-scroll {
-  flex: 1 1 0;
-  width: 0;
-  min-width: 0;
-  overflow: auto;
-  max-height: min(42vh, 440px);
-  background: var(--sheet);
-  scroll-snap-type: x proximity;
-}
-
-.stimul-grid-scroll th,
-.stimul-grid-scroll td {
-  scroll-snap-align: start;
 }
 
 .stimul-grid {
@@ -1034,8 +1000,8 @@
 
 .stimul-grid .is-label {
   text-align: left;
-  min-width: 9rem;
-  max-width: 18rem;
+  min-width: 5.5rem;
+  max-width: 9rem;
   white-space: normal;
 }
 
@@ -1047,18 +1013,27 @@
   min-width: 5.2rem;
 }
 
-.stimul-pin .stimul-grid {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
+.stimul-grid th:first-child,
+.stimul-grid td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 12rem;
+  max-width: 18rem;
+  background: var(--sheet);
+  box-shadow: 1px 0 0 var(--rule);
 }
 
-.stimul-pin .is-label {
-  min-width: 0;
-  max-width: none;
+.stimul-grid thead th:first-child {
+  z-index: 4;
+  background: var(--surface-2);
 }
 
 .stimul-grid tbody tr:nth-child(even) td {
+  background: var(--paper);
+}
+
+.stimul-grid tbody tr:nth-child(even) td:first-child {
   background: var(--paper);
 }
 
