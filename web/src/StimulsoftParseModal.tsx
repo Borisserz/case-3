@@ -76,6 +76,8 @@ function DashboardReadout({ markdown }: { markdown: string }) {
       ) : null}
       {blocks.map((block, index) => {
         if (block.kind === "heading") {
+          const next = blocks[index + 1];
+          if (!next || next.kind === "heading") return null;
           return (
             <h3 key={index} className="stimul-read-title">
               {block.text}
