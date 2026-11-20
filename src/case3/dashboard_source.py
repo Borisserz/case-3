@@ -123,7 +123,7 @@ def parse_dashboard(
     if png_md and pdf_md:
         parts += [
             "Числа в разделе «Таблица PDF» скопированы из ячеек файла. "
-            "Раздел «Экран» — подписи и числа, которые модель прочитала со снимка.",
+            "Раздел «Экран» — фильтры, карточки и график. Строки таблицы модель не читает.",
             "",
         ]
     elif pdf_md:
@@ -175,7 +175,7 @@ def read_dashboard_png(png: bytes, *, client: _VisionClient | None = None) -> st
             f"Модель не прочитала снимок: {exc}",
             code="vision_failed",
         ) from exc
-    cleaned = _strip_fence(text or "")
+    cleaned = strip_screen_table(_strip_fence(text or ""))
     if not cleaned.strip():
         raise DashboardSourceError(
             "Модель ничего не вернула по снимку дашборда.",
@@ -292,7 +292,7 @@ def _screen_markdown(png: bytes, vision: Callable[[bytes], str] | None) -> str:
             f"Модель не прочитала снимок: {exc}",
             code="vision_failed",
         ) from exc
-    cleaned = _strip_fence(text or "")
+    cleaned = strip_screen_table(_strip_fence(text or ""))
     if not cleaned.strip():
         raise DashboardSourceError(
             "Модель ничего не вернула по снимку дашборда.",
@@ -700,6 +700,54 @@ def _numeric_cells(rows: list[list[object]]) -> int:
 
 def _numeric_in_text(text: str) -> int:
     return len(re.findall(r"\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?", text))
+
+
+def strip_screen_table(markdown: str) -> str:
+    """Drop the green pivot if the screen model copied it.
+
+    Cards and the filter table stay: they have at most four columns.
+    A wider grid is the payment table, and that text comes from the PDF.
+    """
+    lines = markdown.replace("\r\n", "\n").split("\n")
+    kept: list[str] = []
+    skipping = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        heading = re.match(r"^#{1,3}\s+(.+?)\s*$", line.strip())
+        if heading and _screen_table_title(heading.group(1)):
+            skipping = True
+            index += 1
+            continue
+        if skipping:
+            if heading:
+                skipping = False
+            else:
+                index += 1
+                continue
+        if _pipe_row(line) and _pipe_width(line) > 4:
+            while index < len(lines) and (
+                _pipe_row(lines[index]) or not lines[index].strip()
+            ):
+                index += 1
+            continue
+        kept.append(line)
+        index += 1
+    return "\n".join(kept).strip()
+
+
+def _screen_table_title(title: str) -> bool:
+    folded = title.casefold().replace("ё", "е")
+    return "таблиц" in folded and "экран" in folded
+
+
+def _pipe_row(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+
+
+def _pipe_width(line: str) -> int:
+    return len([cell for cell in line.strip().strip("|").split("|")])
 
 
 def _strip_fence(text: str) -> str:

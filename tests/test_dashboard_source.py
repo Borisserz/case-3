@@ -14,6 +14,7 @@ from case3.dashboard_source import (
     parse_dashboard,
     prefer_ruled_tables,
     read_dashboard_png,
+    strip_screen_table,
     table_block,
     words_to_rows,
 )
@@ -245,6 +246,43 @@ def test_dashboard_prompt_tells_qwen_not_to_invent() -> None:
     assert "не разобрать" in text
     assert "markdown" in text.lower()
     assert "Не округляй" in text
+    assert "Общие данные" in text and "Динамика" in text
+    assert "Без выполнения плана" in text
+    assert "Код и название ИМНС" in text
+    assert "Таблицу на экране" not in text
+    assert "не читаешь" in text
+
+
+def test_screen_reading_drops_the_green_table_and_keeps_the_cards() -> None:
+    raw = "\n".join(
+        [
+            "## Фильтры",
+            "",
+            "| Фильтр | Выбрано |",
+            "| --- | --- |",
+            "| Режим | Общие данные |",
+            "| Детализация | Детализация |",
+            "| Код и название ИМНС | All |",
+            "",
+            "## Карточки",
+            "",
+            "| Показатель | Сумма | Доля |",
+            "| --- | --- | --- |",
+            "| Консолидированный бюджет | 722 087,17 | 100,0% |",
+            "",
+            "## Таблица на экране",
+            "",
+            "| Наименование | Вид | ИМНС | Факт | План | Процент | Руб |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| НДС | Респ | 216 | 105 865,2 | 94 073,0 | -20,7% | 139 289,1 |",
+        ]
+    )
+    cleaned = strip_screen_table(raw)
+    assert "105 865,2" not in cleaned
+    assert "Таблица на экране" not in cleaned
+    assert "Общие данные" in cleaned
+    assert "722 087,17" in cleaned
+    assert "All" in cleaned
 
 
 def test_qwen_reader_sends_the_png_and_the_prompt() -> None:
