@@ -526,13 +526,21 @@ export default function App() {
       <div
         className={`app chat-app${drag ? " is-drag" : ""}${railLayout && !narrowRail ? " has-rail" : ""}`}
       onDragOver={(e) => {
+        if (e.target instanceof Element && e.target.closest(".stimul-modal")) {
+          return;
+        }
         e.preventDefault();
         setDrag(true);
       }}
       onDragLeave={(e) => {
         if (e.currentTarget === e.target) setDrag(false);
       }}
-      onDrop={onDrop}
+      onDrop={(e) => {
+        if (e.target instanceof Element && e.target.closest(".stimul-modal")) {
+          return;
+        }
+        onDrop(e);
+      }}
     >
       <LiberToastBar
         toast={toast}

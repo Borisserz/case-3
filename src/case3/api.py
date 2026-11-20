@@ -34,6 +34,7 @@ from case3.api_photo import quick_photo_edit
 from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image, is_docker_warmed
+from case3.dashboard_source import DashboardSourceError, parse_dashboard
 from case3.source_ingest import (
     DEFAULT_MAX_MARKDOWN_BYTES,
     IngestDependencyError,
@@ -876,6 +877,48 @@ def _write_office_preview(upload_dir: Path, src: Path, fmt: str) -> str | None:
             log.warning("office preview pdf failed: %s", exc)
             return None
     return None
+
+
+def _dashboard_http_status(code: str) -> int:
+    if code in {"missing_input", "too_large", "bad_pdf", "bad_png", "missing_file"}:
+        return 400
+    if code in {"vision_failed", "ingest_dependency"}:
+        return 503
+    return 422
+
+
+@app.post("/api/dashboard/parse")
+async def api_dashboard_parse(
+    png: UploadFile | None = File(None),
+    pdf: UploadFile | None = File(None),
+) -> JSONResponse:
+    """Dashboard PNG (Qwen) and/or table PDF → markdown. No report run."""
+    png_bytes = await png.read() if png is not None else None
+    pdf_bytes = await pdf.read() if pdf is not None else None
+    if png_bytes == b"":
+        png_bytes = None
+    if pdf_bytes == b"":
+        pdf_bytes = None
+    try:
+        result = parse_dashboard(
+            png=png_bytes,
+            pdf=pdf_bytes,
+        )
+    except DashboardSourceError as exc:
+        raise HTTPException(
+            _dashboard_http_status(exc.code),
+            detail=exc.message,
+        ) from exc
+    return JSONResponse(
+        {
+            "markdown": result.markdown,
+            "png_markdown": result.png_markdown,
+            "pdf_markdown": result.pdf_markdown,
+            "warnings": result.warnings,
+            "pdf_table_count": result.pdf_table_count,
+            "pdf_numeric_cells": result.pdf_numeric_cells,
+        }
+    )
 
 
 @app.post("/api/source/ingest")

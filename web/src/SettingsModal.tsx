@@ -1,6 +1,7 @@
 /** Liber Atelier — report limits + desk health (chart type/style live in edit sheet). */
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { StimulsoftParseModal } from "./StimulsoftParseModal";
 import { FALLBACK_PALETTES } from "./domain/liberConstants";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -79,12 +80,18 @@ export function SettingsModal({
 }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, { active: open });
+  const [stimulOpen, setStimulOpen] = useState(false);
+  useFocusTrap(dialogRef, { active: open && !stimulOpen });
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (stimulOpen) {
+        setStimulOpen(false);
+        return;
+      }
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -93,7 +100,7 @@ export function SettingsModal({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open, onClose, stimulOpen]);
 
   if (!open) return null;
 
@@ -331,6 +338,22 @@ export function SettingsModal({
             )}
             <p className="health-foot">{paradeHint}</p>
           </section>
+
+          <section className="settings-block" aria-labelledby="set-stimul">
+            <h3 className="settings-block-title" id="set-stimul">
+              Стимулсофт
+            </h3>
+            <p className="stimul-settings-note">
+              Снимок дашборда и PDF таблицы. Откроет таблицу, которую можно листать.
+            </p>
+            <button
+              type="button"
+              className="stimul-settings-btn"
+              onClick={() => setStimulOpen(true)}
+            >
+              Стимулсофт
+            </button>
+          </section>
         </div>
 
         <footer className="settings-modal-foot">
@@ -343,6 +366,9 @@ export function SettingsModal({
           </button>
         </footer>
       </div>
+      {stimulOpen ? (
+        <StimulsoftParseModal onClose={() => setStimulOpen(false)} />
+      ) : null}
     </div>
   );
 }

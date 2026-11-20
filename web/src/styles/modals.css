@@ -867,6 +867,290 @@
   box-shadow: 0 6px 18px rgba(201, 42, 42, 0.38);
 }
 
+.stimul-settings-note,
+.stimul-lead,
+.stimul-meta,
+.stimul-busy,
+.stimul-reject {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.stimul-settings-btn {
+  margin-top: 0.7rem;
+  min-height: 2.4rem;
+  padding: 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  background: color-mix(in srgb, var(--primary) 94%, var(--sheet));
+  color: var(--on-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stimul-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: color-mix(in srgb, var(--primary) 18%, rgba(20, 22, 18, 0.4));
+}
+
+.stimul-sheet {
+  width: min(560px, 100%);
+  max-height: min(88vh, 820px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 17px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--primary));
+  background: var(--sheet);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+.stimul-sheet.is-result {
+  width: min(96vw, 1440px);
+  max-height: min(92vh, 920px);
+}
+
+.stimul-sheet.is-result .settings-modal-body {
+  overflow: hidden;
+}
+
+.stimul-result,
+.stimul-readout {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.65rem;
+}
+
+.stimul-read-title {
+  margin: 0.2rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.stimul-read-text {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.stimul-split {
+  display: flex;
+  align-items: stretch;
+  max-height: min(68vh, 680px);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--sheet);
+}
+
+.stimul-pin {
+  flex: 0 0 auto;
+  max-height: min(68vh, 680px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border-right: 1px solid var(--rule);
+  background: var(--sheet);
+  z-index: 1;
+  box-shadow: 8px 0 16px -12px rgba(20, 22, 18, 0.55);
+}
+
+.stimul-pin::-webkit-scrollbar {
+  display: none;
+}
+
+.stimul-grid-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  max-height: min(68vh, 680px);
+  background: var(--sheet);
+  scroll-snap-type: x proximity;
+}
+
+.stimul-grid-scroll th,
+.stimul-grid-scroll td {
+  scroll-snap-align: start;
+}
+
+.stimul-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-family: var(--font);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.stimul-grid th,
+.stimul-grid td {
+  padding: 0.48rem 0.72rem;
+  border-bottom: 1px solid var(--rule);
+  border-right: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  vertical-align: top;
+  background: var(--sheet);
+}
+
+.stimul-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+  font-weight: 600;
+  text-align: left;
+}
+
+.stimul-grid .is-label {
+  text-align: left;
+  min-width: 9rem;
+  max-width: 18rem;
+  white-space: normal;
+}
+
+.stimul-grid .is-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  min-width: 5.2rem;
+}
+
+.stimul-pin .stimul-grid {
+  width: max-content;
+  min-width: 9rem;
+  max-width: 16rem;
+}
+
+.stimul-pin .is-label {
+  min-width: 9rem;
+  max-width: 16rem;
+}
+
+.stimul-grid tbody tr:nth-child(even) td {
+  background: var(--paper);
+}
+
+.stimul-grid tbody tr:hover td,
+.stimul-grid tbody tr.is-hot td {
+  background: color-mix(in srgb, var(--surface-3) 70%, var(--sheet));
+}
+
+.stimul-grid thead th.is-num {
+  text-align: right;
+  max-width: 9rem;
+  white-space: normal;
+}
+
+.stimul-drop {
+  margin-top: 0.8rem;
+  width: 100%;
+  min-height: 8.5rem;
+  border-radius: 14px;
+  border: 1.5px dashed color-mix(in srgb, var(--primary) 45%, var(--rule));
+  background: color-mix(in srgb, var(--paper) 70%, var(--sheet));
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.stimul-drop span {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stimul-drop.is-over {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--sheet));
+}
+
+.stimul-file {
+  display: none;
+}
+
+.stimul-slots {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+
+.stimul-error {
+  margin: 0.6rem 0 0;
+  color: #8e1717;
+  font-size: 0.86rem;
+}
+
+.stimul-warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: #6b4e16;
+  font-size: 0.84rem;
+}
+
+.stimul-md {
+  margin: 0.75rem 0 0;
+  max-height: min(58vh, 560px);
+  overflow: auto;
+  padding: 0.85rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stimul-foot {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.stimul-foot .settings-modal-done {
+  width: auto;
+  flex: 1;
+}
+
+.stimul-foot .settings-modal-done:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.stimul-secondary {
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .liber-confirm-btn.is-primary {
   background: color-mix(in srgb, var(--ink, #111827) 88%, var(--primary, #1e3a2f));
   border: 1px solid var(--primary, #1e3a2f);
