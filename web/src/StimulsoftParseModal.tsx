@@ -71,7 +71,7 @@ function DashboardReadout({ markdown }: { markdown: string }) {
       {tables.length > 0 ? (
         <p className="stimul-meta">
           {tables.length === 1 ? "Одна таблица" : `Таблиц: ${tables.length}`}
-          {`. ${widest} столбцов, ${rowCount} строк. Листай таблицу вправо: там остальные столбцы.`}
+          {`. ${widest} столбцов, ${rowCount} строк. Таблица открыта целиком.`}
         </p>
       ) : null}
       {blocks.map((block, index) => {
