@@ -95,6 +95,7 @@ def prior_block_for_form(
         _source_file,
         format_card,
         format_thread,
+        format_user_numbers,
         load_chain,
         memory_card,
         recall_block,
@@ -107,6 +108,7 @@ def prior_block_for_form(
         if source.strip():
             break
     parts = [
+        format_user_numbers(chain),
         format_card(memory_card(chain, source)),
         format_thread(chain) or format_prior_turn(meta),
         recall_block(chain, user_text),

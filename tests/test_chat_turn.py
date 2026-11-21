@@ -142,6 +142,19 @@ def test_slide_number_does_not_look_like_a_fact_conflict():
     assert "оставить" not in text
 
 
+def test_old_request_number_does_not_enter_the_answer():
+    intent = (
+        "что с кассой\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 1. Запрос: выручка 77\n"
+        "Ответ: было."
+    )
+    client = _Seq(["Выручка 77.", "Выручка 77."])
+    text = try_chat_answer("Касса была 20.", intent, client=client)
+    assert text.startswith("В документах")
+    assert "Выручка 77" not in text
+
+
 def test_choosing_the_document_number_drops_the_rejected_one():
     prior = (
         "20\n\n"
@@ -181,6 +194,206 @@ def test_section_draft_keeps_a_number_the_user_wrote():
     assert "40" in kept
 
 
+def test_long_thread_keeps_the_latest_answer_and_its_paragraphs():
+    """Memory sits after the question. A front clip drops the latest answer."""
+    latest = "Касса в прошлом ответе держится.\n\nХВОСТОВЕТ остаётся абзацем."
+    recall = "Один прошлый ход (не Source).\nОтвет: ВСПОМНИЛКАССУ по запросу."
+    intent = (
+        "Первая мысль.\n\nВторая мысль. Что с кассой?\n\n"
+        "Карточка этого чата (не Source).\n"
+        "документы: касса.txt.\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Числа и факты бери только из документов этого запроса.\n"
+        "Ход 1. Запрос: древний\n"
+        "Ответ: ДРЕВНИЙМАРКЕР " + ("н" * 4000) + "\n"
+        "Ход 2. Запрос: сейчас\n"
+        f"Ответ: {latest}\n\n"
+        f"{recall}"
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", intent, client=client)
+    prompt = client.seen[0]
+    assert "Первая мысль.\n\nВторая мысль." in prompt
+    assert "ХВОСТОВЕТ остаётся абзацем." in prompt
+    assert "ВСПОМНИЛКАССУ" in prompt
+    assert "не Source" in prompt
+    assert "ТЕКСТ:\nКасса была 20." in prompt
+    assert prompt.index("ХВОСТОВЕТ") > prompt.index("ТЕКСТ:")
+    assert prompt.index("ВСПОМНИЛКАССУ") > prompt.index("ХВОСТОВЕТ")
+
+
+def test_overflow_drops_the_old_thread_and_keeps_the_tail():
+    from case3.chat_turn import _MEMORY_CAP
+
+    filler = "ДРЕВНИЙМАРКЕР " + ("н" * (_MEMORY_CAP + 2000))
+    intent = (
+        "Что с кассой?\n\n"
+        "Разговор этого чата (не Source).\n"
+        f"Ход 1. Запрос: старое\nОтвет: {filler}\n"
+        "обрывок древнего абзаца\n"
+        "Ход 2. Запрос: сейчас\nОтвет: ХВОСТОВЕТ живой."
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", intent, client=client)
+    prompt = client.seen[0]
+    assert "ХВОСТОВЕТ живой." in prompt
+    assert "не Source" in prompt
+    assert "ДРЕВНИЙМАРКЕР" not in prompt
+    assert "обрывок древнего абзаца" not in prompt
+    assert prompt.index("Ход 2") < prompt.index("ХВОСТОВЕТ живой.")
+
+
+def test_formatted_thread_keeps_the_latest_paragraph():
+    """The block prior_turn actually pastes, not a hand-built lookalike."""
+    from case3.chat_memory import format_card, format_thread, memory_card, recall_block
+
+    turns = [
+        {
+            "chat_prompt": f"вопрос {i} про кассу",
+            "chat_summary": "старый ответ " + ("н" * 1500),
+            "output_mode": "chat",
+        }
+        for i in range(6)
+    ]
+    turns[-1]["chat_summary"] = "Касса держится.\n\nХВОСТОВЕТ в свежем ответе."
+    source = "===== Касса =====\nКасса была 20."
+    block = "\n\n".join(
+        part
+        for part in (
+            format_card(memory_card(turns, source)),
+            format_thread(turns),
+            recall_block(turns, "вспомни что ты говорил про кассу"),
+        )
+        if part
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", "Что с кассой сейчас?\n\n" + block, client=client)
+    prompt = client.seen[0]
+    assert "Касса держится.\n\nХВОСТОВЕТ в свежем ответе." in prompt
+    assert "не Source" in prompt
+    assert prompt.index("ХВОСТОВЕТ в свежем ответе.") > prompt.index("ТЕКСТ:")
+
+
+def test_fattest_legal_thread_is_pasted_whole():
+    """format_thread already budgets the chain. The prompt must not cut it again."""
+    from case3.chat_memory import format_card, format_thread, memory_card, recall_block
+
+    turns = []
+    for i in range(48):
+        turns.append(
+            {
+                "chat_prompt": f"вопрос {i} " + ("п" * 4000),
+                "chat_summary": "ответ " + ("о" * 4000),
+                "output_mode": "chat",
+                "dialogue": [
+                    {"user": "у" * 500, "assistant": "а" * 500} for _ in range(12)
+                ],
+                "last_edit": {"section": "Введение"},
+            }
+        )
+    turns[-1]["chat_summary"] = "ХВОСТОВЕТ " + ("о" * 4000)
+    source = "===== Документ =====\n" + ("текст " * 200)
+    block = "\n\n".join(
+        part
+        for part in (
+            format_card(memory_card(turns, source)),
+            format_thread(turns),
+            recall_block(turns, "вспомни что ты говорил про вопрос"),
+        )
+        if part
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", "Что с кассой?\n\n" + block, client=client)
+    prompt = client.seen[0]
+    assert block in prompt
+    assert "ХВОСТОВЕТ" in prompt
+    assert prompt.index("ХВОСТОВЕТ") > prompt.index("ТЕКСТ:")
+
+
+def test_trim_keeps_the_second_paragraph_of_the_latest_answer():
+    from case3.chat_turn import _MEMORY_CAP
+
+    filler = "н" * (_MEMORY_CAP + 500)
+    intent = (
+        "Что с кассой?\n\n"
+        "Разговор этого чата (не Source).\n"
+        f"Ответ: {filler}\n"
+        "ХВОСТОВЕТ вторым абзацем.\n"
+        "Дальше: поправили заголовок"
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", intent, client=client)
+    prompt = client.seen[0]
+    assert "ХВОСТОВЕТ вторым абзацем." in prompt
+    assert "Дальше: поправили заголовок" in prompt
+    assert prompt.index("ХВОСТОВЕТ вторым абзацем.") < prompt.index("Дальше:")
+
+
+def test_long_line_with_not_source_does_not_eat_the_tail():
+    from case3.chat_turn import _MEMORY_CAP
+
+    old = "Ответ: это не Source ДРЕВНИЙ " + ("н" * 8000)
+    middle = "Ход 9. Запрос: середина\nОтвет: " + ("с" * (_MEMORY_CAP - 1000))
+    intent = (
+        "Что с кассой?\n\n"
+        "Разговор этого чата (не Source).\n"
+        f"{old}\n"
+        f"{middle}\n"
+        "Ход 2. Запрос: сейчас\n"
+        "Ответ: ХВОСТОВЕТ живой."
+    )
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", intent, client=client)
+    prompt = client.seen[0]
+    assert "ХВОСТОВЕТ живой." in prompt
+    assert "Разговор этого чата (не Source)." in prompt
+    assert "ДРЕВНИЙ" not in prompt
+
+
+def test_long_question_keeps_its_last_paragraph():
+    opening = "Сначала про выручку. " * 400
+    intent = opening + "\n\nХВОСТВОПРОСА почему касса упала?"
+    client = _Seq(["Касса в документе 20. Новых цифр не добавляю."])
+    try_chat_answer("Касса была 20.", intent, client=client)
+    prompt = client.seen[0]
+    assert "Сначала про выручку." in prompt
+    assert "ХВОСТВОПРОСА почему касса упала?" in prompt
+    assert prompt.index("ХВОСТВОПРОСА") > prompt.index("Сначала про выручку.")
+
+
+def test_long_source_keeps_the_head_the_match_and_the_tail():
+    from case3.chat_turn import _clip_source
+
+    parts = [
+        "НАЧАЛО " + ("а" * 2200),
+        "МАСЛОУНИК " + ("м" * 2200),
+        "СКЛАДМАРКЕР на складе тихо.",
+        ("в" * 2200) + " ХВОСТДОКУМЕНТА",
+    ]
+    clipped = _clip_source("\n\n".join(parts), 6000, "что на складе")
+    assert len(clipped) <= 6000
+    assert "НАЧАЛО" in clipped
+    assert "СКЛАДМАРКЕР" in clipped
+    assert "ХВОСТДОКУМЕНТА" in clipped
+    assert "МАСЛОУНИК" not in clipped
+    assert _clip_source("короткий текст", 6000, "склад") == "короткий текст"
+
+
+def test_chat_answer_asks_for_a_long_reply():
+    class _Catch:
+        def __init__(self) -> None:
+            self.max_tokens = 0
+
+        def stream(self, **kwargs):
+            self.max_tokens = kwargs.get("max_tokens") or 0
+            yield "Касса в документе 20. Разбор ниже, без новой цифры."
+
+    client = _Catch()
+    text = try_chat_answer("Касса была 20.", "что с кассой, разбери подробнее", client=client)
+    assert client.max_tokens >= 4096
+    assert "20" in text
+
+
 def test_chat_answer_uses_the_model_text():
     seen: list[str] = []
     answer = (
@@ -195,3 +408,77 @@ def test_chat_answer_uses_the_model_text():
     )
     assert text == answer
     assert seen == [answer]
+
+
+def test_user_stated_number_enters_the_answer():
+    intent = (
+        "сколько я называл\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "77\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 1. Запрос: выручка 77\n"
+        "Ответ: было."
+    )
+    client = _Seq(["Выручка 77.", "Выручка 77."])
+    text = try_chat_answer("Касса была 20.", intent, client=client)
+    assert "77" in text
+    assert not text.startswith("В документах")
+
+
+def test_answer_number_stays_out_when_the_card_lists_only_the_user():
+    intent = (
+        "что с кассой\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "77\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ответ: модель написала 88."
+    )
+    client = _Seq(["Там 88.", "Там 88."])
+    text = try_chat_answer("Касса была 20.", intent, client=client)
+    assert text.startswith("В документах")
+    assert "Там 88" not in text
+
+
+def test_long_source_prompt_keeps_a_middle_heading():
+    from case3.chat_turn import _user_block
+
+    middle = "# Касса в середине\n\n" + ("абзац про склад. " * 80)
+    source = ("# Начало\n\n" + ("вводные слова. " * 200)) + "\n\n" + middle
+    source += "\n\n# Конец\n\n" + ("хвост документа. " * 200)
+    assert len(source) > 6000
+    block = _user_block(source, "что в конце")
+    assert "# Касса в середине" in block
+    assert "склад" not in block.split("# Касса в середине", 1)[-1].split("# Конец", 1)[0]
+
+
+def test_short_source_has_no_extra_outline():
+    from case3.chat_turn import _user_block
+
+    block = _user_block("# Касса\n\nБыло 20.", "что в кассе")
+    assert block.count("# Касса") == 1
+    assert "Оглавление документа" not in block
+
+
+def test_unsupported_edit_tells_the_model_the_file_stayed():
+    class _Catch:
+        def __init__(self) -> None:
+            self.system = ""
+            self.user = ""
+
+        def stream(self, **kwargs):
+            self.system = kwargs.get("system") or ""
+            self.user = kwargs.get("user_text") or ""
+            yield "Числа на графике я поменять не умею. Могу перекрасить или сменить вид. Напиши «перекрась графики в ocean»."
+
+    client = _Catch()
+    text = try_chat_answer("Касса была 20.", "поменяй числа на графике", client=client)
+    assert "Файл не изменился" in client.user
+    assert "числа на графике" in client.system
+    assert "не умею" in text
+    assert "ПРАВКА НЕ ВЗЯТА" not in text
+
+
+def test_a_plain_question_has_no_limit_note():
+    client = _Seq(["Касса была 20."])
+    try_chat_answer("Касса была 20.", "что с кассой", client=client)
+    assert "Файл не изменился" not in client.seen[0]

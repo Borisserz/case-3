@@ -265,6 +265,31 @@ def test_a_named_color_recolors_the_deck_already_on_the_table():
     assert fresh.build == "presentation"
 
 
+def test_table_row_can_be_added_or_removed():
+    added = resolve_act(
+        "в таблице добавь строку: Гомель; 12",
+        has_report=True,
+    )
+    assert added.op == "add_row"
+    assert added.items == ("Гомель", "12")
+    removed = resolve_act("убери из таблицы строку Гомель", has_report=True)
+    assert removed.op == "delete_row"
+    assert removed.section == "Гомель"
+    bare = resolve_act("в таблице добавь строку", has_report=True)
+    assert bare.op == "ask"
+
+
+def test_again_after_another_edit_does_not_rewrite_the_section():
+    act = resolve_act(
+        "ещё",
+        has_report=True,
+        has_deck=True,
+        last_section="Введение",
+        last_op="delete_slide",
+    )
+    assert act.op == "ask"
+
+
 def test_table_cell_replace_names_both_sides():
     act = resolve_act("в таблице замени Гомель на Брест", has_report=True)
     assert act.op == "replace_cell"
@@ -351,3 +376,90 @@ def test_chart_word_picks_a_real_type():
     assert ask.op == "ask"
     assert "пончик" in ask.say
     assert resolve_act("сделай график линейным").kind == "talk"
+
+
+def test_question_mark_on_a_clear_edit_still_edits():
+    act = resolve_act("убери слайд 2?", has_deck=True)
+    assert act.kind == "revise"
+    assert act.op == "delete_slide"
+    assert act.slide == 2
+
+
+def test_why_with_an_edit_verb_stays_talk():
+    act = resolve_act("почему бы не убрать слайд 2?", has_deck=True, has_report=True)
+    assert act.kind == "talk"
+
+
+def test_bare_question_stays_talk():
+    act = resolve_act("что это?", has_deck=True, has_report=True)
+    assert act.kind == "talk"
+
+
+def test_photo_phrase_is_a_pixel_edit():
+    act = resolve_act("на фото сделай небо темнее", has_report=True)
+    assert act.kind == "revise"
+    assert act.op == "edit_photo"
+    assert act.title == "небо темнее"
+    assert act.section == ""
+
+
+def test_named_photo_keeps_its_id():
+    act = resolve_act("поправь фото usr_01: убери людей", has_report=True)
+    assert act.op == "edit_photo"
+    assert act.section == "usr_01"
+    assert "люди" in act.title or "убери людей" in act.title
+
+
+def test_caption_phrase_is_not_a_pixel_edit():
+    act = resolve_act("подпись фото: цех ночью", has_report=True)
+    assert act.op == "caption"
+
+
+def test_a_new_photo_request_is_not_a_pixel_edit():
+    act = resolve_act("сделай фото цеха", has_report=True)
+    assert act.op != "edit_photo"
+
+
+def test_photo_without_a_change_asks():
+    act = resolve_act("поправь фото", has_report=True)
+    assert act.op == "ask"
+    assert "фото" in act.say.lower()
+
+
+def test_delete_section_names_the_heading():
+    act = resolve_act("убери раздел Введение", has_report=True)
+    assert act.kind == "revise"
+    assert act.op == "delete_section"
+    assert act.section == "Введение"
+
+
+def test_delete_section_without_a_name_asks():
+    act = resolve_act("удали раздел", has_report=True)
+    assert act.op == "ask"
+    assert "раздел" in act.say.lower()
+
+
+def test_list_delete_is_not_a_section_delete():
+    act = resolve_act("убери кассу из списка", has_report=True)
+    assert act.op == "delete_item"
+
+
+def test_slide_delete_is_not_a_section_delete():
+    act = resolve_act("убери слайд 2", has_deck=True, has_report=True)
+    assert act.op == "delete_slide"
+
+
+def test_chart_numbers_stay_talk():
+    act = resolve_act("поменяй числа на графике", has_report=True, has_deck=True)
+    assert act.kind == "talk"
+
+
+def test_diagram_legend_stays_talk():
+    act = resolve_act("поправь легенду схемы", has_diagram=True, has_report=True)
+    assert act.kind == "talk"
+
+
+def test_chart_type_is_still_a_retype():
+    act = resolve_act("сделай график линейным", has_report=True)
+    assert act.op == "retype_charts"
+    assert act.chart == "line"

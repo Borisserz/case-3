@@ -1,5 +1,7 @@
 # Liber chat memory improvements — Implementation Plan
 
+> **Closed 2026-11-21.** Tasks 1–8 are in the working tree. The allow-list decision is ADR-0015: ADR-0014 is already the dashboard. The refusal question still names a rejected model number, so the user can confirm it. The two-stem fixture pads with `_WINDOW` (48), not 6.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make one Liber chat remember numbers the user actually wrote, obey a clear edit that ends with `?`, keep a diagram’s palette, show the outline of a long Source, lift an old turn only when the overlap is enough, edit the pixels of a photo already in the chat, delete a named section, and tell the user in chat when a request is outside that list.

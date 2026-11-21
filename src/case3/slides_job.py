@@ -52,7 +52,6 @@ from case3.slides_media import (
     collect_run_media,
     ensure_diagram_pngs,
     load_figures_json,
-    numbers_from_media_json,
 )
 from case3.slides_render import render_deck_pngs
 
@@ -524,7 +523,11 @@ def run_slides_job(
         }
 
         allowed_media = frozenset(chart_ids + figure_ids + diagram_ids)
-        allowed_numbers = numbers_from_media_json(load_figures_json(out_dir))
+        from case3.fact_ground import fact_number_tokens
+
+        # Chart JSON can repeat a number the model copied from chat memory.
+        # Only Source and the user's own message license a digit on a slide.
+        allowed_numbers = fact_number_tokens(source, intent or "")
         locked_arc = list(beat_plan.beats) if beat_plan.from_structure else None
 
         _set_slides(out_dir, meta, status="running", stage="llm", logs_dir=logs_dir)
@@ -578,7 +581,7 @@ def run_slides_job(
                 )
                 + "Use available chart/figure/diagram ids only. "
                 "Numbers only from Source or this allowed token list "
-                f"(chart captions/HTML): {allowed_preview}. "
+                f"(the user's own message, not the chat memory): {allowed_preview}. "
                 "Do not invent decimals. "
                 "If images are attached, look at them: logo wordmark and UI labels "
                 "only if they are visible. "

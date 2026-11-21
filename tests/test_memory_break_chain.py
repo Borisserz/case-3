@@ -9,6 +9,7 @@ from case3.chat_memory import (
     _NOTE_SHORT,
     _PREV,
     _TAIL,
+    _WINDOW_CAPS,
     append_dialogue,
     chain_limit_payload,
     format_thread,
@@ -39,14 +40,14 @@ def test_attack_format_last_turn_prose_up_to_2000():
     assert "ОТРЕЗАТЬХВОСТ" not in text
 
 
-def test_attack_format_previous_turn_capped_near_1200():
+def test_attack_format_previous_turn_capped_near_1600():
     turns = [
         {"chat_prompt": "old", "chat_summary": "archive"},
         {"chat_prompt": "far", "chat_summary": "shrink"},
         {"chat_prompt": "mid", "chat_summary": "also shrink"},
         {
             "chat_prompt": "prev",
-            "chat_summary": "PREV" + ("н" * 400) + "KEEPPREV" + ("н" * 900) + "CUTPREV",
+            "chat_summary": "PREV" + ("н" * 1400) + "KEEPPREV" + ("н" * 400) + "CUTPREV",
         },
         {"chat_prompt": "now", "chat_summary": "current"},
     ]
@@ -55,29 +56,25 @@ def test_attack_format_previous_turn_capped_near_1200():
     assert "CUTPREV" not in text
 
 
-def test_attack_format_older_recent_window_one_line_near_280():
-    pad = "н" * 250
-    summary = "ДАЛЕКО" + pad + "TAILDROP"
-    turns = [
-        {"chat_prompt": "z", "chat_summary": "archive only"},
-        {"chat_prompt": "a", "chat_summary": summary},
-        {"chat_prompt": "b", "chat_summary": "b"},
-        {"chat_prompt": "c", "chat_summary": "c"},
-        {"chat_prompt": "d", "chat_summary": "d"},
-        {"chat_prompt": "e", "chat_summary": "e"},
-    ]
+def test_attack_format_oldest_full_turn_keeps_prose_near_800():
+    from case3.chat_memory import _LINE, _WINDOW
+
+    summary = "ДАЛЕКО" + ("н" * 820) + "TAILDROP"
+    turns = [{"chat_prompt": "z", "chat_summary": summary}]
+    turns.extend(
+        {"chat_prompt": "a", "chat_summary": "a"} for _ in range(_WINDOW - 1)
+    )
     text = format_thread(turns)
     assert "ДАЛЕКО" in text
     assert "TAILDROP" not in text
-    # offset 2+ uses _LINE budget (280)
-    assert _LINE == 280
+    assert _WINDOW_CAPS == (2000, 1600, 1200, 800)
+    assert _LINE == 800
 
 
-def test_attack_format_dialogue_note_caps_last_two_300_older_160():
+def test_attack_format_dialogue_notes_shrink_behind_the_two_newest():
     long_user = "у" * 200 + "USER300"
     long_agent = "а" * 200 + "AGENT300"
-    old_note_user = "о" * 100 + "OLD160"
-    # Exactly four turns → all in recent; offset 3 uses _NOTE_SHORT (160).
+    old_note_user = "СТАРТ" + ("о" * 140) + "ОБРЕЗАНО"
     turns = [
         {
             "chat_prompt": "давно",
@@ -85,7 +82,11 @@ def test_attack_format_dialogue_note_caps_last_two_300_older_160():
             "dialogue": [{"user": old_note_user, "assistant": "ok"}],
         },
         {"chat_prompt": "a", "chat_summary": "a"},
-        {"chat_prompt": "b", "chat_summary": "b"},
+        {
+            "chat_prompt": "prev",
+            "chat_summary": "b",
+            "dialogue": [{"user": "заметка предыдущего", "assistant": "сделано"}],
+        },
         {
             "chat_prompt": "now",
             "chat_summary": "last",
@@ -95,12 +96,13 @@ def test_attack_format_dialogue_note_caps_last_two_300_older_160():
     text = format_thread(turns)
     assert "USER300" in text
     assert "AGENT300" in text
-    # oldest turn in recent window is offset 3 → _NOTE_SHORT
-    assert "OLD160" in text
+    assert "заметка предыдущего" in text
+    assert "СТАРТ" in text
+    assert "ОБРЕЗАНО" not in text
     assert _NOTE == 300
     assert _NOTE_SHORT == 160
     assert _TAIL == 2000
-    assert _PREV == 1200
+    assert _PREV == 1600
 
 
 # --- Attack 2: recall ---

@@ -69,6 +69,23 @@ def _remembered(act: Any, say: str) -> dict[str, str] | None:
             return {"op": "rename_heading", "section": section}
     if act.op in {"undo", "redo"} and ("Отменил" in say or "Вернул" in say):
         return {"op": str(act.op)}
+    if act.op and act.op != "ask" and (say or "").startswith(
+        (
+            "Убираю ",
+            "Убрал ",
+            "Переставляю ",
+            "Меняю ",
+            "Добавляю ",
+            "Добавил ",
+            "Заголовок ",
+            "В таблице ",
+            "Подпись рисунка ",
+            "Собираю ",
+            "Ставлю ",
+            "Сократил ",
+        )
+    ):
+        return {"op": str(act.op)}
     return None
 
 
@@ -81,6 +98,7 @@ def _surface(act: Any) -> str:
         "add_slide",
         "slide_text",
         "slide_bullets",
+        "restyle_structure",
     }:
         return "deck"
     if op == "retitle" and str(getattr(act, "title_on", "") or "") == "deck":
@@ -97,6 +115,13 @@ def _surface(act: Any) -> str:
         "replace_cell",
         "replace_item",
         "add_item",
+        "delete_item",
+        "add_row",
+        "delete_row",
+        "add_paragraph",
+        "add_section",
+        "caption",
+        "rewrite_all",
         "refine_diagram",
     }:
         return "report"
@@ -228,6 +253,14 @@ def try_chat_revise(
         "replace_cell",
         "replace_item",
         "add_item",
+        "add_row",
+        "delete_row",
+        "delete_item",
+        "add_paragraph",
+        "add_section",
+        "caption",
+        "rewrite_all",
+        "delete_section",
     }:
         for run_id, path, _row in reversed(rows):
             if any(path.glob("*.tex")):
@@ -250,6 +283,11 @@ def try_chat_revise(
 
         for run_id, path, _row in reversed(rows):
             if load_diagrams_from_out(path):
+                work_id, work_dir = run_id, path
+                break
+    elif act.op == "edit_photo":
+        for run_id, path, _row in reversed(rows):
+            if any((path / "figures").glob("usr_*.png")):
                 work_id, work_dir = run_id, path
                 break
     elif act.op in {"retype_charts", "retype_chart"}:
@@ -284,6 +322,14 @@ def try_chat_revise(
             "replace_cell",
             "replace_item",
             "add_item",
+            "add_row",
+            "delete_row",
+            "delete_item",
+            "add_paragraph",
+            "add_section",
+            "caption",
+            "rewrite_all",
+            "delete_section",
         }
         deck_ops = {
             "recolor_deck",
@@ -308,6 +354,12 @@ def try_chat_revise(
             )
             if not has_here and has_carried:
                 work_id, work_dir = carried_id, carried_path
+        elif (
+            act.op == "edit_photo"
+            and not any((work_dir / "figures").glob("usr_*.png"))
+            and any((carried_path / "figures").glob("usr_*.png"))
+        ):
+            work_id, work_dir = carried_id, carried_path
     work_meta = _read(work_dir) or head_meta
 
     say = act.say
@@ -336,14 +388,34 @@ def try_chat_revise(
         say = _slide_text(work_id, work_dir, act.slide, act.title) or say
     elif act.op == "add_slide" and act.title:
         say = _add_slide(work_id, work_dir, act.title) or say
+    elif act.op == "add_row" and act.items:
+        say = _add_table_row(work_dir, act.slot, act.items) or say
+    elif act.op == "delete_row" and act.section:
+        say = _delete_table_row(work_dir, act.slot, act.section) or say
     elif act.op == "replace_cell" and act.section and act.title:
         say = _replace_cell(work_dir, act.slot, act.section, act.title) or say
     elif act.op == "replace_item" and act.section and act.title:
         say = _replace_item(work_dir, act.slot, act.section, act.title) or say
     elif act.op == "add_item" and act.title:
         say = _add_item(work_dir, act.slot, act.title) or say
+    elif act.op == "delete_item" and act.section:
+        say = _delete_item(work_dir, act.slot, act.section) or say
+    elif act.op == "add_paragraph" and act.section and act.title:
+        say = _add_paragraph(work_dir, act.section, act.title) or say
+    elif act.op == "add_section" and act.section and act.title:
+        say = _add_section(work_dir, act.section, act.title) or say
+    elif act.op == "caption" and act.title:
+        say = _caption(work_dir, act.section, act.title) or say
+    elif act.op == "rewrite_all":
+        say = _rewrite_all(work_dir, text, act) or say
+    elif act.op == "restyle_structure" and act.title:
+        say = _restyle_structure(work_id, work_dir, act.title) or say
     elif act.op == "refine_diagram" and act.title:
         say = _refine_diagram(work_dir, act.title) or say
+    elif act.op == "edit_photo" and act.title:
+        say = _edit_photo(work_dir, act.section, act.title) or say
+    elif act.op == "delete_section" and act.section:
+        say = _delete_section(work_dir, act.section) or say
     elif act.op == "slide_bullets" and act.slide and act.items:
         say = _slide_bullets(work_id, work_dir, act.slide, act.items) or say
     elif act.op == "retitle" and act.title:
@@ -355,15 +427,12 @@ def try_chat_revise(
         say = _with_headings(say, work_dir)
 
     chain_ids = {run_id for run_id, _path, _row in rows}
-    if work_id in chain_ids and work_dir.is_dir():
-        _note(work_dir, text, say, act)
-    if (
-        rows
-        and head_id in chain_ids
-        and head_dir != work_dir
-        and head_dir.is_dir()
-    ):
+    # One note, on the chat head. The screen walks every turn, so a second
+    # copy on the older file shows the same line twice.
+    if rows and head_dir.is_dir() and head_id in chain_ids:
         _note(head_dir, text, say, act)
+    elif work_id in chain_ids and work_dir.is_dir():
+        _note(work_dir, text, say, act)
     return _payload(
         head_id,
         say,
@@ -717,10 +786,16 @@ def _rewrite(out_dir: Path, text: str, act: Any) -> str:
     if not texs:
         return "В этом чате нет текста отчёта, раздел править негде."
     tex = texs[0].read_text(encoding="utf-8")
-    index = _paragraph_after(tex, name)
-    if index is None:
+    ordinal = int(getattr(act, "slot", 0) or 0) or 1
+    under = _paragraphs_under(tex, name)
+    if under is None:
         shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
         return f"Раздела «{name}» нет. Есть: {shown}."
+    if not under:
+        return f"В «{name}» нет абзаца, который можно переписать."
+    if ordinal > len(under):
+        return f"В «{name}» абзацев: {len(under)}."
+    index = under[ordinal - 1]
     if not parsed:
         current = _paragraph_text(tex, index)
         source = _source_text(out_dir)
@@ -795,7 +870,8 @@ def _heading_titles(tex: str) -> list[str]:
     return titles
 
 
-def _paragraph_after(tex: str, name: str) -> int | None:
+def _paragraphs_under(tex: str, name: str) -> list[int] | None:
+    """1-based paragraph indexes inside one heading. None when the name is ambiguous."""
     from case3.tex_preview import find_heading_spans, find_paragraph_spans
 
     titles = _heading_titles(tex)
@@ -806,10 +882,18 @@ def _paragraph_after(tex: str, name: str) -> int | None:
     headings = find_heading_spans(tex)
     start = headings[hits[0]][1]
     end = headings[hits[0] + 1][0] if hits[0] + 1 < len(headings) else len(tex)
+    found: list[int] = []
     for index, (p0, _p1) in enumerate(find_paragraph_spans(tex), start=1):
         if start <= p0 < end:
-            return index
-    return None
+            found.append(index)
+    return found
+
+
+def _paragraph_after(tex: str, name: str, ordinal: int = 1) -> int | None:
+    found = _paragraphs_under(tex, name)
+    if not found or ordinal < 1 or ordinal > len(found):
+        return None
+    return found[ordinal - 1]
 
 
 def _tables(tex: str) -> list[dict[str, Any]]:
@@ -916,6 +1000,119 @@ def _replace_cell(out_dir: Path, slot: int, old: str, new: str) -> str:
     return f"В таблице {index} «{old}» теперь «{new}». PDF и DOCX тоже."
 
 
+def _table_choice(tables: list[dict[str, Any]], slot: int) -> tuple[int, str]:
+    if not tables:
+        return 0, "В отчёте нет таблицы."
+    if slot:
+        if slot > len(tables):
+            return 0, f"Таблицы {slot} нет. Сейчас их {len(tables)}."
+        return slot, ""
+    if len(tables) == 1:
+        return 1, ""
+    return 0, f"Таблиц {len(tables)}. Напиши номер, например «во второй таблице»."
+
+
+def _write_table(out_dir: Path, index: int, table: dict[str, Any], rows: list[list[str]], verb: str) -> str:
+    from case3.table_edit import TableEditError, edit_table_in_run
+
+    headers = [str(cell) for cell in (table.get("headers") or [])]
+    try:
+        edit_table_in_run(
+            out_dir,
+            index,
+            caption=str(table.get("caption") or ""),
+            headers=headers,
+            rows=rows,
+            formats={"pdf", "docx"},
+        )
+    except TableEditError as exc:
+        return str(exc)
+    return verb
+
+
+def _add_table_row(out_dir: Path, slot: int, items: tuple[str, ...]) -> str:
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, таблицу править негде."
+    try:
+        tex = texs[0].read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    tables = _tables(tex)
+    index, problem = _table_choice(tables, slot)
+    if problem:
+        return problem
+    table = tables[index - 1]
+    headers = [str(cell) for cell in (table.get("headers") or [])]
+    cells = [str(cell).strip() for cell in items]
+    if len(cells) != len(headers):
+        return (
+            f"В строке нужно {len(headers)} ячеек, как в шапке. "
+            "Раздели их точкой с запятой."
+        )
+    rows = [list(row) for row in (table.get("rows") or [])]
+    rows.append(cells)
+    shown = "; ".join(cells)
+    return _write_table(
+        out_dir,
+        index,
+        table,
+        rows,
+        f"Добавил в таблицу {index} строку: {shown}. PDF и DOCX тоже.",
+    )
+
+
+def _delete_table_row(out_dir: Path, slot: int, label: str) -> str:
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, таблицу править негде."
+    try:
+        tex = texs[0].read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    tables = _tables(tex)
+    if not tables:
+        return "В отчёте нет таблицы."
+
+    def matching(table: dict[str, Any]) -> list[int]:
+        found = []
+        for row_index, row in enumerate(table.get("rows") or []):
+            if any(_word_hit(str(cell), label) for cell in row):
+                found.append(row_index)
+        return found
+
+    if slot:
+        index, problem = _table_choice(tables, slot)
+        if problem:
+            return problem
+        hits = {index: matching(tables[index - 1])}
+    else:
+        hits = {
+            index: matching(table)
+            for index, table in enumerate(tables, start=1)
+            if matching(table)
+        }
+    if not hits or not any(hits.values()):
+        return f"В таблицах нет строки «{label}»."
+    if len(hits) > 1:
+        nums = ", ".join(str(index) for index in hits)
+        return f"«{label}» есть в таблицах {nums}. Напиши номер, например «во второй таблице»."
+    index = next(iter(hits))
+    row_hits = hits[index]
+    if len(row_hits) > 1:
+        return f"«{label}» встречается в {len(row_hits)} строках. Напиши точнее."
+    table = tables[index - 1]
+    rows = [list(row) for row in (table.get("rows") or [])]
+    rows.pop(row_hits[0])
+    return _write_table(
+        out_dir,
+        index,
+        table,
+        rows,
+        f"Убрал из таблицы {index} строку «{label}». PDF и DOCX тоже.",
+    )
+
+
 def _list_items(tex: str) -> list[list[str]]:
     import re
 
@@ -978,6 +1175,245 @@ def _replace_item(out_dir: Path, slot: int, old: str, new: str) -> str:
     )
 
 
+def _delete_item(out_dir: Path, slot: int, old: str) -> str:
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, список править негде."
+    try:
+        tex = texs[0].read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    lists = _list_items(tex)
+    if not lists:
+        return "В отчёте нет списка."
+    if slot:
+        if slot > len(lists):
+            return f"Списка {slot} нет. Сейчас их {len(lists)}."
+        chosen = [slot]
+    else:
+        chosen = [
+            index
+            for index, items in enumerate(lists, start=1)
+            if any(_word_hit(item, old) for item in items)
+        ]
+        if not chosen:
+            return f"В списках нет «{old}»."
+        if len(chosen) > 1:
+            nums = ", ".join(str(index) for index in chosen)
+            return f"«{old}» есть в списках {nums}. Напиши номер."
+    index = chosen[0]
+    kept = [item for item in lists[index - 1] if not _word_hit(item, old)]
+    if len(kept) == len(lists[index - 1]):
+        return f"В списке {index} нет «{old}»."
+    if not kept:
+        return f"«{old}» — единственный пункт списка {index}. Оставил список как есть."
+    return _write_list(
+        out_dir,
+        index,
+        kept,
+        verb=f"Убрал «{old}» из списка {index}. PDF и DOCX тоже.",
+    )
+
+
+def _add_paragraph(out_dir: Path, section: str, text: str) -> str:
+    from case3.paragraph_edit import ParagraphEditError, insert_paragraph_in_run
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, абзац добавить некуда."
+    try:
+        tex = texs[0].read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    under = _paragraphs_under(tex, section)
+    if under is None:
+        return f"Раздела «{section}» нет."
+    try:
+        if under:
+            insert_paragraph_in_run(
+                out_dir,
+                text=text,
+                after_paragraph_index=under[-1],
+                formats={"pdf", "docx"},
+            )
+        else:
+            titles = _heading_titles(tex)
+            want = section.casefold()
+            hits = [
+                i
+                for i, title in enumerate(titles, start=1)
+                if want in title.casefold() or title.casefold() in want
+            ]
+            insert_paragraph_in_run(
+                out_dir,
+                text=text,
+                after_heading_index=hits[0] if hits else None,
+                formats={"pdf", "docx"},
+            )
+    except ParagraphEditError as exc:
+        return str(exc)
+    return f"Добавил абзац в «{section}»."
+
+
+def _add_section(out_dir: Path, name: str, text: str) -> str:
+    from case3.paragraph_edit import ParagraphEditError, serialize_paragraph_tex
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import capture_before_edit
+    from case3.tex_safe import escape_tex_text
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, раздел добавить некуда."
+    tex_path = texs[0]
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+        body = serialize_paragraph_tex(text)
+    except (OSError, ParagraphEditError) as exc:
+        return str(exc)
+    block = "\\section{" + escape_tex_text(name) + "}\n\n" + body + "\n"
+    if r"\end{document}" in tex:
+        at = tex.rfind(r"\end{document}")
+        patched = tex[:at].rstrip() + "\n\n" + block + "\n" + tex[at:]
+    else:
+        patched = tex.rstrip() + "\n\n" + block
+    try:
+        capture_before_edit(out_dir, kind="section_insert", target=name)
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
+    tex_path.write_text(patched, encoding="utf-8")
+    try:
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except Exception as exc:  # noqa: BLE001
+        tex_path.write_text(tex, encoding="utf-8")
+        return f"Раздел не добавил: {exc}"
+    return f"Добавил раздел «{name}»."
+
+
+def _caption(out_dir: Path, figure_id: str, caption: str) -> str:
+    import re
+
+    from case3.figure_edit import patch_figure_caption_in_tex
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import capture_before_edit
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, подпись ставить некуда."
+    tex_path = texs[0]
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    fid = (figure_id or "").strip()
+    if not fid:
+        ids = re.findall(r"\\label\{fig:([^}]+)\}", tex)
+        if len(ids) != 1:
+            shown = ", ".join(ids[:6]) or "рисунков не вижу"
+            return f"Какой рисунок? Сейчас: {shown}."
+        fid = ids[0]
+    patched = patch_figure_caption_in_tex(tex, fid, caption)
+    if patched == tex:
+        return f"Рисунка {fid} в отчёте нет."
+    try:
+        capture_before_edit(out_dir, kind="caption", target=fid)
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
+    tex_path.write_text(patched, encoding="utf-8")
+    try:
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except Exception as exc:  # noqa: BLE001
+        tex_path.write_text(tex, encoding="utf-8")
+        return f"Подпись не сменил: {exc}"
+    return f"Подпись рисунка {fid}: {caption}."
+
+
+def _rewrite_all(out_dir: Path, text: str, act: Any) -> str:
+    from case3.chat_turn import draft_section
+    from case3.paragraph_edit import ParagraphEditError, patch_paragraph_in_tex
+    from case3.render import RenderError
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import UndoError, capture_before_edit, clear_undo
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, сокращать нечего."
+    brief = str(getattr(act, "brief", "") or "tighter")
+    source = _source_text(out_dir)
+    tex_path = texs[0]
+    try:
+        original = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    changed: list[str] = []
+    skipped: list[str] = []
+    edits: list[tuple[int, str]] = []
+    for name in _heading_titles(original):
+        under = _paragraphs_under(original, name)
+        if not under:
+            skipped.append(name)
+            continue
+        wrote = False
+        for index in under:
+            current = _paragraph_text(original, index)
+            body = draft_section(
+                section=name,
+                current=current,
+                source=source,
+                brief=brief,
+                user_text=text,
+            )
+            if not body:
+                continue
+            edits.append((index, body))
+            wrote = True
+        if wrote:
+            changed.append(name)
+        else:
+            skipped.append(name)
+    if not edits:
+        return "Не стал сокращать разделы. Новых чисел не добавил."
+    try:
+        capture_before_edit(out_dir, kind="paragraph", target="report")
+    except UndoError as exc:
+        return str(exc)
+    tex = original
+    try:
+        for index, body in sorted(edits, key=lambda item: item[0], reverse=True):
+            tex = patch_paragraph_in_tex(tex, index, body)
+        tex_path.write_text(tex, encoding="utf-8")
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except (ParagraphEditError, RenderError, OSError) as exc:
+        tex_path.write_text(original, encoding="utf-8")
+        try:
+            clear_undo(out_dir)
+        except OSError:
+            pass
+        return f"Не стал сокращать разделы: {exc}"
+    say = "Сократил разделы: " + ", ".join(changed) + "."
+    if skipped:
+        say += " Без изменений: " + ", ".join(skipped) + "."
+    return say
+
+
+def _restyle_structure(run_id: str, out_dir: Path, structure_id: str) -> str:
+    from case3.api_slides import _kick_slides_thread, try_claim_slides_start
+    from case3.chat_act import STRUCTURE_SAY
+
+    logs = out_dir.parent.parent / "logs" / run_id
+    claimed, _meta = try_claim_slides_start(
+        run_id,
+        out_dir=out_dir,
+        logs_dir=logs if logs.is_dir() else None,
+        structure_id=structure_id,
+        kick_source="chat",
+    )
+    label = STRUCTURE_SAY.get(structure_id, structure_id)
+    if not claimed:
+        return f"Презентация уже собирается. Структуру {label} применю, когда она освободится."
+    _kick_slides_thread(run_id)
+    return f"Собираю презентацию для {label}. Текст возьму из документов."
+
+
 def _add_item(out_dir: Path, slot: int, item: str) -> str:
     texs = sorted(out_dir.glob("*.tex"))
     if not texs:
@@ -1004,6 +1440,105 @@ def _add_item(out_dir: Path, slot: int, item: str) -> str:
         items,
         verb=f"Добавил в список {index} пункт «{item}». PDF и DOCX тоже.",
     )
+
+
+def _edit_photo(out_dir: Path, figure_id: str, instruction: str) -> str:
+    from case3.figure_edit import FigureEditError, edit_figure_in_run
+
+    figs = out_dir / "figures"
+    pngs = sorted(figs.glob("usr_*.png")) if figs.is_dir() else []
+    fid = (figure_id or "").strip()
+    if fid:
+        dest = figs / f"{fid}.png"
+        if not dest.is_file():
+            shown = ", ".join(path.stem for path in pngs[:6]) or "фото не вижу"
+            return f"Фото {fid} нет. Сейчас: {shown}."
+    elif len(pngs) == 1:
+        fid = pngs[0].stem
+    elif not pngs:
+        return "В этом чате нет фото."
+    else:
+        shown = ", ".join(path.stem for path in pngs[:6])
+        return f"Какое фото менять? Сейчас: {shown}."
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    try:
+        edit_figure_in_run(
+            out_dir,
+            fid,
+            mode="edit",
+            prompt=instruction,
+            formats=formats,
+        )
+    except FigureEditError as exc:
+        return str(exc)
+    return f"Меняю фото {fid}. Картинку перерисую по твоей фразе."
+
+
+def _delete_section(out_dir: Path, name: str) -> str:
+    import re
+
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import capture_before_edit
+    from case3.tex_preview import find_heading_spans
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, раздел убрать некуда."
+    tex_path = texs[0]
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    titles = _heading_titles(tex)
+    headings = find_heading_spans(tex)
+    levels = []
+    for start, end in headings:
+        chunk = tex[start:end]
+        levels.append(2 if chunk.startswith("\\subsection") else 1)
+    want = name.casefold()
+    hits = [
+        i
+        for i, title in enumerate(titles)
+        if want in title.casefold() or title.casefold() in want
+    ]
+    if len(hits) != 1 or len(headings) != len(titles):
+        shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
+        return f"Раздела «{name}» нет одного. Есть: {shown}."
+    index = hits[0]
+    start = headings[index][0]
+    level = levels[index]
+    end = len(tex)
+    for later in range(index + 1, len(headings)):
+        if levels[later] <= level:
+            end = headings[later][0]
+            break
+    end_doc = tex.find(r"\end{document}", start)
+    if end_doc != -1 and end > end_doc:
+        end = end_doc
+    patched = tex[:start] + tex[end:]
+    patched = re.sub(r"\n{3,}", "\n\n", patched)
+    try:
+        capture_before_edit(out_dir, kind="section_delete", target=titles[index])
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
+    tex_path.write_text(patched, encoding="utf-8")
+    try:
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except Exception as exc:  # noqa: BLE001
+        tex_path.write_text(tex, encoding="utf-8")
+        return f"Раздел не убрал: {exc}"
+    return f"Убрал раздел «{titles[index]}»."
+
+
+_CHART_PALETTES = frozenset({"editorial", "ocean", "sunset", "mono", "atelier"})
+
+
+def _diagram_palette(meta: dict) -> str:
+    for key in ("chart_palette", "image_style_pack"):
+        val = str(meta.get(key) or "").strip().lower()
+        if val in _CHART_PALETTES:
+            return val
+    return "atelier"
 
 
 def _refine_diagram(out_dir: Path, instruction: str) -> str:
@@ -1038,7 +1573,7 @@ def _refine_diagram(out_dir: Path, instruction: str) -> str:
             str(picked.get("id") or ""),
             instruction=instruction,
             client=client,
-            palette="atelier",
+            palette=_diagram_palette(_read(out_dir)),
             formats=formats,
         )
     except DiagramEditError as exc:

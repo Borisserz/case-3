@@ -83,9 +83,15 @@ def test_undo_redo_then_shorter_keeps_original_section(tmp_path: Path, monkeypat
 
     undone = try_chat_revise("отмени", chat, root=tmp_path)
     assert undone is not None and undone["op"] == "undo"
+    from case3.chat_memory import newest_edit
+
+    found = newest_edit(tmp_path, chat)
+    assert found.get("section") == "Введение"
+    assert found.get("op") == "undo"
+    head_meta = json.loads((_chat_dir / "meta.json").read_text(encoding="utf-8"))
     report_meta = json.loads((report_dir / "meta.json").read_text(encoding="utf-8"))
-    assert report_meta.get("last_edit", {}).get("section") == "Введение"
-    assert report_meta.get("last_edit", {}).get("op") == "undo"
+    assert [note.get("user") for note in head_meta.get("dialogue") or []] == ["отмени"]
+    assert "dialogue" not in report_meta
 
     redone = try_chat_revise("верни правку", chat, root=tmp_path)
     assert redone is not None and redone["op"] == "redo"

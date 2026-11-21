@@ -7,11 +7,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-_FULL_TURNS = 4
+# A 100k-token window fits the whole 48-turn chat as paragraphs.
+# Tail turns stay near 800 characters; the two newest stay longer.
+# One-line archive starts only past this window.
+_WINDOW = 48
+_WINDOW_CAPS = (2000, 1600, 1200, 800)
 _MAX_HOPS = 48
-_LINE = 280
-_PREV = 1200
-_TAIL = 2000
+_TAIL = _WINDOW_CAPS[0]
+_PREV = _WINDOW_CAPS[1]
+_LINE = _WINDOW_CAPS[-1]
+_OLDER_LINE = 160
+_OLDER_CAP = 6000
 _NOTE = 300
 _NOTE_SHORT = 160
 
@@ -49,23 +55,56 @@ def _clip_prose(value: object, limit: int) -> str:
 
 def _turn_budget(offset: int) -> tuple[int, int, int]:
     """Prompt, answer, edit-note. Offset 0 is the latest turn."""
-    if offset <= 0:
-        return _TAIL, _TAIL, _NOTE
-    if offset == 1:
-        return _PREV, _PREV, _NOTE
-    return _LINE, _LINE, _NOTE_SHORT
+    slot = min(max(offset, 0), len(_WINDOW_CAPS) - 1)
+    cap = _WINDOW_CAPS[slot]
+    note = _NOTE if slot <= 1 else _NOTE_SHORT
+    return cap, cap, note
 
 
-def _one_line(meta: dict[str, Any]) -> str:
-    summary = _clip(meta.get("chat_summary") or meta.get("chat_opening"), 120)
-    prompt = _clip(meta.get("chat_prompt"), 80)
-    if summary:
-        return summary
-    return prompt
+def _older_line(turn: dict[str, Any], index: int) -> str:
+    """One index line. Digits are stripped: this line is not a fact."""
+    prefix = f"Ход {index}. "
+    room = _OLDER_LINE - len(prefix)
+    if room < 20:
+        return ""
+    half = max(20, (room - 3) // 2)
+    prompt = _clip(_strip_digits(turn.get("chat_prompt")), half)
+    summary = _clip(
+        _strip_digits(turn.get("chat_summary") or turn.get("chat_opening")),
+        half,
+    )
+    if not summary:
+        for note in reversed(turn.get("dialogue") or []):
+            if not isinstance(note, dict):
+                continue
+            said = str(note.get("assistant") or "").strip()
+            if said:
+                summary = _clip(_strip_digits(said), half)
+                break
+    if prompt and summary:
+        body = f"{prompt} → {summary}"
+    else:
+        body = prompt or summary
+    body = _clip(body, room)
+    if not body:
+        return ""
+    return prefix + body
+
+
+def _older_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """One line per old turn. Drop the oldest lines when the block is past the cap."""
+    lines: list[str] = []
+    for index, turn in enumerate(rows, start=1):
+        line = _older_line(turn, index)
+        if line:
+            lines.append(line)
+    while lines and sum(len(line) + 1 for line in lines) - 1 > _OLDER_CAP:
+        lines.pop(0)
+    return lines
 
 
 def format_thread(turns: list[dict[str, Any]] | None) -> str:
-    """Oldest first. The last answer matches the screen. Older turns shrink."""
+    """Oldest first. Six recent turns keep paragraphs. Older turns are one line each."""
     rows = [t for t in (turns or []) if isinstance(t, dict)]
     if not rows:
         return ""
@@ -74,33 +113,39 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
         "Числа и факты бери только из документов этого запроса. "
         "Прошлые ответы нужны, чтобы понять, о чём речь.",
     ]
-    older = rows[:-_FULL_TURNS] if len(rows) > _FULL_TURNS else []
-    recent = rows[-_FULL_TURNS:]
-    if older:
-        first = _one_line(older[0])
-        if first:
-            lines.append("Начало: " + _clip(first, 160))
-        brief = "; ".join(bit for bit in (_one_line(t) for t in older[1:]) if bit)
-        if brief:
-            lines.append("Раньше: " + _clip(brief, 400))
+    older = rows[:-_WINDOW] if len(rows) > _WINDOW else []
+    recent = rows[-_WINDOW:]
+    archived = _older_lines(older)
+    if archived:
+        lines.append("Раньше:")
+        lines.extend(archived)
     for pos, turn in enumerate(recent):
         offset = len(recent) - 1 - pos
         index = len(older) + pos + 1
         prompt_cap, answer_cap, note_cap = _turn_budget(offset)
-        clip = _clip_prose if offset <= 1 else _clip
-        prompt = clip(turn.get("chat_prompt"), prompt_cap)
-        summary = clip(turn.get("chat_summary") or turn.get("chat_opening"), answer_cap)
+        prompt = _clip_prose(turn.get("chat_prompt"), prompt_cap)
+        summary = _clip_prose(
+            turn.get("chat_summary") or turn.get("chat_opening"), answer_cap
+        )
         mode = _clip(turn.get("output_mode"), 20)
         if prompt:
             lines.append(f"Ход {index}. Запрос: {prompt}")
         if summary:
             tail = f" ({mode})" if mode else ""
             lines.append(f"Ответ{tail}: {summary}")
-        for note in turn.get("dialogue") or []:
-            if not isinstance(note, dict):
-                continue
-            user = clip(note.get("user"), note_cap)
-            agent = clip(note.get("assistant"), note_cap)
+        notes = [
+            note
+            for note in (turn.get("dialogue") or [])
+            if isinstance(note, dict)
+        ]
+        # The two newest turns keep every edit. Further back, one short note,
+        # so a full 48-turn paste stays inside the 150000-character prompt cap.
+        if offset > 1:
+            notes = notes[-1:]
+            note_cap = 120
+        for note in notes:
+            user = _clip_prose(note.get("user"), note_cap)
+            agent = _clip_prose(note.get("assistant"), note_cap)
             if user:
                 lines.append(f"Дальше: {user}")
             if agent:
@@ -175,6 +220,62 @@ def format_card(card: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+_USER_NUMBER_MARK = "Числа из реплик пользователя"
+_USER_NUMBER_CAP = 40
+_PROMPT_CUTS = (
+    "Требования UI:",
+    "Разговор этого чата",
+    "Карточка этого чата",
+    "Один прошлый ход",
+    "Предыдущий ход этого чата",
+    _USER_NUMBER_MARK,
+)
+
+
+def _user_words(value: object) -> str:
+    text = str(value or "")
+    for marker in _PROMPT_CUTS:
+        at = text.find(marker)
+        if at != -1:
+            text = text[:at]
+    return text
+
+
+def user_number_tokens(turns: list[dict[str, Any]] | None) -> list[str]:
+    """Spellings the user wrote. Assistant fields are not scanned."""
+    from case3.chat_turn import _NUM, _norm_num
+
+    found: list[str] = []
+    seen: set[str] = set()
+    for turn in turns or []:
+        if not isinstance(turn, dict):
+            continue
+        blobs = [_user_words(turn.get("chat_prompt"))]
+        for note in turn.get("dialogue") or []:
+            if isinstance(note, dict):
+                blobs.append(_user_words(note.get("user")))
+        for blob in blobs:
+            for token in _NUM.findall(blob):
+                norm = _norm_num(token)
+                if not norm or norm in seen:
+                    continue
+                seen.add(norm)
+                found.append(token)
+                if len(found) >= _USER_NUMBER_CAP:
+                    return found
+    return found
+
+
+def format_user_numbers(turns: list[dict[str, Any]] | None) -> str:
+    tokens = user_number_tokens(turns)
+    if not tokens:
+        return ""
+    return (
+        f"{_USER_NUMBER_MARK} (его слова, не ответ модели):\n"
+        + ", ".join(tokens)
+    )
+
+
 _ENDINGS = (
     "ами",
     "ями",
@@ -226,39 +327,172 @@ _RECALL = re.compile(
     r"как ты (отвечал|писал|говорил)|что ты (отвечал|писал|говорил|сказал)|вспомни|вернись к",
     re.IGNORECASE,
 )
+_FILLER = frozenset({"пожалуйста", "спасибо", "теперь"})
+# Automatic lift ignores these. An explicit «вспомни …» still searches them.
+_LIFT_STOP = frozenset(
+    {
+        "отчет",
+        "раздел",
+        "текст",
+        "документ",
+        "вопрос",
+        "ответ",
+        "сообщен",
+        "чат",
+        "можн",
+        "нужн",
+        "сдела",
+        "собер",
+        "почем",
+        "почему",
+        "зачем",
+        "прост",
+        "сейчас",
+        "тогда",
+        "потом",
+        "тольк",
+        "здесь",
+        "очень",
+        "хоч",
+        "напиш",
+        "скаж",
+        "расскаж",
+        "объясн",
+        "такой",
+        "така",
+        "этот",
+        "было",
+        "стал",
+        "пожалуйста",
+        "спасибо",
+    }
+)
 
 
-def recall_block(turns: list[dict[str, Any]] | None, text: str | None) -> str:
-    """One older turn when the user asks what was said. Empty if this is not a recall."""
-    raw = (text or "").replace("ё", "е").replace("Ё", "Е")
-    if not _RECALL.search(raw):
-        return ""
-    found = re.search(r"\bпро\s+(.+)$", raw, re.IGNORECASE)
-    topic = re.sub(r"[?.!]+", "", found.group(1) if found else "").strip()
-    words = re.findall(r"[0-9a-zа-я]{4,}", topic.casefold())
-    if not words:
-        return "Один прошлый ход (не Source): напиши, про какой ответ вспомнить."
-    match: dict[str, Any] | None = None
-    for turn in turns or []:
-        if not isinstance(turn, dict):
+def _turn_blob(turn: dict[str, Any]) -> str:
+    parts = [
+        turn.get("chat_prompt"),
+        turn.get("chat_summary"),
+        turn.get("chat_opening"),
+    ]
+    for note in turn.get("dialogue") or []:
+        if isinstance(note, dict):
+            parts.append(note.get("user"))
+            parts.append(note.get("assistant"))
+    return " ".join(str(part or "") for part in parts)
+
+
+def _stem_set(text: str) -> set[str]:
+    blob = text.casefold().replace("ё", "е")
+    return {_stem(token) for token in re.findall(r"[0-9a-zа-я]{3,}", blob)}
+
+
+def _topic_words(raw: str) -> list[str]:
+    """Words the user named. «про …» wins. Otherwise the phrase after the verb."""
+    found = re.search(r"\bпро\s+(\S.*?)\s*$", raw, re.IGNORECASE)
+    if found and found.group(1).strip():
+        topic = found.group(1)
+    else:
+        topic = _RECALL.sub(" ", raw)
+    topic = re.sub(r"[?.!,;:]+", "", topic)
+    words = re.findall(r"[0-9a-zа-я]{4,}", topic.casefold().replace("ё", "е"))
+    return [word for word in words if _stem(word) not in _FILLER]
+
+
+def _query_stems(raw: str) -> list[str]:
+    stems: list[str] = []
+    seen: set[str] = set()
+    for word in re.findall(r"[0-9a-zа-я]{4,}", raw.casefold().replace("ё", "е")):
+        stem = _stem(word)
+        if len(stem) < 4 or stem in _LIFT_STOP or stem in _FILLER or stem in seen:
             continue
-        blob = " ".join(
-            str(turn.get(key) or "")
-            for key in ("chat_prompt", "chat_summary", "chat_opening")
-        ).casefold()
-        stems = {_stem(token) for token in re.findall(r"[0-9a-zа-я]{3,}", blob)}
-        if all(_stem(word) in stems or word in blob for word in words):
-            match = turn
-    if match is None:
-        return "Один прошлый ход (не Source): такого ответа в этом чате не видно."
-    prompt = _clip_prose(match.get("chat_prompt"), _TAIL)
-    summary = _clip_prose(match.get("chat_summary") or match.get("chat_opening"), _TAIL)
+        seen.add(stem)
+        stems.append(stem)
+    return stems
+
+
+def _covers(words: list[str], blob: str) -> bool:
+    folded = blob.casefold().replace("ё", "е")
+    stems = _stem_set(blob)
+    return all(_stem(word) in stems or word.casefold().replace("ё", "е") in folded for word in words)
+
+
+def _lift_notes(turn: dict[str, Any], needles: set[str]) -> list[dict[str, Any]]:
+    notes = [note for note in (turn.get("dialogue") or []) if isinstance(note, dict)]
+    if len(notes) <= 2:
+        return notes
+    early = []
+    for note in notes[:-1]:
+        blob = f"{note.get('user') or ''} {note.get('assistant') or ''}"
+        if needles & _stem_set(blob):
+            early.append(note)
+            break
+    return (early + notes[-1:])[:2]
+
+
+def _render_lift(turn: dict[str, Any], needles: set[str]) -> str:
+    prompt = _clip_prose(turn.get("chat_prompt"), _TAIL)
+    summary = _clip_prose(turn.get("chat_summary") or turn.get("chat_opening"), _TAIL)
     lines = ["Один прошлый ход (не Source)."]
     if prompt:
         lines.append("Запрос: " + prompt)
     if summary:
         lines.append("Ответ: " + summary)
+    for note in _lift_notes(turn, needles):
+        user = _clip_prose(note.get("user"), _NOTE)
+        agent = _clip_prose(note.get("assistant"), _NOTE)
+        if user:
+            lines.append("Дальше: " + user)
+        if agent:
+            lines.append("Ответ: " + agent)
     return "\n".join(lines)
+
+
+def _best_older(rows: list[dict[str, Any]], stems: list[str]) -> dict[str, Any] | None:
+    """Highest overlap among turns outside the verbatim window. Newer wins a tie."""
+    if len(rows) <= _WINDOW or not stems:
+        return None
+    best: dict[str, Any] | None = None
+    best_score = 0
+    for turn in rows[:-_WINDOW]:
+        have = _stem_set(_turn_blob(turn))
+        score = sum(1 for stem in stems if stem in have)
+        if score > best_score:
+            best = turn
+            best_score = score
+        elif score == best_score and score:
+            best = turn
+    need = 2 if len(stems) >= 2 else 1
+    if best_score < need:
+        return None
+    return best
+
+
+def recall_block(turns: list[dict[str, Any]] | None, text: str | None) -> str:
+    """One older turn in full.
+
+    An explicit recall («вспомни», «что ты говорил») searches every turn,
+    including dialogue, and does not need the word «про». A plain message
+    lifts one turn only when that turn is already outside the six-turn window.
+    """
+    raw = (text or "").replace("ё", "е").replace("Ё", "Е")
+    rows = [turn for turn in (turns or []) if isinstance(turn, dict)]
+    if _RECALL.search(raw):
+        words = _topic_words(raw)
+        if not words:
+            return "Один прошлый ход (не Source): напиши, про какой ответ вспомнить."
+        match: dict[str, Any] | None = None
+        for turn in rows:
+            if _covers(words, _turn_blob(turn)):
+                match = turn
+        if match is None:
+            return "Один прошлый ход (не Source): такого ответа в этом чате не видно."
+        needles = {_stem(word) for word in words}
+        return _render_lift(match, needles)
+    match = _best_older(rows, _query_stems(raw))
+    if match is None:
+        return ""
+    return _render_lift(match, set(_query_stems(raw)))
 
 
 def chain_notice(turns_after: int) -> str:
@@ -340,8 +574,8 @@ def append_dialogue(meta: dict[str, Any], user: str, assistant: str) -> None:
         notes = []
     notes.append(
         {
-            "user": _clip(user, 300),
-            "assistant": _clip(assistant, 300),
+            "user": _clip_prose(user, 300),
+            "assistant": _clip_prose(assistant, 300),
         }
     )
     meta["dialogue"] = notes[-12:]
@@ -443,6 +677,22 @@ def load_chain_dirs(root: Path, run_id: str, *, hops: int = _MAX_HOPS) -> list[t
     return found
 
 
+def report_tex(root: Path, run_id: str) -> str:
+    """Newest report in this chat. A later note without sections is skipped."""
+    rid = (run_id or "").strip()
+    if not rid:
+        return ""
+    for _rid, path, _meta in reversed(load_chain_dirs(root, rid)):
+        for tex in sorted(path.glob("*.tex")):
+            try:
+                text = tex.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if r"\section" in text:
+                return text
+    return ""
+
+
 def merge_edit(found: dict[str, str], raw: object) -> dict[str, str]:
     """Keep a section when a later note, such as undo, does not name one."""
     if not isinstance(raw, dict):
@@ -473,8 +723,8 @@ def _dialogue(meta: dict[str, Any]) -> list[dict[str, str]]:
             continue
         out.append(
             {
-                "user": _clip(note.get("user"), 300),
-                "assistant": _clip(note.get("assistant"), 300),
+                "user": _clip_prose(note.get("user"), 300),
+                "assistant": _clip_prose(note.get("assistant"), 300),
             }
         )
     return out[-12:]
@@ -573,11 +823,11 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
         turns.append(
             {
                 "run_id": turn_id,
-                "chat_prompt": _clip(meta.get("chat_prompt"), 2000),
-                "chat_summary": _clip(
+                "chat_prompt": _clip_prose(meta.get("chat_prompt"), 2000),
+                "chat_summary": _clip_prose(
                     meta.get("chat_summary") or meta.get("chat_opening"), 2000
                 ),
-                "chat_opening": _clip(meta.get("chat_opening"), 600),
+                "chat_opening": _clip_prose(meta.get("chat_opening"), 600),
                 "output_mode": _clip(meta.get("output_mode"), 20),
                 "dialogue": _dialogue(meta),
                 "last_edit": edit if isinstance(edit, dict) else {},

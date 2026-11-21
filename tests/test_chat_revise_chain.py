@@ -50,8 +50,11 @@ def test_shorter_edits_the_report_behind_a_chat_turn(tmp_path: Path, monkeypatch
     assert seen["dir"] == report
     assert seen["section"] == "Введение"
     head = json.loads((chat_dir / "meta.json").read_text(encoding="utf-8"))
+    report_meta = json.loads((report_dir / "meta.json").read_text(encoding="utf-8"))
     assert head["last_edit"]["section"] == "Введение"
     assert result["surface"] == "report"
+    assert [note.get("user") for note in head.get("dialogue") or []] == ["короче"]
+    assert "dialogue" not in report_meta
 
 
 def test_named_deck_title_edits_the_slide_not_the_report(tmp_path: Path, monkeypatch):
@@ -266,6 +269,91 @@ def _report_dir(tmp_path: Path, run_id: str = "source_20261118T100000Z") -> Path
     return out
 
 
+def test_whole_report_shortens_the_file_behind_the_chat(tmp_path: Path, monkeypatch):
+    report = "source_20261118T100000Z"
+    chat = "source_20261118T110000Z"
+    report_dir = tmp_path / "runs" / "out" / report
+    chat_dir = tmp_path / "runs" / "out" / chat
+    report_dir.mkdir(parents=True)
+    chat_dir.mkdir(parents=True)
+    (report_dir / "note.tex").write_text(
+        "\\section{Введение}\nБыло 10.\n", encoding="utf-8"
+    )
+    (report_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": report, "output_mode": "report", "artifacts": {"pdf": "report.pdf"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (chat_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": chat, "prior_run_id": report, "output_mode": "chat"},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    seen: dict[str, str] = {}
+
+    def fake_all(out_dir: Path, text: str, act) -> str:
+        seen["dir"] = out_dir.name
+        return "Сократил разделы: Введение."
+
+    monkeypatch.setattr("case3.chat_revise._rewrite_all", fake_all)
+    result = try_chat_revise("сократи весь отчёт", chat, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "rewrite_all"
+    assert result["artifact_run_id"] == report
+    assert seen["dir"] == report
+
+
+def test_failed_table_row_does_not_replace_the_last_edit(tmp_path: Path, monkeypatch):
+    report = "source_20261118T100000Z"
+    chat = "source_20261118T110000Z"
+    report_dir = tmp_path / "runs" / "out" / report
+    chat_dir = tmp_path / "runs" / "out" / chat
+    report_dir.mkdir(parents=True)
+    chat_dir.mkdir(parents=True)
+    (report_dir / "note.tex").write_text(_TABLE_TEX, encoding="utf-8")
+    (report_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": report,
+                "output_mode": "report",
+                "artifacts": {"pdf": "report.pdf"},
+                "last_edit": {"op": "rewrite", "section": "Введение"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (chat_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": chat, "prior_run_id": report, "output_mode": "chat"},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    called = {"n": 0}
+
+    def fake_edit(*_args, **_kwargs):
+        called["n"] += 1
+        return {}
+
+    monkeypatch.setattr("case3.table_edit.edit_table_in_run", fake_edit)
+    result = try_chat_revise(
+        "в таблице добавь строку: только", chat, root=tmp_path
+    )
+    assert result is not None
+    assert "ячеек" in result["chat"]
+    assert called["n"] == 0
+    from case3.chat_memory import newest_edit
+
+    found = newest_edit(tmp_path, chat)
+    assert found.get("op") == "rewrite"
+    assert found.get("section") == "Введение"
+
+
 def test_chart_recolor_from_chat_rebuilds_pdf_and_docx(tmp_path: Path, monkeypatch):
     report = "source_20261118T100000Z"
     _report_dir(tmp_path, report)
@@ -372,6 +460,31 @@ def test_table_cell_from_chat_rewrites_the_grid(tmp_path: Path, monkeypatch):
     assert seen["index"] == 1
     assert seen["formats"] == {"pdf", "docx"}
     assert seen["rows"] == [["Брест", "10"]]
+
+
+def test_table_row_from_chat_is_appended_and_removed(tmp_path: Path, monkeypatch):
+    report = "source_20261118T100000Z"
+    out = _report_dir(tmp_path, report)
+    (out / "note.tex").write_text(_TABLE_TEX, encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    def fake_edit(out_dir, index, *, caption, headers, rows, formats):
+        seen["rows"] = rows
+        seen["formats"] = formats
+        return {}
+
+    monkeypatch.setattr("case3.table_edit.edit_table_in_run", fake_edit)
+    added = try_chat_revise(
+        "в таблице добавь строку: Брест; 12", report, root=tmp_path
+    )
+    assert added is not None
+    assert added["op"] == "add_row"
+    assert seen["rows"] == [["Гомель", "10"], ["Брест", "12"]]
+    assert seen["formats"] == {"pdf", "docx"}
+    removed = try_chat_revise("убери из таблицы строку Гомель", report, root=tmp_path)
+    assert removed is not None
+    assert removed["op"] == "delete_row"
+    assert seen["rows"] == []
 
 
 def test_list_item_from_chat_is_appended(tmp_path: Path, monkeypatch):
@@ -640,3 +753,56 @@ def test_unclear_edit_lists_the_real_headings(tmp_path: Path):
     assert result["op"] == "ask"
     assert "Введение" in result["chat"]
     assert "Итог" in result["chat"]
+
+
+def test_diagram_phrase_keeps_the_run_palette(tmp_path: Path, monkeypatch):
+    report = "source_20261119T120000Z"
+    out = _report_dir(tmp_path, report)
+    meta_path = out / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["chart_palette"] = "ocean"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    (out / "figures.json").write_text(
+        json.dumps(
+            {"diagrams": [{"id": "dia_01", "title": "Касса", "mermaid": "graph LR\nA-->B"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def fake_refine(out_dir, diagram_id, *, instruction, client, palette, formats):
+        seen["palette"] = palette
+        return {"id": diagram_id}
+
+    monkeypatch.setattr("case3.diagram_edit.refine_diagram_in_run", fake_refine)
+    monkeypatch.setattr("case3.llm_client.LLMConfig.from_env", lambda: object())
+    monkeypatch.setattr("case3.llm_client.LLMClient", lambda _cfg: object())
+    result = try_chat_revise("на схеме убери кассу", report, root=tmp_path)
+    assert result is not None
+    assert seen["palette"] == "ocean"
+
+
+def test_photo_phrase_edits_the_only_png(tmp_path: Path, monkeypatch):
+    report = "source_20261119T130000Z"
+    out = _report_dir(tmp_path, report)
+    figs = out / "figures"
+    figs.mkdir()
+    (figs / "usr_01.png").write_bytes(b"png")
+    seen: dict[str, object] = {}
+
+    def fake_edit(out_dir, figure_id, *, mode, prompt, caption=None, formats=None, cfg=None):
+        seen["id"] = figure_id
+        seen["mode"] = mode
+        seen["prompt"] = prompt
+        seen["formats"] = formats
+        return {"figure_id": figure_id}
+
+    monkeypatch.setattr("case3.figure_edit.edit_figure_in_run", fake_edit)
+    result = try_chat_revise("на фото сделай небо темнее", report, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "edit_photo"
+    assert seen["id"] == "usr_01"
+    assert seen["mode"] == "edit"
+    assert seen["prompt"] == "небо темнее"
+    assert seen["formats"] == {"pdf", "docx"}

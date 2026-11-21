@@ -54,23 +54,316 @@ def chat_fallback() -> str:
     )
 
 
-def _clip_source(source: str, limit: int = 6000) -> str:
+def _source_paragraphs(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+
+
+def _fit_front(paras: list[str], budget: int) -> tuple[list[str], int]:
+    from case3.chat_memory import _clip_prose
+
+    chosen: list[str] = []
+    used = 0
+    for index, para in enumerate(paras):
+        gap = 2 if chosen else 0
+        if used + gap + len(para) <= budget:
+            chosen.append(para)
+            used += gap + len(para)
+            continue
+        room = budget - used - gap
+        if room > 80 and not chosen:
+            chosen.append(_clip_prose(para, room))
+            return chosen, index + 1
+        break
+    return chosen, len(chosen)
+
+
+def _fit_back(paras: list[str], budget: int) -> tuple[list[str], int]:
+    chosen: list[str] = []
+    used = 0
+    start = len(paras)
+    for index in range(len(paras) - 1, -1, -1):
+        para = paras[index]
+        gap = 2 if chosen else 0
+        if used + gap + len(para) <= budget:
+            chosen.append(para)
+            used += gap + len(para)
+            start = index
+            continue
+        room = budget - used - gap
+        if room > 80:
+            piece = para[-room:].lstrip()
+            if len(para) > room:
+                piece = "…" + piece
+            chosen.append(piece)
+            start = index
+        break
+    chosen.reverse()
+    return chosen, start
+
+
+def _focus_hits(para: str, stems: set[str]) -> int:
+    from case3.chat_memory import _stem
+
+    if not stems:
+        return 0
+    found = {
+        _stem(word)
+        for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]{4,}", para)
+    }
+    return len(stems & found)
+
+
+def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
+    """Head, paragraphs that match the question, then the tail.
+
+    A short document is unchanged. A long one stays inside ``limit``.
+    """
+    from case3.chat_memory import _query_stems
+
     text = (source or "").strip()
     if len(text) <= limit:
         return text
-    return text[: limit - 1].rstrip() + "…"
+    paras = _source_paragraphs(text)
+    if not paras:
+        return text[: limit - 1].rstrip() + "…"
+    head, head_n = _fit_front(paras, max(200, (limit * 2) // 5))
+    tail, tail_at = _fit_back(paras, max(200, limit // 4))
+    if head_n > tail_at:
+        chunks = [part for part in ("\n\n".join(head), "\n\n".join(tail)) if part]
+        body = "\n\n…\n\n".join(chunks)
+        if len(body) <= limit:
+            return body
+        return body[: limit - 1].rstrip() + "…"
+    stems = set(_query_stems(focus or ""))
+    middle = paras[head_n:tail_at]
+    ranked = sorted(
+        range(len(middle)),
+        key=lambda index: (-_focus_hits(middle[index], stems), index),
+    )
+    used = len("\n\n".join(head)) + len("\n\n".join(tail)) + 12
+    picked: list[tuple[int, str]] = []
+    for index in ranked:
+        if _focus_hits(middle[index], stems) < 1:
+            break
+        para = middle[index]
+        if used + len(para) + 2 > limit:
+            continue
+        picked.append((index, para))
+        used += len(para) + 2
+    picked.sort(key=lambda item: item[0])
+    chunks = ["\n\n".join(head)]
+    if picked:
+        chunks.append("\n\n".join(para for _index, para in picked))
+    if tail:
+        chunks.append("\n\n".join(tail))
+    body = "\n\n…\n\n".join(chunk for chunk in chunks if chunk)
+    if len(body) <= limit:
+        return body
+    return body[: limit - 1].rstrip() + "…"
+
+
+# format_thread already budgets the chain. A full 48-turn paste stays under
+# this cap (test_fattest_legal_thread_is_pasted_whole). The cap only stops
+# a runaway blob above a legal thread. 150000 characters is about 75–95k
+# tokens of Russian, inside a 100k window together with Source and the reply.
+_MEMORY_CAP = 150_000
+_CHAT_ANSWER_TOKENS = 4096
+_PIN_BITS = (
+    "не Source",
+    "не источник",
+    "Числа и факты бери только из",
+)
+
+
+def _split_message(intent: str) -> tuple[str, str]:
+    """User words, then the memory blocks pasted after them."""
+    text = intent or ""
+    cut = len(text)
+    for marker in _MEMORY_AT:
+        at = text.find(marker)
+        if at != -1:
+            cut = min(cut, at)
+    return text[:cut].strip(), text[cut:].strip()
+
+
+def _end_slice(text: str, limit: int) -> str:
+    """Keep the end of one over-long line, on a word break when it is close."""
+    if len(text) <= limit:
+        return text
+    if limit <= 1:
+        return ""
+    piece = text[-(limit - 1) :]
+    spot = piece.find(" ")
+    if 0 < spot <= 40:
+        piece = piece[spot + 1 :]
+    return "…" + piece
+
+
+_TURN_START = (
+    "Ход ",
+    "Начало:",
+    "Раньше:",
+    "Дальше:",
+    "Ответ",
+    "Последняя правка",
+    "Один прошлый",
+    "Запрос:",
+    "Карточка",
+    "Предыдущий",
+)
+# A new block. An unlabeled line before one of these is the cut edge of an
+# older turn. A line before «Ответ» or «Дальше» is the previous paragraph.
+_NEW_BLOCK = (
+    "Ход ",
+    "Начало:",
+    "Раньше:",
+    "Один прошлый",
+    "Карточка",
+    "Предыдущий",
+    "Последняя правка",
+)
+_PIN_MAX = 240
+_MESSAGE_CAP = 6000
+
+
+def _on_turn_boundary(line: str) -> bool:
+    return line.startswith(_TURN_START) or (
+        len(line) <= _PIN_MAX and any(bit in line for bit in _PIN_BITS)
+    )
+
+
+def _is_pin(line: str) -> bool:
+    """Short grounding line. A long answer that mentions the phrase is not one."""
+    return len(line) <= _PIN_MAX and any(bit in line for bit in _PIN_BITS)
+
+
+def _pack_tail(lines: list[str], limit: int) -> list[str]:
+    if limit <= 1:
+        return []
+    chosen: list[str] = []
+    used = 0
+    for line in reversed(lines):
+        need = len(line) + (1 if chosen else 0)
+        if used + need > limit:
+            if not chosen:
+                chosen.append(_end_slice(line, limit))
+            break
+        chosen.append(line)
+        used += need
+    chosen.reverse()
+    return chosen
+
+
+def _snap_before_new_block(chosen: list[str]) -> list[str]:
+    while len(chosen) > 1 and not _on_turn_boundary(chosen[0]):
+        if not chosen[1].startswith(_NEW_BLOCK):
+            break
+        chosen.pop(0)
+    return chosen
+
+
+def _dropped_pins(lines: list[str], tail: str) -> list[str]:
+    kept = set(tail.split("\n"))
+    pins: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        if not _is_pin(line) or line in seen or line in kept:
+            continue
+        seen.add(line)
+        pins.append(line)
+    return pins
+
+
+def _keep_tail(text: str, limit: int) -> str:
+    """Drop old lines first. The latest answer stays. Short grounding lines stay."""
+    body = (text or "").strip()
+    if len(body) <= limit:
+        return body
+    lines = body.split("\n")
+    chosen = _snap_before_new_block(_pack_tail(lines, limit))
+    tail = "\n".join(chosen).strip()
+    pins = _dropped_pins(lines, tail)
+    pin = "\n".join(pins)
+    if not pin:
+        return tail
+    glued = pin + "\n…\n" + tail
+    if len(glued) <= limit:
+        return glued
+    room = limit - len(pin) - len("\n…\n")
+    if room <= 1:
+        return _end_slice(body, limit)
+    chosen = _snap_before_new_block(_pack_tail(tail.split("\n"), room))
+    tail = "\n".join(chosen).strip()
+    if not tail:
+        return pin
+    return pin + "\n…\n" + tail
+
+
+def _keep_question(text: str, limit: int = _MESSAGE_CAP) -> str:
+    """The current question. Over the cap, keep the opening and the last paragraph."""
+    from case3.chat_memory import _clip_prose
+
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(raw) <= limit:
+        return _clip_prose(raw, limit)
+    head_budget = max(1, (limit * 2) // 3)
+    tail_budget = max(1, limit - head_budget - 5)
+    head = _clip_prose(raw, head_budget)
+    piece = raw[-tail_budget:]
+    for sep in ("\n\n", "\n", ". "):
+        spot = piece.find(sep)
+        if 0 <= spot <= 180:
+            piece = piece[spot + len(sep) :].lstrip()
+            break
+    piece = piece.strip()
+    if not piece or piece in head:
+        return head
+    return head + "\n\n…\n\n" + piece
+
+
+_MD_HEADING = re.compile(r"^(#{1,3})[ \t]+(\S.*?)\s*$", re.MULTILINE)
+
+
+def _source_outline(text: str, limit: int = 1200) -> str:
+    titles: list[str] = []
+    for match in _MD_HEADING.finditer(text or ""):
+        title = " ".join(match.group(2).split())
+        if title:
+            titles.append(f"{match.group(1)} {title}")
+    if not titles:
+        return ""
+    body = "\n".join(titles)
+    if len(body) > limit:
+        body = body[: limit - 1].rstrip() + "…"
+    return "Оглавление документа:\n" + body
 
 
 def _user_block(source: str, intent: str) -> str:
-    parts = []
-    src = _clip_source(source)
-    ask = " ".join((intent or "").split())
-    if ask:
-        parts.append("СООБЩЕНИЕ:\n" + ask[:2000])
-    if src and src != ask:
+    """Question, document, then memory.
+
+    The question keeps its paragraphs, and its last paragraph if it is long.
+    Memory is cut from the front, so the latest answer is the last thing in
+    the prompt when the chain is long.
+    """
+    message, memory = _split_message(intent or "")
+    message = _keep_question(message)
+    memory = _keep_tail(memory, _MEMORY_CAP)
+    src = _clip_source(source, focus=message)
+    if len((source or "").strip()) > 6000:
+        outline = _source_outline(source)
+        if outline and src:
+            src = outline + "\n\n" + src
+        elif outline:
+            src = outline
+    parts: list[str] = []
+    if message:
+        parts.append("СООБЩЕНИЕ:\n" + message)
+    if src and src != message:
         parts.append("ТЕКСТ:\n" + src)
-    elif src:
+    elif src and not message:
         parts.append("ТЕКСТ:\n" + src)
+    if memory:
+        parts.append(memory)
     return "\n\n".join(parts) or "(пусто)"
 
 
@@ -160,6 +453,7 @@ def try_opening(
 
 
 _MEMORY_AT = (
+    "\n\nЧисла из реплик пользователя",
     "\n\nКарточка этого чата",
     "\n\nРазговор этого чата",
     "\n\nПредыдущий ход этого чата",
@@ -227,6 +521,20 @@ def latest_user_line(intent: str | None) -> str:
 
 def number_norms(text: str | None) -> set[str]:
     return {_norm_num(token) for token in _NUM.findall(text or "")}
+
+
+def user_stated_norms(intent: str | None) -> set[str]:
+    """Norms from the one user-number line. The rest of the thread is ignored."""
+    text = intent or ""
+    mark = "Числа из реплик пользователя"
+    at = text.find(mark)
+    if at < 0:
+        return set()
+    rest = text[at + len(mark) :]
+    line = rest.split("\n", 1)[0]
+    body = rest.split("\n", 1)[1] if "\n" in rest else ""
+    body = body.split("\n", 1)[0]
+    return number_norms(body if body.strip() else line)
 
 
 def stray_numbers(text: str | None, allowed: set[str]) -> list[str]:
@@ -320,9 +628,8 @@ def invention_question(tokens: list[str]) -> str:
 
 
 def _request_blob(intent: str) -> str:
-    latest = latest_user_line(intent)
-    earlier = re.findall(r"Запрос:\s*(.+)", intent or "")
-    return "\n".join([latest, *earlier])
+    """Only the latest line. A «Запрос:» inside the thread is not an allow-list."""
+    return latest_user_line(intent)
 
 
 def _answering_choice(intent: str) -> bool:
@@ -360,18 +667,230 @@ def choice_instruction(intent: str) -> tuple[str, set[str]]:
 
 
 def _allowed_norms(source: str, intent: str, drop: set[str]) -> set[str]:
-    have = number_norms(source) | number_norms(_request_blob(intent))
+    have = number_norms(source) | number_norms(_request_blob(intent)) | user_stated_norms(intent)
     return have - drop
 
 
 def _ask_model(client: LLMClient, system: str, user_text: str) -> str:
     try:
         return _accepted(
-            _speak(client, system=system, user_text=user_text, max_tokens=1400, on_delta=None)
+            _speak(
+                client,
+                system=system,
+                user_text=user_text,
+                max_tokens=_CHAT_ANSWER_TOKENS,
+                on_delta=None,
+            )
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
         log.warning("chat answer failed: %s", exc)
         return ""
+
+
+_ASK_STOP_WORDS = (
+    "отчёт",
+    "отчет",
+    "раздел",
+    "текст",
+    "документ",
+    "чат",
+    "файл",
+    "вопрос",
+    "сообщение",
+    "ответ",
+    "этот",
+    "эта",
+)
+_SECTION_CAP = 3500
+_OUTLINE_CAP = 24
+
+
+def _content_words(text: str) -> list[str]:
+    from case3.chat_memory import _stem
+
+    stems: list[str] = []
+    for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", text or ""):
+        stem = _stem(word)
+        if len(stem) >= 4:
+            stems.append(stem)
+    return stems
+
+
+def _same_topic(left: str, right: str) -> bool:
+    """«введении» and «введение» keep one letter of difference after stemming."""
+    if left == right:
+        return True
+    short, long = (left, right) if len(left) <= len(right) else (right, left)
+    return len(short) >= 5 and long.startswith(short)
+
+
+def _heading_score(title: str, needles: list[str]) -> float:
+    title_stems = _content_words(title)
+    if not title_stems or not needles:
+        return 0.0
+    hits = sum(
+        1 for stem in title_stems if any(_same_topic(stem, needle) for needle in needles)
+    )
+    if hits == 0:
+        return 0.0
+    return hits / len(title_stems)
+
+
+def _named_heading(question: str, titles: list[str]) -> tuple[str, str]:
+    """(heading title, name the user asked). Title is empty when nothing matches."""
+    from case3.chat_act import section_target
+    from case3.chat_memory import _stem
+
+    asked = section_target(latest_user_line(question))
+    if asked:
+        needles = _content_words(asked)
+        best = ""
+        best_score = 0.0
+        for title in titles:
+            score = _heading_score(title, needles)
+            if score > best_score:
+                best_score = score
+                best = title
+        return best, asked
+    stop = {_stem(word) for word in _ASK_STOP_WORDS}
+    needles = [stem for stem in _content_words(latest_user_line(question)) if stem not in stop]
+    scored = [(_heading_score(title, needles), title) for title in titles]
+    scored = [item for item in scored if item[0] > 0]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
+        return "", ""
+    return scored[0][1], ""
+
+
+def _table_prose(block: dict) -> str:
+    lines: list[str] = []
+    caption = str(block.get("caption") or "").strip()
+    if caption:
+        lines.append("Таблица: " + caption)
+    headers = [str(cell).strip() for cell in (block.get("headers") or [])]
+    if headers:
+        lines.append(" | ".join(headers))
+    rows = [row for row in (block.get("rows") or []) if isinstance(row, list)]
+    shown = rows[:24]
+    for row in shown:
+        lines.append(" | ".join(str(cell).strip() for cell in row))
+    if len(rows) > len(shown):
+        lines.append("…")
+    return "\n".join(lines)
+
+
+def _section_prose(blocks: list[dict], title: str) -> str:
+    from case3.chat_memory import _clip_prose
+
+    start = -1
+    level = 1
+    for index, block in enumerate(blocks):
+        if block.get("type") == "heading" and str(block.get("text") or "").strip() == title:
+            start = index
+            level = int(block.get("level") or 1)
+            break
+    if start < 0:
+        return ""
+    parts: list[str] = []
+    for block in blocks[start + 1 :]:
+        kind = block.get("type")
+        if kind == "heading" and int(block.get("level") or 1) <= level:
+            break
+        if kind == "heading":
+            text = str(block.get("text") or "").strip()
+        elif kind == "paragraph":
+            text = str(block.get("text") or "").strip()
+        elif kind == "list":
+            rows = [
+                "- " + str((item or {}).get("text") or "").strip()
+                for item in (block.get("items") or [])
+                if str((item or {}).get("text") or "").strip()
+            ]
+            text = "\n".join(rows)
+        elif kind == "table":
+            text = _table_prose(block)
+        elif kind == "figure":
+            caption = str(block.get("caption") or "").strip()
+            text = "Рисунок: " + caption if caption else ""
+        else:
+            text = ""
+        if text:
+            parts.append(text)
+    return _clip_prose("\n\n".join(parts), _SECTION_CAP)
+
+
+def report_context(tex: str, question: str) -> str:
+    """Outline plus the named section. Empty when this chat has no report.
+
+    The block is labeled not-Source. Numbers in it stay illegal unless Source
+    or the user's own message already has them.
+    """
+    from case3.tex_preview import tex_to_preview_blocks
+
+    data = tex_to_preview_blocks(tex or "")
+    blocks = [block for block in (data.get("blocks") or []) if isinstance(block, dict)]
+    headings = [
+        (str(block.get("text") or "").strip(), int(block.get("level") or 1))
+        for block in blocks
+        if block.get("type") == "heading" and str(block.get("text") or "").strip()
+    ]
+    if not headings:
+        return ""
+    lines = [
+        "Открытый отчёт (не Source).",
+        "Числа и факты бери только из текста документов.",
+        "Оглавление:",
+    ]
+    title = str(data.get("title") or "").strip()
+    if title:
+        lines.append("Название: " + title)
+    for text, level in headings[:_OUTLINE_CAP]:
+        pad = "  " if level > 1 else ""
+        lines.append(f"{pad}- {text}")
+    if len(headings) > _OUTLINE_CAP:
+        lines.append("- …")
+    found, asked = _named_heading(question, [text for text, _level in headings])
+    if found:
+        body = _section_prose(blocks, found)
+        lines.append(f"Раздел «{found}»:")
+        if body:
+            lines.append(body)
+    elif asked:
+        lines.append(f"Раздела «{asked}» в отчёте нет.")
+    return "\n".join(lines)
+
+
+def chat_report_block(root, prior_run_id: str, user_text: str) -> str:
+    """Report block for the chat that continues prior_run_id."""
+    from pathlib import Path
+
+    from case3.chat_memory import report_tex
+
+    return report_context(report_tex(Path(root), prior_run_id or ""), user_text or "")
+
+
+def limit_note(intent: str) -> str:
+    """Tell the talk model that this line did not edit the file."""
+    from case3.chat_act import _EDIT, _PROSE, _unsupported_shape, resolve_act
+
+    line = latest_user_line(intent)
+    if not line:
+        return ""
+    act = resolve_act(
+        line,
+        has_deck=True,
+        has_report=True,
+        has_diagram=True,
+    )
+    if act.kind != "talk":
+        return ""
+    if not (_EDIT.search(line) or _PROSE.search(line) or _unsupported_shape(line)):
+        return ""
+    return (
+        "Файл не изменился.\n"
+        "Ответь обычным предложением, без заголовка капсом: чего не умеешь, "
+        "что рядом умеешь, и одну фразу, которую можно скопировать."
+    )
 
 
 def try_chat_answer(
@@ -380,6 +899,7 @@ def try_chat_answer(
     *,
     client: LLMClient | None = None,
     on_delta: Callable[[str], None] | None = None,
+    report: str = "",
 ) -> str:
     """Full chat answer. No TeX.
 
@@ -399,7 +919,13 @@ def try_chat_answer(
     user = _user_block(source, intent)
     if note:
         user += "\n\n" + note
-    llm = client or _client(1400, 90.0)
+    extra = (report or "").strip()
+    if extra:
+        user += "\n\n" + extra
+    note_limit = limit_note(intent)
+    if note_limit:
+        user += "\n\n" + note_limit
+    llm = client or _client(_CHAT_ANSWER_TOKENS, 180.0)
     allowed = _allowed_norms(source, intent, drop)
     text = _ask_model(llm, system, user)
     stray = stray_numbers(text, allowed) if text else []
@@ -452,7 +978,7 @@ def draft_section(
         f"Задача: {task}\n\n"
         f"СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ:\n{said or '(нет)'}\n\n"
         f"ТЕКСТ РАЗДЕЛА:\n{(current or '').strip()[:4000]}\n\n"
-        f"SOURCE:\n{_clip_source(source)}"
+        f"SOURCE:\n{_clip_source(source, focus=said)}"
     )
     text = ""
     try:

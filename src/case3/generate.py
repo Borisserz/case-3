@@ -1111,6 +1111,22 @@ def generate_document(
         tex = "\n".join(fixed_lines) + "\n"
         tex = ensure_document_preamble(tex)
 
+    from case3.fact_ground import ground_generated
+
+    tex, charts, figures, diagrams, dropped = ground_generated(
+        tex,
+        charts,
+        figures,
+        diagrams,
+        source=source_text,
+        intent=intent_text,
+    )
+    if dropped:
+        log.warning(
+            "dropped fact numbers absent from Source and the user message: %s",
+            ", ".join(dropped),
+        )
+
     out_tex.write_text(tex, encoding="utf-8")
     fj_payload: dict[str, Any] = {
         "figures": figures,

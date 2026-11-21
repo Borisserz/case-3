@@ -1206,7 +1206,7 @@ def run_pipeline(
 
     def _finish_chat_answer(user_text: str, source_text: str) -> Path:
         bump("chat", "отвечаю…")
-        from case3.chat_turn import try_chat_answer
+        from case3.chat_turn import chat_report_block, try_chat_answer
 
         if user_figs:
             materialize_user_figures(user_figs, out / "figures")
@@ -1214,9 +1214,13 @@ def run_pipeline(
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
             _emit_chat("answer", answer, "chat")
         else:
+            report = chat_report_block(
+                root, str(meta.get("prior_run_id") or ""), user_text
+            )
             answer = try_chat_answer(
                 source_text,
                 user_text,
+                report=report,
                 on_delta=lambda piece: _emit_chat("answer", piece, "chat"),
             )
         meta["output_mode"] = "chat"

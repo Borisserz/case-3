@@ -5,14 +5,18 @@ from case3.chat_memory import format_sources, format_thread, load_chain
 
 
 def test_thread_marks_itself_as_not_source_and_shrinks_old_turns():
+    from case3.chat_memory import _WINDOW
+
     turns = [
         {"chat_prompt": f"вопрос {i}", "chat_summary": f"ответ {i}", "output_mode": "chat"}
-        for i in range(6)
+        for i in range(_WINDOW + 2)
     ]
     text = format_thread(turns)
     assert "не Source" in text
-    assert "Ход 6" in text
+    assert f"Ход {_WINDOW + 2}" in text
     assert "Раньше:" in text
+    assert "Ход 1. вопрос → ответ" in text
+    assert "Ход 2. вопрос → ответ" in text
     assert format_thread([]) == ""
 
 
@@ -213,21 +217,21 @@ def test_latest_answer_keeps_the_analysis_the_screen_shows():
 
 
 def test_thread_budget_shrinks_as_turns_get_older():
-    """Archive is one line. Four turns back stays short. The previous turn keeps ~1200."""
+    """Every turn inside the window keeps paragraphs. The previous turn keeps 1600."""
     turns = [
         {"chat_prompt": "старт", "chat_summary": "начало разговора"},
         {"chat_prompt": "давно", "chat_summary": "давний ответ"},
-        {"chat_prompt": "далеко", "chat_summary": _marked("ДАЛЕКО", 400, "СРЕЗДАЛЕКО")},
-        {"chat_prompt": "середина", "chat_summary": _marked("СЕРЕДИНА", 400, "СРЕЗСЕРЕДИНА")},
+        {"chat_prompt": "далеко", "chat_summary": _marked("ДАЛЕКО", 900, "СРЕЗДАЛЕКО")},
+        {"chat_prompt": "середина", "chat_summary": _marked("СЕРЕДИНА", 1300, "СРЕЗСЕРЕДИНА")},
         {
             "chat_prompt": "прошлый",
-            "chat_summary": "ПРОШЛЫЙ" + ("н" * 400) + "ДЕРЖУПРОШЛЫЙ" + ("н" * 900) + "СРЕЗПРОШЛЫЙ",
+            "chat_summary": "ПРОШЛЫЙ" + ("н" * 1400) + "ДЕРЖУПРОШЛЫЙ" + ("н" * 400) + "СРЕЗПРОШЛЫЙ",
         },
         {"chat_prompt": "сейчас", "chat_summary": "короткий текущий"},
     ]
     text = format_thread(turns)
     assert "начало разговора" in text
-    assert "Раньше:" in text
+    assert "Раньше:" not in text
     assert "ДАЛЕКО" in text
     assert "СРЕЗДАЛЕКО" not in text
     assert "СРЕЗСЕРЕДИНА" not in text
@@ -392,6 +396,40 @@ def test_twelve_turns_still_find_the_report_and_the_edit(tmp_path: Path):
     assert view["artifact_run_id"] == ids[0]
 
 
+def test_memory_view_keeps_paragraphs_and_list_lines(tmp_path: Path):
+    from case3.chat_memory import memory_view
+
+    run_id = "source_20261119T120000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "chat_prompt": "Первая мысль.\n\nВторая мысль.",
+                "chat_summary": "Касса держится.\n\n- пункт один\n- пункт два",
+                "chat_opening": "Соберу ответ.\nБез новых чисел.",
+                "output_mode": "chat",
+                "dialogue": [
+                    {
+                        "user": "ещё короче",
+                        "assistant": "Готово.\nСтрока осталась.",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    view = memory_view(tmp_path, run_id)
+    assert view is not None
+    turn = view["turns"][0]
+    assert turn["chat_prompt"] == "Первая мысль.\n\nВторая мысль."
+    assert turn["chat_summary"] == "Касса держится.\n\n- пункт один\n- пункт два"
+    assert turn["chat_opening"] == "Соберу ответ.\nБез новых чисел."
+    assert turn["dialogue"][0]["assistant"] == "Готово.\nСтрока осталась."
+
+
 def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     from case3.chat_memory import memory_view
 
@@ -413,6 +451,156 @@ def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     assert view["turns"][0]["photos"] == [
         {"name": "usr_01", "url": f"/api/runs/{run_id}/figures/usr_01.png"}
     ]
+
+
+def test_a_middle_turn_keeps_its_paragraphs_and_number():
+    """Thirty turns still fit in the full window, so turn 10 is not a one-line archive."""
+    turns = [
+        {"chat_prompt": f"ход {i}", "chat_summary": "ок"} for i in range(30)
+    ]
+    turns[10] = {
+        "chat_prompt": "кассовый ход",
+        "chat_summary": "В кассе было 20.\n\nВторой абзац про смену.",
+    }
+    text = format_thread(turns)
+    assert "В кассе было 20.\n\nВторой абзац про смену." in text
+    assert "Раньше:" not in text
+
+
+def test_full_window_keeps_paragraphs_and_the_turn_past_it_is_one_line():
+    """The whole 48-turn chat keeps paragraphs. The turn before that is one line."""
+    from case3.chat_memory import _WINDOW
+
+    older = {
+        "chat_prompt": "сколько было в кассе",
+        "chat_summary": "Выручка 20. МАРКЕРСТАР\n\nВторой абзац старого ответа.",
+    }
+    window = []
+    for i in range(_WINDOW - 1):
+        window.append(
+            {"chat_prompt": f"промежуточный {i}", "chat_summary": f"короткий {i}"}
+        )
+    window.append(
+        {
+            "chat_prompt": "сейчас",
+            "chat_summary": "Абзац один про кассу.\n\nАбзац два про долю.",
+        }
+    )
+    text = format_thread([older, *window])
+    assert "Абзац один про кассу.\n\nАбзац два про долю." in text
+    assert "Раньше:" in text
+    first = [line for line in text.splitlines() if line.startswith("Ход 1.")]
+    assert len(first) == 1
+    assert "МАРКЕРСТАР" in first[0]
+    assert "20" not in first[0]
+    assert "\n" not in first[0]
+
+
+def test_previous_turn_keeps_1600_and_drops_the_tail():
+    body = "ПРОШЛЫЙ" + ("н" * 1400) + "ДЕРЖУПРОШЛЫЙ" + ("н" * 400) + "СРЕЗПРОШЛЫЙ"
+    text = format_thread(
+        [
+            {"chat_prompt": "давно", "chat_summary": "архив"},
+            {"chat_prompt": "прошлый", "chat_summary": body},
+            {"chat_prompt": "сейчас", "chat_summary": "Абзац.\n\nЖивой."},
+        ]
+    )
+    assert "ПРОШЛЫЙ" in text
+    assert "ДЕРЖУПРОШЛЫЙ" in text
+    assert "СРЕЗПРОШЛЫЙ" not in text
+    assert "Абзац.\n\nЖивой." in text
+
+
+def test_oldest_window_turn_keeps_a_paragraph_break():
+    """The oldest turn in the window is still prose, capped near 800, not flattened."""
+    from case3.chat_memory import _WINDOW
+
+    body = "Абзац склада.\n\n" + ("н" * 900) + "ХВОСТОКНА"
+    turns = [{"chat_prompt": "край", "chat_summary": body}]
+    turns.extend(
+        {"chat_prompt": f"ход {i}", "chat_summary": "ок"} for i in range(_WINDOW - 1)
+    )
+    text = format_thread(turns)
+    assert "Абзац склада.\n\n" in text
+    assert "ХВОСТОКНА" not in text
+    assert "Раньше:" not in text
+
+
+def test_older_lines_drop_from_the_front_past_6000():
+    letters = "абвгдежзийклмнопрстуфхцчшщыэюя"
+    span = len(letters)
+    older = []
+    for i in range(40):
+        tag = "ТОЧКА" + letters[i % span] + letters[(i // span) % span]
+        older.append(
+            {
+                "chat_prompt": tag + " " + ("б" * 200),
+                "chat_summary": "выручка 98765 " + ("в" * 200),
+            }
+        )
+    from case3.chat_memory import _WINDOW
+
+    window = [
+        {"chat_prompt": f"свежий {i}", "chat_summary": "ок"} for i in range(_WINDOW)
+    ]
+    text = format_thread(older + window)
+    assert "Раньше:" in text
+    earlier = text.split("Раньше:\n", 1)[1].split("\nХод 41.", 1)[0]
+    assert len(earlier) <= 6000
+    first = "ТОЧКА" + letters[0] + letters[0]
+    last = "ТОЧКА" + letters[39 % span] + letters[(39 // span) % span]
+    assert first not in earlier
+    assert last in earlier
+    assert "98765" not in earlier
+    assert "свежий 0" in text
+
+
+def test_recall_without_pro_lifts_the_named_turn():
+    from case3.chat_memory import recall_block
+
+    hit = recall_block(
+        [{"chat_prompt": "разбор кассы", "chat_summary": "КАССАЦЕЛЬ"}],
+        "вспомни кассу",
+    )
+    assert "КАССАЦЕЛЬ" in hit
+    assert "не Source" in hit
+
+
+def test_plain_question_lifts_a_turn_outside_the_window():
+    from case3.chat_memory import recall_block
+
+    turns = [
+        {
+            "chat_prompt": "общий вопрос",
+            "chat_summary": "ничего особенного",
+            "dialogue": [
+                {"user": "подвинь кассу", "assistant": "КАССАЗАМЕТКА в правке"}
+            ],
+        }
+    ]
+    from case3.chat_memory import _WINDOW
+
+    turns.extend(
+        {"chat_prompt": f"другой ход {i}", "chat_summary": "спокойно"}
+        for i in range(_WINDOW)
+    )
+    hit = recall_block(turns, "что с кассой")
+    assert "Один прошлый ход" in hit
+    assert "КАССАЗАМЕТКА" in hit
+    assert "спокойно" not in hit
+    assert recall_block(turns[-2:], "что такое доля") == ""
+
+
+def test_recall_does_not_duplicate_a_turn_already_in_the_window():
+    from case3.chat_memory import recall_block
+
+    turns = [
+        {"chat_prompt": "разбор кассы", "chat_summary": "СТАРЫЙКАССА"},
+        {"chat_prompt": "ещё про кассу", "chat_summary": "СВЕЖИЙКАССА"},
+    ]
+    assert recall_block(turns, "что с кассой") == ""
+    explicit = recall_block(turns, "что ты говорил про кассу")
+    assert "СВЕЖИЙКАССА" in explicit
 
 
 def test_memory_keeps_a_photo_that_was_left_beside_the_source(tmp_path: Path):
@@ -443,3 +631,58 @@ def test_memory_keeps_a_photo_that_was_left_beside_the_source(tmp_path: Path):
         {"name": "usr_01", "url": f"/api/runs/{run_id}/figures/usr_01.png"}
     ]
     assert (out / "figures" / "usr_01.png").read_bytes() == b"png-bytes"
+
+
+def test_user_number_line_keeps_user_tokens_and_drops_the_answer():
+    from case3.chat_memory import format_user_numbers
+
+    turns = [
+        {
+            "chat_prompt": "выручка 77",
+            "chat_summary": "модель сказала 88",
+            "dialogue": [
+                {"user": "в кассе 12,5", "assistant": "оставил 99"},
+            ],
+        }
+    ]
+    line = format_user_numbers(turns)
+    assert line.startswith("Числа из реплик пользователя")
+    assert "77" in line
+    assert "12,5" in line
+    assert "88" not in line
+    assert "99" not in line
+
+
+def test_user_number_line_ignores_a_thread_pasted_into_the_prompt():
+    from case3.chat_memory import format_user_numbers
+
+    turns = [
+        {
+            "chat_prompt": (
+                "что с кассой\n\n"
+                "Разговор этого чата (не Source).\n"
+                "Ход 1. Запрос: выручка 77\n"
+                "Ответ: было 88."
+            ),
+            "chat_summary": "ок",
+        }
+    ]
+    assert format_user_numbers(turns) == ""
+
+
+def test_two_stems_do_not_lift_a_turn_that_shares_one():
+    from case3.chat_memory import _WINDOW, recall_block
+
+    turns = [
+        {"chat_prompt": "отчёт за квартал", "chat_summary": "КВАРТАЛТОЛЬКО"},
+        {"chat_prompt": "выручка за квартал", "chat_summary": "ОБАСТОВА"},
+    ]
+    turns.extend(
+        {"chat_prompt": f"другой ход {i}", "chat_summary": "спокойно"}
+        for i in range(_WINDOW)
+    )
+    weak = recall_block(turns[:1] + turns[2:], "что с выручкой за квартал")
+    assert weak == ""
+    strong = recall_block(turns, "что с выручкой за квартал")
+    assert "ОБАСТОВА" in strong
+    assert "КВАРТАЛТОЛЬКО" not in strong

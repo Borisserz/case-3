@@ -77,6 +77,23 @@ test("messagesFromMemory keeps the chat in order, including a later edit", () =>
   assert.equal(lines.at(-1)?.role, "bot");
 });
 
+test("messagesFromMemory keeps paragraph breaks for the screen", () => {
+  let n = 0;
+  const lines = messagesFromMemory(
+    [
+      {
+        chat_prompt: "Первая мысль.\n\nВторая мысль.",
+        chat_summary: "Касса держится.\n\n- пункт один\n- пункт два",
+        chat_opening: "Соберу ответ.\nБез новых чисел.",
+      },
+    ],
+    () => `id${(n += 1)}`,
+  );
+  assert.equal(lines[0].text, "Первая мысль.\n\nВторая мысль.");
+  assert.equal(lines[1].text, "Касса держится.\n\n- пункт один\n- пункт два");
+  assert.equal(lines[1].lead, "Соберу ответ.\nБез новых чисел.");
+});
+
 test("messagesFromMemory keeps uploaded photos on the user line", () => {
   let n = 0;
   const lines = messagesFromMemory(

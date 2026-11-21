@@ -72,7 +72,26 @@ _EDIT = re.compile(
     r"убери|убрать|добавь|добавить|поправь",
     re.IGNORECASE,
 )
-_QUESTION = re.compile(r"\?|(?:^|\s)(?:почему|зачем)\b", re.IGNORECASE)
+def asks_without_order(raw: str) -> bool:
+    """True when the line is a question and not an order.
+
+    «почему» and «зачем» are always questions. A trailing ? on
+    «убери слайд 2» is still an order.
+    """
+    text = raw or ""
+    if re.search(r"(?:^|\s)(?:почему|зачем)\b", text, re.IGNORECASE):
+        return True
+    if "?" not in text:
+        return False
+    if (
+        _EDIT.search(text)
+        or _REWRITE.search(text)
+        or _PROSE.search(text)
+        or _RECOLOR.search(text)
+        or _VISUAL.search(text)
+    ):
+        return False
+    return True
 _REF = re.compile(
     r"тот раздел|этот раздел|эту часть|там же|то же место",
     re.IGNORECASE,
@@ -410,6 +429,44 @@ def parse_cell_replace(text: str | None) -> tuple[int, str, str] | None:
     return _slot_index(raw, "таблиц"), swapped[0], swapped[1]
 
 
+def parse_row_add(text: str | None) -> tuple[int, tuple[str, ...]] | None:
+    """«В таблице добавь строку: Гомель; 12» → (slot, cells)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"таблиц", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"добав", raw, re.IGNORECASE) or not re.search(r"строк", raw, re.IGNORECASE):
+        return None
+    match = re.search(r"строк\w*\s*[:—–-]\s*(.+)$", raw, re.IGNORECASE)
+    if not match:
+        match = re.search(r"строк\w*\s+(.+)$", raw, re.IGNORECASE)
+    body = match.group(1).strip(" .") if match else ""
+    body = re.sub(r"^(?:в\s+)?(?:\d+\s+)?таблиц\w*\s*", "", body, flags=re.IGNORECASE).strip(" .")
+    if not body:
+        return _slot_index(raw, "таблиц"), ()
+    if "|" in body:
+        cells = [part.strip(" .") for part in body.split("|")]
+    elif ";" in body:
+        cells = [part.strip(" .") for part in body.split(";")]
+    else:
+        cells = [body]
+    cells = tuple(cell for cell in cells if cell)
+    return _slot_index(raw, "таблиц"), cells
+
+
+def parse_row_delete(text: str | None) -> tuple[int, str] | None:
+    """«Убери из таблицы строку Гомель» → (slot, label)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"таблиц", raw, re.IGNORECASE) or not re.search(r"строк", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return None
+    match = re.search(r"строк\w*\s+(.+)$", raw, re.IGNORECASE)
+    label = match.group(1) if match else ""
+    label = re.sub(r"\s+из\s+(?:\w+\s+)?таблиц\w*.*$", "", label, flags=re.IGNORECASE)
+    label = re.sub(r"^(?:из\s+)?(?:\w+\s+)?таблиц\w*\s*", "", label, flags=re.IGNORECASE)
+    return _slot_index(raw, "таблиц"), label.strip(" .«»")
+
+
 def parse_item_replace(text: str | None) -> tuple[int, str, str] | None:
     raw = _norm(text or "").strip()
     if not re.search(r"спис", raw, re.IGNORECASE):
@@ -418,6 +475,38 @@ def parse_item_replace(text: str | None) -> tuple[int, str, str] | None:
     if not swapped:
         return None
     return _slot_index(raw, "спис"), swapped[0], swapped[1]
+
+
+_STRUCTURES = (
+    ("investor", r"инвестор"),
+    ("board_update", r"совет директор|борд"),
+    ("qbr", r"квартальн"),
+    ("performance", r"эффективн"),
+    ("launch", r"запуск"),
+    ("survey", r"исследован"),
+    ("campaign", r"кампан"),
+    ("workshop", r"воркшоп|мастерск"),
+    ("hire", r"найм"),
+    ("council", r"архитектурн"),
+    ("quarter", r"стратег"),
+)
+STRUCTURE_SAY = {
+    "investor": "инвестора",
+    "board_update": "совета",
+    "qbr": "квартального обзора",
+    "performance": "эффективности",
+    "launch": "запуска",
+    "survey": "исследования",
+    "campaign": "кампании",
+    "workshop": "воркшопа",
+    "hire": "найма",
+    "council": "архитектурного совета",
+    "quarter": "стратегии",
+}
+STRUCTURE_ASK = (
+    "инвестора, совета, квартала, эффективности, запуска, "
+    "исследования, кампании, воркшопа, найма, архитектурного совета, стратегии"
+)
 
 
 def parse_item_add(text: str | None) -> tuple[int, str] | None:
@@ -433,6 +522,171 @@ def parse_item_add(text: str | None) -> tuple[int, str] | None:
     if not item:
         return None
     return _slot_index(raw, "спис"), item
+
+
+def parse_item_delete(text: str | None) -> tuple[int, str] | None:
+    """«Убери кассу из списка» → (0, кассу). None when it is not a list delete."""
+    raw = _norm(text or "").strip()
+    if re.search(r"слайд", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"спис", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return None
+    match = re.search(
+        r"(?:убери|удали|убрать|удалить)\s+(?:пункт\s+)?(.+?)\s+из\s+спис",
+        raw,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    word = match.group(1).strip(" «».")
+    if not word:
+        return None
+    return _slot_index(raw, "спис"), word
+
+
+def paragraph_at(text: str | None) -> tuple[int, str]:
+    """«Второй абзац введения» → (2, Введение). (0, '') when no ordinal is named."""
+    raw = _norm(text or "")
+    if not re.search(r"абзац", raw, re.IGNORECASE):
+        return 0, ""
+    number = re.search(
+        r"(\d)\s*[-–]?\s*й?\s*абзац|абзац\w*\s+(\d)",
+        raw,
+        re.IGNORECASE,
+    )
+    ordinal = int(number.group(1) or number.group(2)) if number else 0
+    if not ordinal:
+        for index, stem in ((5, "пят"), (4, "четвер"), (3, "трет"), (2, "втор"), (1, "перв")):
+            if re.search(rf"{stem}\w*\s+абзац", raw, re.IGNORECASE):
+                ordinal = index
+                break
+    if ordinal < 1:
+        return 0, ""
+    match = re.search(
+        r"абзац\w*(?:\s+\d)?\s+([A-Za-zА-Яа-яЁё-]{4,})",
+        raw,
+        re.IGNORECASE,
+    )
+    name = _clean_name(match.group(1)) if match else ""
+    return ordinal, name
+
+
+def parse_paragraph_add(text: str | None) -> tuple[str, str] | None:
+    """«Добавь абзац во введение: …» → (section, user text)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"добав", raw, re.IGNORECASE) or not re.search(r"абзац", raw, re.IGNORECASE):
+        return None
+    if re.search(r"слайд", raw, re.IGNORECASE):
+        return None
+    match = re.search(
+        r"(?:в|во)\s+([A-Za-zА-Яа-яЁё-]{4,}).{0,40}?[:—–-]\s*(.{8,})",
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    name = _clean_name(match.group(1))
+    body = match.group(2).strip()
+    if not name or len(body) < 8:
+        return None
+    return name, body
+
+
+def parse_section_add(text: str | None) -> tuple[str, str] | None:
+    """«Добавь раздел Выводы: …» → (name, user text)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"добав", raw, re.IGNORECASE) or not re.search(r"раздел", raw, re.IGNORECASE):
+        return None
+    match = re.search(
+        r"раздел\w*\s+[«\"]?([A-Za-zА-Яа-яЁё0-9][^:«»\"\n]{1,40}?)[»\"]?\s*[:—–-]\s*(.{8,})",
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    name = _clean_name(match.group(1))
+    body = match.group(2).strip()
+    if not name or len(body) < 8:
+        return None
+    return name, body
+
+
+def parse_caption(text: str | None) -> tuple[str, str] | None:
+    """«Подпись рисунка fig_01: …» → (id or '', caption)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"подпис", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"рисун|фото|фигур|график", raw, re.IGNORECASE):
+        return None
+    found = re.search(r"\b((?:fig|usr|cht|dia)_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    body = re.search(r"[:—–-]\s*(.{2,})$", raw)
+    if not body:
+        return None
+    caption = body.group(1).strip(" .")
+    if not caption:
+        return None
+    return (found.group(1) if found else ""), caption
+
+
+def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
+    """None when this is not a pixel edit of a photo already on the table.
+
+    ("", "") means the photo was named and the change was not.
+    The id is "" when the user did not name usr_NN.
+    """
+    raw = _norm(text or "").strip()
+    if re.search(r"подпис", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"\bфото\b|usr_", raw, re.IGNORECASE):
+        return None
+    aimed = re.search(
+        r"на фото|у фото|это фото|поправь\s+фото|измени\s+фото|перерисуй\s+фото|убери\s+.+?\s+с фото|фото\s+usr_",
+        raw,
+        re.IGNORECASE,
+    )
+    if not aimed:
+        return None
+    found = re.search(r"\b(usr_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    fid = found.group(1) if found else ""
+    tail = re.search(r"[:—–-]\s*(.{2,})$", raw)
+    if tail:
+        return fid, tail.group(1).strip(" .")
+    inline = re.search(
+        r"(?:на фото|у фото|это фото)\s+(?:сделай|убери|добавь|поправь|измени|перерисуй)\s+(.{2,})$",
+        raw,
+        re.IGNORECASE,
+    )
+    if inline:
+        return fid, inline.group(1).strip(" .")
+    return fid, ""
+
+
+def parse_section_delete(text: str | None) -> str | None:
+    """None when this is not a section delete. Empty string asks for the name."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"раздел", raw, re.IGNORECASE):
+        return None
+    if re.search(r"слайд|спис|таблиц|строк|абзац", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return None
+    match = re.search(
+        r"(?:убери|удали|убрать|удалить)\s+раздел\w*\s+[«\"]?(.{2,80})",
+        raw,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return _clean_name(match.group(1).strip(" «».:"))
+
+
+def wants_whole_report(text: str | None) -> bool:
+    raw = _norm(text or "")
+    if not re.search(r"короче|сократ", raw, re.IGNORECASE):
+        return False
+    return bool(re.search(r"весь отчет|весь текст|все разделы|целиком", raw, re.IGNORECASE))
 
 
 def parse_diagram_edit(text: str | None) -> str | None:
@@ -582,6 +836,19 @@ def _clarify(
     return "Не взял правку, нужно точнее. Можно " + ", ".join(bits) + "."
 
 
+def _unsupported_shape(raw: str) -> bool:
+    """A change the phrase router will never perform."""
+    if re.search(r"график", raw, re.IGNORECASE) and re.search(
+        r"числ|данн|столб|значен", raw, re.IGNORECASE
+    ):
+        if chart_type_named(raw) or _named(raw, _PALETTES):
+            return False
+        return True
+    if re.search(r"схем", raw, re.IGNORECASE) and re.search(r"легенд", raw, re.IGNORECASE):
+        return True
+    return False
+
+
 def resolve_act(
     text: str | None,
     *,
@@ -595,6 +862,9 @@ def resolve_act(
     """Classify one user message. Build wins when they name a new artifact."""
     raw = _norm(text or "").strip()
     has_any = has_deck or has_report or has_diagram
+
+    if _unsupported_shape(raw):
+        return ChatAct(kind="talk")
 
     if has_any and _REDO.search(raw) and len(raw) < 80:
         return ChatAct(kind="revise", op="redo", say="Вернул последнюю правку.")
@@ -643,6 +913,25 @@ def resolve_act(
             say=f"Перекрашиваю презентацию в {PACK_LABELS[pack]}. Слайды соберутся заново, текст тот же.",
         )
 
+    added_paragraph = parse_paragraph_add(raw) if has_report else None
+    if added_paragraph:
+        return ChatAct(
+            kind="revise",
+            op="add_paragraph",
+            section=added_paragraph[0],
+            title=added_paragraph[1],
+            say=f"Добавляю абзац в «{added_paragraph[0]}».",
+        )
+    added_section = parse_section_add(raw) if has_report else None
+    if added_section:
+        return ChatAct(
+            kind="revise",
+            op="add_section",
+            section=added_section[0],
+            title=added_section[1],
+            say=f"Добавляю раздел «{added_section[0]}».",
+        )
+
     supplied = parse_rewrite(raw) if has_report else None
     if supplied:
         return ChatAct(
@@ -687,7 +976,7 @@ def resolve_act(
             say="Пока нечего менять. Сначала собери отчёт или презентацию.",
         )
 
-    question = bool(_QUESTION.search(raw))
+    question = asks_without_order(raw)
     remembered = (last_section or "").strip()
     if not question and _BARE_AGAIN.match(raw):
         if last_op == "recolor_deck" and has_deck and not remembered:
@@ -702,13 +991,24 @@ def resolve_act(
                 op="ask",
                 say=f"Продолжить стиль презентации или раздел «{remembered}»?",
             )
-        if remembered and has_report:
+        if remembered and has_report and last_op in {"", "rewrite"}:
             return ChatAct(
                 kind="revise",
                 op="rewrite",
                 section=remembered,
                 brief="prettier",
                 say=f"Перепишу раздел «{remembered}» по документам. Новых чисел не добавлю.",
+            )
+        if last_op and last_op not in {"rewrite", "recolor_deck"}:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say=_clarify(
+                    has_deck=has_deck,
+                    has_report=has_report,
+                    has_diagram=has_diagram,
+                    last_section=remembered,
+                ),
             )
         return ChatAct(
             kind="revise",
@@ -744,6 +1044,159 @@ def resolve_act(
         )
 
     if not question:
+        if wants_whole_report(raw) and has_report:
+            return ChatAct(
+                kind="revise",
+                op="rewrite_all",
+                brief="tighter",
+                say="Сокращу каждый раздел по документам. Новых чисел не добавлю.",
+            )
+        if re.search(r"структур", raw, re.IGNORECASE) and re.search(
+            r"презентац|слайд|дек", raw, re.IGNORECASE
+        ):
+            if not has_deck:
+                return ChatAct(
+                    kind="talk",
+                    say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+                )
+            structure = _named(raw, _STRUCTURES)
+            if not structure:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say=f"Какая структура: {STRUCTURE_ASK}?",
+                )
+            return ChatAct(
+                kind="revise",
+                op="restyle_structure",
+                title=structure,
+                say=f"Собираю презентацию для {STRUCTURE_SAY[structure]}. Текст возьму из документов.",
+            )
+        removed_section = parse_section_delete(raw)
+        if removed_section is not None:
+            if not has_report:
+                return ChatAct(
+                    kind="talk",
+                    say="Отчёта в этом чате ещё нет, раздел убрать некуда.",
+                )
+            if not removed_section:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Какой раздел убрать? Напиши «убери раздел Введение».",
+                )
+            return ChatAct(
+                kind="revise",
+                op="delete_section",
+                section=removed_section,
+                say=f"Убираю раздел «{removed_section}».",
+            )
+        ordinal, para_name = paragraph_at(raw)
+        if ordinal and para_name and has_report:
+            return ChatAct(
+                kind="revise",
+                op="rewrite",
+                section=para_name,
+                slot=ordinal,
+                brief=_brief_for(raw),
+                say=f"Перепишу абзац {ordinal} раздела «{para_name}». Новых чисел не добавлю.",
+            )
+        added_paragraph = parse_paragraph_add(raw)
+        if added_paragraph:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, абзац добавить некуда.")
+            return ChatAct(
+                kind="revise",
+                op="add_paragraph",
+                section=added_paragraph[0],
+                title=added_paragraph[1],
+                say=f"Добавляю абзац в «{added_paragraph[0]}».",
+            )
+        added_section = parse_section_add(raw)
+        if added_section:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, раздел добавить некуда.")
+            return ChatAct(
+                kind="revise",
+                op="add_section",
+                section=added_section[0],
+                title=added_section[1],
+                say=f"Добавляю раздел «{added_section[0]}».",
+            )
+        caption = parse_caption(raw)
+        if caption:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, подпись ставить некуда.")
+            return ChatAct(
+                kind="revise",
+                op="caption",
+                section=caption[0],
+                title=caption[1],
+                say="Меняю подпись рисунка.",
+            )
+        photo = parse_photo_edit(raw)
+        if photo is not None:
+            fid, instruction = photo
+            if not instruction:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Что изменить на фото? Напиши «на фото сделай небо темнее».",
+                )
+            say = f"Меняю фото {fid}." if fid else "Меняю фото."
+            return ChatAct(
+                kind="revise",
+                op="edit_photo",
+                section=fid,
+                title=instruction,
+                say=say + " Картинку перерисую по твоей фразе.",
+            )
+        removed_item = parse_item_delete(raw)
+        if removed_item:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, список править негде.")
+            return ChatAct(
+                kind="revise",
+                op="delete_item",
+                slot=removed_item[0],
+                section=removed_item[1],
+                say=f"Убираю «{removed_item[1]}» из списка.",
+            )
+        added_row = parse_row_add(raw)
+        if added_row is not None:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, таблицу править негде.")
+            if not added_row[1]:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Какие ячейки в строке? Напиши «в таблице добавь строку: Гомель; 12».",
+                )
+            shown = "; ".join(added_row[1])
+            return ChatAct(
+                kind="revise",
+                op="add_row",
+                slot=added_row[0],
+                items=added_row[1],
+                say=f"Добавляю в таблицу строку: {shown}.",
+            )
+        removed_row = parse_row_delete(raw)
+        if removed_row is not None:
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, таблицу править негде.")
+            if not removed_row[1]:
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Какую строку убрать? Напиши «убери из таблицы строку Гомель».",
+                )
+            return ChatAct(
+                kind="revise",
+                op="delete_row",
+                slot=removed_row[0],
+                section=removed_row[1],
+                say=f"Убираю из таблицы строку «{removed_row[1]}».",
+            )
         cell = parse_cell_replace(raw)
         if cell:
             if not has_report:
