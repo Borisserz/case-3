@@ -13,6 +13,8 @@ import { useReducedMotion } from "framer-motion";
 import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
+import { DashboardPickModal } from "../DashboardPickModal";
+import { attachCaptureMarkdowns } from "../domain/dashboardCapture";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
 import { ChatMessages } from "../ChatMessages";
@@ -141,6 +143,7 @@ export default function App() {
   /** Text of attached .txt/.md for Source tab / plaque. */
   const [sourceDraft, setSourceDraft] = useState<SourceDraft | null>(null);
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -404,6 +407,16 @@ export default function App() {
       makePresentation,
     },
   });
+
+  const onDashboardReady = useCallback(
+    (docs: { name: string; markdown: string }[]) => {
+      setSourceDraft((current) => attachCaptureMarkdowns(current, docs));
+      setPlaqueDismissed(false);
+      setFile(null);
+      setDashboardOpen(false);
+    },
+    [],
+  );
 
   const { capturePastedSource, ingestFiles, onDrop } = useSourceIngest({
     setFile,
@@ -709,7 +722,14 @@ export default function App() {
                     setChat(prompt);
                     chatRef.current?.focus();
                   }}
+                  onOpenDashboard={() => setDashboardOpen(true)}
                 />
+                {dashboardOpen ? (
+                  <DashboardPickModal
+                    onClose={() => setDashboardOpen(false)}
+                    onReady={onDashboardReady}
+                  />
+                ) : null}
               </div>
 
               {railArtifact && (

@@ -905,6 +905,57 @@
   align-items: start;
 }
 
+.stimul-sheet.is-viewer {
+  width: min(1180px, 100%);
+  height: min(92vh, 920px);
+  max-height: 92vh;
+}
+
+.dash-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.dash-viewer-take {
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: var(--ink);
+  color: var(--sheet);
+  border-radius: 10px;
+  padding: 0.42rem 0.8rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.dash-viewer-take:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.dash-viewer-note,
+.dash-viewer-error {
+  margin: 0;
+  padding: 0.35rem 1rem 0;
+  font-size: 0.82rem;
+}
+
+.dash-viewer-note {
+  color: var(--muted);
+}
+
+.dash-viewer-error {
+  color: var(--danger, #9a3412);
+}
+
+.dash-viewer-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
 .stimul-sheet {
   width: min(560px, 100%);
   max-height: min(88vh, 820px);

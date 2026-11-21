@@ -69,6 +69,8 @@ type Props = {
   onDismissPlaque: () => void;
   /** Fill composer from quiet starter card (report/diagram). */
   onPickStarter?: (prompt: string) => void;
+  /** Open the Stimulsoft preview and attach its markdown. */
+  onOpenDashboard?: () => void;
 };
 
 export function ChatComposer({
@@ -107,6 +109,7 @@ export function ChatComposer({
   onOpenSource,
   onDismissPlaque,
   onPickStarter,
+  onOpenDashboard,
 }: Props) {
   const galleryRef = useRef<HTMLDivElement>(null);
   const placeholder =
@@ -252,6 +255,17 @@ export function ChatComposer({
             >
               <IconPaperclip size={18} />
             </button>
+            {onOpenDashboard ? (
+              <button
+                type="button"
+                className="composer-data"
+                disabled={busy}
+                title="Открыть превью Stimulsoft и забрать текущий экран"
+                onClick={onOpenDashboard}
+              >
+                Выбрать данные
+              </button>
+            ) : null}
             {showDeckStyleBtn ? (
               <button
                 type="button"

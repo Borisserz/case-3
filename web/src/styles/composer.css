@@ -436,6 +436,31 @@
   cursor: not-allowed;
 }
 
+.composer-data {
+  flex-shrink: 0;
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.composer-data:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--secondary) 45%, transparent);
+  color: var(--primary);
+}
+
+.composer-data:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .composer-gear {
   font-size: 0;
 }

@@ -34,6 +34,14 @@ from case3.api_photo import quick_photo_edit
 from case3.run_events import EVENTS
 from case3.pipeline import PipelineError, prepare_run_dirs, run_pipeline
 from case3.render import IMAGE, ensure_image, is_docker_warmed
+from case3.dashboard_remote import (
+    DashboardRemoteError,
+    capture_documents,
+    fetch_export,
+    fetch_shot_payload,
+    service_base,
+    viewer_url,
+)
 from case3.dashboard_source import DashboardSourceError, parse_dashboard
 from case3.source_ingest import (
     DEFAULT_MAX_MARKDOWN_BYTES,
@@ -885,6 +893,37 @@ def _dashboard_http_status(code: str) -> int:
     if code in {"vision_failed", "ingest_dependency"}:
         return 503
     return 422
+
+
+@app.get("/api/dashboard/service")
+def api_dashboard_service() -> JSONResponse:
+    """Viewer URL for the pick modal. One env: DASHBOARD_SERVICE_URL."""
+    return JSONResponse({"base": service_base(), "viewer": viewer_url()})
+
+
+@app.post("/api/dashboard/service-capture")
+def api_dashboard_service_capture() -> JSONResponse:
+    """GET the open viewer's /shot, then parse the screen and tables as one document."""
+    import httpx
+
+    base = service_base()
+    timeout = httpx.Timeout(100.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            payload = fetch_shot_payload(base, client)
+            documents = capture_documents(
+                payload,
+                lambda name: fetch_export(base, name, client),
+                parse_dashboard,
+            )
+    except DashboardRemoteError as exc:
+        raise HTTPException(502, detail=exc.message) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            502,
+            detail=f"сервис дашборда недоступен ({base})",
+        ) from exc
+    return JSONResponse({"documents": documents})
 
 
 @app.post("/api/dashboard/parse")
