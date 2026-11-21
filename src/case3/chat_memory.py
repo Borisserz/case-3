@@ -7,10 +7,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-# A 100k-token window fits the whole 48-turn chat as paragraphs.
+# Eight recent turns stay as paragraphs. Older turns of the 48-hop chain
+# are one digit-free line, and a matching question lifts one of them.
 # Tail turns stay near 800 characters; the two newest stay longer.
-# One-line archive starts only past this window.
-_WINDOW = 48
+_WINDOW = 8
 _WINDOW_CAPS = (2000, 1600, 1200, 800)
 _MAX_HOPS = 48
 _TAIL = _WINDOW_CAPS[0]
@@ -104,7 +104,7 @@ def _older_lines(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def format_thread(turns: list[dict[str, Any]] | None) -> str:
-    """Oldest first. Six recent turns keep paragraphs. Older turns are one line each."""
+    """Oldest first. Eight recent turns keep paragraphs. Older turns are one line each."""
     rows = [t for t in (turns or []) if isinstance(t, dict)]
     if not rows:
         return ""
@@ -138,8 +138,8 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
             for note in (turn.get("dialogue") or [])
             if isinstance(note, dict)
         ]
-        # The two newest turns keep every edit. Further back, one short note,
-        # so a full 48-turn paste stays inside the 150000-character prompt cap.
+        # The two newest turns keep every edit. Further back, one short note.
+        # Eight verbatim turns plus the one-line archive stay under the prompt cap.
         if offset > 1:
             notes = notes[-1:]
             note_cap = 120
@@ -241,12 +241,31 @@ def _user_words(value: object) -> str:
     return text
 
 
+def _binding_stem(blob: str, start: int, end: int) -> str:
+    """The word next to a number. «слайд 2» and «2 слайда» both keep «слайд»."""
+    before = re.findall(r"[0-9A-Za-zА-Яа-яЁё]{4,}", blob[max(0, start - 48) : start])
+    word = before[-1] if before else ""
+    if not word:
+        after = re.findall(r"[0-9A-Za-zА-Яа-яЁё]{4,}", blob[end : end + 40])
+        word = after[0] if after else ""
+    stem = _stem(word)
+    if len(stem) < 4 or stem in _LIFT_STOP:
+        return ""
+    return stem
+
+
 def user_number_tokens(turns: list[dict[str, Any]] | None) -> list[str]:
     """Spellings the user wrote. Assistant fields are not scanned."""
+    return [token for token, _stem in user_number_pairs(turns)]
+
+
+def user_number_pairs(turns: list[dict[str, Any]] | None) -> list[tuple[str, str]]:
+    """(spelling, stem). The same value can sit beside more than one word."""
     from case3.chat_turn import _NUM, _norm_num
 
-    found: list[str] = []
-    seen: set[str] = set()
+    found: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    norms: list[str] = []
     for turn in turns or []:
         if not isinstance(turn, dict):
             continue
@@ -255,25 +274,30 @@ def user_number_tokens(turns: list[dict[str, Any]] | None) -> list[str]:
             if isinstance(note, dict):
                 blobs.append(_user_words(note.get("user")))
         for blob in blobs:
-            for token in _NUM.findall(blob):
+            for match in _NUM.finditer(blob):
+                token = match.group(0)
                 norm = _norm_num(token)
-                if not norm or norm in seen:
+                if not norm:
                     continue
-                seen.add(norm)
-                found.append(token)
-                if len(found) >= _USER_NUMBER_CAP:
-                    return found
+                if norm not in norms:
+                    if len(norms) >= _USER_NUMBER_CAP:
+                        return found
+                    norms.append(norm)
+                stem = _binding_stem(blob, match.start(), match.end())
+                key = (norm, stem)
+                if key in seen:
+                    continue
+                seen.add(key)
+                found.append((token, stem))
     return found
 
 
 def format_user_numbers(turns: list[dict[str, Any]] | None) -> str:
-    tokens = user_number_tokens(turns)
-    if not tokens:
+    pairs = user_number_pairs(turns)
+    if not pairs:
         return ""
-    return (
-        f"{_USER_NUMBER_MARK} (его слова, не ответ модели):\n"
-        + ", ".join(tokens)
-    )
+    shown = [f"{token} {stem}".strip() for token, stem in pairs]
+    return f"{_USER_NUMBER_MARK} (его слова, не ответ модели):\n" + ", ".join(shown)
 
 
 _ENDINGS = (
@@ -473,7 +497,7 @@ def recall_block(turns: list[dict[str, Any]] | None, text: str | None) -> str:
 
     An explicit recall («вспомни», «что ты говорил») searches every turn,
     including dialogue, and does not need the word «про». A plain message
-    lifts one turn only when that turn is already outside the six-turn window.
+    lifts one turn only when that turn is already outside the eight-turn window.
     """
     raw = (text or "").replace("ё", "е").replace("Ё", "Е")
     rows = [turn for turn in (turns or []) if isinstance(turn, dict)]
@@ -698,7 +722,7 @@ def merge_edit(found: dict[str, str], raw: object) -> dict[str, str]:
     if not isinstance(raw, dict):
         return found
     nxt = dict(found)
-    for key in ("op", "section", "pack", "palette"):
+    for key in ("op", "section", "pack", "palette", "surface"):
         val = str(raw.get(key) or "").strip()
         if val:
             nxt[key] = val

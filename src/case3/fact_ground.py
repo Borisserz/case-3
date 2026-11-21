@@ -22,6 +22,120 @@ _JS_ARRAY = re.compile(
 _QUOTED = re.compile(r"(['\"])([^'\"]*)\1")
 
 
+def fact_context(source: str, intent: str) -> tuple[set[str], list[tuple[str, str]]]:
+    """Norms that may stand anywhere, and (norm, stem) pairs from earlier user lines."""
+    from case3.chat_memory import _stem
+    from case3.chat_turn import latest_user_line, number_norms
+
+    message = latest_user_line(intent)
+    global_ok = number_norms(source) | number_norms(message)
+    bindings: list[tuple[str, str]] = []
+    text = intent or ""
+    mark = "Числа из реплик пользователя"
+    at = text.find(mark)
+    if at < 0:
+        return global_ok, bindings
+    rest = text[at + len(mark) :]
+    body = rest.split("\n", 1)[1] if "\n" in rest else ""
+    line = body.split("\n", 1)[0]
+    for match in re.finditer(
+        r"(\d+(?:[.,]\d+)?%?)(?:\s+([0-9A-Za-zА-Яа-яЁё]{3,}))?",
+        line,
+    ):
+        norm = _norm_num(match.group(1))
+        raw = match.group(2) or ""
+        stem = _stem(raw) if raw else ""
+        if len(stem) < 4:
+            stem = ""
+        if norm:
+            bindings.append((norm, stem))
+    return global_ok, bindings
+
+
+def _clause_allows(
+    clause: str,
+    norm: str,
+    global_ok: set[str],
+    bindings: list[tuple[str, str]],
+) -> bool:
+    if norm in global_ok:
+        return True
+    from case3.chat_memory import _stem_set
+
+    stems = _stem_set(clause)
+    return any(bound == norm and stem and stem in stems for bound, stem in bindings)
+
+
+def _scrub_bound(
+    text: str,
+    global_ok: set[str],
+    bindings: list[tuple[str, str]],
+    *,
+    context: str = "",
+) -> str:
+    """Drop a number that is not in Source, this message, or beside its own word."""
+    from case3.chat_turn import _SPOKEN_NUMBER, _SPOKEN_RE
+
+    def spoken_norm(token: str) -> str:
+        stem = token.casefold().replace("ё", "е")
+        for prefix, digit in _SPOKEN_NUMBER:
+            if stem.startswith(prefix):
+                return digit
+        return ""
+
+    def clean_clause(clause: str) -> str:
+        digits = [_norm_num(match.group(0)) for match in _NUM.finditer(clause)]
+        words = [(match.group(0), spoken_norm(match.group(0))) for match in _SPOKEN_RE.finditer(clause)]
+        norms = [norm for norm in digits + [digit for _word, digit in words] if norm]
+        if not norms:
+            return clause
+        judged = f"{context} {clause}".strip() if context else clause
+        bad = {norm for norm in norms if not _clause_allows(judged, norm, global_ok, bindings)}
+        if not bad:
+            return clause
+        if len(bad) == len(set(norms)):
+            return ""
+
+        def digit_repl(match: re.Match[str]) -> str:
+            if _norm_num(match.group(0)) in bad:
+                return ""
+            return match.group(0)
+
+        def word_repl(match: re.Match[str]) -> str:
+            if spoken_norm(match.group(0)) in bad:
+                return ""
+            return match.group(0)
+
+        return _SPOKEN_RE.sub(word_repl, _NUM.sub(digit_repl, clause))
+
+    kept_lines: list[str] = []
+    for line in (text or "").split("\n"):
+        bits = re.split(r"([.!?]+(?:\s+|$))", line)
+        kept: list[str] = []
+        index = 0
+        while index < len(bits):
+            chunk = bits[index]
+            delim = bits[index + 1] if index + 1 < len(bits) else ""
+            index += 2 if delim else 1
+            parts = []
+            for part in re.split(r",(?!\d)\s*", chunk):
+                cleaned = clean_clause(part).strip()
+                if cleaned:
+                    parts.append(cleaned)
+            if not parts:
+                continue
+            kept.append(", ".join(parts))
+            if delim:
+                kept.append(delim)
+        if kept:
+            kept_lines.append("".join(kept).strip())
+    result = "\n".join(kept_lines)
+    result = re.sub(r"[ \t]{2,}", " ", result)
+    result = re.sub(r" +([,.;:!?])", r"\1", result)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result
+
+
 def allowed_fact_norms(source: str, intent: str) -> set[str]:
     """Source, this message, and numbers the user wrote earlier."""
     from case3.chat_turn import user_stated_norms
@@ -190,42 +304,118 @@ def ground_generated(
     charts = [dict(item) for item in (charts or []) if isinstance(item, dict)]
     figures = [dict(item) for item in (figures or []) if isinstance(item, dict)]
     diagrams = [dict(item) for item in (diagrams or []) if isinstance(item, dict)]
-    dropped = stray_numbers(
-        _visible(tex, charts, figures, diagrams),
-        allowed_fact_norms(source, intent),
-    )
-    stray = {_norm_num(token) for token in dropped}
-    if not stray:
-        return tex, charts, figures, diagrams, []
+    global_ok, bindings = fact_context(source, intent)
+    visible = _visible(tex, charts, figures, diagrams)
+    dropped = [
+        token
+        for token in stray_numbers(visible, global_ok)
+        if not _clause_allows(visible, _norm_num(token), global_ok, bindings)
+    ]
+    # A bound number can be legal in one sentence and illegal in the next.
+    # Scrub per sentence even when the flat list still contains the value.
     head, body, tail = _split_document(tex)
     body = "".join(
-        piece if protected else _scrub_region(piece, stray)
+        piece if protected else _scrub_bound(piece, global_ok, bindings)
         for piece, protected in _parts(body)
     )
     tex = head + body + tail
     for item in charts:
         for key in ("caption", "insight"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_region(item[key], stray).strip()
+                item[key] = _scrub_bound(item[key], global_ok, bindings).strip()
         if isinstance(item.get("html"), str):
-            item["html"] = _scrub_html(item["html"], stray)
+            item["html"] = _scrub_html_bound(item["html"], global_ok, bindings)
         rows = []
         for row in item.get("highlights") or []:
             if not isinstance(row, dict):
                 continue
             nxt = dict(row)
+            label = str(nxt.get("label") or "")
+            before_value = str(nxt.get("value") or "")
             for key in ("label", "value", "pct"):
                 if isinstance(nxt.get(key), str):
-                    nxt[key] = _scrub_region(nxt[key], stray).strip()
+                    nxt[key] = _scrub_bound(
+                        nxt[key],
+                        global_ok,
+                        bindings,
+                        context="" if key == "label" else label,
+                    ).strip()
+            if before_value.strip() and not str(nxt.get("value") or "").strip():
+                continue
             rows.append(nxt)
         if rows:
             item["highlights"] = rows
     for item in figures:
         for key in ("caption", "prompt"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_region(item[key], stray).strip()
+                item[key] = _scrub_bound(item[key], global_ok, bindings).strip()
     for item in diagrams:
         for key in ("title", "caption", "mermaid"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_region(item[key], stray)
+                item[key] = _scrub_bound(item[key], global_ok, bindings)
     return tex, charts, figures, diagrams, dropped
+
+
+def _scrub_html_bound(
+    html: str,
+    global_ok: set[str],
+    bindings: list[tuple[str, str]],
+) -> str:
+    """Chart data takes only Source and this message. A caption may use a bound word."""
+
+    def repl(match: re.Match[str]) -> str:
+        kind = match.group(1)
+        empty = "null" if kind.lower() == "data" else "''"
+
+        def one(num: re.Match[str]) -> str:
+            if _norm_num(num.group(0)) not in global_ok:
+                return empty
+            return num.group(0)
+
+        return f"{kind}: [{_NUM.sub(one, match.group(2))}]"
+
+    def repl_quote(match: re.Match[str]) -> str:
+        if not _quote_is_fact(match.group(2)):
+            return match.group(0)
+        return match.group(1) + _scrub_bound(match.group(2), global_ok, bindings) + match.group(1)
+
+    return _QUOTED.sub(repl_quote, _JS_ARRAY.sub(repl, html or ""))
+
+
+def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict[str, Any]:
+    """A historical user number stays on a slide only beside its word."""
+    global_ok, bindings = fact_context(source, intent)
+    if not isinstance(deck, dict):
+        return deck
+    slides = []
+    for slide in deck.get("slides") or []:
+        if not isinstance(slide, dict):
+            slides.append(slide)
+            continue
+        nxt = dict(slide)
+        for key in ("title", "subtitle", "caption", "body", "kicker", "takeaway", "term", "definition"):
+            if isinstance(nxt.get(key), str):
+                nxt[key] = _scrub_bound(str(nxt[key]), global_ok, bindings).strip()
+        if isinstance(nxt.get("bullets"), list):
+            nxt["bullets"] = [
+                cleaned
+                for item in nxt["bullets"]
+                if (cleaned := _scrub_bound(str(item), global_ok, bindings).strip())
+            ]
+        if isinstance(nxt.get("kpis"), list):
+            kept = []
+            for kpi in nxt["kpis"]:
+                if not isinstance(kpi, dict):
+                    continue
+                label = str(kpi.get("label") or "")
+                value = str(kpi.get("value") or "")
+                clause = f"{label} {value}"
+                norms = {_norm_num(token) for token in _NUM.findall(value)}
+                if norms and not all(_clause_allows(clause, norm, global_ok, bindings) for norm in norms):
+                    continue
+                kept.append(kpi)
+            nxt["kpis"] = kept
+        slides.append(nxt)
+    out = dict(deck)
+    out["slides"] = slides
+    return out

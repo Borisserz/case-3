@@ -530,15 +530,22 @@ def run_slides_job(
         allowed_numbers = fact_number_tokens(source, intent or "")
         locked_arc = list(beat_plan.beats) if beat_plan.from_structure else None
 
+        def _bound(deck: dict[str, Any]) -> dict[str, Any]:
+            from case3.fact_ground import bind_deck_numbers
+
+            return bind_deck_numbers(deck, source=source, intent=intent or "")
+
         _set_slides(out_dir, meta, status="running", stage="llm", logs_dir=logs_dir)
         if skip_llm_ir is not None:
             raw_ir = skip_llm_ir
-            deck = parse_deck_ir(
-                raw_ir,
-                source=source,
-                allowed_media_ids=allowed_media,
-                allowed_number_strings=allowed_numbers,
-                locked_arc=locked_arc,
+            deck = _bound(
+                parse_deck_ir(
+                    raw_ir,
+                    source=source,
+                    allowed_media_ids=allowed_media,
+                    allowed_number_strings=allowed_numbers,
+                    locked_arc=locked_arc,
+                )
             )
         else:
             system = load_slides_system_prompt(
@@ -616,12 +623,14 @@ def run_slides_job(
                     raise InsufficientDataError(msg)
 
                 try:
-                    return parse_deck_ir(
-                        raw_ir,
-                        source=source,
-                        allowed_media_ids=allowed_media,
-                        allowed_number_strings=allowed_numbers,
-                        locked_arc=locked_arc,
+                    return _bound(
+                        parse_deck_ir(
+                            raw_ir,
+                            source=source,
+                            allowed_media_ids=allowed_media,
+                            allowed_number_strings=allowed_numbers,
+                            locked_arc=locked_arc,
+                        )
                     )
                 except DeckIrError as err:
                     # Digits scrub + demote chart/media slides with no PNG
@@ -635,12 +644,14 @@ def run_slides_job(
                         healed, allowed_media_ids=allowed_media
                     )
                     try:
-                        deck_h = parse_deck_ir(
-                            healed,
-                            source=source,
-                            allowed_media_ids=allowed_media,
-                            allowed_number_strings=allowed_numbers,
-                            locked_arc=locked_arc,
+                        deck_h = _bound(
+                            parse_deck_ir(
+                                healed,
+                                source=source,
+                                allowed_media_ids=allowed_media,
+                                allowed_number_strings=allowed_numbers,
+                                locked_arc=locked_arc,
+                            )
                         )
                     except DeckIrError as scrub_err:
                         # Prefer the post-scrub error (chart_id after number heal).

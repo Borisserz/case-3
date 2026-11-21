@@ -849,6 +849,27 @@ def _unsupported_shape(raw: str) -> bool:
     return False
 
 
+_CLAUSE_JOIN = re.compile(r"\s+и\s+|;\s+")
+_CLAUSE_VERB = re.compile(
+    r"убери|удали|перекрас|перепиш|сократ|добав|перестав|смен|поменя|замен|отмен|верни правк",
+    re.IGNORECASE,
+)
+
+
+def edit_clauses(text: str | None) -> list[str]:
+    """Split a line only when every piece is its own edit.
+
+    «Гомель; 12» stays one clause: the second piece has no edit verb.
+    """
+    raw = _norm(text or "").strip()
+    if not raw:
+        return []
+    parts = [part.strip(" ,.") for part in _CLAUSE_JOIN.split(raw) if part.strip()]
+    if len(parts) < 2 or not all(_CLAUSE_VERB.search(part) for part in parts):
+        return [raw]
+    return parts
+
+
 def resolve_act(
     text: str | None,
     *,

@@ -137,6 +137,23 @@ def test_attack6_comma_decimal_equivalent_to_dot_no_false_conflict():
     assert "12" in text
 
 
+def test_a_word_between_the_subject_and_the_number_still_conflicts():
+    """«в кассе теперь 30» against «Касса … 20» must ask, not accept 30."""
+    clash = fact_conflict("В кассе теперь 30.", "Касса за смену 20 рублей.")
+    assert clash is not None
+    word, doc_n, user_n = clash
+    assert word.casefold().startswith("касс")
+    assert doc_n == "20" and user_n == "30"
+
+    text = try_chat_answer(
+        "Касса за смену 20 рублей.",
+        "В кассе теперь 30.",
+        client=_Boom(),
+    )
+    assert "20" in text and "30" in text
+    assert "оставить" in text
+
+
 def test_attack6b_slide_index_plus_real_conflict_in_one_message():
     """«слайд 3» plus касса 40 vs doc 20 — still one conflict question, model not called."""
     clash = fact_conflict(

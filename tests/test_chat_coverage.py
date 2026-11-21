@@ -122,6 +122,66 @@ def test_ordinal_picks_the_second_paragraph(tmp_path: Path, monkeypatch):
     assert seen["index"] != first
 
 
+def test_rewrite_section_touches_every_paragraph(tmp_path: Path, monkeypatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "report.tex").write_text(_TEX, encoding="utf-8")
+    (out / "meta.json").write_text('{"source":""}', encoding="utf-8")
+    currents: list[str] = []
+
+    def draft(*, section, current, source, brief, user_text="", client=None):
+        currents.append(current)
+        return "Новый " + section + " " + str(len(currents))
+
+    monkeypatch.setattr("case3.chat_turn.draft_section", draft)
+    rebuilds: list[str] = []
+    monkeypatch.setattr(
+        "case3.run_rebuild.rebuild_run_docs",
+        lambda *_a, **_k: rebuilds.append("pdf") or {},
+    )
+    from case3.chat_act import ChatAct
+
+    say = _rewrite(
+        out,
+        "перепиши введение",
+        ChatAct(kind="revise", op="rewrite", section="Введение", brief="clearer"),
+    )
+    tex = (out / "report.tex").read_text(encoding="utf-8")
+    assert currents == ["Первый абзац введения.", "Второй абзац введения."]
+    assert "Новый Введение 1" in tex
+    assert "Новый Введение 2" in tex
+    assert "Один абзац кассы." in tex
+    assert rebuilds == ["pdf"]
+    assert "2" in say
+    assert "Введение" in say
+
+
+def test_supplied_section_text_replaces_the_other_paragraphs(tmp_path: Path, monkeypatch):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "report.tex").write_text(_TEX, encoding="utf-8")
+    (out / "meta.json").write_text('{"source":""}', encoding="utf-8")
+    rebuilds: list[str] = []
+    monkeypatch.setattr(
+        "case3.run_rebuild.rebuild_run_docs",
+        lambda *_a, **_k: rebuilds.append("pdf") or {},
+    )
+    from case3.chat_act import ChatAct
+
+    say = _rewrite(
+        out,
+        "Перепиши раздел Введение: Касса была тихой весь день без второй мысли.",
+        ChatAct(kind="revise", op="rewrite", section="Введение", brief="supplied"),
+    )
+    tex = (out / "report.tex").read_text(encoding="utf-8")
+    assert "тихой весь день" in tex
+    assert "Второй абзац введения" not in tex
+    assert "Первый абзац введения" not in tex
+    assert "Один абзац кассы." in tex
+    assert rebuilds == ["pdf"]
+    assert "Введение" in say
+
+
 def test_delete_item_drops_only_the_named_line(tmp_path: Path, monkeypatch):
     out = tmp_path / "out"
     out.mkdir()
@@ -287,3 +347,26 @@ def test_delete_subsection_leaves_the_parent(tmp_path: Path, monkeypatch):
     assert "Ночь" not in got
     assert "Смена" not in got
     assert r"\section{Выводы}" in got
+
+
+def test_last_section_delete_keeps_the_file_and_says_so(tmp_path: Path, monkeypatch):
+    from case3.chat_revise import _delete_section
+
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "\\section{Введение}\nКасса была 20.\n"
+        "\\end{document}\n"
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "report.tex").write_text(tex, encoding="utf-8")
+    (out / "meta.json").write_text("{}", encoding="utf-8")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("docker latexmk failed\nNo pages of output.\n" + ("x" * 4000))
+
+    monkeypatch.setattr("case3.run_rebuild.rebuild_run_docs", boom)
+    say = _delete_section(out, "Введение")
+    assert say == "Это последний раздел. Без него отчёт не соберётся. Текст остался как был."
+    assert "Касса была 20." in (out / "report.tex").read_text(encoding="utf-8")
+    assert "xxxx" not in say

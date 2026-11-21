@@ -19,7 +19,8 @@ export function reviseSurface(
     op === "reorder_slide" ||
     op === "add_slide" ||
     op === "slide_text" ||
-    op === "slide_bullets"
+    op === "slide_bullets" ||
+    op === "restyle_structure"
   ) {
     return "deck";
   }
@@ -41,6 +42,37 @@ export function reviseSurface(
     return "report";
   }
   return null;
+}
+
+export type RefreshStep = {
+  surface: "deck" | "report";
+  artifactRunId: string;
+};
+
+export function refreshSteps(data: {
+  op?: string;
+  surface?: string;
+  artifact_run_id?: string;
+  surfaces?: Array<{ surface?: string; artifact_run_id?: string; op?: string }>;
+}): RefreshStep[] {
+  const listed = Array.isArray(data.surfaces) ? data.surfaces : [];
+  const steps: RefreshStep[] = [];
+  for (const item of listed) {
+    const surface =
+      item?.surface === "deck" || item?.surface === "report" ? item.surface : null;
+    if (!surface) continue;
+    steps.push({
+      surface,
+      artifactRunId: (item.artifact_run_id || "").trim(),
+    });
+  }
+  if (steps.length) return steps;
+  const single =
+    data.surface === "deck" || data.surface === "report"
+      ? data.surface
+      : reviseSurface(data.op || "");
+  if (!single) return [];
+  return [{ surface: single, artifactRunId: (data.artifact_run_id || "").trim() }];
 }
 
 export function revisedRailPlan(

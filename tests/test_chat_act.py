@@ -1,6 +1,21 @@
 from case3.chat_act import resolve_act
 
 
+def test_two_edit_verbs_split_and_a_table_cell_stays_whole():
+    from case3.chat_act import edit_clauses
+
+    assert edit_clauses("убери слайд 2 и перекрась графики в ocean") == [
+        "убери слайд 2",
+        "перекрась графики в ocean",
+    ]
+    assert edit_clauses("в таблице добавь строку: Гомель; 12") == [
+        "в таблице добавь строку: Гомель; 12",
+    ]
+    assert edit_clauses("перепиши введение и сделай короче") == [
+        "перепиши введение и сделай короче",
+    ]
+
+
 def test_question_stays_talk_even_with_a_deck():
     act = resolve_act("Почему доля 30%?", has_deck=True, has_report=True)
     assert act.kind == "talk"

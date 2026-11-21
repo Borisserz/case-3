@@ -453,22 +453,39 @@ def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     ]
 
 
-def test_a_middle_turn_keeps_its_paragraphs_and_number():
-    """Thirty turns still fit in the full window, so turn 10 is not a one-line archive."""
+def test_verbatim_window_is_eight_and_a_plain_question_lifts_the_ninth():
+    """A live chain stops at 48. Only the last 8 turns stay as paragraphs."""
+    from case3.chat_memory import _MAX_HOPS, _WINDOW, recall_block
+
+    assert _WINDOW == 8
+    assert _MAX_HOPS == 48
     turns = [
-        {"chat_prompt": f"ход {i}", "chat_summary": "ок"} for i in range(30)
+        {
+            "chat_prompt": "разбор кассы",
+            "chat_summary": "Выручка 77.\n\nКАССАЦЕЛЬ вторым абзацем.",
+        }
     ]
-    turns[10] = {
-        "chat_prompt": "кассовый ход",
-        "chat_summary": "В кассе было 20.\n\nВторой абзац про смену.",
-    }
+    turns.extend(
+        {"chat_prompt": f"другой {i}", "chat_summary": f"спокойно {i}\n\nещё абзац"}
+        for i in range(8)
+    )
     text = format_thread(turns)
-    assert "В кассе было 20.\n\nВторой абзац про смену." in text
-    assert "Раньше:" not in text
+    assert "Раньше:" in text
+    assert "ещё абзац" in text
+    archived = [line for line in text.splitlines() if line.startswith("Ход 1.")]
+    assert len(archived) == 1
+    assert "77" not in archived[0]
+    assert "КАССАЦЕЛЬ" in archived[0]
+    assert "\n" not in archived[0]
+    assert "Выручка 77." not in text
+    lifted = recall_block(turns, "что с кассой")
+    assert "Выручка 77." in lifted
+    assert "КАССАЦЕЛЬ вторым абзацем." in lifted
+    assert "спокойно" not in lifted
 
 
 def test_full_window_keeps_paragraphs_and_the_turn_past_it_is_one_line():
-    """The whole 48-turn chat keeps paragraphs. The turn before that is one line."""
+    """Turns inside the verbatim window keep paragraphs. The turn before that is one line."""
     from case3.chat_memory import _WINDOW
 
     older = {
@@ -631,6 +648,18 @@ def test_memory_keeps_a_photo_that_was_left_beside_the_source(tmp_path: Path):
         {"name": "usr_01", "url": f"/api/runs/{run_id}/figures/usr_01.png"}
     ]
     assert (out / "figures" / "usr_01.png").read_bytes() == b"png-bytes"
+
+
+def test_user_number_line_keeps_the_word_beside_the_digit():
+    from case3.chat_memory import format_user_numbers
+
+    line = format_user_numbers(
+        [
+            {"chat_prompt": "на слайде 2 было", "chat_summary": "модель сказала 9"},
+        ]
+    )
+    assert "2 слайд" in line
+    assert "9" not in line
 
 
 def test_user_number_line_keeps_user_tokens_and_drops_the_answer():

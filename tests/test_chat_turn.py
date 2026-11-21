@@ -478,6 +478,18 @@ def test_unsupported_edit_tells_the_model_the_file_stayed():
     assert "ПРАВКА НЕ ВЗЯТА" not in text
 
 
+def test_chat_answer_does_not_read_the_memory_label_aloud():
+    intent = (
+        "какое число я назвал\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "77\n"
+    )
+    client = _Seq(["### Числа из реплик пользователя\n\nТы написал 77."])
+    text = try_chat_answer("Касса была 20.", intent, client=client)
+    assert "Числа из реплик пользователя" not in text
+    assert "77" in text
+
+
 def test_a_plain_question_has_no_limit_note():
     client = _Seq(["Касса была 20."])
     try_chat_answer("Касса была 20.", "что с кассой", client=client)

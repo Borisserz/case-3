@@ -206,13 +206,102 @@ def test_slide_allow_list_keeps_source_spellings_and_drops_memory():
     assert "77" not in allowed
 
 
+def test_user_number_stays_only_beside_its_word_and_spoken_twelve_counts():
+    from case3.fact_ground import ground_generated
+
+    intent = (
+        "собери отчёт\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "2 слайд\n\n"
+        "Разговор этого чата (не Source).\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Выручка 2. Слайд 2 остаётся.\n"
+        "\\end{document}\n"
+    )
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source="Касса без цифр.", intent=intent
+    )
+    assert "Выручка 2" not in out
+    assert "Слайд 2" in out
+
+    spoken_source = ground_generated(
+        "\\documentclass{article}\n\\begin{document}\nИтог 12.\n\\end{document}\n",
+        [],
+        [],
+        [],
+        source="В кассе двенадцать.",
+        intent="собери отчёт",
+    )[0]
+    assert "12" in spoken_source
+    ninety = ground_generated(
+        "\\documentclass{article}\n\\begin{document}\nИтог 90.\n\\end{document}\n",
+        [],
+        [],
+        [],
+        source="В кассе девяносто.",
+        intent="собери отчёт",
+    )[0]
+    assert "90" in ninety
+    invented = ground_generated(
+        "\\documentclass{article}\n\\begin{document}\nБыло двенадцать.\n\\end{document}\n",
+        [],
+        [],
+        [],
+        source="Касса тихая.",
+        intent="собери отчёт",
+    )[0]
+    assert "двенадцать" not in invented
+    from case3.fact_ground import bind_deck_numbers
+
+    deck = bind_deck_numbers(
+        {
+            "slides": [
+                {
+                    "kpis": [
+                        {"label": "Выручка", "value": "2"},
+                        {"label": "Слайд", "value": "2"},
+                    ]
+                }
+            ]
+        },
+        source="Касса без цифр.",
+        intent=intent,
+    )
+    labels = [item["label"] for item in deck["slides"][0]["kpis"]]
+    assert labels == ["Слайд"]
+    _bound_tex, charts, _figures, _diagrams, _dropped_chart = ground_generated(
+        "\\documentclass{article}\n\\begin{document}\nСлайд 2.\n\\end{document}\n",
+        [
+            {
+                "html": "data: [2], labels: ['касса']",
+                "caption": "Слайд 2",
+                "highlights": [
+                    {"label": "Выручка", "value": "2"},
+                    {"label": "Слайд", "value": "2"},
+                ],
+            }
+        ],
+        [],
+        [],
+        source="Касса без цифр.",
+        intent=intent,
+    )
+    assert "data: [2]" not in charts[0]["html"]
+    assert "null" in charts[0]["html"]
+    assert "Слайд 2" in charts[0]["caption"]
+    shown = [row["label"] for row in charts[0]["highlights"] if row.get("value") == "2"]
+    assert shown == ["Слайд"]
+
+
 def test_user_stated_number_stays_in_a_new_report_and_the_answer_number_goes():
     from case3.fact_ground import ground_generated
 
     intent = (
         "собери отчёт\n\n"
         "Числа из реплик пользователя (его слова, не ответ модели):\n"
-        "77\n\n"
+        "77 выручк\n\n"
         "Разговор этого чата (не Source).\n"
         "Ответ: было 88."
     )

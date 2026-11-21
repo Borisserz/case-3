@@ -4,6 +4,7 @@ import {
   chatToReopen,
   historyRailRun,
   offersNewChat,
+  refreshSteps,
   revisedRailPlan,
   reviseSurface,
 } from "./reviseRefresh";
@@ -29,6 +30,7 @@ test("a deck edit refreshes the presentation rail", () => {
   assert.equal(reviseSurface("reorder_slide"), "deck");
   assert.equal(reviseSurface("recolor_deck"), "deck");
   assert.equal(reviseSurface("delete_slide"), "deck");
+  assert.equal(reviseSurface("restyle_structure"), "deck");
   assert.equal(reviseSurface("retitle", "deck"), "deck");
 });
 
@@ -38,6 +40,26 @@ test("a report edit refreshes the report rail and a question does not", () => {
   assert.equal(reviseSurface("retitle", "report"), "report");
   assert.equal(reviseSurface("ask"), null);
   assert.equal(reviseSurface(""), null);
+});
+
+test("two edits refresh deck then report, one edit stays a single step", () => {
+  assert.deepEqual(
+    refreshSteps({
+      op: "batch",
+      surfaces: [
+        { surface: "deck", artifact_run_id: "deck_run", op: "delete_slide" },
+        { surface: "report", artifact_run_id: "report_run", op: "recolor_charts" },
+      ],
+    }),
+    [
+      { surface: "deck", artifactRunId: "deck_run" },
+      { surface: "report", artifactRunId: "report_run" },
+    ],
+  );
+  assert.deepEqual(refreshSteps({ op: "rewrite", surface: "report", artifact_run_id: "r" }), [
+    { surface: "report", artifactRunId: "r" },
+  ]);
+  assert.deepEqual(refreshSteps({ op: "ask" }), []);
 });
 
 test("a later chat edit opens the file and keeps the next message on the head", () => {

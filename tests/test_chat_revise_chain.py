@@ -401,6 +401,77 @@ def test_chart_recolor_without_a_report_does_not_ask_for_print(tmp_path: Path, m
     assert seen["formats"] == set()
 
 
+def test_undo_and_structure_after_chat_stay_on_the_deck(tmp_path: Path, monkeypatch):
+    report = "source_20261121T200000Z"
+    deck = "source_20261121T200100Z"
+    chat = "source_20261121T200200Z"
+    report_dir = tmp_path / "runs" / "out" / report
+    deck_dir = tmp_path / "runs" / "out" / deck
+    chat_dir = tmp_path / "runs" / "out" / chat
+    for path in (report_dir, deck_dir, chat_dir):
+        path.mkdir(parents=True)
+    (report_dir / "note.tex").write_text(
+        "\\section{Введение}\nБыло 10.\n", encoding="utf-8"
+    )
+    (report_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": report, "output_mode": "report", "artifacts": {"pdf": "a.pdf"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (deck_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": deck,
+                "prior_run_id": report,
+                "output_mode": "presentation",
+                "slides_status": "ok",
+                "last_edit": {"op": "recolor_deck", "pack": "board"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (chat_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": chat,
+                "prior_run_id": deck,
+                "output_mode": "chat",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    undone: list[str] = []
+
+    def apply_undo(out_dir: Path, *, rebuild: bool = True):
+        undone.append(Path(out_dir).name)
+        return {}
+
+    monkeypatch.setattr("case3.run_undo.apply_undo", apply_undo)
+    first = try_chat_revise("отмени", chat, root=tmp_path)
+    second = try_chat_revise("отмени", chat, root=tmp_path)
+    assert first is not None and first["surface"] == "deck"
+    assert second is not None and second["surface"] == "deck"
+    assert undone == [deck, deck]
+
+    styled: list[str] = []
+
+    def restyle(_run_id: str, out_dir: Path, _structure: str) -> str:
+        styled.append(Path(out_dir).name)
+        return "Собираю презентацию для инвестора."
+
+    monkeypatch.setattr("case3.chat_revise._restyle_structure", restyle)
+    changed = try_chat_revise(
+        "смени структуру презентации на инвестора", chat, root=tmp_path
+    )
+    assert changed is not None
+    assert changed["op"] == "restyle_structure"
+    assert styled == [deck]
+
+
 def test_undo_and_redo_from_chat_rebuild_print_files(tmp_path: Path, monkeypatch):
     report = "source_20261118T100000Z"
     _report_dir(tmp_path, report)
@@ -806,3 +877,71 @@ def test_photo_phrase_edits_the_only_png(tmp_path: Path, monkeypatch):
     assert seen["mode"] == "edit"
     assert seen["prompt"] == "небо темнее"
     assert seen["formats"] == {"pdf", "docx"}
+
+
+def test_missing_deck_returns_the_canned_line(tmp_path: Path):
+    report = "source_20261121T180000Z"
+    _report_dir(tmp_path, report)
+    result = try_chat_revise("убери слайд 2?", report, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "talk"
+    assert result["chat"].startswith("Презентации в этом чате ещё нет")
+    meta = json.loads(
+        (tmp_path / "runs" / "out" / report / "meta.json").read_text(encoding="utf-8")
+    )
+    notes = meta.get("dialogue") or []
+    assert notes[-1]["user"] == "убери слайд 2?"
+    assert notes[-1]["assistant"].startswith("Презентации в этом чате ещё нет")
+
+
+def test_two_verbs_run_in_the_order_they_were_written(tmp_path: Path, monkeypatch):
+    run_id = "source_20261121T190000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    (out / "note.tex").write_text("\\section{Введение}\nБыло 10.\n", encoding="utf-8")
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "output_mode": "report",
+                "slides_status": "ok",
+                "artifacts": {"pdf": "report.pdf"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def delete_slide(*_args, **_kwargs):
+        seen.append("delete")
+        return "Убираю слайд 2."
+
+    def recolor(*_args, **_kwargs):
+        seen.append("recolor")
+        return "Перекрасил графики в ocean."
+
+    monkeypatch.setattr("case3.chat_revise._delete_slide", delete_slide)
+    monkeypatch.setattr("case3.chat_revise._recolor_charts", recolor)
+    result = try_chat_revise(
+        "убери слайд 2 и перекрась графики в ocean",
+        run_id,
+        root=tmp_path,
+    )
+    assert result is not None
+    assert seen == ["delete", "recolor"]
+    assert "Убираю слайд 2." in result["chat"]
+    assert "ocean" in result["chat"]
+    assert result["op"] == "batch"
+    assert result["surfaces"] == [
+        {"surface": "deck", "artifact_run_id": run_id, "op": "delete_slide"},
+        {"surface": "report", "artifact_run_id": run_id, "op": "recolor_charts"},
+    ]
+
+
+def test_plain_question_still_goes_to_the_model(tmp_path: Path):
+    report = "source_20261121T180100Z"
+    _report_dir(tmp_path, report)
+    assert try_chat_revise("что с кассой", report, root=tmp_path) is None
+    assert try_chat_revise("поменяй числа на графике", report, root=tmp_path) is None
+    assert try_chat_revise("почему бы не убрать слайд 2?", report, root=tmp_path) is None

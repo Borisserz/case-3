@@ -21,6 +21,44 @@ _KIND_LABEL = {
 
 _DONE_CLAIM = re.compile(r"(?i)\b(готово|собрано|pdf готов|презентац\w* готов\w*)\b")
 _NUM = re.compile(r"\d+(?:[.,]\d+)?%?")
+# Longer stems first so «двадцать» is not read as «два».
+_SPOKEN_NUMBER = (
+    ("девятнадцат", "19"),
+    ("восемнадцат", "18"),
+    ("семнадцат", "17"),
+    ("шестнадцат", "16"),
+    ("пятнадцат", "15"),
+    ("четырнадцат", "14"),
+    ("тринадцат", "13"),
+    ("двенадцат", "12"),
+    ("одиннадцат", "11"),
+    ("девяност", "90"),
+    ("восьмидесят", "80"),
+    ("семидесят", "70"),
+    ("шестидесят", "60"),
+    ("пятидесят", "50"),
+    ("тридцат", "30"),
+    ("двадцат", "20"),
+    ("четыр", "4"),
+    ("девят", "9"),
+    ("восем", "8"),
+    ("десять", "10"),
+    ("сорок", "40"),
+    ("шест", "6"),
+    ("пять", "5"),
+    ("семь", "7"),
+    ("три", "3"),
+    ("сто", "100"),
+    ("две", "2"),
+    ("два", "2"),
+)
+_SPOKEN_RE = re.compile(
+    r"\b(?:"
+    + "|".join(stem for stem, _digit in _SPOKEN_NUMBER)
+    + r")(?:ь|и|ю|е|а|у|о)?\b",
+    re.IGNORECASE,
+)
+_SPOKEN_VALUE = {stem: digit for stem, digit in _SPOKEN_NUMBER}
 
 _BRIEF_LINE = {
     "clearer": "Сделай формулировку точнее. Смысл и числа те же.",
@@ -162,10 +200,10 @@ def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
     return body[: limit - 1].rstrip() + "…"
 
 
-# format_thread already budgets the chain. A full 48-turn paste stays under
-# this cap (test_fattest_legal_thread_is_pasted_whole). The cap only stops
-# a runaway blob above a legal thread. 150000 characters is about 75–95k
-# tokens of Russian, inside a 100k window together with Source and the reply.
+# format_thread keeps eight turns as paragraphs and the rest as short lines.
+# A legal 48-hop thread stays under this cap
+# (test_fattest_legal_thread_is_pasted_whole). The cap only stops a runaway
+# blob. 150000 characters is about 75–95k tokens of Russian.
 _MEMORY_CAP = 150_000
 _CHAT_ANSWER_TOKENS = 4096
 _PIN_BITS = (
@@ -519,8 +557,22 @@ def latest_user_line(intent: str | None) -> str:
     return text[:cut].strip()
 
 
+def spoken_number_norms(text: str | None) -> set[str]:
+    """Cardinals written as words. «двенадцать» is 12. «один» is not a number."""
+    found: set[str] = set()
+    for match in _SPOKEN_RE.finditer(text or ""):
+        stem = match.group(0).casefold().replace("ё", "е")
+        for prefix, digit in _SPOKEN_NUMBER:
+            if stem.startswith(prefix):
+                found.add(digit)
+                break
+    return found
+
+
 def number_norms(text: str | None) -> set[str]:
-    return {_norm_num(token) for token in _NUM.findall(text or "")}
+    return {_norm_num(token) for token in _NUM.findall(text or "")} | spoken_number_norms(
+        text
+    )
 
 
 def user_stated_norms(intent: str | None) -> set[str]:
@@ -547,6 +599,18 @@ def stray_numbers(text: str | None, allowed: set[str]) -> list[str]:
             continue
         seen.add(norm)
         found.append(token)
+    for match in _SPOKEN_RE.finditer(text or ""):
+        word = match.group(0)
+        stem = word.casefold().replace("ё", "е")
+        digit = ""
+        for prefix, value in _SPOKEN_NUMBER:
+            if stem.startswith(prefix):
+                digit = value
+                break
+        if not digit or digit in allowed or digit in seen:
+            continue
+        seen.add(digit)
+        found.append(word)
     return found
 
 
@@ -570,13 +634,21 @@ def _subject_word(text: str, start: int) -> str:
     return picked
 
 
-def _subjects_near(text: str, start: int) -> set[str]:
+def _fact_words(text: str, start: int) -> list[tuple[str, str]]:
+    """Content words before a number, nearest last. «кассе теперь 30» keeps both."""
     from case3.chat_memory import _stem
 
-    word = _subject_word(text, start)
-    if not word:
-        return set()
-    return {_stem(word)}
+    found: list[tuple[str, str]] = []
+    for word in _words_before(text, start):
+        stem = _stem(word)
+        if stem in _INDEX_STEMS or stem in _STOP_STEMS or len(stem) < 4:
+            continue
+        found.append((word, stem))
+    return found
+
+
+def _subjects_near(text: str, start: int) -> set[str]:
+    return {stem for _word, stem in _fact_words(text, start)}
 
 
 def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, str] | None:
@@ -584,7 +656,8 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
     raw = user_text or ""
     doc = source or ""
     for hit in _NUM.finditer(raw):
-        user_stems = _subjects_near(raw, hit.start())
+        pairs = _fact_words(raw, hit.start())
+        user_stems = {stem for _word, stem in pairs}
         if not user_stems:
             continue
         user_norm = _norm_num(hit.group())
@@ -600,9 +673,14 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
         for other in _NUM.finditer(doc):
             if _norm_num(other.group()) == user_norm:
                 continue
-            if user_stems & _subjects_near(doc, other.start()):
-                word = _subject_word(raw, hit.start())
-                return word, other.group(), hit.group()
+            shared = user_stems & _subjects_near(doc, other.start())
+            if not shared:
+                continue
+            word = ""
+            for surface, stem in pairs:
+                if stem in shared:
+                    word = surface
+            return word, other.group(), hit.group()
     return None
 
 
@@ -942,9 +1020,31 @@ def try_chat_answer(
         spoken = invention_question(stray)
     else:
         spoken = text or chat_fallback()
+    spoken = _hide_memory_marks(spoken)
     if on_delta:
         on_delta(spoken)
     return spoken
+
+
+def _hide_memory_marks(text: str) -> str:
+    """The model must not read the memory labels aloud."""
+    kept: list[str] = []
+    for line in (text or "").split("\n"):
+        bare = line.strip().lstrip("#").strip()
+        if bare.startswith(
+            (
+                "Числа из реплик пользователя",
+                "Разговор этого чата",
+                "Карточка этого чата",
+            )
+        ):
+            continue
+        kept.append(
+            line.replace("Числа из реплик пользователя", "твои числа")
+            .replace("Разговор этого чата", "этот разговор")
+            .replace("Карточка этого чата", "этот разговор")
+        )
+    return "\n".join(kept).strip()
 
 
 def _norm_num(token: str) -> str:

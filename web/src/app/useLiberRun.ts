@@ -42,7 +42,7 @@ import { priorRunIdFromMessages } from "../domain/priorRun";
 import {
   offersNewChat,
   refreshRevisedArtifact,
-  reviseSurface,
+  refreshSteps,
 } from "../domain/reviseRefresh";
 import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
@@ -399,10 +399,18 @@ async (override?: string) => {
       const line = asString(data.chat, "Сделал.");
       const runId = asString(data.run_id);
       const isolated = data.isolate === true;
-      const surface =
-        asString(data.surface) === "deck" || asString(data.surface) === "report"
-          ? (asString(data.surface) as "deck" | "report")
-          : reviseSurface(asString(data.op));
+      const steps = refreshSteps({
+        op: asString(data.op),
+        surface: asString(data.surface),
+        artifact_run_id: asString(data.artifact_run_id),
+        surfaces: Array.isArray(data.surfaces)
+          ? (data.surfaces as Array<{
+              surface?: string;
+              artifact_run_id?: string;
+              op?: string;
+            }>)
+          : [],
+      });
       setMsgs((m) =>
         m.map((msg) => {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -423,22 +431,26 @@ async (override?: string) => {
           };
         }),
       );
-      if (!runId || !surface) {
+      if (!runId || !steps.length) {
         setBusy(false);
         return;
       }
-      void refreshRevisedArtifact(
-        runId,
-        surface,
-        pendingId,
-        {
-          setMsgs,
-          rememberRun,
-          openReportArtifact,
-        },
-        asString(data.artifact_run_id),
-        { remember: !isolated, isolated },
-      ).finally(() => setBusy(false));
+      void (async () => {
+        for (const step of steps) {
+          await refreshRevisedArtifact(
+            runId,
+            step.surface,
+            pendingId,
+            {
+              setMsgs,
+              rememberRun,
+              openReportArtifact,
+            },
+            step.artifactRunId || asString(data.artifact_run_id),
+            { remember: !isolated, isolated },
+          );
+        }
+      })().finally(() => setBusy(false));
       return;
     }
 

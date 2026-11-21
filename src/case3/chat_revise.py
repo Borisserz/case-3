@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from case3.chat_act import next_deck_pack, resolve_act
+from case3.chat_act import edit_clauses, next_deck_pack, resolve_act
 from case3.chat_memory import append_dialogue, load_chain_dirs, merge_edit
 from case3.run_meta import update_meta
 from case3.run_store import RUN_ID_OK
@@ -38,10 +38,20 @@ def _flags(meta: dict[str, Any], path: Path | None = None) -> tuple[bool, bool, 
     return has_deck, has_report, has_diagram
 
 
-def _note(out_dir: Path, user: str, assistant: str, act: Any) -> None:
+def _note(
+    out_dir: Path,
+    user: str,
+    assistant: str,
+    act: Any,
+    *,
+    surface: str = "",
+) -> None:
     def mut(meta: dict[str, Any]) -> None:
         append_dialogue(meta, user, assistant)
-        remembered = _remembered(act, assistant)
+        remembered = _remembered(act, assistant) or {}
+        # A failed line («нужно 3 ячейки») must not replace the last real edit.
+        if surface and remembered.get("op"):
+            remembered["surface"] = surface
         if remembered:
             previous = meta.get("last_edit")
             meta["last_edit"] = merge_edit(previous if isinstance(previous, dict) else {}, remembered)
@@ -187,6 +197,72 @@ def _run_dir(root: Path, run_id: str) -> Path | None:
     return path
 
 
+def _batch_edits(
+    text: str,
+    prior_run_id: str | None,
+    *,
+    root: Path,
+    bias: str | None,
+    carried_run_id: str | None,
+    has_deck: bool,
+    has_report: bool,
+    has_diagram: bool,
+    last_section: str,
+    last_op: str,
+) -> dict[str, Any] | None:
+    """Run two different edits from one sentence, in the order they were written."""
+    clauses = edit_clauses(text)
+    if len(clauses) < 2:
+        return None
+    previews = [
+        resolve_act(
+            clause,
+            bias=bias,
+            has_deck=has_deck,
+            has_report=has_report,
+            has_diagram=has_diagram,
+            last_section=last_section,
+            last_op=last_op,
+        )
+        for clause in clauses
+    ]
+    runnable = [
+        (clause, preview)
+        for clause, preview in zip(clauses, previews)
+        if preview.kind == "revise" and preview.op not in {"", "ask"}
+    ]
+    if len({preview.op for _clause, preview in runnable}) < 2:
+        return None
+    done: list[dict[str, Any]] = []
+    for clause, _preview in runnable:
+        one = try_chat_revise(
+            clause,
+            prior_run_id,
+            root=root,
+            bias=bias,
+            carried_run_id=carried_run_id,
+        )
+        if one is not None:
+            done.append(one)
+    if len(done) < 2:
+        return None
+    last = dict(done[-1])
+    last["chat"] = " ".join(str(item.get("chat") or "").strip() for item in done if item.get("chat"))
+    last["op"] = "batch"
+    last["surfaces"] = [
+        {
+            "surface": str(item.get("surface") or ""),
+            "artifact_run_id": str(item.get("artifact_run_id") or item.get("run_id") or ""),
+            "op": str(item.get("op") or ""),
+        }
+        for item in done
+        if item.get("surface")
+    ]
+    if last["surfaces"]:
+        last["surface"] = last["surfaces"][-1]["surface"]
+    return last
+
+
 def try_chat_revise(
     text: str,
     prior_run_id: str | None,
@@ -231,6 +307,20 @@ def try_chat_revise(
     else:
         head_id, head_dir, head_meta = carried_id, carried_path, carried_meta
     isolate = not rows
+    batched = _batch_edits(
+        text,
+        prior_run_id,
+        root=root,
+        bias=bias,
+        carried_run_id=carried_run_id,
+        has_deck=has_deck,
+        has_report=has_report,
+        has_diagram=has_diagram,
+        last_section=str(edit.get("section") or ""),
+        last_op=str(edit.get("op") or ""),
+    )
+    if batched is not None:
+        return batched
     act = resolve_act(
         text,
         bias=bias,
@@ -241,12 +331,48 @@ def try_chat_revise(
         last_op=str(edit.get("op") or ""),
     )
     if act.kind != "revise":
-        return None
+        # A ready sentence («презентации ещё нет») must reach the chat.
+        # An empty talk act is a real question, so the model still answers.
+        if act.kind != "talk" or not (act.say or "").strip():
+            return None
+        if rows and head_dir is not None and head_dir.is_dir():
+            _note(head_dir, text, act.say, act)
+        return _payload(
+            head_id,
+            act.say,
+            "talk",
+            output_mode=str(head_meta.get("output_mode") or "chat"),
+        )
 
     work_id, work_dir = head_id, head_dir
-    if act.op in {
-        "undo",
-        "redo",
+    history_surface = ""
+    deck_edit_ops = {
+        "recolor_deck",
+        "delete_slide",
+        "reorder_slide",
+        "add_slide",
+        "slide_text",
+        "slide_bullets",
+        "restyle_structure",
+    }
+    if act.op in {"undo", "redo"}:
+        history_surface = str(edit.get("surface") or "")
+        if history_surface not in {"deck", "report"}:
+            history_surface = "deck" if str(edit.get("op") or "") in deck_edit_ops else "report"
+        picked: tuple[str, Path] | None = None
+        if history_surface == "deck":
+            for run_id, path, row in reversed(rows):
+                if _flags(row)[0]:
+                    picked = (run_id, path)
+                    break
+        else:
+            for run_id, path, _row in reversed(rows):
+                if any(path.glob("*.tex")):
+                    picked = (run_id, path)
+                    break
+        if picked:
+            work_id, work_dir = picked
+    elif act.op in {
         "rewrite",
         "recolor_charts",
         "rename_heading",
@@ -266,14 +392,7 @@ def try_chat_revise(
             if any(path.glob("*.tex")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op in {
-        "recolor_deck",
-        "delete_slide",
-        "reorder_slide",
-        "add_slide",
-        "slide_text",
-        "slide_bullets",
-    }:
+    elif act.op in deck_edit_ops:
         for run_id, path, row in reversed(rows):
             if _flags(row)[0]:
                 work_id, work_dir = run_id, path
@@ -314,8 +433,6 @@ def try_chat_revise(
                         break
     if carried_path is not None and work_id != carried_id:
         tex_ops = {
-            "undo",
-            "redo",
             "rewrite",
             "recolor_charts",
             "rename_heading",
@@ -331,15 +448,12 @@ def try_chat_revise(
             "rewrite_all",
             "delete_section",
         }
-        deck_ops = {
-            "recolor_deck",
-            "delete_slide",
-            "reorder_slide",
-            "add_slide",
-            "slide_text",
-            "slide_bullets",
-        }
-        if act.op in tex_ops and not any(work_dir.glob("*.tex")) and any(carried_path.glob("*.tex")):
+        deck_ops = deck_edit_ops
+        if act.op in {"undo", "redo"} and history_surface == "deck" and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
+            work_id, work_dir = carried_id, carried_path
+        elif act.op in {"undo", "redo"} and history_surface != "deck" and not any(work_dir.glob("*.tex")) and any(carried_path.glob("*.tex")):
+            work_id, work_dir = carried_id, carried_path
+        elif act.op in tex_ops and not any(work_dir.glob("*.tex")) and any(carried_path.glob("*.tex")):
             work_id, work_dir = carried_id, carried_path
         elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
             work_id, work_dir = carried_id, carried_path
@@ -429,16 +543,17 @@ def try_chat_revise(
     chain_ids = {run_id for run_id, _path, _row in rows}
     # One note, on the chat head. The screen walks every turn, so a second
     # copy on the older file shows the same line twice.
+    noted_surface = history_surface if act.op in {"undo", "redo"} and history_surface else _surface(act)
     if rows and head_dir.is_dir() and head_id in chain_ids:
-        _note(head_dir, text, say, act)
+        _note(head_dir, text, say, act, surface=noted_surface)
     elif work_id in chain_ids and work_dir.is_dir():
-        _note(work_dir, text, say, act)
+        _note(work_dir, text, say, act, surface=noted_surface)
     return _payload(
         head_id,
         say,
         act.op,
         output_mode=str(head_meta.get("output_mode") or "chat"),
-        surface=_surface(act),
+        surface=noted_surface,
         artifact_run_id=work_id,
         isolate=isolate,
     )
@@ -786,13 +901,18 @@ def _rewrite(out_dir: Path, text: str, act: Any) -> str:
     if not texs:
         return "В этом чате нет текста отчёта, раздел править негде."
     tex = texs[0].read_text(encoding="utf-8")
-    ordinal = int(getattr(act, "slot", 0) or 0) or 1
     under = _paragraphs_under(tex, name)
     if under is None:
         shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
         return f"Раздела «{name}» нет. Есть: {shown}."
     if not under:
         return f"В «{name}» нет абзаца, который можно переписать."
+    named = int(getattr(act, "slot", 0) or 0)
+    if not named and parsed and len(under) > 1:
+        return _replace_section_prose(out_dir, texs[0], tex, name, under, body)
+    if not named and not parsed and len(under) > 1:
+        return _rewrite_section(out_dir, texs[0], tex, name, under, text, act)
+    ordinal = named or 1
     if ordinal > len(under):
         return f"В «{name}» абзацев: {len(under)}."
     index = under[ordinal - 1]
@@ -826,6 +946,122 @@ def _rewrite(out_dir: Path, text: str, act: Any) -> str:
             f"Переписал раздел «{name}». Поставил {fresh[0]} из твоего сообщения."
         )
     return f"Переписал раздел «{name}» по документам. Новых чисел нет."
+
+
+def _replace_section_prose(
+    out_dir: Path,
+    tex_path: Path,
+    tex: str,
+    name: str,
+    under: list[int],
+    body: str,
+) -> str:
+    """User text becomes the section. Later paragraphs of that section go away."""
+    from case3.paragraph_edit import ParagraphEditError, patch_paragraph_in_tex
+    from case3.render import RenderError
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import UndoError, capture_before_edit, clear_undo
+
+    try:
+        capture_before_edit(out_dir, kind="paragraph", target=name)
+    except UndoError as exc:
+        return str(exc)
+    patched = tex
+    try:
+        for index in reversed(under[1:]):
+            patched = patch_paragraph_in_tex(patched, index, "", allow_delete=True)
+        patched = patch_paragraph_in_tex(patched, under[0], body)
+        tex_path.write_text(patched, encoding="utf-8")
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except (ParagraphEditError, RenderError, OSError) as exc:
+        tex_path.write_text(tex, encoding="utf-8")
+        try:
+            clear_undo(out_dir)
+        except OSError:
+            pass
+        return f"Не стал менять «{name}»: {exc}"
+    return f"Переписал раздел «{name}» в текущем отчёте."
+
+
+def _paragraph_word(count: int) -> str:
+    ten = count % 10
+    hundred = count % 100
+    if ten == 1 and hundred != 11:
+        word = "абзац"
+    elif ten in {2, 3, 4} and hundred not in {12, 13, 14}:
+        word = "абзаца"
+    else:
+        word = "абзацев"
+    return f"{count} {word}"
+
+
+def _rewrite_section(
+    out_dir: Path,
+    tex_path: Path,
+    tex: str,
+    name: str,
+    under: list[int],
+    text: str,
+    act: Any,
+) -> str:
+    """Redraft every paragraph under one heading. One undo snapshot, one rebuild."""
+    from case3.chat_turn import draft_section, number_norms, stray_numbers
+    from case3.paragraph_edit import ParagraphEditError, patch_paragraph_in_tex
+    from case3.render import RenderError
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import UndoError, capture_before_edit, clear_undo
+
+    source = _source_text(out_dir)
+    brief = str(getattr(act, "brief", "") or "prettier")
+    edits: list[tuple[int, str, str]] = []
+    skipped = 0
+    for index in under:
+        current = _paragraph_text(tex, index)
+        body = draft_section(
+            section=name,
+            current=current,
+            source=source,
+            brief=brief,
+            user_text=text,
+        )
+        if not body:
+            skipped += 1
+            continue
+        edits.append((index, body, current))
+    if not edits:
+        return (
+            f"Не стал менять «{name}». "
+            "Если в раздел нужно новое число, напиши его, например «в кассе 40». "
+            "Без этого оставлю текст как есть."
+        )
+    try:
+        capture_before_edit(out_dir, kind="paragraph", target=name)
+    except UndoError as exc:
+        return str(exc)
+    patched = tex
+    try:
+        for index, body, _current in sorted(edits, key=lambda item: item[0], reverse=True):
+            patched = patch_paragraph_in_tex(patched, index, body)
+        tex_path.write_text(patched, encoding="utf-8")
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except (ParagraphEditError, RenderError, OSError) as exc:
+        tex_path.write_text(tex, encoding="utf-8")
+        try:
+            clear_undo(out_dir)
+        except OSError:
+            pass
+        return f"Не стал менять «{name}»: {exc}"
+    fresh: list[str] = []
+    for _index, body, current in edits:
+        fresh.extend(stray_numbers(body, number_norms(f"{current}\n{source}")))
+    count = _paragraph_word(len(edits))
+    if fresh:
+        say = f"Переписал раздел «{name}»: {count}. Поставил {fresh[0]} из твоего сообщения."
+    else:
+        say = f"Переписал раздел «{name}»: {count}. Новых чисел нет."
+    if skipped:
+        say += f" Без изменений: {skipped}."
+    return say
 
 
 def _intro_title(titles: list[str]) -> str:
@@ -1526,7 +1762,10 @@ def _delete_section(out_dir: Path, name: str) -> str:
         rebuild_run_docs(out_dir, formats={"pdf", "docx"})
     except Exception as exc:  # noqa: BLE001
         tex_path.write_text(tex, encoding="utf-8")
-        return f"Раздел не убрал: {exc}"
+        msg = str(exc)
+        if "No pages of output" in msg:
+            return "Это последний раздел. Без него отчёт не соберётся. Текст остался как был."
+        return "Раздел не убрал: сборка PDF не прошла. Текст остался как был."
     return f"Убрал раздел «{titles[index]}»."
 
 
