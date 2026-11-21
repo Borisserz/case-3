@@ -19,11 +19,7 @@ type Props = {
   onReady: (docs: Doc[]) => void;
   /** His /open URL. The button path leaves this empty and uses /viewer. */
   viewerUrl?: string | null;
-  /** Phrase flow: shoot after the filtered dashboard has had time to draw. */
-  autoCapture?: boolean;
 };
-
-const DASHBOARD_SETTLE_MS = 8000;
 
 async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
   const docs: Doc[] = [];
@@ -42,14 +38,12 @@ export function DashboardPickModal({
   onClose,
   onReady,
   viewerUrl: viewerOverride,
-  autoCapture = false,
 }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [viewerUrl, setViewerUrl] = useState(
     () => viewerOverride || viewerFrameUrl(import.meta.env.VITE_DASHBOARD_VIEWER_URL),
   );
-  const [frameReady, setFrameReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useFocusTrap(dialogRef, { active: true });
@@ -71,12 +65,6 @@ export function DashboardPickModal({
       cancelled = true;
     };
   }, [viewerOverride]);
-
-  useEffect(() => {
-    if (!autoCapture || !frameReady) return;
-    const timer = window.setTimeout(() => void takeFromService(), DASHBOARD_SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [autoCapture, frameReady]);
 
   async function takeFromService() {
     setBusy(true);
@@ -175,16 +163,13 @@ export function DashboardPickModal({
         <p className="dash-viewer-note">
           {busy
             ? "Жду снимок сервиса. Это до полутора минут."
-            : autoCapture
-              ? "Фильтры уже подставлены. Сниму экран, когда дашборд дорисуется."
-              : "Фильтры в превью. «В данные» склеивает экран и таблицы в один документ, как в настройках."}
+            : "Дойди до нужного экрана и нажми «В данные». Сниму его и прикреплю документ."}
         </p>
         {error ? <p className="dash-viewer-error">{error}</p> : null}
         <iframe
           className="dash-viewer-frame"
           title="Превью Stimulsoft"
           src={viewerUrl}
-          onLoad={() => setFrameReady(true)}
         />
       </div>
     </div>

@@ -146,7 +146,6 @@ export default function App() {
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
-  const [phraseAuto, setPhraseAuto] = useState(false);
   const resumeQuery = useRef<string | null>(null);
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -414,7 +413,6 @@ export default function App() {
 
   const closeDashboard = useCallback(() => {
     resumeQuery.current = null;
-    setPhraseAuto(false);
     setPhraseViewer(null);
     setDashboardOpen(false);
   }, []);
@@ -424,7 +422,6 @@ export default function App() {
       setSourceDraft((current) => attachCaptureMarkdowns(current, docs));
       setPlaqueDismissed(false);
       setFile(null);
-      setPhraseAuto(false);
       setPhraseViewer(null);
       setDashboardOpen(false);
     },
@@ -495,7 +492,6 @@ export default function App() {
     setChat("");
     resumeQuery.current = text;
     setPhraseViewer(plan.viewer);
-    setPhraseAuto(true);
     setDashboardOpen(true);
   }, [chat, dashboardOpen, send, setChat, setMsgs]);
 
@@ -806,7 +802,6 @@ export default function App() {
                   onOpenDashboard={() => {
                     resumeQuery.current = null;
                     setPhraseViewer(null);
-                    setPhraseAuto(false);
                     setDashboardOpen(true);
                   }}
                 />
@@ -815,7 +810,6 @@ export default function App() {
                     onClose={closeDashboard}
                     onReady={onDashboardReady}
                     viewerUrl={phraseViewer}
-                    autoCapture={phraseAuto}
                   />
                 ) : null}
               </div>
