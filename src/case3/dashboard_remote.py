@@ -7,6 +7,7 @@ import binascii
 import io
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -203,7 +204,7 @@ _ASK_BITS = (
 
 def might_ask_dashboard(text: str) -> bool:
     low = (text or "").casefold().replace("ё", "е")
-    return any(bit in low for bit in _ASK_BITS)
+    return any(re.search(rf"(?<![0-9a-zа-я]){re.escape(bit)}", low) for bit in _ASK_BITS)
 
 
 def _norm(value: object) -> str:
@@ -316,6 +317,8 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
             + json.dumps(catalog, ensure_ascii=False)
         ),
     )
+    if not _json_object(str(raw or "")).get("pull"):
+        return {"pull": False}
     picked = filters_from_model(catalog, text, str(raw or ""))
     if not picked:
         return {

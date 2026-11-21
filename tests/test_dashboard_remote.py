@@ -142,6 +142,15 @@ def test_phrase_keeps_february_25_and_drops_an_unnamed_filter() -> None:
     assert picked == {"Month": "Февраль", "Year": "2025"}
     assert might_ask_dashboard(phrase) is True
     assert might_ask_dashboard("сделай короче") is False
+    assert might_ask_dashboard("куплю смартфон") is False
+
+
+def test_model_refusal_stays_a_normal_message() -> None:
+    def complete(**_kwargs: object) -> str:
+        return '{"pull": false, "filters": {}}'
+
+    plan = plan_dashboard_phrase("хочу данные по февраль 25", _CATALOG, complete)
+    assert plan == {"pull": False}
 
 
 def test_plan_skips_the_model_when_the_sentence_is_not_about_data() -> None:
