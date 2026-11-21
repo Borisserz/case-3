@@ -13,6 +13,7 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 | `chat_answer` | `chat_answer.md` | `chat_turn.try_chat_answer` | — |
 | `chat_section` | `chat_section.md` | `chat_turn.draft_section` | — |
 | `dashboard_png` | `dashboard_png.md` | `dashboard_source.read_dashboard_png` | — |
+| `dashboard_filters` | `dashboard_filters.md` | `POST /api/dashboard/phrase` | — |
 | `system_slides` | `system_slides.md` | `slides_job.load_slides_system_prompt` | `PALETTE` `THEME_OVERLAY` `STRUCTURE_OVERLAY` `CHART_IDS` `FIGURE_IDS` `DIAGRAM_IDS` `MEDIA_CATALOG` `INTENT` `SOURCE` |
 | `diagram_generate` | `diagram_generate.md` | `diagram_edit` / `diagram_generate` | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |
 | `diagram_repair` | `diagram_repair.md` | pipeline `diagram_repair` stage | `DIAGRAM_COLOR_TABLE` |

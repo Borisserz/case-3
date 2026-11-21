@@ -10,6 +10,10 @@ from case3.dashboard_remote import (
     DashboardRemoteError,
     capture_documents,
     files_from_shot,
+    filters_from_model,
+    filtered_open_url,
+    might_ask_dashboard,
+    plan_dashboard_phrase,
     service_base,
     viewer_url,
 )
@@ -106,6 +110,69 @@ def test_capture_documents_uses_one_parse_for_png_and_pdf() -> None:
     assert docs[0]["name"] == "dashboard_20261122.png"
     assert docs[0]["markdown"].startswith("# Данные дашборда")
     assert "Таблица PDF" in docs[0]["markdown"]
+
+
+_CATALOG = {
+    "filters": [
+        {
+            "name": "Month",
+            "alias": "Месяц",
+            "choices": [
+                {"key": "2", "value": "Февраль"},
+                {"key": "3", "value": "Март"},
+            ],
+        },
+        {
+            "name": "Year",
+            "alias": "Год",
+            "choices": [
+                {"key": "2024", "value": "2024"},
+                {"key": "2025", "value": "2025"},
+            ],
+        },
+        {"name": "Region", "alias": "Регион", "choices": [{"key": "7", "value": "Минск"}]},
+    ]
+}
+
+
+def test_phrase_keeps_february_25_and_drops_an_unnamed_filter() -> None:
+    phrase = "хочу данные по февраль 25"
+    raw = '{"pull": true, "filters": {"Месяц": "Февраль", "Year": "2025", "Region": "Минск"}}'
+    picked = filters_from_model(_CATALOG, phrase, raw)
+    assert picked == {"Month": "Февраль", "Year": "2025"}
+    assert might_ask_dashboard(phrase) is True
+    assert might_ask_dashboard("сделай короче") is False
+
+
+def test_plan_skips_the_model_when_the_sentence_is_not_about_data() -> None:
+    called = False
+
+    def complete(**_kwargs):
+        nonlocal called
+        called = True
+        return "{}"
+
+    assert plan_dashboard_phrase("сделай короче", _CATALOG, complete) == {"pull": False}
+    assert called is False
+
+
+def test_plan_opens_when_the_model_maps_the_phrase(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+
+    def complete(**_kwargs: object) -> str:
+        return '{"pull": true, "filters": {"Month": "Февраль", "Year": "2025"}}'
+
+    plan = plan_dashboard_phrase("хочу данные по февраль 25", _CATALOG, complete)
+    assert plan["pull"] is True
+    assert plan["filters"] == {"Month": "Февраль", "Year": "2025"}
+    assert plan["reply"] == "Сейчас открою."
+    assert "/open?filters=" in plan["viewer"]
+
+
+def test_filtered_open_url_carries_the_json() -> None:
+    url = filtered_open_url("http://127.0.0.1:8040", {"Month": "Февраль"})
+    assert url.startswith("http://127.0.0.1:8040/open?filters=")
+    assert "Февраль" in url or "%D0%A4" in url
 
 
 def test_files_from_shot_refuses_a_bare_remote_path() -> None:

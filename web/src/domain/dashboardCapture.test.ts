@@ -4,6 +4,7 @@ import {
   attachCaptureMarkdowns,
   captureOriginOk,
   documentsFromService,
+  phrasePlan,
   filesFromCapture,
   markdownDocName,
   viewerFrameUrl,
@@ -44,6 +45,20 @@ describe("filesFromCapture", () => {
     const viewer = "http://127.0.0.1:8040/viewer";
     assert.equal(captureOriginOk("http://127.0.0.1:8040", viewer), true);
     assert.equal(captureOriginOk("http://evil.example", viewer), false);
+  });
+});
+
+describe("phrasePlan", () => {
+  it("keeps an open-url only when filters came back", () => {
+    assert.equal(phrasePlan({ pull: false }), null);
+    const plan = phrasePlan({
+      pull: true,
+      viewer: "http://127.0.0.1:8040/open?filters=%7B%7D",
+      reply: "Сейчас открою.",
+      filters: { Month: "Февраль" },
+    });
+    assert.equal(plan?.filters.Month, "Февраль");
+    assert.equal(plan?.reply, "Сейчас открою.");
   });
 });
 

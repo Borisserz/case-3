@@ -17,7 +17,13 @@ type Doc = { name: string; markdown: string };
 type Props = {
   onClose: () => void;
   onReady: (docs: Doc[]) => void;
+  /** His /open URL. The button path leaves this empty and uses /viewer. */
+  viewerUrl?: string | null;
+  /** Phrase flow: shoot after the filtered dashboard has had time to draw. */
+  autoCapture?: boolean;
 };
+
+const DASHBOARD_SETTLE_MS = 8000;
 
 async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
   const docs: Doc[] = [];
@@ -32,17 +38,27 @@ async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
   return docs;
 }
 
-export function DashboardPickModal({ onClose, onReady }: Props) {
+export function DashboardPickModal({
+  onClose,
+  onReady,
+  viewerUrl: viewerOverride,
+  autoCapture = false,
+}: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [viewerUrl, setViewerUrl] = useState(() =>
-    viewerFrameUrl(import.meta.env.VITE_DASHBOARD_VIEWER_URL),
+  const [viewerUrl, setViewerUrl] = useState(
+    () => viewerOverride || viewerFrameUrl(import.meta.env.VITE_DASHBOARD_VIEWER_URL),
   );
+  const [frameReady, setFrameReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useFocusTrap(dialogRef, { active: true });
 
   useEffect(() => {
+    if (viewerOverride) {
+      setViewerUrl(viewerOverride);
+      return;
+    }
     let cancelled = false;
     void fetch("/api/dashboard/service")
       .then((res) => (res.ok ? res.json() : null))
@@ -54,7 +70,13 @@ export function DashboardPickModal({ onClose, onReady }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [viewerOverride]);
+
+  useEffect(() => {
+    if (!autoCapture || !frameReady) return;
+    const timer = window.setTimeout(() => void takeFromService(), DASHBOARD_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoCapture, frameReady]);
 
   async function takeFromService() {
     setBusy(true);
@@ -153,13 +175,16 @@ export function DashboardPickModal({ onClose, onReady }: Props) {
         <p className="dash-viewer-note">
           {busy
             ? "Жду снимок сервиса. Это до полутора минут."
-            : "Фильтры в превью. «В данные» склеивает экран и таблицы в один документ, как в настройках."}
+            : autoCapture
+              ? "Фильтры уже подставлены. Сниму экран, когда дашборд дорисуется."
+              : "Фильтры в превью. «В данные» склеивает экран и таблицы в один документ, как в настройках."}
         </p>
         {error ? <p className="dash-viewer-error">{error}</p> : null}
         <iframe
           className="dash-viewer-frame"
           title="Превью Stimulsoft"
           src={viewerUrl}
+          onLoad={() => setFrameReady(true)}
         />
       </div>
     </div>

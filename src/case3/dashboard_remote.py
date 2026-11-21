@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -178,6 +179,156 @@ def fetch_shot_payload(base: str, client: httpx.Client) -> dict:
     if not isinstance(body, dict):
         raise DashboardRemoteError("сервис снимка вернул не объект", "bad_shot")
     return body
+
+
+_ASK_BITS = (
+    "данн",
+    "дашборд",
+    "фильтр",
+    "стимул",
+    "январ",
+    "феврал",
+    "март",
+    "апрел",
+    "мая",
+    "июн",
+    "июл",
+    "август",
+    "сентябр",
+    "октябр",
+    "ноябр",
+    "декабр",
+)
+
+
+def might_ask_dashboard(text: str) -> bool:
+    low = (text or "").casefold().replace("ё", "е")
+    return any(bit in low for bit in _ASK_BITS)
+
+
+def _norm(value: object) -> str:
+    return str(value or "").strip().casefold().replace("ё", "е")
+
+
+def _phrase_has(phrase: str, needle: object) -> bool:
+    left = _norm(phrase)
+    right = _norm(needle)
+    if not left or not right:
+        return False
+    if right in left:
+        return True
+    digits = "".join(ch for ch in right if ch.isdigit())
+    if len(digits) >= 4 and digits[-2:] in left:
+        return True
+    return False
+
+
+def _json_object(raw: str) -> dict:
+    text = (raw or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        body = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _choice_pairs(field: dict) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for choice in field.get("choices") or []:
+        if isinstance(choice, dict):
+            key = str(choice.get("key") if choice.get("key") is not None else "").strip()
+            label = str(
+                choice.get("value") if choice.get("value") is not None else key
+            ).strip()
+            pairs.append((key, label))
+        elif choice is not None:
+            text = str(choice).strip()
+            pairs.append((text, text))
+    return pairs
+
+
+def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object]:
+    """Keep only catalog filters the sentence actually names."""
+    body = _json_object(raw)
+    if not body.get("pull"):
+        return {}
+    wanted = body.get("filters")
+    if not isinstance(wanted, dict):
+        return {}
+    fields = [item for item in (catalog.get("filters") or []) if isinstance(item, dict)]
+    by_name: dict[str, dict] = {}
+    for field in fields:
+        for label in (field.get("name"), field.get("alias")):
+            key = _norm(label)
+            if key:
+                by_name[key] = field
+    picked: dict[str, object] = {}
+    for key, value in wanted.items():
+        field = by_name.get(_norm(key))
+        if field is None:
+            continue
+        name = str(field.get("name") or key).strip()
+        pairs = _choice_pairs(field)
+        if pairs:
+            wanted_norm = _norm(value)
+            match = next(
+                (
+                    pair
+                    for pair in pairs
+                    if wanted_norm and wanted_norm in {_norm(pair[0]), _norm(pair[1])}
+                ),
+                None,
+            )
+            if match is None:
+                continue
+            if not (_phrase_has(phrase, match[1]) or _phrase_has(phrase, match[0])):
+                continue
+            picked[name] = match[1] or match[0]
+            continue
+        if _phrase_has(phrase, value):
+            picked[name] = value
+    return picked
+
+
+def filtered_open_url(base: str, filters: dict[str, object]) -> str:
+    payload = json.dumps(filters, ensure_ascii=False, separators=(",", ":"))
+    return f"{base.rstrip('/')}/open?filters={quote(payload)}"
+
+
+OPEN_REPLY = "Сейчас открою."
+
+
+def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
+    """Map a chat sentence onto his /open URL. No match means a normal send."""
+    if not might_ask_dashboard(text):
+        return {"pull": False}
+    from case3.prompts import load as load_prompt
+
+    raw = complete(
+        system=load_prompt("dashboard_filters"),
+        user_text=(
+            text.strip()
+            + "\n\nКаталог:\n"
+            + json.dumps(catalog, ensure_ascii=False)
+        ),
+    )
+    picked = filters_from_model(catalog, text, str(raw or ""))
+    if not picked:
+        return {
+            "pull": False,
+            "asked": True,
+            "reply": "В фразе нет фильтра, который есть в дашборде. Назови период как в отчёте.",
+        }
+    return {
+        "pull": True,
+        "filters": picked,
+        "viewer": filtered_open_url(service_base(), picked),
+        "reply": OPEN_REPLY,
+    }
 
 
 def fetch_export(base: str, name: str, client: httpx.Client) -> bytes | None:

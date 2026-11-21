@@ -167,9 +167,9 @@ export function useLiberRun(deps: LiberSendDeps) {
   } = deps;
 
   return useCallback(
-async () => {
-  if (!canSend) return;
-  const chatTrim = chat.trim();
+async (override?: string) => {
+  const chatTrim = (override ?? chat).trim();
+  if (!override && !canSend) return;
   const priorRunId = priorRunIdFromMessages(msgs);
   const draftSnap = sourceDraft;
   const hasSource = Boolean(file) || Boolean(draftSnap?.text);

@@ -59,6 +59,45 @@ export function fileFromCapture(file: CaptureFile): File {
   return new File([bytes], file.name, { type });
 }
 
+export type PhrasePlan = {
+  pull: boolean;
+  viewer: string;
+  reply: string;
+  filters: Record<string, string>;
+};
+
+export function phrasePlan(data: unknown): PhrasePlan | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as {
+    pull?: unknown;
+    viewer?: unknown;
+    reply?: unknown;
+    filters?: unknown;
+  };
+  if (row.pull !== true) return null;
+  const viewer = typeof row.viewer === "string" ? row.viewer.trim() : "";
+  if (!viewer) return null;
+  const filters: Record<string, string> = {};
+  if (row.filters && typeof row.filters === "object") {
+    for (const [key, value] of Object.entries(row.filters as Record<string, unknown>)) {
+      if (!key.trim() || value == null) continue;
+      filters[key] = String(value);
+    }
+  }
+  if (!Object.keys(filters).length) return null;
+  const reply = typeof row.reply === "string" && row.reply.trim() ? row.reply.trim() : "Сейчас открою.";
+  return { pull: true, viewer, reply, filters };
+}
+
+export function phraseMiss(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as { pull?: unknown; asked?: unknown; reply?: unknown };
+  if (row.pull === true || row.asked !== true) return null;
+  return typeof row.reply === "string" && row.reply.trim()
+    ? row.reply.trim()
+    : "В фразе нет фильтра, который есть в дашборде.";
+}
+
 export function documentsFromService(
   data: unknown,
 ): { name: string; markdown: string }[] {

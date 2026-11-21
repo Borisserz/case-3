@@ -14,7 +14,8 @@ import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
-import { attachCaptureMarkdowns } from "../domain/dashboardCapture";
+import { attachCaptureMarkdowns, phraseMiss, phrasePlan } from "../domain/dashboardCapture";
+import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
 import { ChatMessages } from "../ChatMessages";
@@ -144,6 +145,9 @@ export default function App() {
   const [sourceDraft, setSourceDraft] = useState<SourceDraft | null>(null);
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
+  const [phraseAuto, setPhraseAuto] = useState(false);
+  const resumeQuery = useRef<string | null>(null);
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -408,15 +412,92 @@ export default function App() {
     },
   });
 
+  const closeDashboard = useCallback(() => {
+    resumeQuery.current = null;
+    setPhraseAuto(false);
+    setPhraseViewer(null);
+    setDashboardOpen(false);
+  }, []);
+
   const onDashboardReady = useCallback(
     (docs: { name: string; markdown: string }[]) => {
       setSourceDraft((current) => attachCaptureMarkdowns(current, docs));
       setPlaqueDismissed(false);
       setFile(null);
+      setPhraseAuto(false);
+      setPhraseViewer(null);
       setDashboardOpen(false);
     },
     [],
   );
+
+  useEffect(() => {
+    const query = resumeQuery.current;
+    if (!query || !sourceDraft?.text) return;
+    resumeQuery.current = null;
+    setChat(query);
+    void send(query);
+  }, [sourceDraft, send]);
+
+  const sendFromComposer = useCallback(async () => {
+    const text = chat.trim();
+    if (!text || dashboardOpen) {
+      void send();
+      return;
+    }
+    let body: unknown = null;
+    let ok = false;
+    try {
+      const res = await fetch("/api/dashboard/phrase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      body = await res.json().catch(() => null);
+      ok = res.ok;
+      if (!ok) {
+        const detail =
+          body && typeof body === "object" && typeof (body as { detail?: unknown }).detail === "string"
+            ? (body as { detail: string }).detail
+            : "Не удалось открыть фильтры.";
+        setMsgs((list) => [
+          ...list,
+          { id: uid(), role: "user", text },
+          { id: uid(), role: "bot", text: detail },
+        ]);
+        setChat("");
+        return;
+      }
+    } catch {
+      void send();
+      return;
+    }
+    const missed = phraseMiss(body);
+    if (missed) {
+      setMsgs((list) => [
+        ...list,
+        { id: uid(), role: "user", text },
+        { id: uid(), role: "bot", text: missed },
+      ]);
+      setChat("");
+      return;
+    }
+    const plan = phrasePlan(body);
+    if (!plan) {
+      void send();
+      return;
+    }
+    setMsgs((list) => [
+      ...list,
+      { id: uid(), role: "user", text },
+      { id: uid(), role: "bot", text: plan.reply },
+    ]);
+    setChat("");
+    resumeQuery.current = text;
+    setPhraseViewer(plan.viewer);
+    setPhraseAuto(true);
+    setDashboardOpen(true);
+  }, [chat, dashboardOpen, send, setChat, setMsgs]);
 
   const { capturePastedSource, ingestFiles, onDrop } = useSourceIngest({
     setFile,
@@ -702,7 +783,7 @@ export default function App() {
                   deckStyleOpen={deckStyleOpen}
                   onChatChange={setChat}
                   onPasteCapture={capturePastedSource}
-                  onSend={() => void send()}
+                  onSend={() => void sendFromComposer()}
                   onIngestFiles={ingestFiles}
                   onRemovePhoto={(i) =>
                     setAttachPhotos((list) => list.filter((_, j) => j !== i))
@@ -722,12 +803,19 @@ export default function App() {
                     setChat(prompt);
                     chatRef.current?.focus();
                   }}
-                  onOpenDashboard={() => setDashboardOpen(true)}
+                  onOpenDashboard={() => {
+                    resumeQuery.current = null;
+                    setPhraseViewer(null);
+                    setPhraseAuto(false);
+                    setDashboardOpen(true);
+                  }}
                 />
                 {dashboardOpen ? (
                   <DashboardPickModal
-                    onClose={() => setDashboardOpen(false)}
+                    onClose={closeDashboard}
                     onReady={onDashboardReady}
+                    viewerUrl={phraseViewer}
+                    autoCapture={phraseAuto}
                   />
                 ) : null}
               </div>

@@ -23,6 +23,7 @@ PROMPT_FILES: dict[str, str] = {
     "chat_answer": "chat_answer.md",
     "chat_section": "chat_section.md",
     "dashboard_png": "dashboard_png.md",
+    "dashboard_filters": "dashboard_filters.md",
 }
 
 # Full catalog of system_tex parts (existence / MANIFEST). Runtime order may omit
