@@ -88,7 +88,7 @@ Desk: SSE v1 + **2A** + **2B** + **finish** (mode scripts · `meta.steps[]`) don
 
 ### Снимок кода — 2026-11-22
 
-`main` = `84dbe3b`. На Windows едут `AGENTS.md`, `docs/MEMORY.md`, `docs/adr/`, `docs/knowledge/`, `.agents/knowledge/`. Спеки `docs/superpowers/` и аудиты `docs/audits/` остаются дома.
+`main` = `c7c035d`. На Windows едут `AGENTS.md`, `docs/MEMORY.md`, `docs/adr/`, `docs/knowledge/`, `.agents/knowledge/`. Спеки `docs/superpowers/` и аудиты `docs/audits/` остаются дома.
 
 | Тема | Как сейчас |
 |------|------------|
