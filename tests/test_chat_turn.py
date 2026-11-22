@@ -9,6 +9,22 @@ class _Fake:
         yield self.text
 
 
+def test_what_can_you_do_answers_without_the_model():
+    from case3.input_validation import validate_input_heuristics
+
+    class _Boom:
+        def stream(self, **_kwargs):
+            raise AssertionError("model should not be called")
+            yield ""
+
+    valid, msg = validate_input_heuristics("", "Что ты умеешь?", output_mode="chat")
+    assert valid and msg is None
+    text = try_chat_answer("", "Что ты умеешь?", client=_Boom())
+    assert "отч" in text.lower()
+    assert "схем" in text.lower()
+    assert "случайн" not in text.lower()
+
+
 def test_opening_fallback_does_not_claim_the_file_is_done():
     line = opening_fallback("presentation", "Выручка 10 и 12")
     assert "презентац" in line.lower()

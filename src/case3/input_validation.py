@@ -107,6 +107,29 @@ _TRIGGER_WORDS = {
 }
 
 
+_CAPABILITY = re.compile(
+    r"(?i)^\s*(?:"
+    r"что ты умеешь|что умеешь|что ты можешь|чем можешь помочь|"
+    r"какие у тебя возможности"
+    r")\s*\??\s*$"
+)
+
+
+def capability_reply(text: str | None) -> str:
+    """Local answer. The capability list in the prompt is never read for this question."""
+    if not _CAPABILITY.match((text or "").strip()):
+        return ""
+    return (
+        "Могу разобрать приложенные данные в чате, собрать отчёт, схему или презентацию.\n\n"
+        "По уже готовому файлу могу по фразе:\n"
+        "- переписать или сократить раздел;\n"
+        "- поправить ячейку, строку или пункт списка;\n"
+        "- сменить вид графика, цвет или стиль слайда;\n"
+        "- поправить схему одной фразой или отменить последний шаг.\n\n"
+        "Числа беру только из ваших данных. Напишите вопрос по тексту или попросите отчёт."
+    )
+
+
 def _format_refusal_message(output_mode: str) -> str:
     mode = (output_mode or "report").strip().lower()
     if mode == "chat":
@@ -193,6 +216,9 @@ def validate_input_heuristics(
 
     # Code blocks or key-value pairs
     if "```" in combined or re.search(r"(?:^|\n)\s*[A-Za-zА-Яа-яЁё0-9_-]+\s*:\s*\S+", combined):
+        return True, None
+
+    if (output_mode or "").strip().lower() == "chat" and _CAPABILITY.match((intent or "").strip()):
         return True, None
 
     # 3. Analyze words against generic trigger words / greetings
