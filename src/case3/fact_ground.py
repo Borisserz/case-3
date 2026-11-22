@@ -360,10 +360,18 @@ def _scrub_bound(
             delim = bits[index + 1] if index + 1 < len(bits) else ""
             index += 2 if delim else 1
             parts = []
+            cut = False
             for part in re.split(r"(?<![{\\]),(?!\d)\s*", chunk):
+                raw = part.strip()
                 cleaned = clean_clause(part).strip()
-                if cleaned and not re.fullmatch(r"[\s\\%{},.;:–—\-]*", cleaned):
-                    parts.append(cleaned)
+                if not cleaned or re.fullmatch(r"[\s\\%{},.;:–—\-]*", cleaned):
+                    if raw and (_NUM.search(raw) or _SPOKEN_RE.search(raw)):
+                        cut = True
+                    continue
+                # «три месяца: март, апрель и май» leaves the lowercase tail.
+                if cut and cleaned[:1].islower() and not _NUM.search(cleaned):
+                    continue
+                parts.append(cleaned)
             if not parts:
                 continue
             kept.append(", ".join(parts))

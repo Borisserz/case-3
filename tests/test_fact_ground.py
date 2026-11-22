@@ -533,6 +533,25 @@ def test_an_invented_share_does_not_leave_a_hole_in_the_sentence():
     assert "\\%" not in out
 
 
+def test_a_spoken_count_does_not_leave_the_tail_of_the_sentence():
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "В исходных данных приведены значения кассы за три месяца: март, апрель и май. "
+        "В марте касса составила 18.\n"
+        "\\end{document}\n"
+    )
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [],
+        [],
+        [],
+        source="В марте касса была 18.\nВ апреле касса была 22.\nВ мае касса была 19.\n",
+        intent="отчёт",
+    )
+    assert "апрель и май" not in out
+    assert "18" in out
+
+
 def test_a_slide_does_not_keep_a_hole_where_the_number_was():
     from case3.fact_ground import bind_deck_numbers
 
