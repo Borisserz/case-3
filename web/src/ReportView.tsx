@@ -23,6 +23,7 @@ import {
   type TableEditRequest,
 } from "./TableEditSheet";
 import { type ParagraphEditRequest } from "./ParagraphEditSheet";
+import { redoChord, undoChord } from "./domain/undoChord";
 import type { HeadingEditRequest } from "./HeadingEditTypes";
 import type { ListEditRequest } from "./ListEditTypes";
 import { InlineBlockEditor } from "./InlineBlockEditor";
@@ -368,7 +369,7 @@ export function ReportView({
                   type="button"
                   className="report-edit-history-btn"
                   aria-label="Отменить"
-                  title="Отменить (⌘Z)"
+                  title={`Отменить (${undoChord()})`}
                   disabled={!editHistory?.canUndo || finishing}
                   onClick={() => void onHistoryUndo?.()}
                 >
@@ -378,7 +379,7 @@ export function ReportView({
                   type="button"
                   className="report-edit-history-btn"
                   aria-label="Вернуть"
-                  title="Вернуть (⌘⇧Z)"
+                  title={`Вернуть (${redoChord()})`}
                   disabled={!editHistory?.canRedo || finishing}
                   onClick={() => void onHistoryRedo?.()}
                 >

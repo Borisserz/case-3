@@ -395,6 +395,68 @@ def test_long_source_keeps_the_head_the_match_and_the_tail():
     assert _clip_source("короткий текст", 6000, "склад") == "короткий текст"
 
 
+def test_list_markers_are_not_numbers():
+    from case3.chat_turn import number_norms, stray_numbers
+
+    assert number_norms("1. Выручка 10\n2. Касса 20") == {"10", "20"}
+    assert stray_numbers("1. В тексте 10.", {"10"}) == []
+    assert stray_numbers("Пункт 1 стоит отдельно.", {"10"}) == ["1"]
+    assert "1.1" in number_norms("1.1. Глобальный тренд 3")
+
+
+def test_chat_prompt_shows_the_whole_table_and_names_the_count():
+    rows = ["| Область | Сумма |", "| --- | --- |"]
+    for index in range(160):
+        rows.append(f"| Район {index:03d} длинная подпись области | {1000 + index} |")
+    source = "\n".join(rows)
+    assert len(source) > 6000
+
+    class _Catch:
+        def __init__(self) -> None:
+            self.user = ""
+            self.system = ""
+
+        def stream(self, **kwargs):
+            self.user = kwargs.get("user_text") or ""
+            self.system = kwargs.get("system") or ""
+            yield "Район 159 в таблице."
+
+    client = _Catch()
+    try_chat_answer(source, "что в таблице", client=client)
+    assert "Район 159" in client.user
+    assert "1159" in client.user
+    assert "Вижу все 160 строк." in client.user
+    assert "Вижу" in client.system and "строк" in client.system
+
+
+def test_chat_drops_a_number_that_belongs_to_another_row():
+    source = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 100 |\n"
+        "| Гомельская | 40 |\n"
+    )
+    text = try_chat_answer(
+        source,
+        "что у Гомельской",
+        client=_Fake("У Гомельской сумма 100."),
+    )
+    assert "100" not in text
+    assert "строк" in text
+
+
+def test_a_long_table_uses_the_chat_cap_not_a_short_slice():
+    from case3.chat_turn import _clip_source
+
+    rows = ["| Область | Сумма |", "| --- | --- |"]
+    for index in range(4000):
+        rows.append(f"| Район {index:04d} | {index} |")
+    source = "\n".join(rows)
+    clipped = _clip_source(source, focus="что в таблице")
+    assert "Район 0150" in clipped
+    assert len(clipped) > 5000
+
+
 def test_long_table_keeps_the_header_and_the_named_region():
     from case3.chat_turn import _clip_source
 
@@ -472,7 +534,7 @@ def test_answer_number_stays_out_when_the_card_lists_only_the_user():
     assert "Там 88" not in text
 
 
-def test_long_source_prompt_keeps_a_middle_heading():
+def test_long_source_prompt_keeps_the_middle_when_the_file_fits():
     from case3.chat_turn import _user_block
 
     middle = "# Касса в середине\n\n" + ("абзац про склад. " * 80)
@@ -481,7 +543,20 @@ def test_long_source_prompt_keeps_a_middle_heading():
     assert len(source) > 6000
     block = _user_block(source, "что в конце")
     assert "# Касса в середине" in block
-    assert "склад" not in block.split("# Касса в середине", 1)[-1].split("# Конец", 1)[0]
+    assert "склад" in block
+    assert "Оглавление документа" not in block
+
+
+def test_source_past_the_chat_cap_still_names_the_middle_heading():
+    from case3.chat_turn import _CHAT_SOURCE_CAP, _user_block
+
+    filler = "вводные слова. " * 3000
+    middle = "# Касса в середине\n\n" + ("абзац про склад. " * 40)
+    source = "# Начало\n\n" + filler + "\n\n" + middle + "\n\n# Конец\n\n" + filler
+    assert len(source) > _CHAT_SOURCE_CAP
+    block = _user_block(source, "что в конце")
+    assert "# Касса в середине" in block
+    assert len(block) < len(source)
 
 
 def test_short_source_has_no_extra_outline():

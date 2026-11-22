@@ -128,6 +128,39 @@ def test_enhance_donut_adds_center_and_valued_legend() -> None:
     assert "animation:false" in out or "animation: false" in out
 
 
+def test_a_small_slice_is_not_printed_as_zero() -> None:
+    html = (
+        '<canvas id="c1" width="520" height="520"></canvas><script>'
+        "new Chart(c,{type:'doughnut',data:{"
+        "labels:['Минская','Гомельская'],"
+        "datasets:[{data:[996,4],backgroundColor:['#3F5210','#7A8F45']}]},"
+        "options:{animation:false}});"
+        "</script>"
+    )
+    out = enhance_donut_html(html)
+    assert "0,4%" in out
+    assert ">0%<" not in out
+
+
+def test_many_regions_get_a_dense_legend() -> None:
+    labels = ",".join(f"'Область {index:02d}'" for index in range(12))
+    values = ",".join(["10"] * 12)
+    html = (
+        '<canvas id="c1" width="520" height="520"></canvas><script>'
+        "new Chart(c,{type:'doughnut',data:{"
+        f"labels:[{labels}],datasets:[{{data:[{values}],backgroundColor:['#3F5210']}}]}},"
+        "options:{animation:false}});"
+        "</script>"
+    )
+    out = enhance_donut_html(html)
+    assert "is-dense" in out
+    assert "Область 11" in out
+    frame = Path(__file__).resolve().parents[1].joinpath(
+        "src/case3/templates/chart_frame.html"
+    ).read_text(encoding="utf-8")
+    assert ".valued-legend.is-dense" in frame
+
+
 def test_enhance_donut_idempotent() -> None:
     once = enhance_donut_html(_DONUT)
     twice = enhance_donut_html(once)

@@ -14,6 +14,8 @@ export type PreviewBlock =
       caption?: string;
       headers: string[];
       rows: string[][];
+      /** Wide table that prints on a landscape page. */
+      landscape?: boolean;
     }
   | {
       type: "figure";

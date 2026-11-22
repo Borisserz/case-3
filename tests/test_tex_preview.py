@@ -139,3 +139,25 @@ def test_preview_preserves_math_formula() -> None:
     assert "$100" in html
     # Plain text cleans up math delimiters
     assert "E = mc^2" in paras[0]["text"]
+
+
+def test_landscape_table_stays_visible_in_the_preview() -> None:
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\begin{landscape}
+\begin{table}
+\caption{Широкая}
+\begin{tabular}{llllll}
+Область & План & Факт & Доля & Место & Код \\
+Минская & 10 & 12 & 60 & 1 & A \\
+\end{tabular}
+\end{table}
+\end{landscape}
+\end{document}
+"""
+    data = tex_to_preview_blocks(tex)
+    tables = [block for block in data["blocks"] if block["type"] == "table"]
+    assert tables
+    assert tables[0]["landscape"] is True
+    assert "Минская" in tables[0]["rows"][0]

@@ -37,7 +37,7 @@ _DIAGRAM = re.compile(
     re.IGNORECASE,
 )
 _REPORT = re.compile(
-    r"отч[её]т|\bpdf\b|\bdocx\b|график|диаграмм",
+    r"отч[её]т|\bpdf\b|\bdocx\b|\bword\b|ворд|справк|график|диаграмм",
     re.IGNORECASE,
 )
 _QUESTION = re.compile(

@@ -608,7 +608,7 @@ export function ReportBody({
               <figure
                 key={i}
                 id={`report-table-${n}`}
-                className={`report-table-wrap report-block${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}${canEditTable && !tableOpen ? " is-editable-idle" : ""}`}
+                className={`report-table-wrap report-block${b.landscape ? " is-landscape" : ""}${isEditingTable ? " is-editing" : ""}${tableOpen ? " is-tuning" : ""}${canEditTable && !tableOpen ? " is-editable-idle" : ""}`}
                 style={delayStyle}
               >
                 <div className="report-table-toolbar">
@@ -616,6 +616,9 @@ export function ReportBody({
                     className={`report-caption${live.caption.trim() ? "" : " muted"}${tableOpen ? " is-draft" : ""}`}
                   >
                     {capText}
+                    {b.landscape ? (
+                      <span className="report-table-landscape"> · альбомная страница</span>
+                    ) : null}
                     {tableOpen && !isEditingTable ? (
                       <span className="report-table-draft-tag"> черновик</span>
                     ) : null}

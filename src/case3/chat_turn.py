@@ -27,7 +27,8 @@ _ASIDE_AFTER = re.compile(r"^\s*(?:место|раз|раза)\b", re.IGNORECASE
 _NUM = re.compile(
     r"\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?%?"
     r"|\d+(?:\\,\d{3})+(?:[.,]\d+)?%?"
-    r"|\d+(?:[.,]\d+)?%?"
+    r"|\d+\{,\}\d+(?:\\%|%)?"
+    r"|\d+(?:[.,]\d+)?(?:\\%|%)?"
 )
 # Longer stems first so «двадцать» is not read as «два».
 _SPOKEN_NUMBER = (
@@ -117,7 +118,10 @@ def _fit_front(paras: list[str], budget: int) -> tuple[list[str], int]:
             continue
         room = budget - used - gap
         if room > 80 and not chosen:
-            chosen.append(_clip_prose(para, room))
+            piece = _shrink_paragraph(para, room)
+            if not piece:
+                piece = _clip_prose(para, room)
+            chosen.append(piece)
             return chosen, index + 1
         break
     return chosen, len(chosen)
@@ -137,14 +141,23 @@ def _fit_back(paras: list[str], budget: int) -> tuple[list[str], int]:
             continue
         room = budget - used - gap
         if room > 80:
-            piece = para[-room:].lstrip()
-            if len(para) > room:
-                piece = "…" + piece
+            piece = _shrink_paragraph(para, room)
+            if not piece:
+                piece = para[-room:].lstrip()
+                if len(para) > room:
+                    piece = "…" + piece
             chosen.append(piece)
             start = index
         break
     chosen.reverse()
     return chosen, start
+
+
+def _shrink_paragraph(para: str, room: int) -> str:
+    """A cut table keeps its header. Prose returns empty so the caller slices it."""
+    if not (para or "").lstrip().startswith("|"):
+        return ""
+    return _focus_table(para, set(), room) or ""
 
 
 def _focus_hits(para: str, stems: set[str]) -> int:
@@ -160,7 +173,7 @@ def _focus_hits(para: str, stems: set[str]) -> int:
 
 
 def _focus_table(para: str, stems: set[str], budget: int) -> str | None:
-    """Header plus the rows that name the question. A markdown table is one paragraph."""
+    """Header, rows the question names, then as many other rows as fit."""
     lines = [line.rstrip() for line in (para or "").splitlines() if line.strip()]
     if len(lines) < 2 or not lines[0].lstrip().startswith("|"):
         return None
@@ -169,18 +182,24 @@ def _focus_table(para: str, stems: set[str], budget: int) -> str | None:
     if rest and re.match(r"^\|?[\s\-:|]+\|?$", rest[0].strip()):
         header.append(rest[0])
         rest = rest[1:]
-    hits = [row for row in rest if _focus_hits(row, stems) >= 1]
-    chosen = hits or rest[:4]
+    first = [index for index, row in enumerate(rest) if _focus_hits(row, stems) >= 1]
+    if not first:
+        first = list(range(min(4, len(rest))))
+    order = first + [index for index in range(len(rest)) if index not in set(first)]
     kept = list(header)
-    for row in chosen:
-        trial = "\n".join(kept + [row])
+    for index in order:
+        trial = "\n".join(kept + [rest[index]])
         if len(trial) > budget:
             break
-        kept.append(row)
+        kept.append(rest[index])
     return "\n".join(kept)
 
 
-def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
+# A dashboard of 500 rows fits. Past this, the prompt says how many rows remain.
+_CHAT_SOURCE_CAP = 80_000
+
+
+def _clip_source(source: str, limit: int = _CHAT_SOURCE_CAP, focus: str = "") -> str:
     """Head, paragraphs that match the question, then the tail.
 
     A short document is unchanged. A long one stays inside ``limit``.
@@ -193,7 +212,7 @@ def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
 
     stems = set(_query_stems(focus or ""))
     paras = [
-        _focus_table(para, stems, min(limit, 2200)) or para
+        _focus_table(para, stems, limit) or para
         for para in _source_paragraphs(text)
     ]
     if not paras:
@@ -409,6 +428,52 @@ def _source_outline(text: str, limit: int = 1200) -> str:
     return "Оглавление документа:\n" + body
 
 
+def _row_noun(count: int, case: str) -> str:
+    """Accusative after «вижу», genitive after «из»."""
+    rest = abs(count) % 100
+    tail = rest % 10
+    if case == "gen":
+        word = "строки" if tail == 1 and rest != 11 else "строк"
+        return word
+    if 11 <= rest <= 14:
+        return "строк"
+    if tail == 1:
+        return "строку"
+    if 2 <= tail <= 4:
+        return "строки"
+    return "строк"
+
+
+def _markdown_data_rows(text: str) -> list[str]:
+    lines = (text or "").splitlines()
+    rows: list[str] = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].strip().startswith("|"):
+            index += 1
+            continue
+        block: list[str] = []
+        while index < len(lines) and lines[index].strip().startswith("|"):
+            block.append(lines[index].strip())
+            index += 1
+        if len(block) >= 2 and re.match(r"^\|?[\s\-:|]+\|?$", block[1]) and "-" in block[1]:
+            rows.extend(block[2:])
+    return rows
+
+
+def _table_coverage_line(full: str, shown: str) -> str:
+    """The sentence the model must copy. Empty when the text has no table."""
+    total = _markdown_data_rows(full)
+    if len(total) < 2:
+        return ""
+    visible = _markdown_data_rows(shown)
+    if len(visible) >= len(total):
+        noun = _row_noun(len(total), "acc")
+        return f"Вижу все {len(total)} {noun}."
+    noun = _row_noun(len(total), "gen")
+    return f"Вижу {len(visible)} из {len(total)} {noun}."
+
+
 def _user_block(source: str, intent: str) -> str:
     """Question, document, then memory.
 
@@ -419,13 +484,17 @@ def _user_block(source: str, intent: str) -> str:
     message, memory = _split_message(intent or "")
     message = _keep_question(message)
     memory = _keep_tail(memory, _MEMORY_CAP)
+    full = (source or "").strip()
     src = _clip_source(source, focus=message)
-    if len((source or "").strip()) > 6000:
+    coverage = _table_coverage_line(full, src)
+    if src and len(src) < len(full):
         outline = _source_outline(source)
-        if outline and src:
+        if outline:
             src = outline + "\n\n" + src
-        elif outline:
-            src = outline
+    elif not src:
+        src = _source_outline(source)
+    if coverage:
+        src = (src + "\n\n" + coverage).strip() if src else coverage
     parts: list[str] = []
     if message:
         parts.append("СООБЩЕНИЕ:\n" + message)
@@ -621,10 +690,28 @@ def spoken_number_norms(text: str | None) -> set[str]:
     return found
 
 
+def _is_list_marker(text: str, start: int, end: int) -> bool:
+    """``1. Пункт`` is a marker. ``пункт 1`` and ``1.1. Раздел`` are numbers."""
+    token = (text or "")[start:end]
+    if not token.isdigit():
+        return False
+    line_start = text.rfind("\n", 0, start) + 1
+    if text[line_start:start].strip():
+        return False
+    return bool(re.match(r"[.)](?:\s|$)", text[end:]))
+
+
+def _fact_tokens(text: str | None) -> list[str]:
+    raw = text or ""
+    return [
+        match.group(0)
+        for match in _NUM.finditer(raw)
+        if not _is_list_marker(raw, match.start(), match.end())
+    ]
+
+
 def number_norms(text: str | None) -> set[str]:
-    return {_norm_num(token) for token in _NUM.findall(text or "")} | spoken_number_norms(
-        text
-    )
+    return {_norm_num(token) for token in _fact_tokens(text)} | spoken_number_norms(text)
 
 
 def user_stated_norms(intent: str | None) -> set[str]:
@@ -645,7 +732,7 @@ def stray_numbers(text: str | None, allowed: set[str]) -> list[str]:
     """Number tokens in text that are not in the allowed set. Order kept."""
     found: list[str] = []
     seen: set[str] = set()
-    for token in _NUM.findall(text or ""):
+    for token in _fact_tokens(text):
         norm = _norm_num(token)
         if norm in allowed or norm in seen:
             continue
@@ -724,7 +811,7 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
     raw = user_text or ""
     doc = source or ""
     for hit in _NUM.finditer(raw):
-        if _aside_number(raw, hit):
+        if _is_list_marker(raw, hit.start(), hit.end()) or _aside_number(raw, hit):
             continue
         pairs = _claim_words(raw, hit.start(), hit.group())
         user_stems = {stem for _word, stem in pairs}
@@ -1082,6 +1169,10 @@ def try_chat_answer(
     allowed = _allowed_norms(source, intent, drop)
     text = _ask_model(llm, system, user)
     stray = stray_numbers(text, allowed) if text else []
+    from case3.fact_ground import wrong_row_tokens
+
+    said = latest_user_line(intent)
+    wrong = wrong_row_tokens(text, source, said) if text and not stray else []
     if stray:
         retry = (
             user
@@ -1097,6 +1188,23 @@ def try_chat_answer(
             spoken = kept
         else:
             spoken = invention_question(stray)
+    elif wrong:
+        retry = (
+            user
+            + "\n\nПовтор: это число стоит в другой строке таблицы. "
+            "Назови строку и колонку, как они записаны. Не переноси чужую ячейку: "
+            + ", ".join(wrong)
+            + "."
+        )
+        text = _ask_model(llm, system, retry)
+        wrong = wrong_row_tokens(text, source, said) if text else []
+        if wrong:
+            spoken = (
+                "Число из другой строки таблицы сюда не переношу. "
+                "Назови область и колонку ещё раз."
+            )
+        else:
+            spoken = text or chat_fallback()
     else:
         spoken = text or chat_fallback()
     spoken = _hide_memory_marks(spoken)
@@ -1161,13 +1269,15 @@ def _hide_memory_marks(text: str) -> str:
 
 def _norm_num(token: str) -> str:
     compact = re.sub(r"[ \u00a0\u202f]+", "", token or "")
+    compact = compact.replace("{,}", ",").replace("{.}", ".")
     compact = compact.replace("\\,", "")
+    compact = compact.replace("\\%", "")
     return compact.replace(",", ".").replace("%", "")
 
 
 def _numbers_grounded(draft: str, allowed: str) -> bool:
-    have = {_norm_num(token) for token in _NUM.findall(allowed or "")}
-    return all(_norm_num(token) in have for token in _NUM.findall(draft or ""))
+    have = {_norm_num(token) for token in _fact_tokens(allowed)}
+    return all(_norm_num(token) in have for token in _fact_tokens(draft))
 
 
 def draft_section(

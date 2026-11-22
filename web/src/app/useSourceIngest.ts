@@ -10,6 +10,7 @@ import {
 import type { ActiveArtifact } from "../ArtifactRail";
 import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
+import { ATTACHED_TOAST } from "../domain/sourceCopy";
 import { mergeSourcePack } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
 import { parseDashboard } from "../domain/dashboardParse";
@@ -87,7 +88,7 @@ export function useSourceIngest({
       if (trimmed.length <= LONG_TEXT_CHARS) return false;
       revokeBlob();
       applySourceDraft({
-        title: "Текст",
+        title: "Документ",
         text: trimmed,
         viewMode: "text",
       });
@@ -114,6 +115,7 @@ export function useSourceIngest({
                 fileName: f.name,
                 viewMode: "text",
               });
+              showToast(ATTACHED_TOAST, 2800);
             } catch (err) {
               showToast(
                 err instanceof Error
@@ -188,11 +190,12 @@ export function useSourceIngest({
                 text: out.markdown,
                 fileName: f.name,
                 viewMode: "text",
+                fromScreen: true,
               });
               if (out.warnings.length) {
                 showToast(out.warnings[0], 5000);
               } else {
-                showToast(`Данные: ${f.name}`, 2800);
+                showToast(ATTACHED_TOAST, 2800);
               }
             } catch (err) {
               setAttachPhotos((prev) => [...prev, f].slice(0, 5));

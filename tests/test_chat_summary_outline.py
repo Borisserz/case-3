@@ -98,6 +98,33 @@ def test_is_clean_chat_summary_rejects_reasoning_leak() -> None:
     assert is_clean_chat_summary(valid_russian)
 
 
+def test_local_blurb_says_when_a_chart_did_not_arrive() -> None:
+    blurb = local_summary_blurb(
+        "\\section{Касса}\n\nТекст без таблицы.",
+        media={"charts_planned": 2, "charts_ok": 1, "figures_ok": 0},
+    )
+    assert "не собрал" in blurb
+    assert "1" in blurb
+
+
+def test_ready_line_waits_until_the_pdf_exists() -> None:
+    from case3.chat_summary import seal_chat_summary
+
+    held = seal_chat_summary(
+        "Готов: отчёт.",
+        {},
+        render_error="! Undefined control sequence.\nl.42 \\bad",
+    )
+    assert "Готов" not in held
+    assert "! Undefined control sequence." in held
+    ok = seal_chat_summary(
+        "Готов: отчёт.",
+        {"charts_planned": 2, "charts_ok": 1},
+    )
+    assert "Готов" in ok
+    assert "не собрал" in ok
+
+
 def test_local_summary_blurb_uses_title_and_counts() -> None:
     tex = FIXTURE.read_text(encoding="utf-8")
     blurb = local_summary_blurb(

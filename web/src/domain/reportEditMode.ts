@@ -1,5 +1,7 @@
 /** Preview edit-mode: document click-to-edit + session undo/redo. */
 
+import { undoChord } from "./undoChord";
+
 export type EditHistoryDesc = {
   canUndo: boolean;
   canRedo: boolean;
@@ -38,9 +40,9 @@ export function reportEditToggleVisible(opts: {
 }
 
 /** Hint under the top toggle. */
-export function reportEditModeHint(editMode: boolean): string {
+export function reportEditModeHint(editMode: boolean, platform?: string): string {
   return editMode
-    ? "Клик · ⌘Z · PDF/DOCX на Готово"
+    ? `Клик · ${undoChord(platform)} · PDF/DOCX на Готово`
     : "Чтение · правки документов";
 }
 

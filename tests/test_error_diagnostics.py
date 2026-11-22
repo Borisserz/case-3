@@ -20,6 +20,20 @@ def test_latex_log_tail_reads_last_lines(tmp_path: Path) -> None:
     assert "L0" not in tail
 
 
+def test_latex_error_keeps_the_bang_line_not_only_the_tail(tmp_path: Path) -> None:
+    log = tmp_path / "doc.log"
+    body = [
+        "! Undefined control sequence.",
+        "l.42 \\badcommand",
+        "",
+    ]
+    body.extend("Transcript written on doc.log." for _ in range(60))
+    log.write_text("\n".join(body), encoding="utf-8")
+    tail = _latex_log_tail(log, lines=8)
+    assert "! Undefined control sequence." in tail
+    assert "l.42" in tail
+
+
 def test_attach_error_diagnostics_collects_failed_charts(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
     logs.mkdir()

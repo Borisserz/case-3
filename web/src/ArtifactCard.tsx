@@ -4,6 +4,7 @@ import { DeckFileCard } from "./DeckFileCard";
 import { DiagramChatCard, type DiagramChatItem } from "./DiagramChatCard";
 import type { DeckIR } from "./deckTypes";
 import { reportDownloadLinks } from "./domain/reportDownloads";
+import { reportCanMakeDeck } from "./domain/deckFromReport";
 import { modeSurfaces } from "./domain/liberModes";
 
 type DiagramChip = DiagramChatItem;
@@ -31,6 +32,8 @@ type Props = {
   onOpenPresentation?: () => void;
   /** Open vertical Слайды film (deck PDF twin). */
   onOpenDeckSlides?: () => void;
+  /** Finished report → start a deck from this run. */
+  onMakePresentation?: () => void;
   /** PPTX and deck PDF stay closed until «Готово». */
   deckDownloadsBlocked?: boolean;
 };
@@ -138,6 +141,7 @@ export function ArtifactCard({
   onOpenDiagram,
   onOpenPresentation,
   onOpenDeckSlides,
+  onMakePresentation,
   deckDownloadsBlocked = false,
 }: Props) {
   const surfaces = modeSurfaces(outputMode);
@@ -305,6 +309,19 @@ export function ArtifactCard({
               />
             )}
           </section>
+          {reportCanMakeDeck({
+            outputMode,
+            pdfUrl: reportPdfHref,
+            slidesStatus,
+          }) && onMakePresentation ? (
+            <button
+              type="button"
+              className="deck-make-primary is-ghost"
+              onClick={onMakePresentation}
+            >
+              Сделать презентацию
+            </button>
+          ) : null}
           {visibleDiagrams.length > 0 && onOpenDiagram ? (
             <section className="artifact-card-block is-diagram-peer">
               <p className="artifact-card-quiet-label">

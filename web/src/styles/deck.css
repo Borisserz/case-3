@@ -1273,6 +1273,15 @@
 
 /* —— Deck style sheet (Julius-parity UX, Liber DNA) —— */
 /* Ghost primary still used by ArtifactCard Julius CTA */
+.deck-make-primary {
+  display: inline-flex;
+  margin: 0.55rem 0 0.15rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
 .deck-make-primary.is-ghost {
   background: transparent;
   color: var(--primary);

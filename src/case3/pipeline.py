@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable  # Any used by user_figures metas
 
 from case3.charts import generate_all_charts, max_charts_from_env
-from case3.chat_summary import try_generate_chat_summary
+from case3.chat_summary import seal_chat_summary, try_generate_chat_summary
 from case3.diagrams import max_diagrams_from_env
 from case3.generate import generate_document, max_images_from_env, resolve_text_file
 from case3.inject import write_injected
@@ -163,7 +163,22 @@ def _latex_log_tail(path: Path | None, *, lines: int = 40) -> str:
     parts = text.splitlines()
     if not parts:
         return ""
-    return "\n".join(parts[-max(1, lines) :])
+    bang = next((i for i, line in enumerate(parts) if line.startswith("!")), None)
+    if bang is None:
+        return "\n".join(parts[-max(1, lines) :])
+    return "\n".join(parts[bang : bang + 12])
+
+
+def _abort_open_summary(run_id: str, error: str) -> None:
+    """If the chat is still waiting on the summary, say the print failed."""
+    snap = BUS.snapshot(run_id)
+    if snap.get("status") != "streaming" or snap.get("done"):
+        return
+    BUS.finish(
+        run_id,
+        seal_chat_summary("", {}, render_error=error),
+        "error",
+    )
 
 
 def _find_latex_log(logs_dir: Path) -> Path | None:
@@ -628,10 +643,7 @@ def _pipeline_print_and_summary(
     skip_print = not formats
     injected_tex = tex_path.read_text(encoding="utf-8")
 
-    def _do_summary() -> tuple[str, str]:
-        def on_delta(piece: str) -> None:
-            BUS.publish(run_id, piece)
-
+    def _do_summary() -> tuple[str, str, dict[str, Any]]:
         chart_ids = [
             str(c.get("id") or "")
             for c in (charts or [])
@@ -654,14 +666,13 @@ def _pipeline_print_and_summary(
                 1 for fid in fig_ids if _media_ok_on_disk(fid, status, figs_dir)
             ),
         }
+        # Do not publish while print is still running. The caller seals and finishes.
         text, status_sum = try_generate_chat_summary(
             injected_tex,
             intent=intent,
             media=media_facts,
-            on_delta=on_delta,
         )
-        BUS.finish(run_id, text, status_sum)
-        return text, status_sum
+        return text, status_sum, media_facts
 
     def _do_render() -> dict:
         return render_tex(
@@ -707,7 +718,7 @@ def _pipeline_print_and_summary(
             meta["summary_status"] = "streaming"
             meta["chat_summary"] = ""
             _write_meta(meta, out, logs)
-            summary_text, summary_status = _do_summary()
+            summary_text, summary_status, _media_facts = _do_summary()
         BUS.finish(run_id, summary_text or "", summary_status)
         meta["chat_summary"] = summary_text or ""
         meta["summary_status"] = summary_status
@@ -726,7 +737,9 @@ def _pipeline_print_and_summary(
         artifacts = fut_r.result()
         _sync_render_meta_fields()
         bump("summary")
-        summary_text, summary_status = fut_s.result()
+        summary_text, summary_status, media_facts = fut_s.result()
+    summary_text = seal_chat_summary(summary_text, media_facts)
+    BUS.finish(run_id, summary_text or "", summary_status)
     meta["chat_summary"] = summary_text or ""
     meta["summary_status"] = summary_status
     if summary_text:
@@ -1049,6 +1062,7 @@ def resume_pipeline(
         log.exception("resume pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         _write_meta(meta, out, logs)
+        _abort_open_summary(run_id, str(meta.get("error") or exc))
         from case3.stage_eta import error_hint
 
         EVENTS.publish_terminal(
@@ -1611,6 +1625,7 @@ def run_pipeline(
         log.exception("pipeline failed")
         (logs / "error.txt").write_text(meta["traceback"], encoding="utf-8")
         _write_meta(meta, out, logs)
+        _abort_open_summary(run_id, str(meta.get("error") or exc))
         from case3.stage_eta import error_hint
 
         EVENTS.publish_terminal(

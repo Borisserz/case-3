@@ -40,6 +40,19 @@ def test_extract_bar() -> None:
     assert ir["series"][0]["values"] == [48.0, 35.0, 17.0]
 
 
+def test_a_second_series_still_reaches_word_when_its_shape_differs() -> None:
+    html = (
+        "labels:['Минск','Гомель'],datasets:["
+        "{label:'План',data:[10,20],backgroundColor:'#111'},"
+        "{data:[12,18],label:'Факт',borderColor:{r:1,g:2}}"
+        "]"
+    )
+    ir = extract_chart_series(html, chart_type="grouped_bar")
+    assert ir is not None
+    assert [item["name"] for item in ir["series"]] == ["План", "Факт"]
+    assert ir["series"][1]["values"] == [12.0, 18.0]
+
+
 def test_spaced_sum_stays_one_point_and_a_null_keeps_its_category() -> None:
     html = """
 <script>new Chart(el,{type:'bar',data:{

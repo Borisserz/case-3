@@ -3,6 +3,7 @@
 import { deckStyleToApiPayload, type DeckStyle } from "../deckStyle";
 import type { LiberWorkMode } from "../domain/liberModes";
 import type { SourceDraft } from "../domain/liberTypes";
+import { asksForPhoto } from "../domain/photoChip";
 
 /** Fixed run defaults — chart type/style/title come from model + ChartEditSheet. */
 const CHART_AUTO = true;
@@ -85,15 +86,17 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     fd.append("source_text", chatTrim);
     fd.append("intent", intentText);
   }
+  const photoBudget =
+    photosSnapshot.length > 0
+      ? Math.max(maxImages, photosSnapshot.length)
+      : asksForPhoto(`${chatTrim}\n${intentText}`)
+        ? maxImages
+        : 0;
   fd.append("max_charts", String(forbidCharts ? 0 : maxCharts));
   fd.append("max_diagrams", String(maxDiagrams));
   fd.append(
     "max_images",
-    String(
-      forbidImages && !photosSnapshot.length
-        ? 0
-        : Math.max(maxImages, photosSnapshot.length),
-    ),
+    String(forbidImages && !photosSnapshot.length ? 0 : photoBudget),
   );
   fd.append("chart_types", CHART_AUTO ? "" : CHART_TYPES.join(","));
   fd.append("chart_hints", CHART_HINTS.trim());
@@ -107,7 +110,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   fd.append("forbid_charts", String(forbidCharts));
   fd.append(
     "forbid_images",
-    String(forbidImages && photosSnapshot.length === 0),
+    String((forbidImages && photosSnapshot.length === 0) || photoBudget === 0),
   );
   fd.append("output_mode", "auto");
   fd.append("artifact_bias", workMode ?? "");

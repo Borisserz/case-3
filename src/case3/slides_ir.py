@@ -133,17 +133,17 @@ def _number_variants(num: str) -> list[str]:
     return list({n, n.replace(",", "."), n.replace(".", ",")})
 
 
-def _is_section_index_chrome(num: str) -> bool:
-    """Allow slide/section chrome indices — not Source facts.
+def _is_section_index_chrome(num: str, blob: str = "") -> bool:
+    """A padded kicker ``01`` or a field that is only ``1``…``24``.
 
-    - Zero-padded kickers ``01``…``099``
-    - Bare ``1``…``24`` (deck chapter / card count chrome; LLM often emits these)
-    Multi-digit facts like ``5000`` still require Source / chart allow-list.
+    The same digits inside a sentence are a fact and still need Source.
     """
     n = num or ""
     if re.fullmatch(r"0\d{1,2}", n):
         return True
-    return bool(re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n))
+    if not re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n):
+        return False
+    return bool(re.fullmatch(r"\s*[0-9]{1,2}\s*", blob or ""))
 
 
 def _boundary_hit(num: str, source_norm: str) -> bool:
@@ -206,9 +206,13 @@ def _scaled_magnitudes(text: str) -> set[str]:
 
 
 def _number_is_allowed(
-    num: str, *, source_norm: str, allowed: frozenset[str]
+    num: str,
+    *,
+    source_norm: str,
+    allowed: frozenset[str],
+    blob: str = "",
 ) -> bool:
-    if _is_section_index_chrome(num):
+    if _is_section_index_chrome(num, blob):
         return True
     for v in _number_variants(num):
         if v in allowed or _number_in_source(v, source_norm):
@@ -226,7 +230,9 @@ def _assert_numbers_allowed(
     allowed: frozenset[str],
 ) -> None:
     for num in _numbers_in_text(text):
-        if _number_is_allowed(num, source_norm=source_norm, allowed=allowed):
+        if _number_is_allowed(
+            num, source_norm=source_norm, allowed=allowed, blob=text
+        ):
             continue
         raise DeckIrError(
             f"number {num!r} not found in Source (and not in allowed chart numbers)"
@@ -332,7 +338,9 @@ def scrub_invented_numbers(
     def _scrub_text(text: str) -> str:
         def repl(m: re.Match[str]) -> str:
             num = m.group(0)
-            if _number_is_allowed(num, source_norm=source_norm, allowed=allowed):
+            if _number_is_allowed(
+                num, source_norm=source_norm, allowed=allowed, blob=text or ""
+            ):
                 return num
             return ""
 

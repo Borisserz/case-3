@@ -8,6 +8,7 @@ import {
   type PaletteInfo,
 } from "./ChartEditSheet";
 import { DeckCanvas, mediaUrl, type DeckMediaKind } from "./DeckCanvas";
+import { redoChord, undoChord } from "./domain/undoChord";
 import { DeckGallery, type DeckGalleryItem } from "./DeckGallery";
 import type { DeckIR, DeckSlide } from "./deckTypes";
 import {
@@ -1318,7 +1319,7 @@ export function PresentationPane({
                 type="button"
                 className="presentation-history-btn"
                 aria-label="Отменить"
-                title="Отменить (⌘Z)"
+                title={`Отменить (${undoChord()})`}
                 disabled={!editHistory?.canUndo || saving}
                 onClick={() => void historyUndo()}
               >
@@ -1328,7 +1329,7 @@ export function PresentationPane({
                 type="button"
                 className="presentation-history-btn"
                 aria-label="Вернуть"
-                title="Вернуть (⌘⇧Z)"
+                title={`Вернуть (${redoChord()})`}
                 disabled={!editHistory?.canRedo || saving}
                 onClick={() => void historyRedo()}
               >

@@ -537,7 +537,7 @@ def test_scrub_invented_table_cell_then_parse() -> None:
                 "layout": "table_hero",
                 "title": "Сводка",
                 "rows": [
-                    ["Метрика", "Факт", "План", "Факт2"],
+                    ["Метрика", "Факт", "План", "Запас"],
                     ["Выручка", "120", "35%", "979,72"],
                 ],
             },
@@ -731,7 +731,7 @@ def test_zero_padded_kicker_chrome_allowed() -> None:
 
 
 def test_bare_slide_index_chrome_1_to_12_allowed() -> None:
-    """Bare 1–12 are deck chrome (not Source facts); 5000 still gated."""
+    """A kicker that is only the index stays. A sentence that uses 1–24 does not."""
     ir = parse_deck_ir(
         {
             "version": 1,
@@ -742,7 +742,7 @@ def test_bare_slide_index_chrome_1_to_12_allowed() -> None:
                     "id": "s02",
                     "layout": "bullets",
                     "title": "Направления",
-                    "bullets": ["3 фокуса из Source-нарратива", "Выручка 120"],
+                    "bullets": ["Фокус из текста", "Выручка 120"],
                 },
                 {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
             ],
@@ -750,6 +750,24 @@ def test_bare_slide_index_chrome_1_to_12_allowed() -> None:
         source=SOURCE,
     )
     assert ir["slides"][0]["kicker"] == "3"
+    with pytest.raises(DeckIrError, match="3"):
+        parse_deck_ir(
+            {
+                "version": 1,
+                "palette": "atelier",
+                "slides": [
+                    {"id": "s01", "layout": "title", "title": "Итоги"},
+                    {
+                        "id": "s02",
+                        "layout": "bullets",
+                        "title": "Направления",
+                        "bullets": ["3 фокуса из текста"],
+                    },
+                    {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+                ],
+            },
+            source=SOURCE,
+        )
     with pytest.raises(DeckIrError, match="5000"):
         parse_deck_ir(
             {
@@ -781,7 +799,6 @@ def test_bare_index_13_to_24_is_chrome_25_is_not() -> None:
                     "id": "s02",
                     "layout": "section",
                     "title": "Глава",
-                    "subtitle": "Блок 24",
                 },
                 {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
             ],
@@ -789,6 +806,24 @@ def test_bare_index_13_to_24_is_chrome_25_is_not() -> None:
         source=SOURCE,
     )
     assert ir["slides"][0]["kicker"] == "18"
+    with pytest.raises(DeckIrError, match="24"):
+        parse_deck_ir(
+            {
+                "version": 1,
+                "palette": "atelier",
+                "slides": [
+                    {"id": "s01", "layout": "title", "title": "Итоги"},
+                    {
+                        "id": "s02",
+                        "layout": "section",
+                        "title": "Глава",
+                        "subtitle": "Блок 24",
+                    },
+                    {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+                ],
+            },
+            source=SOURCE,
+        )
     with pytest.raises(DeckIrError, match="25"):
         parse_deck_ir(
             {
@@ -818,7 +853,7 @@ def test_parse_accepts_sixteen_slide_deck() -> None:
         layout = layouts[i % len(layouts)]
         sid = f"s{i + 2:02d}"
         if layout == "section":
-            slides.append({"id": sid, "layout": "section", "title": f"Часть {i + 1}"})
+            slides.append({"id": sid, "layout": "section", "title": f"Часть {'абвгдежзиклмно'[i]}"})
         elif layout == "callout":
             slides.append(
                 {

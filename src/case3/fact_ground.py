@@ -55,12 +55,255 @@ def fact_context(source: str, intent: str) -> tuple[set[str], list[tuple[str, st
     return global_ok, bindings
 
 
+class TableGrid:
+    """Row stem → numbers that belong on that row, split by column."""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, set[str]] = {}
+        self.values: dict[tuple[str, str], set[str]] = {}
+        self.shares: dict[tuple[str, str], set[str]] = {}
+        self.ranks: dict[tuple[str, str], set[str]] = {}
+        self.columns: set[str] = set()
+
+    def add(
+        self,
+        bucket: dict[tuple[str, str], set[str]],
+        row: str,
+        col: str,
+        norms: set[str],
+    ) -> None:
+        clean = {norm for norm in norms if norm}
+        if not clean or not row:
+            return
+        if col:
+            bucket.setdefault((row, col), set()).update(clean)
+            self.columns.add(col)
+        self.rows.setdefault(row, set()).update(clean)
+
+
+_GENERIC_ROW = frozenset(
+    {
+        "область",
+        "област",
+        "регион",
+        "район",
+        "итого",
+        "итог",
+        "всего",
+        "всег",
+        "total",
+    }
+)
+_DERIV_LINE = re.compile(
+    r"^[-*]\s+(.+?)\s+[—-]\s+доля\s+(\d[\d \u00a0.,]*%?)\s*,\s*место\s+(\d+)\s*$"
+)
+
+
+def _name_stems(label: str) -> set[str]:
+    from case3.chat_memory import _stem
+
+    found: set[str] = set()
+    for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]{4,}", label or ""):
+        stem = _stem(word)
+        if len(stem) < 4 or stem in _GENERIC_ROW:
+            continue
+        found.add(stem)
+    return found
+
+
+def table_grid(source: str) -> TableGrid:
+    """One cell stays on its row and its column. A shared word is not a row key."""
+    from collections import Counter
+
+    from case3.dashboard_source import _label_column, _markdown_tables
+
+    grid = TableGrid()
+    stem_rows: list[set[str]] = []
+    row_cells: list[dict[str, set[str]]] = []
+    for _title, rows in _markdown_tables(source or ""):
+        if len(rows) < 2:
+            continue
+        header, body = rows[0], rows[1:]
+        label_at = _label_column(body)
+        width = max(len(row) for row in rows)
+        col_stems: dict[int, str] = {}
+        for col in range(width):
+            if label_at is not None and col == label_at:
+                continue
+            name = header[col].strip() if col < len(header) else ""
+            stems = _name_stems(name)
+            if stems:
+                col_stems[col] = max(stems, key=len)
+        for row in body:
+            label = row[label_at].strip() if label_at is not None and label_at < len(row) else ""
+            cells: dict[str, set[str]] = {}
+            for col in range(width):
+                if label_at is not None and col == label_at:
+                    continue
+                cell = row[col].strip() if col < len(row) else ""
+                norms = number_norms(cell)
+                if not norms:
+                    continue
+                # «Май» is three letters, so it never becomes a column stem.
+                # The number still belongs to the row.
+                cells.setdefault(col_stems.get(col, ""), set()).update(norms)
+            stem_rows.append(_name_stems(label))
+            row_cells.append(cells)
+    counts = Counter(stem for stems in stem_rows for stem in stems)
+    for stems, cells in zip(stem_rows, row_cells):
+        for key in {stem for stem in stems if counts[stem] == 1}:
+            for col, norms in cells.items():
+                grid.add(grid.values, key, col, norms)
+    _add_derivatives(grid, source or "")
+    return grid
+
+
+def _add_derivatives(grid: TableGrid, source: str) -> None:
+    column = ""
+    for raw in (source or "").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("|") or stripped.startswith("#"):
+            continue
+        match = _DERIV_LINE.match(stripped)
+        if not match:
+            if "Доли и места" in stripped:
+                continue
+            column = stripped
+            continue
+        label, share, rank = match.group(1), match.group(2), match.group(3)
+        named = _name_stems(column)
+        col = max(named, key=len) if named else ""
+        for stem in _name_stems(label):
+            if stem not in grid.rows:
+                continue
+            grid.add(grid.shares, stem, col, number_norms(share))
+            grid.add(grid.ranks, stem, col, number_norms(rank))
+
+
+def _mentions_share(clause: str) -> bool:
+    folded = (clause or "").casefold().replace("ё", "е")
+    return "дол" in folded or "%" in clause
+
+
+def _mentions_rank(clause: str) -> bool:
+    return "мест" in (clause or "").casefold()
+
+
+def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
+    """False when the sentence names a row and the number is not on it."""
+    if grid is None or not grid.rows or not norm:
+        return None
+    from case3.chat_memory import _stem_set
+
+    stems = _stem_set(clause)
+    row_hits = [stem for stem in stems if stem in grid.rows]
+    if not row_hits:
+        return None
+    col_hits = [stem for stem in stems if stem in grid.columns]
+    allowed: set[str] = set()
+    if col_hits:
+        share = _mentions_share(clause)
+        rank = _mentions_rank(clause)
+        for row in row_hits:
+            for col in col_hits:
+                if share:
+                    allowed |= grid.shares.get((row, col), set())
+                if rank:
+                    allowed |= grid.ranks.get((row, col), set())
+                if not share and not rank:
+                    allowed |= grid.values.get((row, col), set())
+        return norm in allowed
+    for row in row_hits:
+        allowed |= grid.rows[row]
+    return norm in allowed
+
+
+def wrong_row_tokens(
+    text: str | None,
+    source: str | None,
+    message: str | None = "",
+) -> list[str]:
+    """A number that exists, but on a different row from the one named here."""
+    from case3.chat_turn import _is_list_marker
+
+    grid = table_grid(source or "")
+    if not grid.rows:
+        return []
+    message_ok = number_norms(message)
+    source_ok = number_norms(source)
+    found: list[str] = []
+    seen: set[str] = set()
+    for line in (text or "").split("\n"):
+        for chunk in re.split(r"[.!?]+", line):
+            for part in re.split(r",(?!\d)\s*", chunk):
+                for match in _NUM.finditer(part):
+                    if _is_list_marker(part, match.start(), match.end()):
+                        continue
+                    norm = _norm_num(match.group(0))
+                    if not norm or norm in message_ok or norm in seen or norm not in source_ok:
+                        continue
+                    if _row_allows(part, norm, grid) is False:
+                        seen.add(norm)
+                        found.append(match.group(0))
+    return found
+
+
+def _rewrite_chart_body(kind: str, body: str, reject) -> str:
+    """``[100,40]`` is two points. A comma is a decimal only after four digits."""
+    empty = "null" if kind.lower() == "data" else "''"
+    text = re.sub(
+        r"(?<=\d)[\s\u00a0\u202f]+(?=\d{3}(?:\D|$))",
+        "",
+        body or "",
+    )
+    parts: list[str] = []
+    index = 0
+    size = len(text)
+    while index < size:
+        if text[index : index + 4].lower() == "null" and (
+            index == 0 or not text[index - 1].isalnum()
+        ):
+            parts.append("null")
+            index += 4
+            continue
+        match = re.match(r"-?\d+", text[index:])
+        if match and (index == 0 or not text[index - 1].isdigit()):
+            start = index
+            num = match.group(0)
+            index += len(num)
+            if index < size and text[index] == ".":
+                frac = re.match(r"\.\d+", text[index:])
+                if frac:
+                    index += len(frac.group(0))
+            elif index < size and text[index] == "," and len(num.lstrip("-")) >= 4:
+                frac = re.match(r",(\d{1,2})(?!\d)", text[index:])
+                if frac:
+                    index += 1 + len(frac.group(1))
+            if index < size and text[index] in "eE":
+                exp = re.match(r"[eE][+-]?\d+", text[index:])
+                if exp:
+                    index += len(exp.group(0))
+            token = text[start:index]
+            parts.append(empty if reject(token) else token)
+            continue
+        parts.append(text[index])
+        index += 1
+    return f"{kind}: [{''.join(parts)}]"
+
+
 def _clause_allows(
     clause: str,
     norm: str,
     global_ok: set[str],
     bindings: list[tuple[str, str]],
+    grid: TableGrid | None = None,
+    message_ok: set[str] | None = None,
 ) -> bool:
+    if message_ok and norm in message_ok:
+        return True
+    on_row = _row_allows(clause, norm, grid)
+    if on_row is not None:
+        return on_row
     if norm in global_ok:
         return True
     from case3.chat_memory import _stem_set
@@ -75,6 +318,8 @@ def _scrub_bound(
     bindings: list[tuple[str, str]],
     *,
     context: str = "",
+    grid: TableGrid | None = None,
+    message_ok: set[str] | None = None,
 ) -> str:
     """Drop a number that is not in Source, this message, or beside its own word."""
     from case3.chat_turn import _SPOKEN_NUMBER, _SPOKEN_RE
@@ -93,23 +338,17 @@ def _scrub_bound(
         if not norms:
             return clause
         judged = f"{context} {clause}".strip() if context else clause
-        bad = {norm for norm in norms if not _clause_allows(judged, norm, global_ok, bindings)}
+        bad = {
+            norm
+            for norm in norms
+            if not _clause_allows(
+                judged, norm, global_ok, bindings, grid, message_ok
+            )
+        }
         if not bad:
             return clause
-        if len(bad) == len(set(norms)):
-            return ""
-
-        def digit_repl(match: re.Match[str]) -> str:
-            if _norm_num(match.group(0)) in bad:
-                return ""
-            return match.group(0)
-
-        def word_repl(match: re.Match[str]) -> str:
-            if spoken_norm(match.group(0)) in bad:
-                return ""
-            return match.group(0)
-
-        return _SPOKEN_RE.sub(word_repl, _NUM.sub(digit_repl, clause))
+        # One illegal number ruins the clause. Cutting it out leaves «в раза».
+        return ""
 
     kept_lines: list[str] = []
     for line in (text or "").split("\n"):
@@ -121,9 +360,9 @@ def _scrub_bound(
             delim = bits[index + 1] if index + 1 < len(bits) else ""
             index += 2 if delim else 1
             parts = []
-            for part in re.split(r",(?!\d)\s*", chunk):
+            for part in re.split(r"(?<![{\\]),(?!\d)\s*", chunk):
                 cleaned = clean_clause(part).strip()
-                if cleaned:
+                if cleaned and not re.fullmatch(r"[\s\\%{},.;:–—\-]*", cleaned):
                     parts.append(cleaned)
             if not parts:
                 continue
@@ -258,14 +497,7 @@ def _quote_is_fact(inner: str) -> bool:
 def _scrub_html(html: str, stray: set[str]) -> str:
     def repl(match: re.Match[str]) -> str:
         kind = match.group(1)
-        empty = "null" if kind.lower() == "data" else "''"
-
-        def one(num: re.Match[str]) -> str:
-            if _norm_num(num.group(0)) in stray:
-                return empty
-            return num.group(0)
-
-        return f"{kind}: [{_NUM.sub(one, match.group(2))}]"
+        return _rewrite_chart_body(kind, match.group(2), lambda token: _norm_num(token) in stray)
 
     def repl_quote(match: re.Match[str]) -> str:
         if not _quote_is_fact(match.group(2)):
@@ -308,26 +540,38 @@ def ground_generated(
     figures = [dict(item) for item in (figures or []) if isinstance(item, dict)]
     diagrams = [dict(item) for item in (diagrams or []) if isinstance(item, dict)]
     global_ok, bindings = fact_context(source, intent)
+    grid = table_grid(source)
+    message_ok = number_norms(latest_user_line(intent))
     visible = _visible(tex, charts, figures, diagrams)
     dropped = [
         token
         for token in stray_numbers(visible, global_ok)
-        if not _clause_allows(visible, _norm_num(token), global_ok, bindings)
+        if not _clause_allows(
+            visible, _norm_num(token), global_ok, bindings, grid, message_ok
+        )
     ]
     # A bound number can be legal in one sentence and illegal in the next.
     # Scrub per sentence even when the flat list still contains the value.
     head, body, tail = _split_document(tex)
     body = "".join(
-        piece if protected else _scrub_bound(piece, global_ok, bindings)
+        piece
+        if protected
+        else _scrub_bound(
+            piece, global_ok, bindings, grid=grid, message_ok=message_ok
+        )
         for piece, protected in _parts(body)
     )
     tex = head + body + tail
     for item in charts:
         for key in ("caption", "insight"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_bound(item[key], global_ok, bindings).strip()
+                item[key] = _scrub_bound(
+                    item[key], global_ok, bindings, grid=grid, message_ok=message_ok
+                ).strip()
         if isinstance(item.get("html"), str):
-            item["html"] = _scrub_html_bound(item["html"], global_ok, bindings)
+            item["html"] = _scrub_html_bound(
+                item["html"], global_ok, bindings, grid, message_ok
+            )
         rows = []
         for row in item.get("highlights") or []:
             if not isinstance(row, dict):
@@ -342,6 +586,8 @@ def ground_generated(
                         global_ok,
                         bindings,
                         context="" if key == "label" else label,
+                        grid=grid,
+                        message_ok=message_ok,
                     ).strip()
             if before_value.strip() and not str(nxt.get("value") or "").strip():
                 continue
@@ -351,11 +597,15 @@ def ground_generated(
     for item in figures:
         for key in ("caption", "prompt"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_bound(item[key], global_ok, bindings).strip()
+                item[key] = _scrub_bound(
+                    item[key], global_ok, bindings, grid=grid, message_ok=message_ok
+                ).strip()
     for item in diagrams:
         for key in ("title", "caption", "mermaid"):
             if isinstance(item.get(key), str):
-                item[key] = _scrub_bound(item[key], global_ok, bindings)
+                item[key] = _scrub_bound(
+                    item[key], global_ok, bindings, grid=grid, message_ok=message_ok
+                )
     return tex, charts, figures, diagrams, dropped
 
 
@@ -363,24 +613,33 @@ def _scrub_html_bound(
     html: str,
     global_ok: set[str],
     bindings: list[tuple[str, str]],
+    grid: TableGrid | None = None,
+    message_ok: set[str] | None = None,
 ) -> str:
     """Chart data takes only Source and this message. A caption may use a bound word."""
 
     def repl(match: re.Match[str]) -> str:
         kind = match.group(1)
-        empty = "null" if kind.lower() == "data" else "''"
-
-        def one(num: re.Match[str]) -> str:
-            if _norm_num(num.group(0)) not in global_ok:
-                return empty
-            return num.group(0)
-
-        return f"{kind}: [{_NUM.sub(one, match.group(2))}]"
+        return _rewrite_chart_body(
+            kind,
+            match.group(2),
+            lambda token: _norm_num(token) not in global_ok,
+        )
 
     def repl_quote(match: re.Match[str]) -> str:
         if not _quote_is_fact(match.group(2)):
             return match.group(0)
-        return match.group(1) + _scrub_bound(match.group(2), global_ok, bindings) + match.group(1)
+        return (
+            match.group(1)
+            + _scrub_bound(
+                match.group(2),
+                global_ok,
+                bindings,
+                grid=grid,
+                message_ok=message_ok,
+            )
+            + match.group(1)
+        )
 
     return _QUOTED.sub(repl_quote, _JS_ARRAY.sub(repl, html or ""))
 
@@ -388,6 +647,8 @@ def _scrub_html_bound(
 def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict[str, Any]:
     """A historical user number stays on a slide only beside its word."""
     global_ok, bindings = fact_context(source, intent)
+    grid = table_grid(source)
+    message_ok = number_norms(latest_user_line(intent))
     if not isinstance(deck, dict):
         return deck
     slides = []
@@ -398,12 +659,18 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
         nxt = dict(slide)
         for key in ("title", "subtitle", "caption", "body", "kicker", "takeaway", "term", "definition"):
             if isinstance(nxt.get(key), str):
-                nxt[key] = _scrub_bound(str(nxt[key]), global_ok, bindings).strip()
+                nxt[key] = _scrub_bound(
+                    str(nxt[key]), global_ok, bindings, grid=grid, message_ok=message_ok
+                ).strip()
         if isinstance(nxt.get("bullets"), list):
             nxt["bullets"] = [
                 cleaned
                 for item in nxt["bullets"]
-                if (cleaned := _scrub_bound(str(item), global_ok, bindings).strip())
+                if (
+                    cleaned := _scrub_bound(
+                        str(item), global_ok, bindings, grid=grid, message_ok=message_ok
+                    ).strip()
+                )
             ]
         if isinstance(nxt.get("cards"), list):
             cards = []
@@ -414,7 +681,11 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 for key in ("title", "body", "kicker"):
                     if isinstance(nxt_card.get(key), str):
                         nxt_card[key] = _scrub_bound(
-                            str(nxt_card[key]), global_ok, bindings
+                            str(nxt_card[key]),
+                            global_ok,
+                            bindings,
+                            grid=grid,
+                            message_ok=message_ok,
                         ).strip()
                 if str(nxt_card.get("title") or "").strip():
                     cards.append(nxt_card)
@@ -428,11 +699,64 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 value = str(kpi.get("value") or "")
                 clause = f"{label} {value}"
                 norms = {_norm_num(token) for token in _NUM.findall(value)}
-                if norms and not all(_clause_allows(clause, norm, global_ok, bindings) for norm in norms):
+                if norms and not all(
+                    _clause_allows(clause, norm, global_ok, bindings, grid, message_ok)
+                    for norm in norms
+                ):
                     continue
                 kept.append(kpi)
             nxt["kpis"] = kept
         slides.append(nxt)
     out = dict(deck)
     out["slides"] = slides
+    return _repass_blank_slides(out)
+
+
+def _has_letters(value: object) -> bool:
+    return bool(re.search(r"[0-9A-Za-zА-Яа-яЁё]", str(value or "")))
+
+
+def _slide_still_visible(slide: dict[str, Any]) -> bool:
+    if str(slide.get("media_id") or slide.get("chart_id") or "").strip():
+        return True
+    for key in (
+        "title",
+        "subtitle",
+        "caption",
+        "body",
+        "kicker",
+        "takeaway",
+        "term",
+        "definition",
+    ):
+        if _has_letters(slide.get(key)):
+            return True
+    for item in slide.get("bullets") or []:
+        if _has_letters(item):
+            return True
+    for card in slide.get("cards") or []:
+        if isinstance(card, dict) and any(
+            _has_letters(card.get(key)) for key in ("title", "body", "kicker")
+        ):
+            return True
+    for kpi in slide.get("kpis") or []:
+        if isinstance(kpi, dict) and str(kpi.get("value") or "").strip():
+            return True
+    for row in slide.get("rows") or []:
+        if isinstance(row, list) and any(str(cell).strip() and str(cell).strip() != "—" for cell in row):
+            return True
+    return False
+
+
+def _repass_blank_slides(deck: dict[str, Any]) -> dict[str, Any]:
+    """Drop a slide the number pass wiped. Never leave the deck empty."""
+    kept = [
+        slide
+        for slide in deck.get("slides") or []
+        if isinstance(slide, dict) and _slide_still_visible(slide)
+    ]
+    if not kept:
+        kept = [{"id": "s01", "layout": "title", "title": "Итоги"}]
+    out = dict(deck)
+    out["slides"] = kept
     return out

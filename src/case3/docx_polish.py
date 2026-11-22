@@ -434,6 +434,40 @@ def polish_docx(path: Path | str) -> Path:
     return path
 
 
+def orient_wide_tables(path: Path | str) -> bool:
+    """Turn the Word page sideways when a table has six or more columns.
+
+    Pandoc drops the LaTeX landscape environment, so a wide table was squeezed
+    into a portrait page. Returns True when the page was turned.
+    """
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Twips
+
+    doc = Document(str(path))
+    wide = [table for table in doc.tables if table.rows and len(table.rows[0].cells) >= 6]
+    if not wide:
+        return False
+    for table in wide:
+        tbl_pr = table._tbl.tblPr
+        if tbl_pr is None:
+            continue
+        width = tbl_pr.find(qn("w:tblW"))
+        if width is None:
+            width = OxmlElement("w:tblW")
+            tbl_pr.append(width)
+        width.set(qn("w:w"), "14400")
+        width.set(qn("w:type"), "dxa")
+    for section in doc.sections:
+        section.orientation = WD_ORIENT.LANDSCAPE
+        section.page_width = Twips(16838)
+        section.page_height = Twips(11906)
+    doc.save(str(path))
+    return True
+
+
 def try_polish_docx(path: Path | str) -> bool:
     """Best-effort polish; never raise into render."""
     try:

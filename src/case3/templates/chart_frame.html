@@ -141,6 +141,26 @@
       flex-shrink: 0;
       box-shadow: inset 0 0 0 1px rgba(15, 61, 62, 0.12);
     }
+    .donut-layout:has(.valued-legend.is-dense) {
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+    .valued-legend.is-dense {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 20px;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .valued-legend.is-dense .valued-legend__row {
+      font-size: 14px;
+      gap: 8px 10px;
+    }
+    .valued-legend.is-dense .valued-legend__label {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
     .valued-legend__label {
       overflow: hidden;
       text-overflow: ellipsis;

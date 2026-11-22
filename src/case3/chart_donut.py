@@ -106,6 +106,18 @@ def _rewrite_chart_labels_array(html: str, labels: list[str]) -> str:
         flags=re.I,
     )
 
+def _fmt_slice_pct(val: float, total: float) -> str:
+    """A positive slice never prints as 0%. Tiny shares keep one decimal."""
+    raw = 100.0 * val / total if total else 0.0
+    whole = int(round(raw))
+    if val > 0 and whole == 0:
+        tenth = round(raw, 1)
+        if tenth <= 0:
+            tenth = 0.1
+        return f"{tenth:.1f}".replace(".", ",") + "%"
+    return f"{whole}%"
+
+
 def enhance_donut_html(html: str) -> str:
     """Wrap doughnut fragment with center % + valued HTML legend when parseable.
 
@@ -132,16 +144,17 @@ def enhance_donut_html(html: str) -> str:
 
     rows: list[str] = []
     for label, val, color in clean_slices:
-        pct = int(round(100.0 * val / total))
+        pct = _fmt_slice_pct(val, total)
         rows.append(
             '<li class="valued-legend__row">'
             f'<span class="valued-legend__swatch" style="background:{color}"></span>'
             f'<span class="valued-legend__label">{label}</span>'
-            f'<span class="valued-legend__pct">{pct}%</span>'
+            f'<span class="valued-legend__pct">{pct}</span>'
             f'<span class="valued-legend__abs">{_fmt_slice_num(val)}</span>'
             "</li>"
         )
-    legend = '<ul class="valued-legend">' + "".join(rows) + "</ul>"
+    legend_class = "valued-legend is-dense" if len(clean_slices) >= 8 else "valued-legend"
+    legend = f'<ul class="{legend_class}">' + "".join(rows) + "</ul>"
     center = (
         '<div class="donut-center">'
         f'<div class="pct">{focus_pct}%</div>'

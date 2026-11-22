@@ -15,6 +15,7 @@ import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
 import { attachCaptureMarkdowns, captureWarning, phraseMiss, phrasePlan, phraseRoute } from "../domain/dashboardCapture";
+import { ATTACHED_TOAST, screenReadNote } from "../domain/sourceCopy";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
@@ -419,9 +420,14 @@ export default function App() {
 
   const onDashboardReady = useCallback(
     (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
-      setSourceDraft((current) => attachCaptureMarkdowns(current, docs));
+      setSourceDraft((current) => {
+        const next = attachCaptureMarkdowns(current, docs);
+        if (!next) return next;
+        return { ...next, fromScreen: true };
+      });
       const note = captureWarning(docs);
       if (note) showToast(note, 5000);
+      else if (docs.length) showToast(ATTACHED_TOAST, 2800);
       setPlaqueDismissed(false);
       setFile(null);
       setPhraseViewer(null);
@@ -509,8 +515,9 @@ export default function App() {
   const plaqueDraft = sourceDraft
     ? {
         title: sourceDraft.title,
-        subtitle:
-          sourceDraft.viewMode === "document"
+        subtitle: sourceDraft.fromScreen
+          ? screenReadNote(true)
+          : sourceDraft.viewMode === "document"
             ? sourceDraft.previewUrl
               ? "Документ · просмотр"
               : "Документ · без PDF-превью"
@@ -690,6 +697,9 @@ export default function App() {
                   onOpenDiagram={openDiagramArtifact}
                   onOpenPresentation={openPresentationArtifact}
                   onOpenDeckSlides={openDeckSlidesArtifact}
+                  onMakePresentation={(msgId, result) => {
+                    void makePresentation(msgId, result);
+                  }}
                   onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}

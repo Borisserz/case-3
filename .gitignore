@@ -12,12 +12,19 @@ build/
 .local-wrangler/
 .code-review-graph/
 
-# Agent / memory — home-only; do not sync to work desk
-AGENTS.md
+# Home-only agent chrome. The desk still reads the memory below.
 CLAUDE.md
-.agents/
 .cursor/
-docs/
+.agents/*
+!.agents/knowledge/
+!.agents/knowledge/**
+
+docs/*
+!docs/MEMORY.md
+!docs/adr/
+!docs/adr/**
+!docs/knowledge/
+!docs/knowledge/**
 
 # Dev smoke Source texts (not needed on work desk)
 fixtures/

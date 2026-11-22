@@ -39,6 +39,7 @@ import {
 import { layoutPositions } from "./diagramLayout";
 import { useConfirm } from "./ConfirmModal";
 import { useFocusTrap } from "./useFocusTrap";
+import { redoChord, undoChord } from "./domain/undoChord";
 
 /** React Flow fires dimensions/select on mount — those must not mark dirty. */
 function isUserNodeChange(
@@ -750,7 +751,7 @@ function EditorInner({
                 className="btn ghost icon"
                 onClick={undo}
                 disabled={!canUndo}
-                title="Отменить · ⌘Z"
+                title={`Отменить · ${undoChord()}`}
                 aria-label="Отменить"
               >
                 <svg viewBox="0 0 16 16" aria-hidden>
@@ -776,7 +777,7 @@ function EditorInner({
                 className="btn ghost icon"
                 onClick={redo}
                 disabled={!canRedo}
-                title="Повторить · ⌘⇧Z"
+                title={`Повторить · ${redoChord()}`}
                 aria-label="Повторить"
               >
                 <svg viewBox="0 0 16 16" aria-hidden>
@@ -884,7 +885,7 @@ function EditorInner({
                 Карта
               </button>
               <span className="diagram-visual-hint">
-                Тяните от точки — стрелка · ⌘Z — отмена
+                Тяните от точки — стрелка · {undoChord()} — отмена
               </span>
             </div>
             <div className="diagram-visual-flow">

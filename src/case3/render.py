@@ -406,6 +406,14 @@ def render_tex(
                     log.warning("docx native charts hook failed: %s", exc)
                     shutil.copy2(docx_backup, docx_dst)
                     native_ids = []
+            try:
+                from case3.docx_polish import orient_wide_tables
+
+                orient_wide_tables(docx_dst)
+                _restore_if_broken("landscape")
+            except Exception as exc:  # noqa: BLE001 — never break DOCX
+                log.warning("docx landscape hook failed: %s", exc)
+                shutil.copy2(docx_backup, docx_dst)
             results["docx"] = docx_dst
             media_src = work / media_dir
             if native_ids and media_src.is_dir():

@@ -413,35 +413,46 @@ def _rewrite_js_type(html: str, preferred: str) -> str:
         out = re.sub(r"cutout\s*:\s*['\"][^'\"]*['\"]\s*,?", "", out, flags=re.I)
     return out
 
+def _scatter_radius_for(html: str) -> tuple[int, int]:
+    """A two-point cloud stays large. A dense cloud shrinks so points do not merge."""
+    count = len(re.findall(r"\{\s*x\s*:", html or ""))
+    if count >= 36:
+        return 4, 7
+    if count >= 16:
+        return 6, 9
+    return _SCATTER_RADIUS, _SCATTER_HOVER
+
+
+def _relax_vertical_bar_labels(html: str) -> str:
+    """Turn crowded category labels so a vertical bar chart stays readable."""
+    if _count_labels(html) < 8 or "maxRotation" in (html or ""):
+        return html or ""
+    snippet = "scales:{x:{ticks:{maxRotation:45,minRotation:40,autoSkip:true,font:{size:11}}}},"
+    if re.search(r"options\s*:\s*\{", html or ""):
+        return re.sub(r"(options\s*:\s*\{)", rf"\1{snippet}", html or "", count=1)
+    return html or ""
+
+
 def _ensure_scatter_point_size(html: str) -> str:
-    """Scatter defaults are tiny (r≈3) — bump for print + Liber draft."""
+    """Scatter defaults are tiny (r≈3) — bump for print. A large cloud stays smaller."""
+    radius, hover = _scatter_radius_for(html)
     out = html or ""
 
-    def _bump(key: str, floor: int, target: int) -> None:
+    def _set(key: str, target: int) -> None:
         nonlocal out
-
-        def _repl(m: re.Match[str]) -> str:
-            try:
-                v = float(m.group(2))
-            except ValueError:
-                return f"{m.group(1)}{target}"
-            if v >= floor:
-                return m.group(0)
-            return f"{m.group(1)}{target}"
-
         out = re.sub(
             rf"({key}\s*:\s*)([\d.]+)",
-            _repl,
+            rf"\g<1>{target}",
             out,
             flags=re.I,
         )
 
-    _bump("pointRadius", 8, _SCATTER_RADIUS)
-    _bump("pointHoverRadius", 11, _SCATTER_HOVER)
+    _set("pointRadius", radius)
+    _set("pointHoverRadius", hover)
     if not re.search(r"pointRadius\s*:", out, flags=re.I):
         out = re.sub(
             r"(datasets\s*:\s*\[\s*\{)",
-            rf"\1pointRadius:{_SCATTER_RADIUS},pointHoverRadius:{_SCATTER_HOVER},borderWidth:2,",
+            rf"\1pointRadius:{radius},pointHoverRadius:{hover},borderWidth:2,",
             out,
             count=1,
             flags=re.I,
@@ -449,7 +460,7 @@ def _ensure_scatter_point_size(html: str) -> str:
     elif not re.search(r"pointHoverRadius\s*:", out, flags=re.I):
         out = re.sub(
             r"(pointRadius\s*:\s*[\d.]+)",
-            rf"\1,pointHoverRadius:{_SCATTER_HOVER}",
+            rf"\1,pointHoverRadius:{hover}",
             out,
             count=1,
             flags=re.I,
@@ -794,6 +805,7 @@ def harden_chart_html(
         out = _colorize_hbar_categories(out, palette_id)
     elif want in {"bar", "grouped_bar", "stacked_bar"} and out:
         out = _solidify_pale_bar_fill(out)
+        out = _relax_vertical_bar_labels(out)
         if want == "stacked_bar":
             out = _ensure_stack_segment_gaps(out)
     elif want == "scatter" and out:

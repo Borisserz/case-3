@@ -505,6 +505,7 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             if tm:
                 table = _parse_table_block(tm.group(0))
                 if table:
+                    table["landscape"] = True
                     blocks.append(table)
             pos = m.start() + em.end()
             continue

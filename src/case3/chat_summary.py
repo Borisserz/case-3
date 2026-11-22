@@ -132,6 +132,41 @@ def build_summary_user(
     return "\n".join(parts)
 
 
+def missing_chart_note(media: dict[str, Any] | None) -> str:
+    """Spoken line when a planned chart never became a file."""
+    planned = int((media or {}).get("charts_planned") or 0)
+    ok = int((media or {}).get("charts_ok") or 0)
+    missed = planned - ok
+    if missed <= 0:
+        return ""
+    if missed == 1:
+        return "Один график не собрался и в файл не попал."
+    return f"Графиков не собралось: {missed} из {planned}."
+
+
+def seal_chat_summary(
+    text: str,
+    media: dict[str, Any] | None,
+    *,
+    render_error: str = "",
+) -> str:
+    """Publish a ready line only after print. A TeX failure replaces it."""
+    err = (render_error or "").strip()
+    if err:
+        bang = next((line.strip() for line in err.splitlines() if line.startswith("!")), "")
+        loc = next(
+            (line.strip() for line in err.splitlines() if line.strip().startswith("l.")),
+            "",
+        )
+        shown = " ".join(part for part in (bang, loc) if part) or err.splitlines()[0][:240]
+        return f"PDF не собрался. {shown}"
+    note = missing_chart_note(media)
+    body = (text or "").strip()
+    if note and note not in body:
+        body = (body + "\n\n" + note).strip()
+    return body
+
+
 def local_summary_blurb(
     tex: str,
     *,
@@ -163,6 +198,9 @@ def local_summary_blurb(
         parts.append(f"иллюстраций: {figures_ok}")
     if parts:
         bits.append("Внутри — " + ", ".join(parts) + ".")
+    note = missing_chart_note(m)
+    if note:
+        bits.append(note)
     fact = _first_table_fact(data)
     if fact:
         bits.append(fact + ".")

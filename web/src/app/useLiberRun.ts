@@ -21,6 +21,7 @@ import {
 import { cancelIfStopPressed } from "../domain/stopRun";
 import { userIntentForRun } from "../domain/userIntent";
 import { modeToOutputMode, type LiberWorkMode } from "../domain/liberModes";
+import { asksForPhoto, photoLimitChip } from "../domain/photoChip";
 import {
   appendBotThinking,
   asString,
@@ -180,7 +181,7 @@ async (override?: string) => {
   // Soft warn: Image down + photos wanted — run still proceeds (fig_* may skip)
   const wantsPhotos =
     !forbidImages &&
-    maxImages > 0 &&
+    (attachPhotos.length > 0 || asksForPhoto(chatTrim)) &&
     modeToOutputMode(workMode) !== "diagram";
   if (wantsPhotos && health && !imageChip.ok) {
     setToast(
@@ -236,17 +237,18 @@ async (override?: string) => {
         : outMode === "report"
           ? "отчёт"
           : null,
-    attachPhotos.length ? `фото ×${attachPhotos.length}` : null,
+    photoLimitChip({
+      text: chatTrim,
+      attached: attachPhotos.length,
+      maxImages,
+      forbidImages,
+      showLimits: Boolean(workMode) && outMode !== "diagram",
+    }),
     workMode && outMode !== "diagram" && forbidCharts
       ? "без графиков"
       : workMode && outMode !== "diagram"
         ? `≤${maxCharts} гр.`
         : null,
-    workMode && outMode !== "diagram"
-      ? forbidImages && !attachPhotos.length
-        ? "без фото"
-        : `≤${Math.max(maxImages, attachPhotos.length)} фото`
-      : null,
     workMode
       ? `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`
       : null,

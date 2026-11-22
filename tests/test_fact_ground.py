@@ -36,6 +36,89 @@ def test_tex_thousands_and_column_span_stay_when_the_cell_is_in_source():
     assert r"\multicolumn{3}" in out
 
 
+def test_chart_array_keeps_both_points_when_the_comma_has_no_space():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Минская 100. Гомельская 40.
+\end{document}
+"""
+    _out, charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [{"id": "cht_01", "caption": "Области", "html": "data: [100,40]"}],
+        [],
+        [],
+        source=(
+            "| Область | Сумма |\n"
+            "| --- | --- |\n"
+            "| Минская | 100 |\n"
+            "| Гомельская | 40 |\n"
+        ),
+        intent="отчёт",
+    )
+    html = charts[0]["html"]
+    assert "100" in html
+    assert "40" in html
+    assert "null" not in html
+    assert "100.40" not in html
+    assert "100,40" not in html or "100, 40" in html or html.index("40") > html.index("100")
+
+
+def test_named_region_keeps_its_column_and_drops_the_other_row():
+    source = (
+        "| Область | План | Факт |\n"
+        "| --- | --- | --- |\n"
+        "| Минская | 10 | 12 |\n"
+        "| Гомельская | 40 | 48 |\n"
+    )
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Гомельская план 40. Гомельская план 10. Минская факт 12.
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [],
+        [],
+        [],
+        source=source,
+        intent="отчёт",
+    )
+    assert "Гомельская план 40" in out
+    assert "план 10" not in out
+    assert "Минская факт 12" in out
+
+
+def test_share_stays_on_the_region_it_was_computed_for():
+    from case3.dashboard_source import derivative_block
+
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105 865,2 |\n"
+        "| Гомельская | 94 073,0 |\n"
+    )
+    source = table + "\n## Производные\n" + derivative_block(table)
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Доля Минской 52,9%.
+Доля Гомельской 52,9%.
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [],
+        [],
+        [],
+        source=source,
+        intent="отчёт",
+    )
+    assert out.count("52,9%") == 1
+    assert "Гомель" not in out
+
+
 def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
     from case3.chat_turn import number_norms
 
@@ -371,3 +454,113 @@ def test_user_stated_number_stays_in_a_new_report_and_the_answer_number_goes():
     assert "77" in out
     assert "88" not in out
     assert "88" in dropped
+
+
+def test_a_slide_emptied_by_numbers_is_dropped_on_the_second_pass() -> None:
+    from case3.fact_ground import bind_deck_numbers
+
+    deck = bind_deck_numbers(
+        {
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "bullets",
+                    "title": "999",
+                    "bullets": ["888"],
+                },
+                {"id": "s03", "layout": "closing", "title": "Конец", "bullets": ["ок"]},
+            ]
+        },
+        source="Касса без цифр.",
+        intent="собери отчёт",
+    )
+    ids = [slide.get("id") for slide in deck["slides"]]
+    assert "s02" not in ids
+    assert "s01" in ids
+    assert "s03" in ids
+    blank = bind_deck_numbers(
+        {"slides": [{"id": "s01", "layout": "bullets", "title": "999", "bullets": ["4"]}]},
+        source="Касса без цифр.",
+        intent="собери отчёт",
+    )
+    assert blank["slides"]
+    assert "999" not in str(blank)
+    assert str(blank["slides"][0].get("title") or "").strip()
+
+
+def test_a_three_letter_month_stays_on_its_row():
+    source = (
+        "| Область | Май | Июнь |\n"
+        "| --- | --- | --- |\n"
+        "| Минская | 14 | 15 |\n"
+        "| Гомельская | 11 | 12 |\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Минская & 14 & 15 \\\\\n"
+        "Гомельская & 11 & 12 \\\\\n"
+        "\\end{document}\n"
+    )
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source=source, intent="отчёт"
+    )
+    assert "& 14 &" in out
+    assert "& 11 &" in out
+
+
+def test_an_invented_share_does_not_leave_a_hole_in_the_sentence():
+    source = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 100 |\n"
+        "| Гомельская | 40 |\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Минская область — 100 единиц, Гомельская область — 40 единиц.\n"
+        "Доля Минской около 71{,}4\\%, доля Гомельской около 28{,}6\\%.\n"
+        "По сравнению с Гомельской её сумма выше более чем в два раза: 100 против 40.\n"
+        "\\end{document}\n"
+    )
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source=source, intent="отчёт"
+    )
+    assert "100 единиц" in out
+    assert "40 единиц" in out
+    assert "71" not in out
+    assert "раза" not in out
+    assert "\\%" not in out
+
+
+def test_a_slide_does_not_keep_a_hole_where_the_number_was():
+    from case3.fact_ground import bind_deck_numbers
+
+    deck = bind_deck_numbers(
+        {
+            "slides": [
+                {
+                    "id": "s01",
+                    "layout": "section",
+                    "title": "Минская в два раза больше Гомельской",
+                },
+                {
+                    "id": "s02",
+                    "layout": "title",
+                    "title": "Касса",
+                    "takeaway": "Минская лидирует с 100 против 40",
+                },
+            ]
+        },
+        source=(
+            "| Область | Сумма |\n"
+            "| --- | --- |\n"
+            "| Минская | 100 |\n"
+            "| Гомельская | 40 |\n"
+        ),
+        intent="презентация",
+    )
+    blob = str(deck)
+    assert "раза" not in blob
+    assert "против" not in blob
+    assert any(slide.get("title") == "Касса" for slide in deck["slides"])

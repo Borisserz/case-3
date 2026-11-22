@@ -38,6 +38,8 @@ import {
 } from "./domain/reportEditMode";
 import { reportToMarkdown } from "./domain/reportMarkdown";
 import { modeSurfaces } from "./domain/liberModes";
+import { SOURCE_LABEL } from "./domain/sourceCopy";
+import { redoChord, undoChord } from "./domain/undoChord";
 import { SourcePane } from "./SourcePane";
 import {
   RAIL_WIDTH_DEFAULT,
@@ -387,7 +389,7 @@ export function ArtifactRail({
   const displaySourceTitle =
     artifact.kind === "source" || artifact.kind === "intent"
       ? artifact.title
-      : reportSourceDoc?.title || sourceTitle || "Текст";
+      : reportSourceDoc?.title || sourceTitle || SOURCE_LABEL;
   const sourceFileName =
     artifact.kind === "source"
       ? artifact.fileName
@@ -436,7 +438,7 @@ export function ArtifactRail({
       },
       {
         id: "source",
-        label: sourceAsDocument ? "Документ" : "Текст",
+        label: SOURCE_LABEL,
         show: hasSource,
       },
     ];
@@ -768,7 +770,7 @@ export function ArtifactRail({
                       type="button"
                       className="artifact-rail-edit-hist"
                       aria-label="Отменить"
-                      title="Отменить (⌘Z)"
+                      title={`Отменить (${undoChord()})`}
                       disabled={!editHistory?.canUndo || finishReportEditBusy}
                       onClick={() => void onHistoryUndo?.()}
                     >
@@ -778,7 +780,7 @@ export function ArtifactRail({
                       type="button"
                       className="artifact-rail-edit-hist"
                       aria-label="Вернуть"
-                      title="Вернуть (⌘⇧Z)"
+                      title={`Вернуть (${redoChord()})`}
                       disabled={!editHistory?.canRedo || finishReportEditBusy}
                       onClick={() => void onHistoryRedo?.()}
                     >

@@ -260,3 +260,34 @@ def test_polish_docx_forces_black_headings(tmp_path: Path) -> None:
     color = rPr.find(qn("w:color")) if rPr is not None else None
     assert color is not None
     assert color.get(qn("w:val"), "").upper() == "121212"
+
+
+def test_a_wide_table_turns_the_word_page_sideways(tmp_path: Path) -> None:
+    import zipfile
+
+    from case3.docx_polish import orient_wide_tables
+
+    path = tmp_path / "wide.docx"
+    doc = Document()
+    table = doc.add_table(rows=1, cols=6)
+    for index, cell in enumerate(table.rows[0].cells):
+        cell.text = f"c{index}"
+    doc.save(str(path))
+    assert orient_wide_tables(path) is True
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+    assert "landscape" in xml
+    assert "16838" in xml
+
+
+def test_a_narrow_table_stays_portrait(tmp_path: Path) -> None:
+    import zipfile
+
+    from case3.docx_polish import orient_wide_tables
+
+    path = tmp_path / "narrow.docx"
+    doc = Document()
+    doc.add_table(rows=1, cols=2)
+    doc.save(str(path))
+    assert orient_wide_tables(path) is False
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+    assert "landscape" not in xml

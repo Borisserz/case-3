@@ -1,6 +1,7 @@
 /** Compact source chip — composer + sent user bubble. */
 
 import { IconSourceDoc } from "./icons";
+import { SOURCE_LABEL } from "./domain/sourceCopy";
 
 export type SourcePlaqueKind = "md" | "txt" | "pdf" | "docx" | "paste";
 
@@ -39,7 +40,7 @@ function kindLabel(kind: SourcePlaqueKind): string {
   if (kind === "txt") return "TXT";
   if (kind === "pdf") return "PDF";
   if (kind === "docx") return "DOC";
-  return "Текст";
+  return SOURCE_LABEL;
 }
 
 function displayTitle(title: string, kind: SourcePlaqueKind): string {
@@ -80,7 +81,7 @@ export function ContextPlaque({
           <span className="context-plaque-badge">{badge}</span>
         </span>
         <span className="context-plaque-copy">
-          <span className="context-plaque-eyebrow">Source</span>
+          <span className="context-plaque-eyebrow">{SOURCE_LABEL}</span>
           <span className="context-plaque-title">{shown}</span>
           {subtitle ? (
             <span className="context-plaque-meta">{subtitle}</span>

@@ -867,7 +867,6 @@
   box-shadow: 0 6px 18px rgba(201, 42, 42, 0.38);
 }
 
-.stimul-settings-note,
 .stimul-lead,
 .stimul-meta,
 .stimul-busy,
@@ -876,18 +875,6 @@
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.45;
-}
-
-.stimul-settings-btn {
-  margin-top: 0.7rem;
-  min-height: 2.4rem;
-  padding: 0 0.9rem;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-  background: color-mix(in srgb, var(--primary) 94%, var(--sheet));
-  color: var(--on-primary);
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .stimul-modal {

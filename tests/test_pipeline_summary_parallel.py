@@ -255,6 +255,45 @@ def test_pipeline_preserves_docx_native_charts_written_by_render(
     assert meta.get("docx_native_charts") == ["cht_01"]
 
 
+def test_a_failed_pdf_does_not_publish_a_ready_summary(tmp_path: Path, monkeypatch) -> None:
+    from case3.render import RenderError
+
+    root, src = _setup(tmp_path)
+    monkeypatch.setenv("IMAGE_API_BASE_URL", "")
+    monkeypatch.setenv("CASE3_MAX_CHARTS", "0")
+    monkeypatch.setenv("IMAGE_MAX_IMAGES", "0")
+
+    def fake_summary(tex, *, intent=None, media=None, client=None, on_delta=None):
+        return "Готов: отчёт.\n\nПодробности — в полном документе.", "ok"
+
+    def boom_render(*_a, **_k):
+        raise RenderError("! Undefined control sequence.\nl.42 \\bad")
+
+    with (
+        patch("case3.pipeline.generate_document", side_effect=_fake_generate),
+        patch("case3.pipeline.render_tex", side_effect=boom_render),
+        patch("case3.pipeline.try_generate_chat_summary", side_effect=fake_summary),
+    ):
+        try:
+            run_pipeline(
+                src,
+                project_root=root,
+                formats={"pdf"},
+                max_images=0,
+                max_charts=0,
+                run_id="sum_hold_1",
+            )
+        except Exception:
+            pass
+        else:
+            raise AssertionError("render failure must surface")
+
+    snap = BUS.snapshot("sum_hold_1")
+    assert snap["done"] is True
+    assert "Готов" not in (snap.get("text") or "")
+    assert "! Undefined control sequence." in (snap.get("text") or "")
+
+
 def test_pipeline_presentation_writes_meta_ok_before_pipeline_ok_event(
     tmp_path: Path, monkeypatch
 ) -> None:

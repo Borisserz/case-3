@@ -141,6 +141,8 @@ export type SourceDraft = {
   format?: string;
   /** Documents kept in this chat. The joined text is what /api/run receives. */
   parts?: { name: string; text: string }[];
+  /** Dashboard capture or a screen PNG. The plaque says the model could read it. */
+  fromScreen?: boolean;
 };
 
 export type UserMsg = {

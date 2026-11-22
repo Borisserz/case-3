@@ -71,6 +71,8 @@ type Props = {
   onNewChat?: (kind: "empty" | "documents") => void;
   /** Message whose deck file lags the screen. Its PPTX/PDF stay closed. */
   deckDownloadsBlockedMsgId?: string | null;
+  /** Finished report card → POST /slides for this run. */
+  onMakePresentation?: (msgId: string, result: RunResult) => void;
 };
 
 export function ChatMessages({
@@ -95,6 +97,7 @@ export function ChatMessages({
   onResumeRun,
   onNewChat,
   deckDownloadsBlockedMsgId = null,
+  onMakePresentation,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -302,6 +305,11 @@ export function ChatMessages({
                           ? () => onOpenDeckSlides(m.id, m.result!)
                           : undefined
                       }
+                      onMakePresentation={
+                        onMakePresentation
+                          ? () => onMakePresentation(m.id, m.result!)
+                          : undefined
+                      }
                     />
                     {(m.lead || "").trim() &&
                     (m.text || "").trim() &&
@@ -474,6 +482,11 @@ export function ChatMessages({
                           pulse={downloadsPulseMsgId === m.id}
                           updated={downloadsPulseMsgId === m.id}
                           onView={() => onOpenReport(m.id, m.result!)}
+                          onMakePresentation={
+                            onMakePresentation
+                              ? () => onMakePresentation(m.id, m.result!)
+                              : undefined
+                          }
                         />
                       )}
                   </div>

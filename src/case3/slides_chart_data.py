@@ -19,14 +19,79 @@ NATIVE_CHART_TYPES = frozenset(
 )
 
 _LABELS = re.compile(r"labels\s*:\s*\[([^\]]*)\]", re.I | re.S)
-_DATASET = re.compile(
-    r"\{[^{}]*?label\s*:\s*(['\"])(?P<label>.*?)\1[^{}]*?data\s*:\s*\[(?P<data>[^\]]*)\]",
-    re.I | re.S,
-)
-_DATASET_DATA_FIRST = re.compile(
-    r"\{[^{}]*?data\s*:\s*\[(?P<data>[^\]]*)\][^{}]*?label\s*:\s*(['\"])(?P<label>.*?)\2",
-    re.I | re.S,
-)
+
+
+def _datasets_bodies(html: str) -> list[str]:
+    """Top-level objects inside the first ``datasets`` array, braces included."""
+    match = re.search(r"datasets\s*:\s*\[", html or "", re.I)
+    if not match:
+        return []
+    text = html or ""
+    index = match.end()
+    bodies: list[str] = []
+    while index < len(text):
+        while index < len(text) and text[index] in " \t\r\n,":
+            index += 1
+        if index >= len(text) or text[index] == "]":
+            break
+        if text[index] != "{":
+            index += 1
+            continue
+        start = index
+        depth = 0
+        while index < len(text):
+            char = text[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    index += 1
+                    bodies.append(text[start:index])
+                    break
+            index += 1
+        else:
+            break
+    return bodies
+
+
+def _array_body(obj: str, key: str) -> str | None:
+    match = re.search(rf"\b{key}\s*:\s*\[", obj or "", re.I)
+    if not match:
+        return None
+    index = match.end()
+    depth = 1
+    start = index
+    while index < len(obj) and depth:
+        if obj[index] == "[":
+            depth += 1
+        elif obj[index] == "]":
+            depth -= 1
+        index += 1
+    if depth:
+        return None
+    return obj[start : index - 1]
+
+
+def _series_from_datasets(html: str) -> list[dict[str, Any]]:
+    series: list[dict[str, Any]] = []
+    for body in _datasets_bodies(html):
+        data = _array_body(body, "data")
+        if data is None:
+            continue
+        values = _parse_numbers(data)
+        if not values:
+            continue
+        label_m = re.search(
+            r"""\blabel\s*:\s*(['"])(?P<label>.*?)\1""",
+            body,
+            re.I | re.S,
+        )
+        name = (label_m.group("label") if label_m else "Series").strip() or "Series"
+        series.append({"name": name, "values": values})
+    return series
+
+
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
 _SCATTER_POINT = re.compile(
     r"\{\s*x\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*y\s*:\s*(-?\d+(?:\.\d+)?)\s*\}",
@@ -190,23 +255,7 @@ def extract_chart_series(
     if not categories:
         return None
 
-    series: list[dict[str, Any]] = []
-    for rx in (_DATASET, _DATASET_DATA_FIRST):
-        for m in rx.finditer(html or ""):
-            values = _parse_numbers(m.group("data"))
-            if not values:
-                continue
-            n = min(len(categories), len(values))
-            if n < 1:
-                continue
-            series.append(
-                {
-                    "name": (m.group("label") or "Series").strip() or "Series",
-                    "values": values[:n],
-                }
-            )
-        if series:
-            break
+    series = _series_from_datasets(html or "")
 
     if not series:
         # Single anonymous data:[] near labels

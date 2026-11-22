@@ -1,6 +1,13 @@
 from case3.turn_route import resolve_turn
 
 
+def test_word_and_spravka_leave_chat():
+    assert resolve_turn("Сделай word", None) == "report"
+    assert resolve_turn("сделай справку по областям", None) == "report"
+    assert resolve_turn("Собери ворд", None) == "report"
+    assert resolve_turn("что в справке?", "report") == "chat"
+
+
 def test_a_question_does_not_rebuild_because_the_plaque_is_on():
     assert resolve_turn("Какая доля Минской?", "report") == "chat"
     assert resolve_turn("что в отчёте по Гомельской", "report") == "chat"
