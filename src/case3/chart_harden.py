@@ -121,9 +121,10 @@ def _sum_series(arrays: list[list[float]]) -> list[float]:
 
 
 def _fmt_num(n: float) -> str:
+    """Plain digits. ``.4g`` turned 105865.2 into ``1.059e+05``."""
     if abs(n - round(n)) < 1e-9:
         return str(int(round(n)))
-    return f"{n:.4g}"
+    return f"{n:.4f}".rstrip("0").rstrip(".")
 
 
 _DONUT_FALLBACK_COLORS = (

@@ -26,6 +26,7 @@ _ASIDE_AFTER = re.compile(r"^\s*(?:место|раз|раза)\b", re.IGNORECASE
 # Spaced thousands are one value: «105 865,2», not 105 and 865,2.
 _NUM = re.compile(
     r"\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?%?"
+    r"|\d+(?:\\,\d{3})+(?:[.,]\d+)?%?"
     r"|\d+(?:[.,]\d+)?%?"
 )
 # Longer stems first so «двадцать» is not read as «два».
@@ -1153,6 +1154,7 @@ def _hide_memory_marks(text: str) -> str:
 
 def _norm_num(token: str) -> str:
     compact = re.sub(r"[ \u00a0\u202f]+", "", token or "")
+    compact = compact.replace("\\,", "")
     return compact.replace(",", ".").replace("%", "")
 
 

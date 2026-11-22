@@ -38,6 +38,20 @@ def test_kpi_to_bar_builds_chart_js() -> None:
     assert "new Chart" in out["html"]
 
 
+def test_dashboard_sum_stays_a_plain_number_on_a_donut() -> None:
+    html = (
+        "<canvas id='c1'></canvas><script>new Chart(document.getElementById('c1'),"
+        "{type:'bar',data:{labels:['Minsk','Gomel'],datasets:[{data:[105865.2,94073],"
+        "backgroundColor:['#1A4A4B','#5A6E28']}]},"
+        "options:{animation:false}});"
+        "window.__CASE3_CHART_READY=true;</script>"
+    )
+    out = apply_type_to_chart({"id": "c", "type": "bar", "html": html}, "donut")
+    assert "105865.2" in out["html"]
+    assert "94073" in out["html"]
+    assert "e+" not in out["html"].lower()
+
+
 def test_kpi_to_donut_builds_doughnut() -> None:
     out = apply_type_to_chart({"id": "c", "type": "kpi", "html": _KPI}, "donut")
     assert out["type"] == "donut"

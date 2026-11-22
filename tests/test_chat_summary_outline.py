@@ -14,6 +14,22 @@ from case3.chat_summary import (
 FIXTURE = Path(__file__).parent / "fixtures" / "preview_sample.tex"
 
 
+def test_outline_keeps_the_table_cell_not_only_the_caption() -> None:
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "\\begin{tabularx}{\\textwidth}{YY}\n"
+        "Область & Сумма \\\\\n"
+        "Минская & 105 865,2 \\\\\n"
+        "\\end{tabularx}\n"
+        "\\end{document}\n"
+    )
+    outline = build_outline(tex)
+    assert "105 865,2" in outline
+    assert "Минская" in outline
+    blurb = local_summary_blurb(tex)
+    assert "105 865,2" in blurb
+
+
 def test_build_outline_includes_title_headings_captions() -> None:
     tex = FIXTURE.read_text(encoding="utf-8")
     outline = build_outline(tex)

@@ -22,6 +22,8 @@ _MAX_PARAS = 6
 _MAX_HEADINGS = 12
 _MAX_FIGS = 8
 _MAX_TABLES = 4
+_MAX_TABLE_ROWS = 4
+_MAX_TABLE_COLS = 6
 
 
 def build_outline(tex: str) -> str:
@@ -70,9 +72,28 @@ def build_outline(tex: str) -> str:
                 lines.append("TABLE: " + " | ".join(str(h) for h in headers[:6]))
             else:
                 lines.append("TABLE: (без подписи)")
+            for row in (block.get("rows") or [])[:_MAX_TABLE_ROWS]:
+                cells = [" ".join(str(cell).split()) for cell in row[:_MAX_TABLE_COLS]]
+                cells = [cell for cell in cells if cell]
+                if cells:
+                    lines.append("ROW: " + " | ".join(cells))
             tables += 1
 
     return "\n".join(lines).strip() or "(пустой документ)"
+
+
+def _first_table_fact(data: dict[str, Any]) -> str:
+    """One data row so a fallback blurb can name a real cell."""
+    for block in data.get("blocks") or []:
+        if not isinstance(block, dict) or block.get("type") != "table":
+            continue
+        for row in block.get("rows") or []:
+            cells = [" ".join(str(cell).split()) for cell in row[:_MAX_TABLE_COLS]]
+            cells = [cell for cell in cells if cell]
+            text = ", ".join(cells)
+            if re.search(r"\d", text):
+                return text
+    return ""
 
 
 def format_media_delivered(media: dict[str, Any] | None) -> str:
@@ -142,6 +163,9 @@ def local_summary_blurb(
         parts.append(f"иллюстраций: {figures_ok}")
     if parts:
         bits.append("Внутри — " + ", ".join(parts) + ".")
+    fact = _first_table_fact(data)
+    if fact:
+        bits.append(fact + ".")
     bits.append("Подробности — в превью и PDF.")
     return "\n\n".join(bits)
 

@@ -15,6 +15,27 @@ _TEX = r"""
 """
 
 
+def test_tex_thousands_and_column_span_stay_when_the_cell_is_in_source():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Собрано 85\,000. Чужое 12\,345.
+\multicolumn{3}{c}{Итого}
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [],
+        [],
+        [],
+        source="собрано 85000",
+        intent="отчёт",
+    )
+    assert r"85\,000" in out
+    assert r"12\,345" not in out
+    assert r"\multicolumn{3}" in out
+
+
 def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
     from case3.chat_turn import number_norms
 

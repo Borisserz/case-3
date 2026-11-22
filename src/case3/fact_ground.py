@@ -12,7 +12,10 @@ _PROTECT = re.compile(
     r"|\\begin\{tabularx?\*?\}\s*\{[^}]*\}"
     r"|\\(?:label|ref|pageref|cite\w*)\{[^}]*\}"
     r"|(?<!\\)%[^\n]*"
-    r"|\\(?:vspace|hspace|setlength|fontsize)\{[^}]*\}",
+    r"|\\(?:vspace|hspace|setlength|fontsize)\{[^}]*\}"
+    r"|\\(?:multicolumn|multirow)\{[^}]*\}\{[^}]*\}"
+    r"|\\(?:cmidrule|cline|hhline)\{[^}]*\}"
+    r"|\\\\\[[^\]]*\]",
     re.IGNORECASE,
 )
 _JS_ARRAY = re.compile(
