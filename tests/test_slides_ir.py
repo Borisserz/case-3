@@ -172,6 +172,53 @@ def test_long_delta_and_bullet_are_clipped() -> None:
     assert len(ir["slides"][2]["bullets"]) == 5
 
 
+def test_slide_table_keeps_fourteen_rows_and_eight_columns() -> None:
+    labels = [
+        "Минская",
+        "Гомельская",
+        "Брестская",
+        "Витебская",
+        "Гродненская",
+        "Могилевская",
+        "Минск",
+        "Молодечно",
+        "Борисов",
+        "Солигорск",
+        "Барановичи",
+        "Пинск",
+        "Орша",
+        "Лида",
+    ]
+    header = ["Область", "Факт", "План", "Доля", "Год", "Ранг", "Темп", "Итог", "Лишнее"]
+    data = [
+        [name, "да", "да", "да", "да", "да", "да", "край", "нет"] for name in labels
+    ]
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "table_hero",
+                    "title": "Области",
+                    "rows": [header, *data],
+                },
+                {"id": "s03", "layout": "closing", "title": "Далее", "bullets": ["План"]},
+            ],
+        },
+        source=SOURCE,
+    )
+    rows = ir["slides"][1]["rows"]
+    assert len(rows) == 14
+    assert rows[-1][0] == "Орша"
+    assert all(row[0] != "Лида" for row in rows)
+    assert len(rows[0]) == 8
+    assert rows[0][-1] == "Итог"
+    assert rows[1][-1] == "край"
+
+
 def test_ragged_table_rows_are_padded() -> None:
     ir = parse_deck_ir(
         {
@@ -580,6 +627,63 @@ def test_title_echo_bullets_heal_to_section() -> None:
     assert mid["title"] == "Этапы процесса данных"
     assert mid.get("subtitle") == "Этапы"
     assert "bullets" not in mid
+
+
+def _region_deck(body: str) -> dict:
+    return {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Области"},
+            {
+                "id": "s02",
+                "layout": "card_row",
+                "title": "Сравнение",
+                "cards": [
+                    {"title": "Минская", "body": body},
+                    {"title": "Гомельская", "body": "Рядом, без новой цифры."},
+                ],
+            },
+            {"id": "s03", "layout": "closing", "title": "Итог", "bullets": ["ok"]},
+        ],
+    }
+
+
+def test_card_row_rejects_a_number_that_is_not_in_source() -> None:
+    with pytest.raises(DeckIrError, match="999"):
+        parse_deck_ir(
+            _region_deck("Собрано 999 тысяч."),
+            source="Минская область | 105 865,2",
+        )
+
+
+def test_card_row_keeps_a_spaced_sum_from_source() -> None:
+    ir = parse_deck_ir(
+        _region_deck("Собрано 105 865,2."),
+        source="Минская область | 105 865,2",
+    )
+    assert ir["slides"][1]["cards"][0]["body"] == "Собрано 105 865,2."
+
+
+def test_spaced_cell_on_the_slide_matches_the_spaced_source() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги"},
+                {
+                    "id": "s02",
+                    "layout": "scorecard",
+                    "title": "Области",
+                    "kpis": [{"label": "Минская", "value": "105 865,2"}],
+                },
+                {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+            ],
+        },
+        source="Минская область | 105 865,2",
+    )
+    assert ir["slides"][1]["kpis"][0]["value"] == "105 865,2"
 
 
 def test_spaced_thousands_allowed_when_compact_in_source() -> None:

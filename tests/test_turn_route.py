@@ -1,12 +1,24 @@
 from case3.turn_route import resolve_turn
 
 
+def test_a_question_does_not_rebuild_because_the_plaque_is_on():
+    assert resolve_turn("Какая доля Минской?", "report") == "chat"
+    assert resolve_turn("что в отчёте по Гомельской", "report") == "chat"
+    assert resolve_turn("что на слайде", "presentation") == "chat"
+
+
 def test_question_stays_chat_even_if_plaque_is_report():
     assert resolve_turn("Проанализируй отчёт и разложи цифры", "report") == "chat"
 
 
 def test_explicit_deck_wins_over_plaque_and_over_analyze():
     assert resolve_turn("Проанализируй и собери презентацию", "report") == "presentation"
+
+
+def test_a_chart_request_builds_a_report_and_a_scheme_stays_a_scheme():
+    assert resolve_turn("Построй график по областям", None) == "report"
+    assert resolve_turn("Нарисуй диаграмму продаж", None) == "report"
+    assert resolve_turn("Нарисуй схему онбординга", None) == "diagram"
 
 
 def test_explicit_diagram_and_report():

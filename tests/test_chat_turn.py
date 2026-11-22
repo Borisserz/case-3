@@ -379,6 +379,23 @@ def test_long_source_keeps_the_head_the_match_and_the_tail():
     assert _clip_source("короткий текст", 6000, "склад") == "короткий текст"
 
 
+def test_long_table_keeps_the_header_and_the_named_region():
+    from case3.chat_turn import _clip_source
+
+    rows = ["| Область | Сумма |", "| --- | --- |"]
+    for index, name in enumerate(
+        ["Брестская", "Витебская", "Гомельская", "Гродненская", "Минская", "Могилевская"]
+        * 80
+    ):
+        rows.append(f"| {name} область | {1000 + index} |")
+    source = "Экран дашборда.\n\n" + "\n".join(rows)
+    assert len(source) > 6000
+    clipped = _clip_source(source, 6000, "что в Гомельской")
+    assert "| Область | Сумма |" in clipped
+    assert "Гомельская" in clipped
+    assert len(clipped) <= 6000
+
+
 def test_chat_answer_asks_for_a_long_reply():
     class _Catch:
         def __init__(self) -> None:

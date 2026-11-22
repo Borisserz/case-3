@@ -43,9 +43,10 @@ def test_leaving_kpi_warns() -> None:
     assert "KPI" in msg
 
 
-def test_kpi_to_donut_mentions_invented_slice() -> None:
+def test_kpi_to_donut_does_not_invent_a_share() -> None:
     msg = chart_type_change_warning({"type": "kpi", "html": _KPI}, "donut")
-    assert "Прочее" in msg
+    assert "Прочее" not in msg
+    assert "одной доли" in msg
 
 
 def test_same_type_is_silent() -> None:

@@ -11,6 +11,7 @@ import base64
 import logging
 import re
 import tempfile
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Protocol
@@ -100,16 +101,16 @@ def parse_dashboard(
     numeric_cells = 0
     png_error: DashboardSourceError | None = None
     pdf_error: DashboardSourceError | None = None
-    if png_bytes is not None:
-        try:
-            png_md = _screen_markdown(png_bytes, vision)
-        except DashboardSourceError as exc:
-            png_error = exc
     if pdf_bytes is not None:
         try:
             pdf_md, table_count, numeric_cells, warnings = _pdf_markdown(pdf_bytes)
         except DashboardSourceError as exc:
             pdf_error = exc
+    if png_bytes is not None:
+        try:
+            png_md = _screen_markdown(png_bytes, vision, keep_table=not pdf_md)
+        except DashboardSourceError as exc:
+            png_error = exc
     if not png_md and not pdf_md:
         if png_error and pdf_error:
             raise DashboardSourceError(
@@ -141,6 +142,9 @@ def parse_dashboard(
         parts += ["## Экран", "", png_md.rstrip(), ""]
     if pdf_md:
         parts += ["## Таблица PDF", "", pdf_md.rstrip(), ""]
+    derived = derivative_block(pdf_md or png_md)
+    if derived:
+        parts += ["## Производные", "", derived.rstrip(), ""]
     return DashboardSource(
         markdown="\n".join(parts).rstrip() + "\n",
         png_markdown=png_md,
@@ -151,7 +155,12 @@ def parse_dashboard(
     )
 
 
-def read_dashboard_png(png: bytes, *, client: _VisionClient | None = None) -> str:
+def read_dashboard_png(
+    png: bytes,
+    *,
+    client: _VisionClient | None = None,
+    keep_table: bool = False,
+) -> str:
     """Ask Qwen for a markdown reading of one dashboard screenshot."""
     _check_png(png)
     if len(png) > MAX_PNG_BYTES:
@@ -160,7 +169,7 @@ def read_dashboard_png(png: bytes, *, client: _VisionClient | None = None) -> st
             code="too_large",
         )
     reader = client if client is not None else _qwen_client()
-    system = prompts.load("dashboard_png")
+    system = prompts.load("dashboard_png_only" if keep_table else "dashboard_png")
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     try:
         text = reader.complete(
@@ -175,7 +184,7 @@ def read_dashboard_png(png: bytes, *, client: _VisionClient | None = None) -> st
             f"Модель не прочитала снимок: {exc}",
             code="vision_failed",
         ) from exc
-    cleaned = strip_screen_table(_strip_fence(text or ""))
+    cleaned = _finish_screen(text or "", keep_table=keep_table)
     if not cleaned.strip():
         raise DashboardSourceError(
             "Модель ничего не вернула по снимку дашборда.",
@@ -222,6 +231,199 @@ def table_block(rows: list[list[object | None]]) -> tuple[str, str | None]:
     for row in use_rows[1:]:
         lines.append(fmt(row))
     return "\n".join(lines) + "\n", note
+
+
+_TOTAL_LABEL = re.compile(r"^(итого|всего|total|sum|сумма)$", re.IGNORECASE)
+_YEAR_HEADER = re.compile(r"^(год|года|year|years)$", re.IGNORECASE)
+_CODE_HEADER = re.compile(r"(код|номер|№|\bid\b)", re.IGNORECASE)
+_MD_SEP = re.compile(r"^\|?[\s\-:|]+\|?$")
+
+
+def derivative_block(markdown: str) -> str:
+    """Shares and ranks from markdown tables. Empty when there is nothing to divide.
+
+    One decimal. The tenths are handed out so a column sums to 100%.
+    A total row and a year column stay out of the sum.
+    """
+    blocks: list[str] = []
+    for title, rows in _markdown_tables(markdown):
+        lines = _column_shares(rows)
+        if not lines:
+            continue
+        if title and title not in {"Таблица PDF", "Экран"}:
+            blocks.append(title)
+        blocks.extend(lines)
+        blocks.append("")
+    if not blocks:
+        return ""
+    head = "Доли и места посчитаны из ячеек. Копируй их как здесь."
+    return head + "\n\n" + "\n".join(blocks).rstrip() + "\n"
+
+
+def _markdown_tables(markdown: str) -> list[tuple[str, list[list[str]]]]:
+    lines = (markdown or "").splitlines()
+    found: list[tuple[str, list[list[str]]]] = []
+    title = ""
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if stripped.startswith("## "):
+            title = stripped[3:].strip()
+            index += 1
+            continue
+        if _looks_like_table(lines, index):
+            rows: list[list[str]] = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                row = lines[index].strip()
+                index += 1
+                if _MD_SEP.match(row) and "-" in row:
+                    continue
+                rows.append([cell.strip() for cell in row.strip("|").split("|")])
+            if len(rows) >= 2:
+                found.append((title, rows))
+            continue
+        index += 1
+    return found
+
+
+def _looks_like_table(lines: list[str], index: int) -> bool:
+    if not lines[index].strip().startswith("|"):
+        return False
+    nxt = index + 1
+    while nxt < len(lines) and not lines[nxt].strip():
+        nxt += 1
+    if nxt >= len(lines):
+        return False
+    sep = lines[nxt].strip()
+    return bool(_MD_SEP.match(sep) and "-" in sep)
+
+
+def _column_shares(rows: list[list[str]]) -> list[str]:
+    header, body = rows[0], rows[1:]
+    data = [row for row in body if not _is_total_row(row)]
+    if len(data) < 2:
+        return []
+    label_at = _label_column(data)
+    if label_at is None:
+        return []
+    width = max(len(row) for row in rows)
+    lines: list[str] = []
+    for col in range(width):
+        if col == label_at:
+            continue
+        name = header[col].strip() if col < len(header) else ""
+        if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.match(name):
+            continue
+        parsed = _measure_column(data, col, label_at)
+        if parsed is None:
+            continue
+        labels, values = parsed
+        shares = _share_tenths(values)
+        ranks = _ranks(values)
+        lines.append(name)
+        for label, tenths, rank in zip(labels, shares, ranks):
+            lines.append(f"- {label} — доля {_fmt_share(tenths)}, место {rank}")
+        lines.append("")
+    return lines
+
+
+def _is_total_row(row: list[str]) -> bool:
+    for cell in row:
+        if _TOTAL_LABEL.match(cell.strip()):
+            return True
+    return False
+
+
+def _label_column(rows: list[list[str]]) -> int | None:
+    width = max(len(row) for row in rows)
+    for col in range(width):
+        cells = [row[col].strip() if col < len(row) else "" for row in rows]
+        filled = [cell for cell in cells if cell]
+        if not filled:
+            continue
+        text = sum(1 for cell in filled if _cell_decimal(cell) is None)
+        if text * 2 >= len(filled):
+            return col
+    return None
+
+
+def _measure_column(
+    rows: list[list[str]], col: int, label_at: int
+) -> tuple[list[str], list[Decimal]] | None:
+    labels: list[str] = []
+    values: list[Decimal] = []
+    raw: list[str] = []
+    for index, row in enumerate(rows):
+        cell = row[col].strip() if col < len(row) else ""
+        if not cell:
+            continue
+        raw.append(cell)
+        number = _cell_decimal(cell)
+        if number is None or number < 0:
+            return None
+        raw_label = row[label_at].strip() if label_at < len(row) else ""
+        label = raw_label or f"строка {index + 1}"
+        labels.append(label)
+        values.append(number)
+    if len(values) < 2 or any("%" in cell for cell in raw):
+        return None
+    if all(_is_year(value) for value in values):
+        return None
+    return labels, values
+
+
+def _cell_decimal(cell: str) -> Decimal | None:
+    text = cell.strip().replace("−", "-")
+    if not _COMPLETE_NUM.match(text):
+        return None
+    if text.endswith("%"):
+        text = text[:-1]
+    compact = text.replace(" ", "").replace("\u00a0", "").replace(",", ".")
+    try:
+        return Decimal(compact)
+    except InvalidOperation:
+        return None
+
+
+def _is_year(value: Decimal) -> bool:
+    if value != value.to_integral_value():
+        return False
+    year = int(value)
+    return 1900 <= year <= 2099
+
+
+def _share_tenths(values: list[Decimal]) -> list[int]:
+    total = sum(values, Decimal(0))
+    if total <= 0:
+        return []
+    raw = [value * Decimal(1000) / total for value in values]
+    floors = [int(piece) for piece in raw]
+    left = 1000 - sum(floors)
+    order = sorted(
+        range(len(raw)),
+        key=lambda index: (-(raw[index] - Decimal(floors[index])), index),
+    )
+    for index in order[:left]:
+        floors[index] += 1
+    return floors
+
+
+def _ranks(values: list[Decimal]) -> list[int]:
+    order = sorted(range(len(values)), key=lambda index: (-values[index], index))
+    ranks = [0] * len(values)
+    for place, index in enumerate(order):
+        if place > 0 and values[index] == values[order[place - 1]]:
+            ranks[index] = ranks[order[place - 1]]
+        else:
+            ranks[index] = place + 1
+    return ranks
+
+
+def _fmt_share(tenths: int) -> str:
+    whole, frac = divmod(tenths, 10)
+    if frac == 0:
+        return f"{whole}%"
+    return f"{whole},{frac}%"
 
 
 def prefer_ruled_tables(
@@ -274,7 +476,12 @@ def join_page_tables(
     return joined
 
 
-def _screen_markdown(png: bytes, vision: Callable[[bytes], str] | None) -> str:
+def _screen_markdown(
+    png: bytes,
+    vision: Callable[[bytes], str] | None,
+    *,
+    keep_table: bool,
+) -> str:
     if len(png) > MAX_PNG_BYTES:
         raise DashboardSourceError(
             "Снимок больше 15 МБ. Сожмите PNG без сильного даунскейла.",
@@ -282,7 +489,7 @@ def _screen_markdown(png: bytes, vision: Callable[[bytes], str] | None) -> str:
         )
     _check_png(png)
     if vision is None:
-        return read_dashboard_png(png)
+        return read_dashboard_png(png, keep_table=keep_table)
     try:
         text = vision(png)
     except DashboardSourceError:
@@ -292,7 +499,7 @@ def _screen_markdown(png: bytes, vision: Callable[[bytes], str] | None) -> str:
             f"Модель не прочитала снимок: {exc}",
             code="vision_failed",
         ) from exc
-    cleaned = strip_screen_table(_strip_fence(text or ""))
+    cleaned = _finish_screen(text or "", keep_table=keep_table)
     if not cleaned.strip():
         raise DashboardSourceError(
             "Модель ничего не вернула по снимку дашборда.",
@@ -700,6 +907,14 @@ def _numeric_cells(rows: list[list[object]]) -> int:
 
 def _numeric_in_text(text: str) -> int:
     return len(re.findall(r"\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?", text))
+
+
+def _finish_screen(text: str, *, keep_table: bool) -> str:
+    """A lone screenshot keeps its grid. Beside a PDF the grid is the PDF's."""
+    stripped = _strip_fence(text)
+    if keep_table:
+        return stripped.strip()
+    return strip_screen_table(stripped)
 
 
 def strip_screen_table(markdown: str) -> str:

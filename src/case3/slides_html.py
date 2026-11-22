@@ -679,7 +679,12 @@ def _body_for_slide(
         cap = str(slide.get("caption") or "").strip()
         cap_html = f'<p class="narr-gate">{_esc(cap)}</p>' if cap else ""
         data_n = max(0, len(trs) - 1)
-        roomy = " is-roomy" if 0 < data_n <= 6 else ""
+        if 0 < data_n <= 6:
+            roomy = " is-roomy"
+        elif data_n > 8:
+            roomy = " is-dense"
+        else:
+            roomy = ""
         return (
             f'<div class="slide-inner">'
             f"{brand}"

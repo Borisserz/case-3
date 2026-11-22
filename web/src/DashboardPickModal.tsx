@@ -12,7 +12,7 @@ import {
 } from "./domain/dashboardCapture";
 import { useFocusTrap } from "./useFocusTrap";
 
-type Doc = { name: string; markdown: string };
+type Doc = { name: string; markdown: string; warnings?: string[] };
 
 type Props = {
   onClose: () => void;
@@ -29,7 +29,11 @@ async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
       file.ext === "png" ? bin : null,
       file.ext === "pdf" ? bin : null,
     );
-    docs.push({ name: file.name, markdown: parsed.markdown });
+    docs.push({
+      name: file.name,
+      markdown: parsed.markdown,
+      warnings: parsed.warnings,
+    });
   }
   return docs;
 }

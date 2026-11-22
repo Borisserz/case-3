@@ -166,6 +166,22 @@ def _sections(prose: str) -> list[tuple[str, str]]:
 
 
 def _fact_lines(body: str, *, limit: int) -> list[str]:
+    lines = [line.strip() for line in (body or "").splitlines() if line.strip()]
+    table = [
+        line
+        for line in lines
+        if line.startswith("|") and not re.match(r"^\|?[\s\-:|]+\|?$", line)
+    ]
+    if table:
+        out: list[str] = []
+        for line in table:
+            flat = " ".join(line.split())
+            if len(flat) > 240:
+                flat = flat[:239].rstrip() + "…"
+            out.append(flat)
+            if len(out) >= 48:
+                break
+        return out
     sentences = [s.strip() for s in _SENT_SPLIT.split(body or "") if s.strip()]
     numbered = [s for s in sentences if re.search(r"\d", s)]
     chosen = numbered or sentences[:1]

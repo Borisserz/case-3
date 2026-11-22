@@ -169,9 +169,9 @@ def test_patch_adds_table_row_and_column() -> None:
 
 
 def test_patch_rejects_table_over_slide_caps() -> None:
-    wide = [["H1", "H2", "H3", "H4", "H5", "H6"], ["1", "2", "3", "4", "5", "6"]]
+    wide = [["H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9"], ["1", "2", "3", "4", "5", "6", "7", "8", "9"]]
     with pytest.raises(DeckIrError, match="column"):
         apply_deck_text_patch(_base(), {"slides": [{"id": "s04", "rows": wide}]})
-    tall = [["H1", "H2"]] + [[str(i), "x"] for i in range(8)]
+    tall = [["H1", "H2"]] + [[str(i), "x"] for i in range(14)]
     with pytest.raises(DeckIrError, match="row"):
         apply_deck_text_patch(_base(), {"slides": [{"id": "s04", "rows": tall}]})

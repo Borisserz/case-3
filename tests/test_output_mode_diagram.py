@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
-from case3.api import build_intent_from_ui, parse_formats_form
+from case3.api import apply_mode_caps, build_intent_from_ui, parse_formats_form
 from case3.pipeline import (
     _presentation_chat_blurb,
     resolve_pipeline_formats,
 )
+
+
+def test_presentation_keeps_diagrams_for_the_deck_and_skips_pdf() -> None:
+    charts, images, diagrams, formats, no_charts, no_images = apply_mode_caps(
+        "presentation",
+        max_charts=3,
+        max_images=2,
+        max_diagrams=2,
+        formats="both",
+        no_charts=False,
+        no_images=False,
+    )
+    assert formats == "none"
+    assert diagrams == 2
+    assert charts == 3
+    assert images == 2
+    assert no_charts is False
+    assert no_images is False
+
+    _, _, forced, formats0, _, _ = apply_mode_caps(
+        "presentation",
+        max_charts=3,
+        max_images=0,
+        max_diagrams=0,
+        formats="pdf",
+        no_charts=False,
+        no_images=True,
+    )
+    assert formats0 == "none"
+    assert forced == 1
 
 
 def test_parse_formats_none_empty_set() -> None:
@@ -64,7 +94,7 @@ def test_pipeline_diagram_mode_uses_fast_diagram_generation(tmp_path: Path, monk
     class DummyLLM:
         def __init__(self, cfg):
             self.cfg = cfg
-        def complete(self, *, system, user_text, cancel_check=None):
+        def complete(self, *, system, user_text, cancel_check=None, reasoning=None, images=None):
             calls.append((system, user_text, self.cfg.max_tokens))
             return '```json\n{"diagrams": [{"id": "dia_01", "title": "Возврат", "type": "flowchart", "mermaid": "flowchart TD\\nA-->B"}]}\n```'
 
@@ -80,7 +110,9 @@ def test_pipeline_diagram_mode_uses_fast_diagram_generation(tmp_path: Path, monk
         formats=set(),
     )
     assert len(calls) >= 1
-    system_prompt, _, max_tokens = calls[0]
+    diagram_calls = [item for item in calls if item[2] >= 2048]
+    assert diagram_calls, calls
+    system_prompt, _, max_tokens = diagram_calls[0]
     assert len(system_prompt) < 5000
     assert max_tokens >= 2048
     fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))

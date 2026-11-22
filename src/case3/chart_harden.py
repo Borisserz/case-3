@@ -223,17 +223,15 @@ def chart_html_from_kpi(html: str, want: str) -> str:
         opts = "scales:{x:{},y:{}},animation:false,responsive:false,maintainAspectRatio:false"
         js_type = "scatter"
     elif want == "donut":
-        # Two slices so the ring reads; keep metric as the larger slice so
-        # donut-center highlights the KPI, not «Прочее».
+        # One slice: the KPI number. A second slice would be a share that is not in the data.
         try:
             v = abs(float(num))
         except ValueError:
             v = 0.0
-        rest = max(v * 0.45, 1.0)
         body = (
-            f"labels:['{safe_lab}','Прочее'],datasets:[{{label:'Доля',"
-            f"data:[{_fmt_num(v)},{_fmt_num(rest)}],"
-            f"backgroundColor:['{color}','#D0D4C8'],borderWidth:0}}]"
+            f"labels:['{safe_lab}'],datasets:[{{label:'{safe_lab}',"
+            f"data:[{_fmt_num(v)}],"
+            f"backgroundColor:['{color}'],borderWidth:0}}]"
         )
         opts = (
             "cutout:'58%',plugins:{legend:{display:false}},"
@@ -759,7 +757,8 @@ def harden_chart_html(
         out = _clamp_canvas_height(out)
     if want == "horizontal_bar" and out:
         n = _count_labels(out)
-        h = max(300, min(420, 88 + n * 52))
+        # 36px per region so a 15-row ranking stays readable. Print cap is 900.
+        h = max(300, min(900, 80 + n * 36))
         out = re.sub(
             r'(<canvas\b[^>]*\bheight=")(\d+)(")',
             rf"\g<1>{h}\3",

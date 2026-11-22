@@ -43,6 +43,7 @@ def test_kpi_to_donut_builds_doughnut() -> None:
     assert out["type"] == "donut"
     assert "doughnut" in out["html"]
     assert "42" in out["html"]
+    assert "Прочее" not in out["html"]
 
 
 def test_scatter_to_donut_uses_y_values() -> None:

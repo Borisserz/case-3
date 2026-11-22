@@ -447,18 +447,48 @@ def _looks_like_md_table_start(raw_lines: list[str], i: int) -> bool:
     return bool(nxt) and _is_md_table_sep(nxt)
 
 
+# One A4 page of single-line booktabs rows. Longer tables must break.
+_ONE_PAGE_ROWS = 24
+
+
+def _table_cells(row: list[str], ncol: int) -> str:
+    cells = [escape_tex_text(c) for c in (row + [""] * ncol)[:ncol]]
+    return " & ".join(cells) + r" \\"
+
+
+def _emit_xltabular(rows: list[list[str]]) -> list[str]:
+    """Page-breaking table. Y columns wrap; the header repeats."""
+    ncol = max(len(r) for r in rows)
+    spec = "Y" * max(ncol, 1)
+    out = [
+        rf"\begin{{xltabular}}{{\textwidth}}{{{spec}}}",
+        r"\toprule",
+        _table_cells(rows[0], ncol),
+        r"\midrule",
+        r"\endhead",
+        r"\bottomrule",
+        r"\endfoot",
+    ]
+    for row in rows[1:]:
+        out.append(_table_cells(row, ncol))
+    out.append(r"\end{xltabular}")
+    out.append("")
+    return out
+
+
 def _emit_tabularx(rows: list[list[str]]) -> list[str]:
     if not rows:
         return []
+    if len(rows) > _ONE_PAGE_ROWS:
+        return _emit_xltabular(rows)
     ncol = max(len(r) for r in rows)
     spec = "Y" * max(ncol, 1)
     out = [
         rf"\begin{{tabularx}}{{\textwidth}}{{{spec}}}",
         r"\toprule",
     ]
-    for ri, row in enumerate(rows[:24]):
-        cells = [escape_tex_text(c) for c in (row + [""] * ncol)[:ncol]]
-        out.append(" & ".join(cells) + r" \\")
+    for ri, row in enumerate(rows):
+        out.append(_table_cells(row, ncol))
         if ri == 0:
             out.append(r"\midrule")
     out.append(r"\bottomrule")

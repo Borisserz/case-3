@@ -12,7 +12,8 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 | `chat_opening` | `chat_opening.md` | `chat_turn.try_opening` | — |
 | `chat_answer` | `chat_answer.md` | `chat_turn.try_chat_answer` | — |
 | `chat_section` | `chat_section.md` | `chat_turn.draft_section` | — |
-| `dashboard_png` | `dashboard_png.md` | `dashboard_source.read_dashboard_png` | — |
+| `dashboard_png` | `dashboard_png.md` | `dashboard_source.read_dashboard_png` when a PDF is also present | — |
+| `dashboard_png_only` | `dashboard_png_only.md` | `read_dashboard_png` when the screenshot is the only file | — |
 | `dashboard_filters` | `dashboard_filters.md` | `POST /api/dashboard/phrase` | — |
 | `system_slides` | `system_slides.md` | `slides_job.load_slides_system_prompt` | `PALETTE` `THEME_OVERLAY` `STRUCTURE_OVERLAY` `CHART_IDS` `FIGURE_IDS` `DIAGRAM_IDS` `MEDIA_CATALOG` `INTENT` `SOURCE` |
 | `diagram_generate` | `diagram_generate.md` | `diagram_edit` / `diagram_generate` | `MAX_DIAGRAMS` `DIAGRAM_COLOR_TABLE` |

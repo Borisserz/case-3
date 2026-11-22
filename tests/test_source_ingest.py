@@ -66,6 +66,26 @@ def test_scan_only_pdf_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         file_to_markdown(src)
 
 
+def test_docx_wide_table_keeps_every_column_and_a_repeated_neighbor(tmp_path: Path) -> None:
+    from docx import Document
+
+    src = tmp_path / "wide.docx"
+    doc = Document()
+    table = doc.add_table(rows=2, cols=14)
+    header = [f"c{i}" for i in range(14)]
+    values = ["77", "77"] + [str(i) for i in range(12)]
+    for index, cell in enumerate(header):
+        table.cell(0, index).text = cell
+    for index, cell in enumerate(values):
+        table.cell(1, index).text = cell
+    doc.save(src)
+
+    markdown = file_to_markdown(src).markdown
+    assert "| c13 |" in markdown
+    assert "| 77 | 77 |" in markdown
+    assert "truncated" not in markdown
+
+
 def test_docx_tables_and_numbers(tmp_path: Path) -> None:
     from docx import Document
 
@@ -84,10 +104,8 @@ def test_docx_tables_and_numbers(tmp_path: Path) -> None:
     assert result.format == "docx"
     assert "Отчёт" in result.markdown
     assert "42" in result.markdown
-    assert "Метрика\tЗначение" in result.markdown
-    assert not any(
-        line.strip().startswith("|") for line in result.markdown.splitlines()
-    )
+    assert "| Метрика | Значение |" in result.markdown
+    assert "| Выручка | 42 |" in result.markdown
 
 
 def test_pdf_missing_pypdfium2(

@@ -402,6 +402,20 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 for item in nxt["bullets"]
                 if (cleaned := _scrub_bound(str(item), global_ok, bindings).strip())
             ]
+        if isinstance(nxt.get("cards"), list):
+            cards = []
+            for card in nxt["cards"]:
+                if not isinstance(card, dict):
+                    continue
+                nxt_card = dict(card)
+                for key in ("title", "body", "kicker"):
+                    if isinstance(nxt_card.get(key), str):
+                        nxt_card[key] = _scrub_bound(
+                            str(nxt_card[key]), global_ok, bindings
+                        ).strip()
+                if str(nxt_card.get("title") or "").strip():
+                    cards.append(nxt_card)
+            nxt["cards"] = cards
         if isinstance(nxt.get("kpis"), list):
             kept = []
             for kpi in nxt["kpis"]:

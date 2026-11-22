@@ -89,6 +89,16 @@ export function phrasePlan(data: unknown): PhrasePlan | null {
   return { pull: true, viewer, reply, filters };
 }
 
+export type PhraseRoute = "send" | "miss" | "open";
+
+/** A down dashboard service must not swallow the message. A real miss still stops. */
+export function phraseRoute(ok: boolean, data: unknown): PhraseRoute {
+  if (!ok) return "send";
+  if (phraseMiss(data)) return "miss";
+  if (phrasePlan(data)) return "open";
+  return "send";
+}
+
 export function phraseMiss(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const row = data as { pull?: unknown; asked?: unknown; reply?: unknown };
@@ -100,20 +110,36 @@ export function phraseMiss(data: unknown): string | null {
 
 export function documentsFromService(
   data: unknown,
-): { name: string; markdown: string }[] {
+): { name: string; markdown: string; warnings: string[] }[] {
   if (!data || typeof data !== "object") return [];
   const docs = (data as { documents?: unknown }).documents;
   if (!Array.isArray(docs)) return [];
-  const out: { name: string; markdown: string }[] = [];
+  const out: { name: string; markdown: string; warnings: string[] }[] = [];
   for (const item of docs) {
     if (!item || typeof item !== "object") continue;
-    const row = item as { name?: unknown; markdown?: unknown };
+    const row = item as { name?: unknown; markdown?: unknown; warnings?: unknown };
     const name = typeof row.name === "string" ? row.name.trim() : "";
     const markdown = typeof row.markdown === "string" ? row.markdown.trim() : "";
     if (!name || !markdown) continue;
-    out.push({ name, markdown });
+    const warnings = Array.isArray(row.warnings)
+      ? row.warnings
+          .filter((note): note is string => typeof note === "string")
+          .map((note) => note.trim())
+          .filter(Boolean)
+      : [];
+    out.push({ name, markdown, warnings });
   }
   return out;
+}
+
+export function captureWarning(
+  docs: { warnings?: string[] }[],
+): string {
+  for (const doc of docs) {
+    const note = (doc.warnings || []).find((item) => item.trim());
+    if (note) return note.trim();
+  }
+  return "";
 }
 
 export function attachCaptureMarkdowns(

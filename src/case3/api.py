@@ -399,6 +399,7 @@ def _run_result_payload(
         "user_text": user_text,
         "error": meta.get("error"),
         "warnings": _warnings(meta, max_images=mi),
+        "insufficient_data": bool(meta.get("insufficient_data")),
     }
 
 
@@ -786,6 +787,26 @@ def _auto_kick_presentation_slides(run_id: str) -> None:
         log.exception("auto-kick slides failed run_id=%s", run_id)
 
 
+def apply_mode_caps(
+    out_mode: str,
+    *,
+    max_charts: int,
+    max_images: int,
+    max_diagrams: int,
+    formats: str,
+    no_charts: bool,
+    no_images: bool,
+) -> tuple[int, int, int, str, bool, bool]:
+    """Chat and scheme drop print media. A deck still gets dia_* for its slides."""
+    if out_mode == "chat":
+        return 0, 0, 0, "none", True, True
+    if out_mode == "diagram":
+        return 0, 0, max(1, max_diagrams), "none", True, True
+    if out_mode == "presentation":
+        return max_charts, max_images, max(1, max_diagrams), "none", no_charts, no_images
+    return max_charts, max_images, max_diagrams, formats, no_charts, no_images
+
+
 def _bg_run_pipeline(
     src_path: Path,
     *,
@@ -1156,27 +1177,16 @@ async def api_run(
     max_images = max(0, min(int(max_images), 8))
     # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
     max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
-    # Chat: answer in the thread. No TeX, charts, or photos.
-    if out_mode == "chat":
-        max_charts = 0
-        max_images = 0
-        no_charts = True
-        no_images = True
-        max_diagrams = 0
-        formats = "none"
-    # Composer «Схема»: Mermaid + short prose only — no charts/photos/PDF.
-    if out_mode == "diagram":
-        max_charts = 0
-        max_images = 0
-        no_charts = True
-        no_images = True
-        max_diagrams = max(1, max_diagrams)
-        formats = "none"
-    # Composer «Презентация»: no print PDF/DOCX — slides job builds the deck.
-    # Diagrams stay on the deck (dia_*), they are not a separate report.
-    if out_mode == "presentation":
-        formats = "none"
-        max_diagrams = 0
+    # Chat and scheme skip print. Presentation keeps charts and dia_* for the deck.
+    max_charts, max_images, max_diagrams, formats, no_charts, no_images = apply_mode_caps(
+        out_mode,
+        max_charts=max_charts,
+        max_images=max_images,
+        max_diagrams=max_diagrams,
+        formats=formats,
+        no_charts=no_charts,
+        no_images=no_images,
+    )
 
     # FastAPI may pass a single UploadFile when the client sends one file.
     if isinstance(photos, list):

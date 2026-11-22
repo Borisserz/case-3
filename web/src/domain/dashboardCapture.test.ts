@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   attachCaptureMarkdowns,
   captureOriginOk,
+  captureWarning,
   documentsFromService,
   phrasePlan,
+  phraseRoute,
   filesFromCapture,
   markdownDocName,
   viewerFrameUrl,
@@ -62,7 +64,50 @@ describe("phrasePlan", () => {
   });
 });
 
+describe("phraseRoute", () => {
+  it("sends the message when the dashboard service fails", () => {
+    assert.equal(phraseRoute(false, { detail: "нет списка фильтров" }), "send");
+  });
+
+  it("keeps a real filter miss and a real open", () => {
+    assert.equal(
+      phraseRoute(true, { pull: false, asked: true, reply: "Нет такого фильтра." }),
+      "miss",
+    );
+    assert.equal(
+      phraseRoute(true, {
+        pull: true,
+        viewer: "http://127.0.0.1:8040/open",
+        reply: "Сейчас открою.",
+        filters: { Month: "Март" },
+      }),
+      "open",
+    );
+    assert.equal(phraseRoute(true, { pull: false }), "send");
+  });
+});
+
 describe("documentsFromService", () => {
+  it("keeps the truncation warning with the table", () => {
+    const docs = documentsFromService({
+      documents: [
+        {
+          name: "Table.pdf",
+          markdown: "| a |",
+          warnings: ["Таблица обрезана: было 80×600, осталось 64×500."],
+        },
+      ],
+    });
+    assert.equal(docs.length, 1);
+    assert.deepEqual(docs[0].warnings, [
+      "Таблица обрезана: было 80×600, осталось 64×500.",
+    ]);
+    assert.equal(
+      captureWarning(docs),
+      "Таблица обрезана: было 80×600, осталось 64×500.",
+    );
+  });
+
   it("keeps named markdown from the capture route", () => {
     const docs = documentsFromService({
       documents: [
@@ -71,7 +116,9 @@ describe("documentsFromService", () => {
         { name: "Table.pdf", markdown: "  " },
       ],
     });
-    assert.deepEqual(docs, [{ name: "screen.png", markdown: "# Экран" }]);
+    assert.deepEqual(docs, [
+      { name: "screen.png", markdown: "# Экран", warnings: [] },
+    ]);
   });
 });
 

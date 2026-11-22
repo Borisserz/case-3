@@ -168,6 +168,11 @@ def test_patch_escapes_specials() -> None:
     assert tables[1]["rows"][0][0] == "x & y"
 
 
+def test_long_region_table_can_be_saved() -> None:
+    rows = [[f"Район {i:02d}", str(1000 + i)] for i in range(1, 31)]
+    validate_table_payload(caption="", headers=["Район", "Сумма"], rows=rows)
+
+
 def test_patch_oob_raises() -> None:
     with pytest.raises(TableEditError):
         patch_table_in_tex(

@@ -14,7 +14,7 @@ import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
-import { attachCaptureMarkdowns, phraseMiss, phrasePlan } from "../domain/dashboardCapture";
+import { attachCaptureMarkdowns, captureWarning, phraseMiss, phrasePlan, phraseRoute } from "../domain/dashboardCapture";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
@@ -418,14 +418,16 @@ export default function App() {
   }, []);
 
   const onDashboardReady = useCallback(
-    (docs: { name: string; markdown: string }[]) => {
+    (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
       setSourceDraft((current) => attachCaptureMarkdowns(current, docs));
+      const note = captureWarning(docs);
+      if (note) showToast(note, 5000);
       setPlaqueDismissed(false);
       setFile(null);
       setPhraseViewer(null);
       setDashboardOpen(false);
     },
-    [],
+    [showToast],
   );
 
   useEffect(() => {
@@ -452,20 +454,12 @@ export default function App() {
       });
       body = await res.json().catch(() => null);
       ok = res.ok;
-      if (!ok) {
-        const detail =
-          body && typeof body === "object" && typeof (body as { detail?: unknown }).detail === "string"
-            ? (body as { detail: string }).detail
-            : "Не удалось открыть фильтры.";
-        setMsgs((list) => [
-          ...list,
-          { id: uid(), role: "user", text },
-          { id: uid(), role: "bot", text: detail },
-        ]);
-        setChat("");
-        return;
-      }
     } catch {
+      void send();
+      return;
+    }
+    const route = phraseRoute(ok, body);
+    if (route === "send") {
       void send();
       return;
     }

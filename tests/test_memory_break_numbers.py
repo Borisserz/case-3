@@ -154,6 +154,41 @@ def test_a_word_between_the_subject_and_the_number_still_conflicts():
     assert "оставить" in text
 
 
+def test_region_period_and_rank_are_not_a_cell_conflict():
+    """A year, a rank, or «в N раза» next to a region is not a rival cell."""
+    src = "Минская область | 105 865,2\nГомельская область | 80 100,0"
+    assert fact_conflict("Покажи Минскую область за 2025", src) is None
+    assert fact_conflict("Какая область в 2 раза лучше?", src) is None
+    assert fact_conflict("Минская область 1 место?", src) is None
+
+
+def test_region_cell_still_conflicts_when_the_user_names_another_sum():
+    clash = fact_conflict(
+        "В Минской области теперь 80.",
+        "Минская область | 105 865,2",
+    )
+    assert clash is not None
+    _word, doc_n, user_n = clash
+    assert doc_n == "105 865,2"
+    assert user_n == "80"
+
+
+def test_chat_keeps_sobrano_and_drops_only_the_extra_number():
+    source = "Минская область | 105 865,2"
+    client = _Seq(
+        [
+            "Минская область лидирует. Собрано 105 865,2. Доля составила 125.",
+            "Минская область лидирует. Собрано 105 865,2. Доля составила 125.",
+        ]
+    )
+    text = try_chat_answer(source, "Кто лидирует?", client=client)
+    assert "собрано" in text.lower()
+    assert "лидирует" in text.lower()
+    assert "125" not in text
+    assert "нет числа" not in text.lower()
+    assert "нет чисел" not in text.lower()
+
+
 def test_attack6b_slide_index_plus_real_conflict_in_one_message():
     """«слайд 3» plus касса 40 vs doc 20 — still one conflict question, model not called."""
     clash = fact_conflict(

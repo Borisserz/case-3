@@ -12,10 +12,9 @@ import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
 import { mergeSourcePack } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
-import {
-  ingestOfficeSource,
-  isOfficeSourceFile,
-} from "../domain/sourceOfficeIngest";
+import { parseDashboard } from "../domain/dashboardParse";
+import { paperclipAction } from "../domain/paperclipRoute";
+import { ingestOfficeSource } from "../domain/sourceOfficeIngest";
 
 type Deps = {
   setFile: Dispatch<SetStateAction<File | null>>;
@@ -101,11 +100,8 @@ export function useSourceIngest({
     (list: FileList | File[]) => {
       const arr = Array.from(list);
       for (const f of arr) {
-        if (
-          /\.(txt|md)$/i.test(f.name) ||
-          f.type === "text/plain" ||
-          f.type === "text/markdown"
-        ) {
+        const action = paperclipAction(f);
+        if (action === "text") {
           revokeBlob();
           setPlaqueDismissed(false);
           setDeckApplyHint(null);
@@ -128,7 +124,7 @@ export function useSourceIngest({
           })();
           continue;
         }
-        if (isOfficeSourceFile(f)) {
+        if (action === "office") {
           showToast(`Читаю ${f.name}…`, 8000);
           const localPreview =
             /\.pdf$/i.test(f.name) || f.type === "application/pdf"
@@ -182,7 +178,37 @@ export function useSourceIngest({
           })();
           continue;
         }
-        if (/^image\//.test(f.type) || /\.(png|jpe?g)$/i.test(f.name)) {
+        if (action === "dashboard-png") {
+          showToast(`Читаю ${f.name}…`, 8000);
+          void (async () => {
+            try {
+              const out = await parseDashboard(f, null);
+              applySourceDraft({
+                title: f.name,
+                text: out.markdown,
+                fileName: f.name,
+                viewMode: "text",
+              });
+              if (out.warnings.length) {
+                showToast(out.warnings[0], 5000);
+              } else {
+                showToast(`Данные: ${f.name}`, 2800);
+              }
+            } catch (err) {
+              setAttachPhotos((prev) => [...prev, f].slice(0, 5));
+              setForbidImages(false);
+              setMaxImages((n) => Math.max(n, 5));
+              showToast(
+                err instanceof Error
+                  ? `${err.message} Файл приложен как фото.`
+                  : "Не удалось прочитать снимок. Файл приложен как фото.",
+                6000,
+              );
+            }
+          })();
+          continue;
+        }
+        if (action === "photo") {
           setAttachPhotos((prev) => [...prev, f].slice(0, 5));
           setForbidImages(false);
           setMaxImages((n) => Math.max(n, 5));

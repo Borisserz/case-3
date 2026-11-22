@@ -191,9 +191,9 @@ def _docx_to_markdown(path: Path) -> str:
             else:
                 parts.append(text)
         elif isinstance(block, Table):
-            tsv = _table_to_tsv(block)
-            if tsv:
-                parts.append(tsv)
+            table_md = _table_to_markdown(block)
+            if table_md:
+                parts.append(table_md)
     # Fallback if body XML order failed but paragraphs exist
     if not parts:
         for p in document.paragraphs:
@@ -201,9 +201,9 @@ def _docx_to_markdown(path: Path) -> str:
             if text:
                 parts.append(text)
         for table in document.tables:
-            tsv = _table_to_tsv(table)
-            if tsv:
-                parts.append(tsv)
+            table_md = _table_to_markdown(table)
+            if table_md:
+                parts.append(table_md)
     return "\n\n".join(parts) + ("\n" if parts else "")
 
 
@@ -221,17 +221,17 @@ def _iter_docx_blocks(document: object) -> Iterator[object]:
             yield Table(child, document)
 
 
-def _table_to_tsv(table: object) -> str:
-    rows: list[list[object | None]] = []
+def _table_to_markdown(table: object) -> str:
+    """Grid as a markdown table. Repeated neighbours stay, so columns do not shift."""
+    from case3.dashboard_source import table_block
+
+    rows: list[list[str]] = []
     for row in table.rows:  # type: ignore[attr-defined]
-        cells = [" ".join((c.text or "").split()) for c in row.cells]
-        cleaned: list[object | None] = []
-        for cell in cells:
-            if cleaned and cleaned[-1] == cell:
-                continue
-            cleaned.append(cell)
-        rows.append(cleaned)
-    return _cells_to_tsv(rows)
+        rows.append([" ".join((cell.text or "").split()) for cell in row.cells])
+    block, note = table_block(rows)
+    if note:
+        block = block.rstrip() + "\n\n" + note + "\n"
+    return block
 
 
 def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
@@ -265,9 +265,20 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
             f"{detail} OCR в Liber пока не подключён — нужен цифровой PDF/DOCX."
         )
 
-    md = _pdf_text_layer_markdown(path)
+    # Same cells as «В данные»: 64×500, repeated neighbours stay, markdown table.
+    from case3.dashboard_source import DashboardSourceError, parse_dashboard
+
+    try:
+        result = parse_dashboard(pdf=path)
+    except DashboardSourceError as exc:
+        if exc.code == "scan_pdf":
+            raise ScanPdfError(exc.message) from exc
+        if exc.code == "ingest_dependency":
+            raise IngestDependencyError(exc.message) from exc
+        raise SourceIngestError(exc.message, code=exc.code) from exc
+    md = result.markdown
+    warns.extend(result.warnings)
     if not md.strip():
-        # Image-heavy / broken text layer that triage still called usable
         raise ScanPdfError(
             "Из PDF не удалось извлечь текст (пустой текстовый слой или только "
             "картинки). OCR в Liber пока не подключён — нужен цифровой PDF/DOCX."

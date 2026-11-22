@@ -21,6 +21,21 @@ _HBAR = (
 )
 
 
+def test_harden_horizontal_bar_grows_for_many_regions() -> None:
+    labels = ",".join(f"'{name}'" for name in [f"Область {i}" for i in range(15)])
+    html = (
+        '<canvas id="c1" width="1100" height="420"></canvas><script>'
+        "new Chart(el,{type:'bar',data:{"
+        f"labels:[{labels}],"
+        "datasets:[{label:'Сумма',data:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}]}});"
+        "</script>"
+    )
+    out = harden_chart_html(html, "horizontal_bar")
+    height = int(re.search(r'height="(\d+)"', out).group(1))
+    assert height > 420
+    assert height <= 900
+
+
 def test_harden_horizontal_bar_shrinks_tall_canvas() -> None:
     out = harden_chart_html(_HBAR, "horizontal_bar")
     m = re.search(r'height="(\d+)"', out)

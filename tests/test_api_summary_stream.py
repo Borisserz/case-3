@@ -44,6 +44,35 @@ def _seed_ok_run(tmp_path: Path, run_id: str, *, summary: str = "Готово.")
     )
 
 
+def test_status_reports_insufficient_data(client: TestClient, tmp_path: Path) -> None:
+    run_id = "insuf_api_20261122T000000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "status": "ok",
+                "stage": "ok",
+                "figures_planned": [],
+                "charts_planned": [],
+                "media_status": {},
+                "max_charts": 0,
+                "max_images": 0,
+                "insufficient_data": True,
+                "chat_summary": "В запросе недостаточно данных.",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    st = client.get(f"/api/runs/{run_id}/status")
+    assert st.status_code == 200
+    body = st.json()
+    assert body["insufficient_data"] is True
+    assert body["chat_summary"] == "В запросе недостаточно данных."
+
+
 def test_status_includes_chat_summary(client: TestClient, tmp_path: Path) -> None:
     run_id = "sum_api_20261021T000000Z"
     _seed_ok_run(tmp_path, run_id, summary="Собрал отчёт.")

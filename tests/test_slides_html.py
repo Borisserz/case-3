@@ -361,6 +361,33 @@ def test_scorecard_callout_table() -> None:
     )
     assert "deck-table" in table
     assert "<th>A</th>" in table
+    assert "is-roomy" in table
+
+    dense_rows = [["Область", "Факт"]] + [
+        [name, "да"]
+        for name in (
+            "Минская",
+            "Гомельская",
+            "Брестская",
+            "Витебская",
+            "Гродненская",
+            "Могилевская",
+            "Минск",
+            "Борисов",
+            "Пинск",
+        )
+    ]
+    dense = render_slide_html(
+        {
+            "id": "s13",
+            "layout": "table_hero",
+            "title": "Области",
+            "rows": dense_rows,
+        },
+        palette="atelier",
+    )
+    assert "is-dense" in dense
+    assert "Пинск" in dense
 
 
 def test_plain_title_is_an_accent_field_and_split_stays() -> None:

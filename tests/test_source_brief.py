@@ -46,6 +46,28 @@ def test_long_tech_doc_becomes_a_short_map_that_keeps_facts() -> None:
     assert str(len(source)) in brief
 
 
+def test_long_region_table_keeps_rows_not_a_240_char_slice() -> None:
+    rows = ["| Область | Сумма |", "| --- | --- |"]
+    for name in (
+        "Брестская",
+        "Витебская",
+        "Гомельская",
+        "Гродненская",
+        "Минская",
+        "Могилевская",
+    ):
+        rows.append(
+            f"| {name} область | платежи по налогу на добавленную стоимость за период | 100 |"
+        )
+    filler = "Пояснение без чисел. " * 500
+    source = filler + "\n\n## Таблица\n" + "\n".join(rows) + "\n"
+    assert len(source) > 8000
+    brief = slides_source_text(source)
+    assert "Гомельская" in brief
+    assert "Могилевская" in brief
+    assert "| Область | Сумма |" in brief or "Область" in brief
+
+
 def test_one_section_keeps_every_numbered_sentence() -> None:
     filler = "Пояснение без чисел. " * 400
     source = (

@@ -14,6 +14,7 @@ REQUIRED_PACKAGES = (
     "array",  # >{…} col types for wrapping tabularx
     "tabularx",
     "longtable",
+    "xltabular",  # long markdown tables: X columns that break across pages
     "float",
     "graphicx",
     "setspace",
@@ -940,7 +941,7 @@ def strip_orphan_table_markup(tex: str) -> str:
     pos = 0
     depth = 0
     for m in re.finditer(
-        r"\\begin\{(tabularx?\*?|longtable\*?)\}|\\end\{(tabularx?\*?|longtable\*?)\}",
+        r"\\begin\{(xltabular|tabularx?\*?|longtable\*?)\}|\\end\{(xltabular|tabularx?\*?|longtable\*?)\}",
         tex,
         flags=re.I,
     ):

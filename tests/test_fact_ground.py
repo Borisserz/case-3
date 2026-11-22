@@ -15,6 +15,40 @@ _TEX = r"""
 """
 
 
+def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
+    from case3.chat_turn import number_norms
+
+    source = "Минская область | 105 865,2"
+    norms = number_norms(source)
+    assert "105865.2" in norms
+    assert "105" not in norms
+    assert "865.2" not in norms
+    tex = r"""
+\documentclass{article}
+\begin{document}
+В Минской области собрано 105 865,2.
+\end{document}
+"""
+    out, charts, _figures, _diagrams, dropped = ground_generated(
+        tex,
+        [
+            {
+                "id": "cht_01",
+                "caption": "Минская область",
+                "html": "data: [105865.2, 999], labels: ['Минская','Гомельская']",
+            }
+        ],
+        [],
+        [],
+        source=source,
+        intent="Сделай отчёт.",
+    )
+    assert "105 865,2" in out
+    assert "999" not in charts[0]["html"]
+    assert "105865.2" in charts[0]["html"]
+    assert "999" in dropped
+
+
 def test_decimal_comma_stays_when_a_foreign_number_is_dropped():
     tex = r"""
 \documentclass{article}

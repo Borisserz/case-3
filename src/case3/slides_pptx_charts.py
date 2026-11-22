@@ -214,7 +214,7 @@ def add_native_chart(
         )
         vals = list(s.get("values") or [])
         if len(vals) < len(cats):
-            vals = vals + [0.0] * (len(cats) - len(vals))
+            vals = vals + [None] * (len(cats) - len(vals))
         data.add_series(name, vals[: len(cats)])
 
     try:

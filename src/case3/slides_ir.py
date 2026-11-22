@@ -54,8 +54,8 @@ _MAX_CARDS = 3
 _MAX_CARD_KICKER = 48
 _MAX_CARD_TITLE = 72
 _MAX_CARD_BODY = 240
-_MAX_TABLE_ROWS = 8
-_MAX_TABLE_COLS = 5
+_MAX_TABLE_ROWS = 14
+_MAX_TABLE_COLS = 8
 _MAX_CELL = 48
 _MAX_CONSECUTIVE_BULLETS = 2
 _KPI_STATUS = frozenset({"up", "down", "flat"})
@@ -105,6 +105,13 @@ def _collect_text_blobs(slide: dict[str, Any]) -> list[str]:
                 for cell in row:
                     if isinstance(cell, str) and cell.strip():
                         blobs.append(cell)
+    for card in slide.get("cards") or []:
+        if not isinstance(card, dict):
+            continue
+        for key in ("title", "body", "kicker"):
+            val = card.get(key)
+            if isinstance(val, str) and val.strip():
+                blobs.append(val)
     return blobs
 
 
@@ -139,7 +146,7 @@ def _is_section_index_chrome(num: str) -> bool:
     return bool(re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n))
 
 
-def _number_in_source(num: str, source_norm: str) -> bool:
+def _boundary_hit(num: str, source_norm: str) -> bool:
     """Whole-token match — ``38`` must not hitchhike on ``38000``."""
     if not num or not source_norm:
         return False
@@ -157,6 +164,17 @@ def _number_in_source(num: str, source_norm: str) -> bool:
         if after in ".," and end + 1 < len(source_norm) and source_norm[end + 1].isdigit():
             continue
         return True
+    return False
+
+
+def _number_in_source(num: str, source_norm: str) -> bool:
+    """Match a spaced cell and the same cell after the spaces are joined."""
+    if _boundary_hit(num, source_norm):
+        return True
+    compact_num = _compact_spaced_thousands(num)
+    compact_src = _compact_spaced_thousands(source_norm)
+    if compact_num != num or compact_src != source_norm:
+        return _boundary_hit(compact_num, compact_src)
     return False
 
 

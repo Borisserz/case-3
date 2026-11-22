@@ -12,13 +12,15 @@ _TITLE = re.compile(r"\\title\{([^{}]*)\}")
 _SECTION = re.compile(r"\\(sub)*section\*?\{([^{}]*)\}")
 _TABLE_ENV = re.compile(
     r"\\begin\{table\*?\}.*?\\end\{table\*?\}"
-    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}",
+    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}"
+    r"|\\begin\{xltabular\}.*?\\end\{xltabular\}",
     re.S,
 )
 _TABULAR = re.compile(
     r"\\begin\{tabularx\}\{[^}]+\}\{[^}]+\}([\s\S]*?)\\end\{tabularx\}"
     r"|\\begin\{tabular\}\{[^}]+\}([\s\S]*?)\\end\{tabular\}"
     r"|\\begin\{longtable\*?\}\{[^}]+\}([\s\S]*?)\\end\{longtable\*?\}"
+    r"|\\begin\{xltabular\}\{[^}]+\}\{[^}]+\}([\s\S]*?)\\end\{xltabular\}"
 )
 _CAPTION = re.compile(r"\\caption\{([^{}]*)\}")
 _FIGURE_ENV = re.compile(
@@ -199,13 +201,32 @@ def _split_rows(tabular_body: str) -> list[list[str]]:
     return rows
 
 
+def _table_env_name(tok: str) -> str:
+    if "xltabular" in tok:
+        return "xltabular"
+    if "longtable" in tok:
+        return "longtable"
+    if "tabularx" in tok:
+        return "tabularx"
+    return "table"
+
+
+def _is_table_token(tok: str) -> bool:
+    return (
+        tok.startswith(r"\begin{table}")
+        or tok.startswith(r"\begin{longtable}")
+        or tok.startswith(r"\begin{xltabular}")
+        or tok.startswith(r"\begin{tabularx}")
+    )
+
+
 def _parse_table_block(block: str) -> dict[str, Any] | None:
     cap_m = _CAPTION.search(block)
     caption = _plain_unescape(cap_m.group(1)) if cap_m else ""
     tab_m = _TABULAR.search(block)
     if not tab_m:
         return None
-    body = tab_m.group(1) or tab_m.group(2) or tab_m.group(3)
+    body = next((group for group in tab_m.groups() if group is not None), "")
     rows = _split_rows(body or "")
     if not rows:
         return None
@@ -269,6 +290,8 @@ _STRUCT_TOKEN = re.compile(
     r"\\subsection\*?\{[^{}]*\}|"
     r"\\begin\{table\*?\}|"
     r"\\begin\{longtable\*?\}|"
+    r"\\begin\{xltabular\}|"
+    r"\\begin\{tabularx\}|"
     r"\\begin\{figure\}|"
     r"\\begin\{landscape\}|"
     r"\\begin\{itemize\}|"
@@ -329,8 +352,8 @@ def find_paragraph_spans(tex: str) -> list[tuple[int, int]]:
             for a, b, _t, _h in _paragraph_parts_in_range(body, pos, m.start()):
                 spans.append((body_off + a, body_off + b))
         tok = m.group(1)
-        if tok.startswith(r"\begin{table}") or tok.startswith(r"\begin{longtable}"):
-            env = "longtable" if "longtable" in tok else "table"
+        if _is_table_token(tok):
+            env = _table_env_name(tok)
             em = re.search(rf"\\end\{{{env}\*?\}}", body[m.start() :], re.S)
             pos = m.start() + em.end() if em else m.end()
             continue
@@ -456,8 +479,8 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             pos = m.end()
             continue
 
-        if tok.startswith(r"\begin{table}") or tok.startswith(r"\begin{longtable}"):
-            env = "longtable" if "longtable" in tok else "table"
+        if _is_table_token(tok):
+            env = _table_env_name(tok)
             em = re.search(rf"\\end\{{{env}\*?\}}", body[m.start() :], re.S)
             if not em:
                 pos = m.end()

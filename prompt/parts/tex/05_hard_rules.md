@@ -52,6 +52,7 @@
    **Landscape (C4):** only when a table is still too wide after tabularx (≈6+ columns or very long cells) —
    wrap **that one** `table` in `\begin{landscape}…\end{landscape}` (`pdflscape` is in the preamble).
    Do **not** put the whole document in landscape; leave normal tables portrait.
+   If Source has a section «Производные», those shares and ranks are already computed from the cells. Copy them as written. Do not invent another percent.
 5b. **Citations / footnotes (C2):** use `\footnote{…}` **only** when Source has an explicit ref
    (URL, «см. …», bibliography line). Copy the URL/phrase from Source — never invent authors, years, or DOIs.
    If Source has no refs → emit **no** `\footnote` and **no** `\cite`.

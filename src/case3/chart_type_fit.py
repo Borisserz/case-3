@@ -69,12 +69,14 @@ def chart_type_change_warning(chart: dict[str, Any], target: str) -> str:
     if shape["kind"] == "unknown":
         return ""
     if shape["kind"] == "kpi" and want != "kpi":
-        invented = ""
         if want == "donut":
-            invented = " Для кольца появится доля «Прочее», которой нет в данных."
+            return (
+                "Сейчас это одно число (KPI). Кольцо будет из одной доли, "
+                "без сравнения с другими."
+            )
         return (
             "Сейчас это одно число (KPI). Другой тип оставит одну точку — "
-            "график будет пустым." + invented
+            "график будет пустым."
         )
     if want == "kpi" and (shape["points"] > 1 or shape["series"] > 1):
         return (

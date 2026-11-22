@@ -46,11 +46,52 @@ def _parse_labels(blob: str) -> list[str]:
     return re.findall(r"""['"]([^'"]*)['"]""", blob or "")
 
 
-def _parse_numbers(blob: str) -> list[float]:
-    out: list[float] = []
-    for m in _NUM.finditer(blob or ""):
+def _parse_numbers(blob: str) -> list[float | None]:
+    """One float per slot. ``105 865,2`` is one point. ``null`` keeps the slot."""
+    text = re.sub(
+        r"(?<=\d)[\s\u00a0\u202f]+(?=\d{3}(?:\D|$))",
+        "",
+        blob or "",
+    )
+    out: list[float | None] = []
+    index = 0
+    size = len(text)
+    while index < size:
+        char = text[index]
+        if char.isspace() or char == ",":
+            index += 1
+            continue
+        if text[index : index + 4].lower() == "null":
+            out.append(None)
+            index += 4
+            continue
+        match = re.match(r"-?\d+", text[index:])
+        if not match:
+            index += 1
+            continue
+        num = match.group(0)
+        index += len(num)
+        if index < size and text[index] == ".":
+            frac = re.match(r"\.\d+", text[index:])
+            if frac:
+                num += frac.group(0)
+                index += len(frac.group(0))
+        elif (
+            index < size
+            and text[index] == ","
+            and len(num.lstrip("-")) >= 4
+        ):
+            frac = re.match(r",(\d{1,2})(?!\d)", text[index:])
+            if frac:
+                num += "." + frac.group(1)
+                index += 1 + len(frac.group(1))
+        if index < size and text[index] in "eE":
+            exp = re.match(r"[eE][+-]?\d+", text[index:])
+            if exp:
+                num += exp.group(0)
+                index += len(exp.group(0))
         try:
-            out.append(float(m.group(0)))
+            out.append(float(num))
         except ValueError:
             continue
     return out
@@ -69,13 +110,16 @@ def normalize_series_ir(raw: Any, *, default_type: str = "bar") -> dict[str, Any
         if not isinstance(s, dict):
             continue
         vals = list(s.get("values") or [])
-        nums: list[float] = []
+        nums: list[float | None] = []
         for v in vals:
+            if v is None or (isinstance(v, str) and v.strip().lower() == "null"):
+                nums.append(None)
+                continue
             try:
                 nums.append(float(v))
             except (TypeError, ValueError):
-                continue
-        if not nums:
+                nums.append(None)
+        if not any(isinstance(n, (int, float)) for n in nums):
             continue
         cleaned.append(
             {

@@ -20,7 +20,14 @@ _KIND_LABEL = {
 }
 
 _DONE_CLAIM = re.compile(r"(?i)\b(готово|собрано|pdf готов|презентац\w* готов\w*)\b")
-_NUM = re.compile(r"\d+(?:[.,]\d+)?%?")
+# A year or a rank is not a rival cell. «за 2025», «1 место», «в 2 раза».
+_ASIDE_YEAR = re.compile(r"(?:19|20)\d{2}")
+_ASIDE_AFTER = re.compile(r"^\s*(?:место|раз|раза)\b", re.IGNORECASE)
+# Spaced thousands are one value: «105 865,2», not 105 and 865,2.
+_NUM = re.compile(
+    r"\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?%?"
+    r"|\d+(?:[.,]\d+)?%?"
+)
 # Longer stems first so «двадцать» is not read as «два».
 _SPOKEN_NUMBER = (
     ("девятнадцат", "19"),
@@ -151,17 +158,43 @@ def _focus_hits(para: str, stems: set[str]) -> int:
     return len(stems & found)
 
 
+def _focus_table(para: str, stems: set[str], budget: int) -> str | None:
+    """Header plus the rows that name the question. A markdown table is one paragraph."""
+    lines = [line.rstrip() for line in (para or "").splitlines() if line.strip()]
+    if len(lines) < 2 or not lines[0].lstrip().startswith("|"):
+        return None
+    header = [lines[0]]
+    rest = lines[1:]
+    if rest and re.match(r"^\|?[\s\-:|]+\|?$", rest[0].strip()):
+        header.append(rest[0])
+        rest = rest[1:]
+    hits = [row for row in rest if _focus_hits(row, stems) >= 1]
+    chosen = hits or rest[:4]
+    kept = list(header)
+    for row in chosen:
+        trial = "\n".join(kept + [row])
+        if len(trial) > budget:
+            break
+        kept.append(row)
+    return "\n".join(kept)
+
+
 def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
     """Head, paragraphs that match the question, then the tail.
 
     A short document is unchanged. A long one stays inside ``limit``.
+    A markdown table keeps its header and the rows the question names.
     """
-    from case3.chat_memory import _query_stems
-
     text = (source or "").strip()
     if len(text) <= limit:
         return text
-    paras = _source_paragraphs(text)
+    from case3.chat_memory import _query_stems
+
+    stems = set(_query_stems(focus or ""))
+    paras = [
+        _focus_table(para, stems, min(limit, 2200)) or para
+        for para in _source_paragraphs(text)
+    ]
     if not paras:
         return text[: limit - 1].rstrip() + "…"
     head, head_n = _fit_front(paras, max(200, (limit * 2) // 5))
@@ -172,7 +205,6 @@ def _clip_source(source: str, limit: int = 6000, focus: str = "") -> str:
         if len(body) <= limit:
             return body
         return body[: limit - 1].rstrip() + "…"
-    stems = set(_query_stems(focus or ""))
     middle = paras[head_n:tail_at]
     ranked = sorted(
         range(len(middle)),
@@ -454,9 +486,14 @@ def _client(max_tokens: int, timeout_s: float) -> LLMClient:
     )
 
 
-def _accepted(text: str) -> str:
+def _accepted(text: str, *, block_done: bool = False) -> str:
+    """Keep a chat answer that says «собрано». Block that word only in the opening line."""
     cleaned = (text or "").strip()
-    if not cleaned or _DONE_CLAIM.search(cleaned) or not is_clean_chat_summary(cleaned):
+    if not cleaned:
+        return ""
+    if block_done and _DONE_CLAIM.search(cleaned):
+        return ""
+    if not is_clean_chat_summary(cleaned):
         return ""
     return cleaned
 
@@ -479,7 +516,8 @@ def try_opening(
     try:
         llm = client or _client(320, 25.0)
         text = _accepted(
-            _speak(llm, system=system, user_text=user, max_tokens=320, on_delta=None)
+            _speak(llm, system=system, user_text=user, max_tokens=320, on_delta=None),
+            block_done=True,
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
         log.warning("opening failed: %s", exc)
@@ -542,8 +580,21 @@ _STOP_STEMS = frozenset(
         "котор",
         "нужн",
         "откры",
+        # Column words on every dashboard row. A named region still conflicts.
+        "область",
+        "област",
+        "регион",
+        "район",
     }
 )
+
+
+def _aside_number(text: str, match: re.Match[str]) -> bool:
+    """True when this digit is a period or a rank, not a cell the user is correcting."""
+    token = match.group(0).replace("%", "")
+    if _ASIDE_YEAR.fullmatch(token):
+        return True
+    return bool(_ASIDE_AFTER.match(text[match.end() : match.end() + 16]))
 
 
 def latest_user_line(intent: str | None) -> str:
@@ -651,12 +702,30 @@ def _subjects_near(text: str, start: int) -> set[str]:
     return {stem for _word, stem in _fact_words(text, start)}
 
 
+def _nearest_stem(text: str, start: int) -> str:
+    words = _fact_words(text, start)
+    return words[-1][1] if words else ""
+
+
+_CHANGE_PREFIXES = ("вырос", "сниз", "упа", "прирос", "измен", "увелич", "сократ", "паден")
+
+
+def _claim_words(text: str, start: int, token: str) -> list[tuple[str, str]]:
+    """A growth percent belongs to the verb, not the noun before it."""
+    words = _fact_words(text, start)
+    if token.endswith("%") and words and words[-1][1].startswith(_CHANGE_PREFIXES):
+        return [words[-1]]
+    return words
+
+
 def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, str] | None:
     """User number and a different document number about the same word."""
     raw = user_text or ""
     doc = source or ""
     for hit in _NUM.finditer(raw):
-        pairs = _fact_words(raw, hit.start())
+        if _aside_number(raw, hit):
+            continue
+        pairs = _claim_words(raw, hit.start(), hit.group())
         user_stems = {stem for _word, stem in pairs}
         if not user_stems:
             continue
@@ -665,7 +734,8 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
         for other in _NUM.finditer(doc):
             if _norm_num(other.group()) != user_norm:
                 continue
-            if user_stems & _subjects_near(doc, other.start()):
+            # The same digit on a later metric does not excuse this one.
+            if _nearest_stem(doc, other.start()) in user_stems:
                 same_subject_same_value = True
                 break
         if same_subject_same_value:
@@ -849,11 +919,8 @@ def _table_prose(block: dict) -> str:
     if headers:
         lines.append(" | ".join(headers))
     rows = [row for row in (block.get("rows") or []) if isinstance(row, list)]
-    shown = rows[:24]
-    for row in shown:
+    for row in rows:
         lines.append(" | ".join(str(cell).strip() for cell in row))
-    if len(rows) > len(shown):
-        lines.append("…")
     return "\n".join(lines)
 
 
@@ -1017,13 +1084,50 @@ def try_chat_answer(
         text = _ask_model(llm, system, retry)
         stray = stray_numbers(text, allowed) if text else []
     if stray:
-        spoken = invention_question(stray)
+        kept = _without_stray(text, stray)
+        if len(re.findall(r"[А-Яа-яЁё]", kept)) >= 12:
+            spoken = kept
+        else:
+            spoken = invention_question(stray)
     else:
         spoken = text or chat_fallback()
     spoken = _hide_memory_marks(spoken)
     if on_delta:
         on_delta(spoken)
     return spoken
+
+
+def _without_stray(text: str, stray: list[str]) -> str:
+    """Drop a sentence whose only numbers are foreign. Keep the grounded sentences."""
+    norms = {_norm_num(token) for token in stray}
+    if not text or not norms:
+        return text or ""
+    kept_lines: list[str] = []
+    for line in text.split("\n"):
+        bits = re.split(r"([.!?]+(?:\s+|$))", line)
+        kept: list[str] = []
+        index = 0
+        while index < len(bits):
+            chunk = bits[index]
+            delim = bits[index + 1] if index + 1 < len(bits) else ""
+            index += 2 if delim else 1
+            nums = {_norm_num(token) for token in _NUM.findall(chunk)}
+            if nums and nums <= norms:
+                continue
+            if nums & norms:
+                chunk = _NUM.sub(
+                    lambda match: "" if _norm_num(match.group(0)) in norms else match.group(0),
+                    chunk,
+                )
+            chunk = re.sub(r"[ \t]{2,}", " ", chunk).strip(" ,;")
+            if not chunk:
+                continue
+            kept.append(chunk)
+            if delim:
+                kept.append(delim if delim.startswith((".", "!", "?")) else " ")
+        if kept:
+            kept_lines.append("".join(kept).strip())
+    return "\n".join(kept_lines).strip()
 
 
 def _hide_memory_marks(text: str) -> str:
@@ -1048,7 +1152,8 @@ def _hide_memory_marks(text: str) -> str:
 
 
 def _norm_num(token: str) -> str:
-    return token.replace(",", ".").replace("%", "")
+    compact = re.sub(r"[ \u00a0\u202f]+", "", token or "")
+    return compact.replace(",", ".").replace("%", "")
 
 
 def _numbers_grounded(draft: str, allowed: str) -> bool:

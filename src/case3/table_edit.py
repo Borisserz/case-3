@@ -16,11 +16,12 @@ from case3.tex_safe import escape_tex_text
 log = logging.getLogger("case3.table_edit")
 
 _MAX_COLS = 40
-_MAX_ROWS = 20
+_MAX_ROWS = 200
 
 _TABLE_ENV = re.compile(
     r"\\begin\{table\*?\}.*?\\end\{table\*?\}"
-    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}",
+    r"|\\begin\{longtable\*?\}.*?\\end\{longtable\*?\}"
+    r"|\\begin\{xltabular\}.*?\\end\{xltabular\}",
     re.S,
 )
 _CAPTION = re.compile(r"(\\caption\{)([^{}]*)(\})")
@@ -33,6 +34,9 @@ _TABULAR = re.compile(
 _LONGTABLE = re.compile(
     r"(\\begin\{longtable\*?\}\{)([^}]+)(\})([\s\S]*?)(\\end\{longtable\*?\})"
 )
+_XLTABULAR = re.compile(
+    r"(\\begin\{xltabular\}\{)([^}]+)(\}\{)([^}]+)(\})([\s\S]*?)(\\end\{xltabular\})"
+)
 
 
 class TableEditError(RuntimeError):
@@ -40,8 +44,19 @@ class TableEditError(RuntimeError):
 
 
 def find_table_spans(tex: str) -> list[tuple[int, int]]:
-    """Return (start, end) spans for each ``table`` environment (document order)."""
-    return [(m.start(), m.end()) for m in _TABLE_ENV.finditer(tex or "")]
+    """Return (start, end) spans for each table (document order).
+
+    A ``tabularx`` already inside ``table`` / ``longtable`` / ``xltabular``
+    is not a second table.
+    """
+    raw = tex or ""
+    spans = [(m.start(), m.end()) for m in _TABLE_ENV.finditer(raw)]
+    for m in _TABULARX.finditer(raw):
+        if any(start <= m.start() < end for start, end in spans):
+            continue
+        spans.append((m.start(), m.end()))
+    spans.sort()
+    return spans
 
 
 def validate_table_payload(
@@ -112,6 +127,7 @@ def serialize_tabular_body(
     use_tabularx: bool,
     width_arg: str = r"\textwidth",
     use_longtable: bool = False,
+    use_xltabular: bool = False,
     caption: str = "",
 ) -> str:
     """Build begin…end tabular(x) or longtable with booktabs rules."""
@@ -129,7 +145,9 @@ def serialize_tabular_body(
         specs[0] = "l"
     colspec = "".join(specs)
     lines: list[str] = []
-    if use_longtable:
+    if use_xltabular:
+        lines.append(rf"\begin{{xltabular}}{{{width_arg}}}{{{colspec}}}")
+    elif use_longtable:
         lines.append(rf"\begin{{longtable}}{{{colspec}}}")
         if caption:
             lines.append(rf"\caption{{{escape_tex_text(caption)}}} \\")
@@ -140,10 +158,17 @@ def serialize_tabular_body(
     lines.append(r"  \toprule")
     lines.append("  " + " & ".join(_cell_tex(h) for h in headers) + r" \\")
     lines.append(r"  \midrule")
+    if use_xltabular:
+        lines.append(r"  \endhead")
+        lines.append(r"  \bottomrule")
+        lines.append(r"  \endfoot")
     for row in rows:
         lines.append("  " + " & ".join(_cell_tex(c) for c in row) + r" \\")
-    lines.append(r"  \bottomrule")
-    if use_longtable:
+    if not use_xltabular:
+        lines.append(r"  \bottomrule")
+    if use_xltabular:
+        lines.append(r"\end{xltabular}")
+    elif use_longtable:
         lines.append(r"\end{longtable}")
     elif use_tabularx:
         lines.append(r"\end{tabularx}")
@@ -170,6 +195,18 @@ def _replace_caption(block: str, caption: str) -> str:
 def _replace_tabular(
     block: str, headers: list[str], rows: list[list[str]], caption: str = ""
 ) -> str:
+    mxlt = _XLTABULAR.search(block)
+    if mxlt:
+        width_arg = mxlt.group(2) or r"\textwidth"
+        body = serialize_tabular_body(
+            headers,
+            rows,
+            use_tabularx=True,
+            use_xltabular=True,
+            width_arg=width_arg,
+            caption=caption,
+        )
+        return block[: mxlt.start()] + body + block[mxlt.end() :]
     ml = _LONGTABLE.search(block)
     if ml:
         body = serialize_tabular_body(

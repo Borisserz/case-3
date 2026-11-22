@@ -33,11 +33,19 @@ _PRESENTATION = re.compile(
     re.IGNORECASE,
 )
 _DIAGRAM = re.compile(
-    r"схем|диаграмм|блок-схем|flowchart|mermaid",
+    r"схем|flowchart|mermaid",
     re.IGNORECASE,
 )
 _REPORT = re.compile(
-    r"отч[её]т|\bpdf\b|\bdocx\b",
+    r"отч[её]т|\bpdf\b|\bdocx\b|график|диаграмм",
+    re.IGNORECASE,
+)
+_QUESTION = re.compile(
+    r"\?\s*$|"
+    r"(?:^|[\s,])(?:"
+    r"что|как|где|какой|какая|какие|какое|каких|какую|"
+    r"сколько|когда|кто|чем|чему"
+    r")\b",
     re.IGNORECASE,
 )
 # «не делай отчёт», «без схемы» — noun is present, the request is not.
@@ -78,6 +86,9 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
 
     make = bool(_MAKE.search(raw))
     analyze = bool(_ANALYZE.search(raw))
+    # A question reads the file. It does not start a new one.
+    if _QUESTION.search(raw) and not make:
+        return "chat"
 
     if kinds and (make or not analyze):
         return kinds[0]

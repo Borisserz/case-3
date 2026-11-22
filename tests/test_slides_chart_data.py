@@ -40,6 +40,21 @@ def test_extract_bar() -> None:
     assert ir["series"][0]["values"] == [48.0, 35.0, 17.0]
 
 
+def test_spaced_sum_stays_one_point_and_a_null_keeps_its_category() -> None:
+    html = """
+<script>new Chart(el,{type:'bar',data:{
+labels:['Брестская','Витебская','Гомельская'],
+datasets:[{label:'Сумма',data:[105 865,2, null, 80100.5]}]
+}});</script>
+"""
+    ir = extract_chart_series(html, chart_type="bar")
+    assert ir is not None
+    assert ir["categories"] == ["Брестская", "Витебская", "Гомельская"]
+    assert ir["series"][0]["values"][0] == 105865.2
+    assert ir["series"][0]["values"][1] is None
+    assert ir["series"][0]["values"][2] == 80100.5
+
+
 def test_extract_empty() -> None:
     assert extract_chart_series("", chart_type="bar") is None
     assert extract_chart_series("<div/>", chart_type="kpi") is None

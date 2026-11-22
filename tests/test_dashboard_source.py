@@ -109,6 +109,33 @@ def test_split_word_grid_loses_to_columns_from_positions() -> None:
     assert choose_grids([], word, text) is word
 
 
+def test_paperclip_pdf_keeps_a_wide_grid_and_a_repeated_neighbor(tmp_path: Path) -> None:
+    from case3.source_ingest import file_to_markdown
+
+    path = tmp_path / "wide.pdf"
+    header = [f"c{i}" for i in range(14)]
+    row = ["77", "77"] + [str(i) for i in range(12)]
+    _write_grid_pdf(path, [header, row], caption="Wide")
+    markdown = file_to_markdown(path).markdown
+    assert "| c13 |" in markdown
+    assert markdown.count("77") >= 2
+    assert "truncated" not in markdown
+
+
+def test_two_region_pdf_carries_the_computed_share(tmp_path: Path) -> None:
+    path = tmp_path / "regions.pdf"
+    _write_grid_pdf(
+        path,
+        [["Region", "Sum"], ["Minsk", "60"], ["Gomel", "40"]],
+        caption="Regions",
+    )
+    result = parse_dashboard(pdf=path)
+    assert "## Производные" in result.markdown
+    assert "Minsk" in result.markdown
+    assert "60%" in result.markdown
+    assert "40%" in result.markdown
+
+
 def test_open_pivot_pdf_keeps_the_spaced_number(tmp_path: Path) -> None:
     path = tmp_path / "open.pdf"
     _write_open_pivot(path)
@@ -253,6 +280,48 @@ def test_dashboard_prompt_tells_qwen_not_to_invent() -> None:
     assert "не читаешь" in text
 
 
+def test_png_without_pdf_keeps_the_wide_table() -> None:
+    wide = "\n".join(
+        [
+            "## Фильтры",
+            "",
+            "| Фильтр | Выбрано |",
+            "| --- | --- |",
+            "| Режим | Общие данные |",
+            "",
+            "## Таблица",
+            "",
+            "| Наименование | Вид | ИМНС | Факт | План | Процент |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| НДС | Респ | 216 | 105 865,2 | 94 073,0 | -20,7% |",
+        ]
+    )
+    result = parse_dashboard(png=_tiny_png(), vision=lambda _raw: wide)
+    assert "105 865,2" in result.markdown
+    assert "Наименование" in result.markdown
+    assert "Общие данные" in result.markdown
+    assert "## Таблица PDF" not in result.markdown
+
+
+def test_png_beside_pdf_still_drops_the_screen_table(tmp_path: Path) -> None:
+    path = tmp_path / "one.pdf"
+    _write_grid_pdf(
+        path,
+        [["Tax", "Fact"], ["VAT", "10"]],
+        caption="Payments table for the dashboard export",
+    )
+    wide = "\n".join(
+        [
+            "| Наименование | Вид | ИМНС | Факт | План | Процент |",
+            "| --- | --- | --- | --- | --- | --- |",
+            "| НДС | Респ | 216 | 105 865,2 | 94 073,0 | -20,7% |",
+        ]
+    )
+    result = parse_dashboard(png=_tiny_png(), pdf=path, vision=lambda _raw: wide)
+    assert "105 865,2" not in result.markdown
+    assert "VAT" in result.markdown
+
+
 def test_screen_reading_drops_the_green_table_and_keeps_the_cards() -> None:
     raw = "\n".join(
         [
@@ -283,6 +352,18 @@ def test_screen_reading_drops_the_green_table_and_keeps_the_cards() -> None:
     assert "Общие данные" in cleaned
     assert "722 087,17" in cleaned
     assert "All" in cleaned
+
+
+def test_png_only_reader_asks_for_the_payment_table() -> None:
+    class _Fake:
+        def complete(self, *, system: str, user_text: str, images=None, **_kwargs):
+            assert "единственный источник" in system
+            assert "не читаешь" not in system
+            assert images and images[0][0] == "dashboard"
+            return "| A | B | C | D | E |\n| --- | --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 | 5 |"
+
+    md = read_dashboard_png(_tiny_png(), client=_Fake(), keep_table=True)
+    assert "1" in md and "5" in md
 
 
 def test_qwen_reader_sends_the_png_and_the_prompt() -> None:
