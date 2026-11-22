@@ -399,6 +399,8 @@ def test_list_markers_are_not_numbers():
     from case3.chat_turn import number_norms, stray_numbers
 
     assert number_norms("1. Выручка 10\n2. Касса 20") == {"10", "20"}
+    assert "2024" in number_norms("2024. Выручка 10")
+    assert "10" in number_norms("2024. Выручка 10")
     assert stray_numbers("1. В тексте 10.", {"10"}) == []
     assert stray_numbers("Пункт 1 стоит отдельно.", {"10"}) == ["1"]
     assert "1.1" in number_norms("1.1. Глобальный тренд 3")

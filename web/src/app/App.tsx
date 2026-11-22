@@ -15,7 +15,7 @@ import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
 import { attachCaptureMarkdowns, captureWarning, phraseMiss, phrasePlan, phraseRoute } from "../domain/dashboardCapture";
-import { ATTACHED_TOAST, screenReadNote } from "../domain/sourceCopy";
+import { ATTACHED_TOAST, screenReadNote, sourceCameFromScreen } from "../domain/sourceCopy";
 import { hideSourcePlaque } from "../domain/sourcePlaque";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
@@ -424,7 +424,7 @@ export default function App() {
       setSourceDraft((current) => {
         const next = attachCaptureMarkdowns(current, docs);
         if (!next) return next;
-        return { ...next, fromScreen: true };
+        return { ...next, fromScreen: sourceCameFromScreen(next.text) };
       });
       const note = captureWarning(docs);
       if (note) showToast(note, 5000);

@@ -141,7 +141,11 @@ def test_run_rejects_second_while_busy(client: TestClient) -> None:
             },
         )
         assert third.status_code == 409, third.text
-        assert "holder_test" in (third.json().get("detail") or "")
+        detail = third.json().get("detail") or ""
+        assert "уже ждёт" in detail
+        assert "Этот запрос не поставлен" in detail
+        assert "перезапуск" not in detail
+        assert "holder_test" not in detail
     finally:
         api_mod._bg_run_pipeline = original
         api_mod._release_pipeline_slot("holder_test")

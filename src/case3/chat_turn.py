@@ -691,9 +691,9 @@ def spoken_number_norms(text: str | None) -> set[str]:
 
 
 def _is_list_marker(text: str, start: int, end: int) -> bool:
-    """``1. Пункт`` is a marker. ``пункт 1`` and ``1.1. Раздел`` are numbers."""
+    """``1. Пункт`` is a marker. ``2024. Выручка`` and ``1.1. Раздел`` are numbers."""
     token = (text or "")[start:end]
-    if not token.isdigit():
+    if not token.isdigit() or len(token) >= 4:
         return False
     line_start = text.rfind("\n", 0, start) + 1
     if text[line_start:start].strip():

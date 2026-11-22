@@ -10,7 +10,7 @@ import {
 import type { ActiveArtifact } from "../ArtifactRail";
 import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
-import { ATTACHED_TOAST } from "../domain/sourceCopy";
+import { ATTACHED_TOAST, sourceCameFromScreen } from "../domain/sourceCopy";
 import { mergeSourcePack } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
 import { failedDashboardSnapshot, parseDashboard } from "../domain/dashboardParse";
@@ -68,7 +68,10 @@ export function useSourceIngest({
   const applySourceDraft = useCallback(
     (draft: SourceDraft) => {
       setFile(null);
-      setSourceDraft((current) => mergeSourcePack(current, draft));
+      setSourceDraft((current) => {
+        const merged = mergeSourcePack(current, draft);
+        return { ...merged, fromScreen: sourceCameFromScreen(merged.text) };
+      });
       setPlaqueDismissed(false);
       setDeckApplyHint(null);
       setActiveArtifact(artifactFromDraft(draft));
@@ -190,7 +193,6 @@ export function useSourceIngest({
                 text: out.markdown,
                 fileName: f.name,
                 viewMode: "text",
-                fromScreen: true,
               });
               if (out.warnings.length) {
                 showToast(out.warnings[0], 5000);

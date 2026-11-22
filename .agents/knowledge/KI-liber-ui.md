@@ -41,7 +41,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Report downloads: **one** chat card (Source → PDF+DOCX twin links) + rail header PDF/DOCX (`reportDownloadLinks`); no Export ▾
 - `sessionStorage` last report + history list → opens rail
 - Attach `.txt/.md` or intent >400 chars → `ContextPlaque` (eyebrow «Документ», not Source/Текст) + Source tab labeled «Документ»
-- A screen capture or dashboard PNG sets `fromScreen`. The plaque says the model could read the numbers. Success toast: «Данные прикреплены». The × on the document chip hides the chip. The attached text and file stay, and the open document stays on the rail.
+- A screen capture or a dashboard PNG with no PDF table sets `fromScreen`. The plaque says the model could read the numbers. A document that contains `## Таблица PDF` or «скопированы из ячеек» does not: those digits were copied from the file. Success toast: «Данные прикреплены». The × on the document chip hides the chip. The attached text and file stay, and the open document stays on the rail.
 - A finished report card has «Сделать презентацию» until the deck is queued or ready (`reportCanMakeDeck`).
 - The photo chip and `max_images` stay off unless a photo is attached or the message asks for one.
 - Undo hints use Ctrl+Z on Windows and Linux, ⌘Z on a Mac.

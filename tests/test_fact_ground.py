@@ -259,6 +259,20 @@ def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
     assert "999" in dropped
 
 
+def test_a_year_at_the_start_of_a_line_stays_in_the_report():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+В 2024 году выручка составила 10.
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source="2024. Выручка 10", intent="отчёт"
+    )
+    assert "2024" in out
+    assert "10" in out
+
+
 def test_a_foreign_number_in_the_title_does_not_reach_the_first_page():
     tex = r"""
 \documentclass{article}

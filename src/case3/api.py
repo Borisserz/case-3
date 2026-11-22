@@ -854,11 +854,10 @@ def _read_run_meta(run_id: str) -> dict[str, Any]:
     return {}
 
 
-def _busy_detail(active: str | None) -> str:
-    holder = active or "busy"
+def _busy_detail(_active: str | None) -> str:
     return (
-        f"Уже идёт прогон {holder}, и один запрос уже ждёт. "
-        "Дождись конца. Ожидающий запрос лежит на диске и продолжится после перезапуска API."
+        "Сейчас собирается один документ, и ещё один уже ждёт. "
+        "Этот запрос не поставлен. Дождись, пока освободится очередь."
     )
 
 
