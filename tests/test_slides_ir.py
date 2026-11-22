@@ -499,6 +499,34 @@ def test_scrub_unavailable_chart_id_demotes_to_callout() -> None:
     assert deck["slides"][1]["layout"] == "callout"
 
 
+def test_a_table_cell_is_not_a_slide_index():
+    raw = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Итоги", "kicker": "01"},
+            {
+                "id": "s02",
+                "layout": "table_hero",
+                "title": "Коды",
+                "rows": [["Код", "Сумма"], ["07", "12"]],
+            },
+            {"id": "s03", "layout": "closing", "title": "C", "bullets": ["ok"]},
+        ],
+    }
+    with pytest.raises(DeckIrError, match="07|12"):
+        parse_deck_ir(raw, source="Касса 20.")
+    healed = scrub_invented_numbers(raw, source="Касса 20.")
+    assert healed["slides"][0]["kicker"] == "01"
+    flat = " ".join(
+        cell
+        for row in healed["slides"][1].get("rows") or []
+        for cell in row
+    )
+    assert "07" not in flat
+    assert "12" not in flat
+
+
 def test_scrub_demotes_broken_table_hero() -> None:
     raw = {
         "version": 1,

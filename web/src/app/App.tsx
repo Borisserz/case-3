@@ -16,6 +16,7 @@ import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
 import { attachCaptureMarkdowns, captureWarning, phraseMiss, phrasePlan, phraseRoute } from "../domain/dashboardCapture";
 import { ATTACHED_TOAST, screenReadNote } from "../domain/sourceCopy";
+import { hideSourcePlaque } from "../domain/sourcePlaque";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
@@ -792,12 +793,10 @@ export default function App() {
                     if (sourceDraft) openSourceArtifact(sourceDraft);
                   }}
                   onDismissPlaque={() => {
-                    setPlaqueDismissed(true);
-                    setSourceDraft(null);
-                    setFile(null);
-                    setActiveArtifact((a) =>
-                      a?.kind === "source" || a?.kind === "intent" ? null : a,
-                    );
+                    const next = hideSourcePlaque({ sourceDraft, file });
+                    setPlaqueDismissed(next.plaqueDismissed);
+                    setSourceDraft(next.sourceDraft);
+                    setFile(next.file);
                   }}
                   onPickStarter={(prompt) => {
                     setChat(prompt);

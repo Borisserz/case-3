@@ -27,7 +27,9 @@ MAX_TABLE_COLS = 64
 MAX_TABLE_ROWS = 500
 
 _NUM = re.compile(r"\d")
-_COMPLETE_NUM = re.compile(r"^[+\-−]?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?$")
+_COMPLETE_NUM = re.compile(
+    r"^[+\-−]?(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d+)?%?$"
+)
 _SHORT_NUM = re.compile(r"^[+\-−]?\d{1,3}$")
 _THOUSANDS_TAIL = re.compile(r"^\d{3}(?:[.,]\d+)?%?$")
 _NUM_TOKEN = re.compile(r"[+\-−]?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?")
@@ -230,10 +232,16 @@ def table_block(rows: list[list[object | None]]) -> tuple[str, str | None]:
     lines.append("| " + " | ".join("---" for _ in range(use_cols)) + " |")
     for row in use_rows[1:]:
         lines.append(fmt(row))
-    return "\n".join(lines) + "\n", note
+    text = "\n".join(lines) + "\n"
+    if note:
+        text = text.rstrip() + "\n\n" + note + "\n"
+    return text, note
 
 
-_TOTAL_LABEL = re.compile(r"^(итого|всего|total|sum|сумма)$", re.IGNORECASE)
+_TOTAL_LABEL = re.compile(
+    r"^(?:итого|всего|total|sum|сумма)(?!\w)",
+    re.IGNORECASE,
+)
 _YEAR_HEADER = re.compile(r"^(год|года|year|years)$", re.IGNORECASE)
 _CODE_HEADER = re.compile(r"(код|номер|№|\bid\b)", re.IGNORECASE)
 _MD_SEP = re.compile(r"^\|?[\s\-:|]+\|?$")

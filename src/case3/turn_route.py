@@ -1,6 +1,8 @@
 """Decide chat vs artifact from the user's words and an optional plaque.
 
 The plaque is a default, not a gate. A named action in the message wins.
+An analyze line that names no artifact uses the plaque, unless that plaque
+was negated («без схемы, расскажи»).
 """
 
 from __future__ import annotations
@@ -59,6 +61,23 @@ def _norm(text: str) -> str:
     return (text or "").replace("ё", "е").replace("Ё", "Е")
 
 
+def _plaque_blocked(raw: str, plaque: str) -> bool:
+    """True when every mention of this plaque's artifact is negated."""
+    pattern = {
+        "presentation": _PRESENTATION,
+        "diagram": _DIAGRAM,
+        "report": _REPORT,
+    }[plaque]
+    matches = list(pattern.finditer(raw))
+    if not matches:
+        return False
+    for match in matches:
+        window = raw[max(0, match.start() - 32) : match.start()]
+        if not _NEG_BEFORE.search(window):
+            return False
+    return True
+
+
 def _live_kinds(raw: str) -> list[str]:
     found: list[str] = []
     for kind, pattern in (
@@ -93,6 +112,8 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
     if kinds and (make or not analyze):
         return kinds[0]
     if analyze:
+        if plaque and not kinds and not _plaque_blocked(raw, plaque):
+            return plaque
         return "chat"
     if plaque:
         return plaque

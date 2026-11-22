@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   emptyDashboardDrop,
+  failedDashboardSnapshot,
   parseDashboard,
   takeDashboardFiles,
 } from "./dashboardParse.ts";
@@ -75,5 +76,13 @@ describe("parseDashboard", () => {
       () => parseDashboard(null, pdf, fetchImpl),
       /текстового слоя/,
     );
+  });
+});
+
+describe("failedDashboardSnapshot", () => {
+  it("keeps a failed screen reading out of the photo tray", () => {
+    const toast = failedDashboardSnapshot("Снимок не разобран.");
+    assert.match(toast, /Снимок не разобран/);
+    assert.match(toast, /не приложен как фото/);
   });
 });

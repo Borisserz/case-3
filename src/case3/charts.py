@@ -158,6 +158,38 @@ def _assert_chart_visible(page) -> None:  # noqa: ANN001
         raise RuntimeError(f"blank chart screenshot: {stats}")
 
 
+def _plotted_series(page) -> list[list[float | None]]:  # noqa: ANN001
+    """Numbers Chart.js plotted. One list per dataset."""
+    raw = page.evaluate(
+        """() => {
+          const canvas = document.querySelector('#mount canvas');
+          const chart = (window.Chart && canvas && Chart.getChart)
+            ? Chart.getChart(canvas) : null;
+          if (!chart) return [];
+          return chart.data.datasets.map((ds) => (ds.data || []).map((v) => {
+            if (v == null) return null;
+            if (typeof v === 'object') return (v && 'y' in v) ? Number(v.y) : null;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+          }));
+        }"""
+    )
+    if not isinstance(raw, list):
+        return []
+    out: list[list[float | None]] = []
+    for row in raw:
+        if not isinstance(row, list):
+            continue
+        points: list[float | None] = []
+        for item in row:
+            if item is None:
+                points.append(None)
+            else:
+                points.append(float(item))
+        out.append(points)
+    return out
+
+
 def _render_chart_in_browser(
     browser: Any,
     html: str,
@@ -165,6 +197,7 @@ def _render_chart_in_browser(
     *,
     work_dir: Path,
     timeout_ms: int,
+    series_out: list[list[float | None]] | None = None,
 ) -> None:
     index = _write_frame(work_dir)
     dest_png.parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +283,8 @@ def _render_chart_in_browser(
                 waited += step
         if last_err is not None:
             raise last_err
+        if series_out is not None:
+            series_out[:] = _plotted_series(page)
         page.locator("#mount").screenshot(path=str(dest_png), type="png")
     finally:
         context.close()
@@ -273,6 +308,7 @@ def render_chart_png(
     dest_png: Path,
     *,
     work_dir: Path | None = None,
+    series_out: list[list[float | None]] | None = None,
 ) -> None:
     raw_html = chart if isinstance(chart, str) else str(chart.get("html") or "")
     html = sanitize_chart_html(raw_html)
@@ -299,6 +335,7 @@ def render_chart_png(
                     dest_png,
                     work_dir=work_dir,
                     timeout_ms=timeout_ms,
+                    series_out=series_out,
                 )
             finally:
                 browser.close()

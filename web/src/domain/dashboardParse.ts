@@ -38,6 +38,11 @@ export function takeDashboardFiles(
   return { png, pdf, rejected };
 }
 
+export function failedDashboardSnapshot(message: string): string {
+  const detail = message.trim() || "Не удалось прочитать снимок.";
+  return `${detail} Снимок не приложен как фото: чисел из него нет.`;
+}
+
 export async function parseDashboard(
   png: File | null,
   pdf: File | null,

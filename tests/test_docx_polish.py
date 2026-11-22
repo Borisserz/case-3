@@ -279,6 +279,48 @@ def test_a_wide_table_turns_the_word_page_sideways(tmp_path: Path) -> None:
     assert "16838" in xml
 
 
+def test_only_the_wide_table_turns_sideways(tmp_path: Path) -> None:
+    from docx.enum.section import WD_ORIENT
+    from docx.oxml.ns import qn
+
+    from case3.docx_polish import orient_wide_tables
+
+    path = tmp_path / "mixed.docx"
+    doc = Document()
+    doc.add_paragraph("До")
+    doc.add_table(rows=1, cols=2)
+    doc.add_paragraph("Между")
+    doc.add_paragraph("Таблица 1. Показатели")
+    wide = doc.add_table(rows=1, cols=6)
+    for index, cell in enumerate(wide.rows[0].cells):
+        cell.text = f"c{index}"
+    doc.add_paragraph("После")
+    doc.save(str(path))
+    assert orient_wide_tables(path) is True
+    out = Document(str(path))
+    assert [sect.orientation for sect in out.sections] == [
+        WD_ORIENT.PORTRAIT,
+        WD_ORIENT.LANDSCAPE,
+        WD_ORIENT.PORTRAIT,
+    ]
+    wide_sect = out.sections[1]
+    assert wide_sect.page_width.twips == 16838
+    assert wide_sect.page_height.twips == 11906
+    chunks: list[list[str]] = [[]]
+    for child in out.element.body:
+        p_pr = child.find(qn("w:pPr")) if child.tag == qn("w:p") else None
+        if p_pr is not None and p_pr.find(qn("w:sectPr")) is not None:
+            chunks.append([])
+            continue
+        if child.tag == qn("w:sectPr"):
+            continue
+        chunks[-1].append("".join(node.text or "" for node in child.iter(qn("w:t"))))
+    assert "До" in chunks[0] and "Между" in chunks[0]
+    assert "Таблица 1. Показатели" in chunks[1]
+    assert "c0" in "".join(chunks[1])
+    assert chunks[2] == ["После"]
+
+
 def test_a_narrow_table_stays_portrait(tmp_path: Path) -> None:
     import zipfile
 

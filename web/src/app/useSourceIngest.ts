@@ -13,7 +13,7 @@ import type { SourceDraft } from "../domain/liberTypes";
 import { ATTACHED_TOAST } from "../domain/sourceCopy";
 import { mergeSourcePack } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
-import { parseDashboard } from "../domain/dashboardParse";
+import { failedDashboardSnapshot, parseDashboard } from "../domain/dashboardParse";
 import { paperclipAction } from "../domain/paperclipRoute";
 import { ingestOfficeSource } from "../domain/sourceOfficeIngest";
 
@@ -198,15 +198,11 @@ export function useSourceIngest({
                 showToast(ATTACHED_TOAST, 2800);
               }
             } catch (err) {
-              setAttachPhotos((prev) => [...prev, f].slice(0, 5));
-              setForbidImages(false);
-              setMaxImages((n) => Math.max(n, 5));
-              showToast(
+              const message =
                 err instanceof Error
-                  ? `${err.message} Файл приложен как фото.`
-                  : "Не удалось прочитать снимок. Файл приложен как фото.",
-                6000,
-              );
+                  ? err.message
+                  : "Не удалось прочитать снимок.";
+              showToast(failedDashboardSnapshot(message), 6000);
             }
           })();
           continue;

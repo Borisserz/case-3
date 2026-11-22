@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from case3.chart_number import compact_chart_number_text, take_chart_number
+
 # Types we can map to python-pptx chart kinds.
 NATIVE_CHART_TYPES = frozenset(
     {
@@ -112,51 +114,28 @@ def _parse_labels(blob: str) -> list[str]:
 
 
 def _parse_numbers(blob: str) -> list[float | None]:
-    """One float per slot. ``105 865,2`` is one point. ``null`` keeps the slot."""
-    text = re.sub(
-        r"(?<=\d)[\s\u00a0\u202f]+(?=\d{3}(?:\D|$))",
-        "",
-        blob or "",
-    )
+    """One float per slot. ``12,5`` and ``105 865,2`` are one point. ``null`` keeps the slot."""
+    text = compact_chart_number_text(blob)
     out: list[float | None] = []
     index = 0
     size = len(text)
     while index < size:
-        char = text[index]
-        if char.isspace() or char == ",":
+        if text[index].isspace() or text[index] == ",":
             index += 1
             continue
-        if text[index : index + 4].lower() == "null":
+        if text[index : index + 4].lower() == "null" and (
+            index == 0 or not text[index - 1].isalnum()
+        ):
             out.append(None)
             index += 4
             continue
-        match = re.match(r"-?\d+", text[index:])
-        if not match:
+        taken = take_chart_number(text, index)
+        if not taken:
             index += 1
             continue
-        num = match.group(0)
-        index += len(num)
-        if index < size and text[index] == ".":
-            frac = re.match(r"\.\d+", text[index:])
-            if frac:
-                num += frac.group(0)
-                index += len(frac.group(0))
-        elif (
-            index < size
-            and text[index] == ","
-            and len(num.lstrip("-")) >= 4
-        ):
-            frac = re.match(r",(\d{1,2})(?!\d)", text[index:])
-            if frac:
-                num += "." + frac.group(1)
-                index += 1 + len(frac.group(1))
-        if index < size and text[index] in "eE":
-            exp = re.match(r"[eE][+-]?\d+", text[index:])
-            if exp:
-                num += exp.group(0)
-                index += len(exp.group(0))
+        token, index = taken
         try:
-            out.append(float(num))
+            out.append(float(token))
         except ValueError:
             continue
     return out

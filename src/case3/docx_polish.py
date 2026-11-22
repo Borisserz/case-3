@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from copy import deepcopy
 from pathlib import Path
 
 log = logging.getLogger("case3.docx_polish")
@@ -434,17 +435,86 @@ def polish_docx(path: Path | str) -> Path:
     return path
 
 
-def orient_wide_tables(path: Path | str) -> bool:
-    """Turn the Word page sideways when a table has six or more columns.
-
-    Pandoc drops the LaTeX landscape environment, so a wide table was squeezed
-    into a portrait page. Returns True when the page was turned.
-    """
-    from docx import Document
-    from docx.enum.section import WD_ORIENT
+def _page_size(sect, *, landscape: bool) -> None:  # noqa: ANN001
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Twips
+
+    page = sect.find(qn("w:pgSz"))
+    if page is None:
+        page = OxmlElement("w:pgSz")
+        sect.append(page)
+    if landscape:
+        page.set(qn("w:w"), "16838")
+        page.set(qn("w:h"), "11906")
+        page.set(qn("w:orient"), "landscape")
+        return
+    if page.get(qn("w:orient")) == "landscape":
+        page.set(qn("w:w"), "11906")
+        page.set(qn("w:h"), "16838")
+    if qn("w:orient") in page.attrib:
+        del page.attrib[qn("w:orient")]
+
+
+def _section_break(template, *, landscape: bool):  # noqa: ANN001
+    """A paragraph that ends the current section on a new page."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    paragraph = OxmlElement("w:p")
+    props = OxmlElement("w:pPr")
+    sect = deepcopy(template)
+    _page_size(sect, landscape=landscape)
+    kind = sect.find(qn("w:type"))
+    if kind is None:
+        kind = OxmlElement("w:type")
+        sect.insert(0, kind)
+    kind.set(qn("w:val"), "nextPage")
+    props.append(sect)
+    paragraph.append(props)
+    return paragraph
+
+
+def _is_table_caption(element) -> bool:  # noqa: ANN001
+    from docx.oxml.ns import qn
+
+    if element.tag != qn("w:p"):
+        return False
+    props = element.find(qn("w:pPr"))
+    if props is not None and props.find(qn("w:sectPr")) is not None:
+        return False
+    text = "".join(node.text or "" for node in element.iter(qn("w:t"))).strip()
+    return bool(_TABLE_CAPTION_ALREADY.match(text))
+
+
+def _wide_clusters(blocks: list, wide_ids: set[int]) -> list[tuple[int, int]]:
+    clusters: list[tuple[int, int]] = []
+    index = 0
+    while index < len(blocks):
+        if id(blocks[index]) not in wide_ids:
+            index += 1
+            continue
+        start = index
+        if start > 0 and _is_table_caption(blocks[start - 1]):
+            start -= 1
+        end = index
+        while end + 1 < len(blocks) and id(blocks[end + 1]) in wide_ids:
+            end += 1
+        clusters.append((start, end))
+        index = end + 1
+    return clusters
+
+
+def orient_wide_tables(path: Path | str) -> bool:
+    """Turn only the wide table's page sideways.
+
+    Pandoc drops the LaTeX landscape environment. A table of six or more
+    columns gets its own landscape page. Text before and after stays portrait.
+    The caption «Таблица N» stays on that landscape page. Returns True when a
+    page was turned.
+    """
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
     doc = Document(str(path))
     wide = [table for table in doc.tables if table.rows and len(table.rows[0].cells) >= 6]
@@ -460,10 +530,24 @@ def orient_wide_tables(path: Path | str) -> bool:
             tbl_pr.append(width)
         width.set(qn("w:w"), "14400")
         width.set(qn("w:type"), "dxa")
-    for section in doc.sections:
-        section.orientation = WD_ORIENT.LANDSCAPE
-        section.page_width = Twips(16838)
-        section.page_height = Twips(11906)
+
+    body = doc.element.body
+    sect_tag = qn("w:sectPr")
+    final = next((child for child in body if child.tag == sect_tag), None)
+    if final is None:
+        final = OxmlElement("w:sectPr")
+        body.append(final)
+    portrait = deepcopy(final)
+    blocks = [child for child in list(body) if child.tag != sect_tag]
+    clusters = _wide_clusters(blocks, {id(table._tbl) for table in wide})
+    for start, end in reversed(clusters):
+        first, last = blocks[start], blocks[end]
+        if end < len(blocks) - 1:
+            last.addnext(_section_break(portrait, landscape=True))
+        else:
+            _page_size(final, landscape=True)
+        if start > 0:
+            first.addprevious(_section_break(portrait, landscape=False))
     doc.save(str(path))
     return True
 

@@ -18,6 +18,14 @@ def test_question_stays_chat_even_if_plaque_is_report():
     assert resolve_turn("Проанализируй отчёт и разложи цифры", "report") == "chat"
 
 
+def test_analyze_without_an_artifact_noun_uses_the_plaque():
+    assert resolve_turn("проанализируй регионы", "report") == "report"
+    assert resolve_turn("сравни области", "report") == "report"
+    assert resolve_turn("посчитай доли", "presentation") == "presentation"
+    assert resolve_turn("проанализируй регионы", None) == "chat"
+    assert resolve_turn("не делай отчёт, просто разбери цифры", "report") == "chat"
+
+
 def test_explicit_deck_wins_over_plaque_and_over_analyze():
     assert resolve_turn("Проанализируй и собери презентацию", "report") == "presentation"
 

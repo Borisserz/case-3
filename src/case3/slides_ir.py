@@ -69,8 +69,9 @@ def _norm_ws(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
-def _collect_text_blobs(slide: dict[str, Any]) -> list[str]:
-    blobs: list[str] = []
+def _collect_text_blobs(slide: dict[str, Any]) -> list[tuple[str, bool]]:
+    """Text on a slide, and whether that field is only a section kicker."""
+    blobs: list[tuple[str, bool]] = []
     for key in (
         "title",
         "subtitle",
@@ -83,12 +84,12 @@ def _collect_text_blobs(slide: dict[str, Any]) -> list[str]:
     ):
         val = slide.get(key)
         if isinstance(val, str) and val.strip():
-            blobs.append(val)
+            blobs.append((val, key == "kicker"))
     bullets = slide.get("bullets")
     if isinstance(bullets, list):
         for b in bullets:
             if isinstance(b, str) and b.strip():
-                blobs.append(b)
+                blobs.append((b, False))
     kpis = slide.get("kpis")
     if isinstance(kpis, list):
         for k in kpis:
@@ -97,21 +98,21 @@ def _collect_text_blobs(slide: dict[str, Any]) -> list[str]:
             for key in ("label", "value", "hint", "delta"):
                 val = k.get(key)
                 if isinstance(val, str) and val.strip():
-                    blobs.append(val)
+                    blobs.append((val, False))
     rows = slide.get("rows")
     if isinstance(rows, list):
         for row in rows:
             if isinstance(row, list):
                 for cell in row:
                     if isinstance(cell, str) and cell.strip():
-                        blobs.append(cell)
+                        blobs.append((cell, False))
     for card in slide.get("cards") or []:
         if not isinstance(card, dict):
             continue
         for key in ("title", "body", "kicker"):
             val = card.get(key)
             if isinstance(val, str) and val.strip():
-                blobs.append(val)
+                blobs.append((val, False))
     return blobs
 
 
@@ -134,16 +135,16 @@ def _number_variants(num: str) -> list[str]:
 
 
 def _is_section_index_chrome(num: str, blob: str = "") -> bool:
-    """A padded kicker ``01`` or a field that is only ``1``…``24``.
+    """A kicker that is only ``01`` or ``1``…``24``.
 
-    The same digits inside a sentence are a fact and still need Source.
+    The same digits in a sentence or a table cell are a fact and need Source.
     """
     n = num or ""
-    if re.fullmatch(r"0\d{1,2}", n):
-        return True
-    if not re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n):
+    padded = bool(re.fullmatch(r"0\d{1,2}", n))
+    short = bool(re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n))
+    if not padded and not short:
         return False
-    return bool(re.fullmatch(r"\s*[0-9]{1,2}\s*", blob or ""))
+    return bool(re.fullmatch(r"\s*[0-9]{1,3}\s*", blob or ""))
 
 
 def _boundary_hit(num: str, source_norm: str) -> bool:
@@ -211,8 +212,9 @@ def _number_is_allowed(
     source_norm: str,
     allowed: frozenset[str],
     blob: str = "",
+    chrome: bool = False,
 ) -> bool:
-    if _is_section_index_chrome(num, blob):
+    if chrome and _is_section_index_chrome(num, blob):
         return True
     for v in _number_variants(num):
         if v in allowed or _number_in_source(v, source_norm):
@@ -228,10 +230,15 @@ def _assert_numbers_allowed(
     *,
     source_norm: str,
     allowed: frozenset[str],
+    chrome: bool = False,
 ) -> None:
     for num in _numbers_in_text(text):
         if _number_is_allowed(
-            num, source_norm=source_norm, allowed=allowed, blob=text
+            num,
+            source_norm=source_norm,
+            allowed=allowed,
+            blob=text,
+            chrome=chrome,
         ):
             continue
         raise DeckIrError(
@@ -335,11 +342,15 @@ def scrub_invented_numbers(
     source_norm = _norm_ws(source)
     allowed = frozenset(allowed_number_strings or ())
 
-    def _scrub_text(text: str) -> str:
+    def _scrub_text(text: str, *, chrome: bool = False) -> str:
         def repl(m: re.Match[str]) -> str:
             num = m.group(0)
             if _number_is_allowed(
-                num, source_norm=source_norm, allowed=allowed, blob=text or ""
+                num,
+                source_norm=source_norm,
+                allowed=allowed,
+                blob=text or "",
+                chrome=chrome,
             ):
                 return num
             return ""
@@ -369,7 +380,7 @@ def scrub_invented_numbers(
             if isinstance(s2.get(key), str):
                 raw_t = str(s2[key])
                 had = bool(_NUMBER_RUN.search(raw_t))
-                cleaned = _scrub_text(raw_t)
+                cleaned = _scrub_text(raw_t, chrome=(key == "kicker"))
                 if key in ("takeaway", "subtitle", "body", "caption", "definition"):
                     s2[key] = (
                         cleaned
@@ -945,8 +956,10 @@ def _parse_slide(
                 out["subtitle"] = sub
             # A title-only close is the decision. Bullets and a photo are optional.
 
-    for blob in _collect_text_blobs(out):
-        _assert_numbers_allowed(blob, source_norm=source_norm, allowed=allowed)
+    for blob, chrome in _collect_text_blobs(out):
+        _assert_numbers_allowed(
+            blob, source_norm=source_norm, allowed=allowed, chrome=chrome
+        )
 
     return out
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from case3.chart_number import compact_chart_number_text, take_chart_number
 from case3.chat_turn import _NUM, _norm_num, latest_user_line, number_norms, stray_numbers
 
 _PROTECT = re.compile(
@@ -78,7 +79,10 @@ class TableGrid:
         if col:
             bucket.setdefault((row, col), set()).update(clean)
             self.columns.add(col)
-        self.rows.setdefault(row, set()).update(clean)
+        else:
+            bucket.setdefault((row, ""), set()).update(clean)
+        if bucket is self.values:
+            self.rows.setdefault(row, set()).update(clean)
 
 
 _GENERIC_ROW = frozenset(
@@ -189,33 +193,83 @@ def _mentions_rank(clause: str) -> bool:
     return "мест" in (clause or "").casefold()
 
 
+def _row_mentions(clause: str, grid: TableGrid) -> list[tuple[int, int, str]]:
+    from case3.chat_memory import _stem
+
+    found: list[tuple[int, int, str]] = []
+    for match in re.finditer(r"[0-9A-Za-zА-Яа-яЁё]{4,}", clause or ""):
+        stem = _stem(match.group(0))
+        if len(stem) < 4 or stem not in grid.rows:
+            continue
+        found.append((match.start(), match.end(), stem))
+    return found
+
+
+def _owner_row(mentions: list[tuple[int, int, str]], start: int) -> str | None:
+    """The region name closest to this number. The one before it wins a tie."""
+    before = [item for item in mentions if item[1] <= start]
+    if before:
+        return max(before, key=lambda item: item[1])[2]
+    after = [item for item in mentions if item[0] >= start]
+    if after:
+        return min(after, key=lambda item: item[0])[2]
+    return None
+
+
+def _norms_on_row(grid: TableGrid, row: str, clause: str, columns: list[str]) -> set[str]:
+    share = _mentions_share(clause)
+    rank = _mentions_rank(clause)
+    buckets = []
+    if share:
+        buckets.append(grid.shares)
+    if rank:
+        buckets.append(grid.ranks)
+    if not share and not rank:
+        buckets.append(grid.values)
+    allowed: set[str] = set()
+    for bucket in buckets:
+        if columns:
+            for col in columns:
+                allowed |= bucket.get((row, col), set())
+        else:
+            for (key, _col), norms in bucket.items():
+                if key == row:
+                    allowed |= norms
+    return allowed
+
+
 def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
-    """False when the sentence names a row and the number is not on it."""
+    """False when the sentence names a row and the number is not on it.
+
+    Two region names in one sentence do not share a sum. A share is not a sum:
+    ``52,9`` is allowed only where the sentence says «доля» or writes ``%``.
+    """
     if grid is None or not grid.rows or not norm:
+        return None
+    mentions = _row_mentions(clause, grid)
+    if not mentions:
         return None
     from case3.chat_memory import _stem_set
 
-    stems = _stem_set(clause)
-    row_hits = [stem for stem in stems if stem in grid.rows]
-    if not row_hits:
-        return None
-    col_hits = [stem for stem in stems if stem in grid.columns]
-    allowed: set[str] = set()
-    if col_hits:
-        share = _mentions_share(clause)
-        rank = _mentions_rank(clause)
-        for row in row_hits:
-            for col in col_hits:
-                if share:
-                    allowed |= grid.shares.get((row, col), set())
-                if rank:
-                    allowed |= grid.ranks.get((row, col), set())
-                if not share and not rank:
-                    allowed |= grid.values.get((row, col), set())
-        return norm in allowed
-    for row in row_hits:
-        allowed |= grid.rows[row]
-    return norm in allowed
+    columns = [stem for stem in _stem_set(clause) if stem in grid.columns]
+    rows: list[str] = []
+    for _start, _end, stem in mentions:
+        if stem not in rows:
+            rows.append(stem)
+    spans = [
+        match.start()
+        for match in _NUM.finditer(clause)
+        if _norm_num(match.group(0)) == norm
+    ]
+    if len(rows) > 1 and spans:
+        for start in spans:
+            owner = _owner_row(mentions, start)
+            if owner is None or norm not in _norms_on_row(grid, owner, clause, columns):
+                return False
+        return True
+    if len(rows) > 1:
+        return all(norm in _norms_on_row(grid, row, clause, columns) for row in rows)
+    return norm in _norms_on_row(grid, rows[0], clause, columns)
 
 
 def wrong_row_tokens(
@@ -248,14 +302,30 @@ def wrong_row_tokens(
     return found
 
 
-def _rewrite_chart_body(kind: str, body: str, reject) -> str:
-    """``[100,40]`` is two points. A comma is a decimal only after four digits."""
+def _chart_labels(html: str) -> list[str]:
+    """Category names in order. One labels array per chart."""
+    match = re.search(r"labels\s*:\s*\[([^\]]*)\]", html or "", re.IGNORECASE)
+    if not match:
+        return []
+    return [item.group(2) for item in _QUOTED.finditer(match.group(1))]
+
+
+def _row_norms_for_label(label: str, grid: TableGrid | None) -> set[str] | None:
+    """Numbers on the one table row this label names. None when it names none."""
+    if grid is None or not grid.rows:
+        return None
+    hits = [stem for stem in _name_stems(label) if stem in grid.rows]
+    if len(hits) != 1:
+        return None
+    return grid.rows[hits[0]]
+
+
+def _rewrite_chart_body(kind: str, body: str, reject, slot_reject=None) -> str:
+    """``[100,40]`` is two points. ``12,5`` is one point and is written with a dot."""
     empty = "null" if kind.lower() == "data" else "''"
-    text = re.sub(
-        r"(?<=\d)[\s\u00a0\u202f]+(?=\d{3}(?:\D|$))",
-        "",
-        body or "",
-    )
+    is_data = kind.lower() == "data"
+    slot = 0
+    text = compact_chart_number_text(body)
     parts: list[str] = []
     index = 0
     size = len(text)
@@ -265,26 +335,18 @@ def _rewrite_chart_body(kind: str, body: str, reject) -> str:
         ):
             parts.append("null")
             index += 4
+            if is_data:
+                slot += 1
             continue
-        match = re.match(r"-?\d+", text[index:])
-        if match and (index == 0 or not text[index - 1].isdigit()):
-            start = index
-            num = match.group(0)
-            index += len(num)
-            if index < size and text[index] == ".":
-                frac = re.match(r"\.\d+", text[index:])
-                if frac:
-                    index += len(frac.group(0))
-            elif index < size and text[index] == "," and len(num.lstrip("-")) >= 4:
-                frac = re.match(r",(\d{1,2})(?!\d)", text[index:])
-                if frac:
-                    index += 1 + len(frac.group(1))
-            if index < size and text[index] in "eE":
-                exp = re.match(r"[eE][+-]?\d+", text[index:])
-                if exp:
-                    index += len(exp.group(0))
-            token = text[start:index]
-            parts.append(empty if reject(token) else token)
+        taken = take_chart_number(text, index)
+        if taken:
+            token, index = taken
+            bad = reject(token)
+            if not bad and is_data and slot_reject is not None:
+                bad = slot_reject(token, slot)
+            parts.append(empty if bad else token)
+            if is_data:
+                slot += 1
             continue
         parts.append(text[index])
         index += 1
@@ -469,6 +531,31 @@ def _scrub_region(text: str, stray: set[str]) -> str:
     return result
 
 
+def _scrub_title(
+    head: str,
+    global_ok: set[str],
+    bindings: list[tuple[str, str]],
+    *,
+    grid: TableGrid | None,
+    message_ok: set[str] | None,
+) -> str:
+    """A foreign number in ``\\title`` would print on the first page."""
+
+    def repl(match: re.Match[str]) -> str:
+        inner = _scrub_bound(
+            match.group(1),
+            global_ok,
+            bindings,
+            grid=grid,
+            message_ok=message_ok,
+        ).strip()
+        if not re.search(r"[0-9A-Za-zА-Яа-яЁё]", inner):
+            inner = "Отчёт"
+        return r"\title{" + inner + "}"
+
+    return re.sub(r"\\title\{([^{}]*)\}", repl, head or "", count=1)
+
+
 def _parts(body: str) -> list[tuple[str, bool]]:
     """(text, protected). Protected spans stay byte for byte."""
     parts: list[tuple[str, bool]] = []
@@ -561,6 +648,9 @@ def ground_generated(
     # A bound number can be legal in one sentence and illegal in the next.
     # Scrub per sentence even when the flat list still contains the value.
     head, body, tail = _split_document(tex)
+    head = _scrub_title(
+        head, global_ok, bindings, grid=grid, message_ok=message_ok
+    )
     body = "".join(
         piece
         if protected
@@ -624,7 +714,23 @@ def _scrub_html_bound(
     grid: TableGrid | None = None,
     message_ok: set[str] | None = None,
 ) -> str:
-    """Chart data takes only Source and this message. A caption may use a bound word."""
+    """Chart data takes only Source and this message. A label keeps its own row.
+
+    A caption may use a bound word. A month label is not a table row, so its
+    point stays when the number itself is in Source.
+    """
+    labels = _chart_labels(html)
+
+    def slot_reject(token: str, slot: int) -> bool:
+        norm = _norm_num(token)
+        if message_ok and norm in message_ok:
+            return False
+        if slot >= len(labels):
+            return False
+        allowed = _row_norms_for_label(labels[slot], grid)
+        if allowed is None:
+            return False
+        return norm not in allowed
 
     def repl(match: re.Match[str]) -> str:
         kind = match.group(1)
@@ -632,6 +738,7 @@ def _scrub_html_bound(
             kind,
             match.group(2),
             lambda token: _norm_num(token) not in global_ok,
+            slot_reject if kind.lower() == "data" else None,
         )
 
     def repl_quote(match: re.Match[str]) -> str:
@@ -680,6 +787,28 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                     ).strip()
                 )
             ]
+        if isinstance(nxt.get("rows"), list):
+            rows: list[list[str]] = []
+            for row in nxt["rows"]:
+                if not isinstance(row, list):
+                    continue
+                cells = [
+                    _scrub_bound(
+                        str(cell),
+                        global_ok,
+                        bindings,
+                        grid=grid,
+                        message_ok=message_ok,
+                    ).strip()
+                    for cell in row
+                ]
+                if any(cell.strip() for cell in cells):
+                    rows.append(cells)
+            if rows:
+                header, data = rows[0], rows[1:]
+                data = [row for row in data if any(re.search(r"\d", cell) for cell in row)]
+                rows = [header] + data if data else []
+            nxt["rows"] = rows
         if isinstance(nxt.get("cards"), list):
             cards = []
             for card in nxt["cards"]:

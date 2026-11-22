@@ -1,7 +1,7 @@
 # ADR-0010: One executing run, one waiter
 
 ## Status
-Accepted
+Accepted, amended 2026-11-22
 
 ## Date
 2026-11-10
@@ -32,4 +32,4 @@ Diagram mode builds its Mermaid prompt in `diagram_generate.complete_diagrams` f
 
 ## Consequences
 - Positive: one extra report is kept; reset cannot cut a live thread; history GET does not re-read every meta
-- Negative / follow-ups: a run that was `status=running` when the process died is not resumed (no second pipeline thread). Artifact retention is still parked. The queue file is a single JSON object, not a log.
+- Negative / follow-ups: a run that was `status=running` when the process died is not resumed automatically (no second pipeline thread). On the next start `settle_orphaned_runs` marks it `error`, keeps `failed_stage`, and Liber can offer «Продолжить». A cancelled run becomes `cancelled`. A deck left in `slides_status=running` becomes `error`. Artifact retention is still parked. The queue file is a single JSON object, not a log.

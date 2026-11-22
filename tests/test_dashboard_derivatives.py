@@ -73,6 +73,56 @@ def test_total_row_is_not_a_region_and_a_year_is_not_a_sum() -> None:
     assert "47,1%" in block
 
 
+def test_a_total_phrase_is_not_a_region() -> None:
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 60 |\n"
+        "| Гомельская | 40 |\n"
+        "| Итого по области | 100 |\n"
+        "| Всего по стране | 100 |\n"
+    )
+    block = derivative_block(table)
+    assert "Итого" not in block
+    assert "Всего" not in block
+    assert "60%" in block
+    assert "40%" in block
+    assert "30%" not in block
+    assert "50%" not in block
+    source = table + "\n## Производные\n" + block
+    kept = _kept("Доля Минской 60%. Доля Гомельской 40%.", source)
+    assert "60%" in kept
+    assert "40%" in kept
+
+
+def test_a_word_that_only_starts_like_a_total_stays() -> None:
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Итоговый район | 60 |\n"
+        "| Суммарная | 40 |\n"
+    )
+    block = derivative_block(table)
+    assert "Итоговый район" in block
+    assert "Суммарная" in block
+    assert "60%" in block
+    assert "40%" in block
+
+
+def test_a_number_without_thousand_spaces_still_gets_a_share() -> None:
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105865 |\n"
+        "| Гомельская | 40000 |\n"
+    )
+    block = derivative_block(table)
+    assert "Минская" in block
+    assert "Гомельская" in block
+    assert "72,6%" in block
+    assert "27,4%" in block
+
+
 def test_a_column_that_is_already_a_share_is_not_divided_again() -> None:
     table = (
         "| Область | Доля |\n"

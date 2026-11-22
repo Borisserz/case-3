@@ -228,9 +228,7 @@ def _table_to_markdown(table: object) -> str:
     rows: list[list[str]] = []
     for row in table.rows:  # type: ignore[attr-defined]
         rows.append([" ".join((cell.text or "").split()) for cell in row.cells])
-    block, note = table_block(rows)
-    if note:
-        block = block.rstrip() + "\n\n" + note + "\n"
+    block, _note = table_block(rows)
     return block
 
 

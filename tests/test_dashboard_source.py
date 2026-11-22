@@ -57,6 +57,8 @@ def test_overwide_table_is_cut_and_noted() -> None:
     assert "| c64 |" not in md
     assert note is not None
     assert "65" in note
+    assert "Таблица обрезана" in md
+    assert "65" in md
 
 
 def test_ruled_grid_beats_a_noisier_text_split() -> None:

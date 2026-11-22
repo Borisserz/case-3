@@ -115,6 +115,10 @@ async def lifespan(app: FastAPI):
     from case3.render import warmup_docker
     warmup_docker(background=True)
     try:
+        settle_orphaned_runs()
+    except Exception:  # noqa: BLE001
+        log.exception("orphan run settle failed")
+    try:
         recover_persisted_pipeline()
     except Exception:  # noqa: BLE001
         log.exception("pipeline queue recover failed")
@@ -678,6 +682,106 @@ def _spawn_pipeline_thread(
         name=f"case3-pipeline-{job.run_id}",
         daemon=True,
     ).start()
+
+
+_ORPHAN_RUN = "Сервер перезапустился, прогон оборвался."
+_ORPHAN_SLIDES = "Сервер перезапустился, сборка презентации оборвалась."
+
+
+def _run_is_live(run_id: str) -> bool:
+    """True while this process still owns the pipeline thread or the start handoff."""
+    if _is_pipeline_thread_alive(run_id):
+        return True
+    with _PIPELINE_ACTIVE_GUARD:
+        return bool(_SLOT_HANDOFF and _PIPELINE_ACTIVE_ID == run_id)
+
+
+def _slides_thread_alive(run_id: str) -> bool:
+    names = {thread.name for thread in threading.enumerate()}
+    return (
+        f"case3-slides-{run_id}" in names
+        or f"case3-slides-patch-{run_id}" in names
+    )
+
+
+def _persist_settled_meta(run_id: str, meta: dict[str, Any]) -> None:
+    from case3.run_meta import write_meta
+
+    out = run_store.ROOT / "runs" / "out" / run_id
+    logs = run_store.ROOT / "runs" / "logs" / run_id
+    if (out / "meta.json").is_file() or not (logs / "meta.json").is_file():
+        write_meta(out, meta, logs_dir=logs if logs.is_dir() else None)
+        return
+    write_meta(logs, meta)
+
+
+def settle_orphaned_runs() -> list[str]:
+    """Turn a dead ``running`` run into ``error`` so the spinner can stop.
+
+    Called once at process start, before the queued waiter is picked up.
+    A live thread is left alone. ``queued`` stays queued. A run the user
+    already cancelled becomes ``cancelled`` and does not offer «Продолжить».
+    """
+    ids: set[str] = set()
+    for base in ("out", "logs"):
+        root = run_store.ROOT / "runs" / base
+        if not root.is_dir():
+            continue
+        for path in root.glob("*/meta.json"):
+            ids.add(path.parent.name)
+    changed: list[str] = []
+    for run_id in sorted(ids):
+        if _settle_one_orphan(run_id):
+            changed.append(run_id)
+    return changed
+
+
+def _settle_one_orphan(run_id: str) -> bool:
+    meta = _read_run_meta(run_id)
+    if not meta:
+        return False
+    changed = False
+    if str(meta.get("status") or "") == "running" and not _run_is_live(run_id):
+        if meta.get("cancel_requested"):
+            meta["status"] = "cancelled"
+            meta["stage"] = "cancelled"
+            meta["error"] = meta.get("error") or "Остановлено"
+        else:
+            from case3.pipeline import _record_failed_stage
+
+            _record_failed_stage(meta)
+            meta["status"] = "error"
+            meta["stage"] = "error"
+            meta["error"] = _ORPHAN_RUN
+        changed = True
+    slides = str(meta.get("slides_status") or "")
+    if (
+        slides in {"running", "queued"}
+        and not _slides_thread_alive(run_id)
+        and not _run_is_live(run_id)
+    ):
+        meta["slides_status"] = "error"
+        meta["slides_stage"] = "error"
+        meta["slides_error"] = _ORPHAN_SLIDES
+        changed = True
+    if not changed:
+        return False
+    _persist_settled_meta(run_id, meta)
+    if meta.get("status") in {"error", "cancelled"} and str(meta.get("error") or "") in {
+        _ORPHAN_RUN,
+        "Остановлено",
+    }:
+        try:
+            from case3.run_events import EVENTS
+
+            EVENTS.publish_terminal(
+                run_id,
+                str(meta["status"]),
+                error=str(meta.get("error") or ""),
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("could not publish orphan terminal run_id=%s", run_id)
+    return True
 
 
 def recover_persisted_pipeline() -> str | None:

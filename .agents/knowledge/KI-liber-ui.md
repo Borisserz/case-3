@@ -41,7 +41,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Report downloads: **one** chat card (Source → PDF+DOCX twin links) + rail header PDF/DOCX (`reportDownloadLinks`); no Export ▾
 - `sessionStorage` last report + history list → opens rail
 - Attach `.txt/.md` or intent >400 chars → `ContextPlaque` (eyebrow «Документ», not Source/Текст) + Source tab labeled «Документ»
-- A screen capture or dashboard PNG sets `fromScreen`. The plaque says the model could read the numbers. Success toast: «Данные прикреплены».
+- A screen capture or dashboard PNG sets `fromScreen`. The plaque says the model could read the numbers. Success toast: «Данные прикреплены». The × on the document chip hides the chip. The attached text and file stay, and the open document stays on the rail.
 - A finished report card has «Сделать презентацию» until the deck is queued or ready (`reportCanMakeDeck`).
 - The photo chip and `max_images` stay off unless a photo is attached or the message asks for one.
 - Undo hints use Ctrl+Z on Windows and Linux, ⌘Z on a Mac.
@@ -97,7 +97,7 @@ ADR-0003 · ADR-0006 · `docs/superpowers/specs/2026-10-21-liber-soft-premium-ui
 
 ## Chat-first (2026-11-18)
 
-Default send is a chat answer, full width, no bubble. The user message is a right bubble. Plaques Отчёт · Схема · Презентация sit above the composer and only bias the next send. The message wins: «проанализируй» stays in chat; «сделай презу» builds a deck even with the plaque off. An artifact turn speaks a short line first (`chat_opening`), then the existing pipeline, then the card and the side rail. Router: `turn_route.resolve_turn`. Spec: `docs/superpowers/specs/2026-11-18-liber-chat-first-design.md`.
+Default send is a chat answer, full width, no bubble. The user message is a right bubble. Plaques Отчёт · Схема · Презентация sit above the composer and only bias the next send. The message wins when it names an artifact: «проанализируй отчёт» stays in chat; «проанализируй регионы» with the report plaque builds a report; «сделай презу» builds a deck even with the plaque off. An artifact turn speaks a short line first (`chat_opening`), then the existing pipeline, then the card and the side rail. Router: `turn_route.resolve_turn`. Spec: `docs/superpowers/specs/2026-11-18-liber-chat-first-design.md`.
 
 ## Preview full edit (2026-11-02)
 

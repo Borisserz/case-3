@@ -90,6 +90,65 @@ def test_named_region_keeps_its_column_and_drops_the_other_row():
     assert "Минская факт 12" in out
 
 
+def test_two_regions_in_one_sentence_keep_their_own_sums():
+    source = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105 865,2 |\n"
+        "| Гомельская | 94 073,0 |\n"
+    )
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Минская 94 073,0; Гомельская 105 865,2.
+Минская 94 073,0 и Гомельская 105 865,2.
+Минская 105 865,2 и Гомельская 94 073,0.
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source=source, intent="отчёт"
+    )
+    assert "94 073,0; Гомельская 105 865,2" not in out
+    assert "94 073,0 и Гомельская 105 865,2" not in out
+    assert "Минская 105 865,2 и Гомельская 94 073,0" in out
+
+
+def test_a_share_is_not_the_regions_sum():
+    from case3.dashboard_source import derivative_block
+
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105 865,2 |\n"
+        "| Гомельская | 94 073,0 |\n"
+    )
+    source = table + "\n## Производные\n" + derivative_block(table)
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Минская собрала 52,9.
+Доля Минской 52,9%.
+\end{document}
+"""
+    out, charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [
+            {
+                "id": "cht_01",
+                "caption": "Минская",
+                "html": "labels: ['Минская'], data: [52.9]",
+            }
+        ],
+        [],
+        [],
+        source=source,
+        intent="отчёт",
+    )
+    assert "собрала" not in out
+    assert "Доля Минской 52,9%" in out
+    assert "52.9" not in charts[0]["html"]
+
+
 def test_share_stays_on_the_region_it_was_computed_for():
     from case3.dashboard_source import derivative_block
 
@@ -117,6 +176,53 @@ def test_share_stays_on_the_region_it_was_computed_for():
     )
     assert out.count("52,9%") == 1
     assert "Гомель" not in out
+
+
+def test_a_chart_point_stays_on_the_region_it_labels():
+    source = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105 865,2 |\n"
+        "| Гомельская | 94 073,0 |\n"
+    )
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Сравнение областей.
+\end{document}
+"""
+    _out, charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [
+            {
+                "id": "cht_01",
+                "caption": "Области",
+                "html": "labels: ['Гомельская','Минская'], data: [105865.2, 105865.2]",
+            }
+        ],
+        [],
+        [],
+        source=source,
+        intent="Сделай отчёт.",
+    )
+    html = charts[0]["html"]
+    assert "data: [null, 105865.2]" in html
+    months, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [
+            {
+                "id": "cht_02",
+                "caption": "По месяцам",
+                "html": "labels: ['Январь','Февраль'], data: [105865.2, 94073.0]",
+            }
+        ],
+        [],
+        [],
+        source=source,
+        intent="Сделай отчёт.",
+    )[1:]
+    assert "105865.2" in months[0]["html"]
+    assert "94073.0" in months[0]["html"]
 
 
 def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
@@ -151,6 +257,52 @@ def test_spaced_thousands_are_one_number_in_prose_and_in_chart_data():
     assert "999" not in charts[0]["html"]
     assert "105865.2" in charts[0]["html"]
     assert "999" in dropped
+
+
+def test_a_foreign_number_in_the_title_does_not_reach_the_first_page():
+    tex = r"""
+\documentclass{article}
+\title{Поступления 999}
+\begin{document}
+Касса 20.
+\end{document}
+"""
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex, [], [], [], source="Касса 20.", intent="отчёт"
+    )
+    assert "999" not in out
+    assert r"\title{Отчёт}" in out
+    assert "Касса 20" in out
+
+
+def test_a_short_decimal_comma_in_chart_data_is_one_point():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+Маржа 12,5. В Минской собрано 105 865,2.
+\end{document}
+"""
+    _out, charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [
+            {
+                "id": "cht_01",
+                "caption": "Маржа",
+                "html": "labels: ['Маржа'], data: [12,5]",
+            },
+            {
+                "id": "cht_02",
+                "caption": "Сумма",
+                "html": "labels: ['Минская'], data: [105 865,2]",
+            },
+        ],
+        [],
+        [],
+        source="Маржа 12,5.\nМинская 105 865,2.",
+        intent="Сделай отчёт.",
+    )
+    assert charts[0]["html"] == "labels: ['Маржа'], data: [12.5]"
+    assert charts[1]["html"] == "labels: ['Минская'], data: [105865.2]"
 
 
 def test_decimal_comma_stays_when_a_foreign_number_is_dropped():

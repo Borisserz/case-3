@@ -20,6 +20,8 @@ LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit resty
 - Vertical bar with 8 or more categories gets `maxRotation:45` and `autoSkip`. Horizontal bar does not.
 - Donut legend: 8 or more slices use `.valued-legend.is-dense` (two columns, names wrap). A positive slice never prints as `0%`; a share under 0.5% keeps one decimal (`0,4%`).
 - Word native charts: `extract_chart_series` walks every top-level dataset, including `data` before `label` and nested objects. A second series must reach DOCX.
+- A category label that names one table row may keep only that row's numbers (`fact_ground._row_norms_for_label`). A label that names no row, such as a month, keeps any Source number. The point becomes `null` when it belongs to another row.
+- `chart_number.take_chart_number`: `12,5` and `105 865,2` are one point and are rewritten with a dot before Chart.js runs. `100,40` stays two points. Word reads the same rule.
 - Offline matrix: `python3 scripts/archive/chart_visual_pack.py` → `runs/chart_visual_pack/` (all types × 4 palettes)
 - Multi-chart (≥2): polish clamps width to 0.82; donut legend col `minmax(320px,1fr)`
 - Visual pack: `scripts/archive/chart_visual_pack.py` → `runs/chart_visual_pack/`

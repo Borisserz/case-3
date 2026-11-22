@@ -68,6 +68,27 @@ datasets:[{label:'Сумма',data:[105 865,2, null, 80100.5]}]
     assert ir["series"][0]["values"][2] == 80100.5
 
 
+def test_a_short_decimal_comma_is_one_bar_and_a_bare_pair_stays_two() -> None:
+    one = extract_chart_series(
+        "labels:['Маржа'],datasets:[{data:[12,5]}]",
+        chart_type="bar",
+    )
+    assert one is not None
+    assert one["series"][0]["values"] == [12.5]
+    pair = extract_chart_series(
+        "labels:['Минская','Гомельская'],datasets:[{data:[100,40]}]",
+        chart_type="bar",
+    )
+    assert pair is not None
+    assert pair["series"][0]["values"] == [100.0, 40.0]
+    wide = extract_chart_series(
+        "labels:['Минская'],datasets:[{data:[105 865,25]}]",
+        chart_type="bar",
+    )
+    assert wide is not None
+    assert wide["series"][0]["values"] == [105865.25]
+
+
 def test_extract_empty() -> None:
     assert extract_chart_series("", chart_type="bar") is None
     assert extract_chart_series("<div/>", chart_type="kpi") is None
