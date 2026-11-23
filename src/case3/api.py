@@ -1087,7 +1087,7 @@ async def api_dashboard_phrase(payload: dict = Body(...)) -> JSONResponse:
 
     def _run_phrase() -> dict[str, Any]:
         with httpx.Client(timeout=timeout) as client:
-            catalog = fetch_filter_catalog(base, client)
+            catalog = fetch_filter_catalog(base, client, question=text)
             llm = LLMClient(LLMConfig.from_env())
             plan = plan_dashboard_phrase(
                 text,

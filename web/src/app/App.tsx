@@ -655,6 +655,7 @@ export default function App() {
     }
     const card: DashboardCard = {
       viewer: plan.viewer,
+      ...(plan.mrt ? { mrt: plan.mrt } : {}),
       filters: plan.filters,
       shots: [],
       analyzed: 0,

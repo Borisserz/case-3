@@ -66,11 +66,13 @@ describe("phrasePlan", () => {
     assert.equal(phrasePlan({ pull: false }), null);
     const plan = phrasePlan({
       pull: true,
+      mrt: "revenue.mrt",
       viewer: "http://127.0.0.1:8040/open?filters=%7B%7D",
       reply: "Сейчас открою.",
       filters: { Month: "Февраль" },
     });
     assert.equal(plan?.filters.Month, "Февраль");
+    assert.equal(plan?.mrt, "revenue.mrt");
     assert.equal(plan?.reply, "Сейчас открою.");
   });
 

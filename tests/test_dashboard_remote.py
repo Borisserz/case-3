@@ -577,3 +577,108 @@ def test_fetch_shot_payload_forwards_mrt_param() -> None:
     body = fetch_shot_payload("http://127.0.0.1:8040", _Client(), mrt="a.mrt")
     assert body == {"ok": True}
     assert seen == ["http://127.0.0.1:8040/shot?mrt=a.mrt"]
+
+
+def test_fetch_filter_catalog_with_question_uses_post_and_propagates_picked_mrt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+
+    class _Client:
+        def __init__(self) -> None:
+            self.gets: list[str] = []
+            self.posts: list[tuple[str, dict]] = []
+
+        def get(self, url: str, **_kwargs):
+            self.gets.append(url)
+            return _Resp(200, {"mrt": "fallback.mrt", "filters": []})
+
+        def post(self, url: str, json=None, **_kwargs):
+            self.posts.append((url, dict(json or {})))
+            if url.endswith("/filters?open=0"):
+                return _Resp(
+                    200,
+                    {
+                        "mrt": "revenue.mrt",
+                        "dashboard": {"mrt": "revenue.mrt", "description": "Выручка"},
+                        "filters": [
+                            {
+                                "name": "month",
+                                "alias": "Месяц",
+                                "value": "1",
+                                "choices": [
+                                    {"key": "1", "value": "Январь"},
+                                    {"key": "2", "value": "Февраль"},
+                                ],
+                            }
+                        ],
+                        "result": {"month": "2"},
+                        "path": "/open?mrt=revenue.mrt&rf=abc",
+                        "url": "http://127.0.0.1:8040/open?mrt=revenue.mrt&rf=abc",
+                    },
+                )
+            if "/open" in url:
+                return _Resp(
+                    200,
+                    {
+                        "ok": True,
+                        "mrt": (json or {}).get("mrt"),
+                        "path": "/open?mrt=revenue.mrt&rf=xyz",
+                    },
+                )
+            return _Resp(404, {})
+
+    c = _Client()
+    cat = fetch_filter_catalog("http://127.0.0.1:8040", c, question="открой выручку за февраль")
+    assert c.posts[0][0] == "http://127.0.0.1:8040/filters?open=0"
+    assert cat["mrt"] == "revenue.mrt"
+
+    plan = plan_dashboard_phrase(
+        "открой дашборд выручки за февраль",
+        cat,
+        lambda **_k: '{"pull": true, "filters": {"Месяц": "Февраль"}, "say": "Открываю выручку за февраль."}',
+    )
+    assert plan["mrt"] == "revenue.mrt"
+    assert plan["filters"] == {"month": 2}
+    done = finish_dashboard_phrase(plan, "http://127.0.0.1:8040", c)
+    assert done["mrt"] == "revenue.mrt"
+    assert c.posts[-1][1]["mrt"] == "revenue.mrt"
+    assert done["viewer"] == "http://127.0.0.1:8040/open?mrt=revenue.mrt&rf=xyz"
+
+
+def test_plan_dashboard_phrase_adopts_validated_catalog_result_only_when_in_phrase() -> None:
+    catalog = {
+        "mrt": "revenue.mrt",
+        "filters": [
+            {
+                "name": "month",
+                "alias": "Месяц",
+                "value": "1",
+                "choices": [
+                    {"key": "1", "value": "Январь"},
+                    {"key": "2", "value": "Февраль"},
+                ],
+            },
+            {
+                "name": "region",
+                "alias": "Регион",
+                "value": "10",
+                "choices": [
+                    {"key": "10", "value": "Минск"},
+                    {"key": "99", "value": "Брест"},
+                ],
+            },
+        ],
+        "result": {"month": "2", "region": "99"},
+    }
+    plan = plan_dashboard_phrase(
+        "открой дашборд выручки за февраль",
+        catalog,
+        lambda **_k: '{"pull": true, "filters": {}, "say": "Открываю за февраль."}',
+    )
+    assert plan["pull"] is True
+    assert plan["mrt"] == "revenue.mrt"
+    # month=2 ("Февраль") is mentioned in phrase -> adopted from catalog["result"];
+    # region=99 ("Брест") is NOT in phrase -> stays default 10 ("Минск").
+    assert plan["filters"] == {"month": 2, "region": 10}
+

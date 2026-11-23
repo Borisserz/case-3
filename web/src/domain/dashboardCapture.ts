@@ -64,6 +64,7 @@ export type PhrasePlan = {
   viewer: string;
   reply: string;
   filters: Record<string, string>;
+  mrt?: string;
 };
 
 export function phrasePlan(data: unknown): PhrasePlan | null {
@@ -73,6 +74,7 @@ export function phrasePlan(data: unknown): PhrasePlan | null {
     viewer?: unknown;
     reply?: unknown;
     filters?: unknown;
+    mrt?: unknown;
   };
   if (row.pull !== true) return null;
   const viewer = typeof row.viewer === "string" ? row.viewer.trim() : "";
@@ -86,7 +88,8 @@ export function phrasePlan(data: unknown): PhrasePlan | null {
   }
   if (!Object.keys(filters).length) return null;
   const reply = typeof row.reply === "string" ? row.reply.trim() : "";
-  return { pull: true, viewer, reply, filters };
+  const mrt = typeof row.mrt === "string" && row.mrt.trim() ? row.mrt.trim() : undefined;
+  return mrt ? { pull: true, viewer, reply, filters, mrt } : { pull: true, viewer, reply, filters };
 }
 
 export type PhraseRoute = "send" | "miss" | "open";

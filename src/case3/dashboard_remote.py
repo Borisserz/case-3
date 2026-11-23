@@ -318,12 +318,8 @@ def _value_for_open(field: dict, value: object) -> object:
     return _open_value(value)
 
 
-def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object]:
-    """Keep only catalog filters the sentence actually names."""
-    body = _json_object(raw)
-    if not body.get("pull"):
-        return {}
-    wanted = body.get("filters")
+def _validate_filter_map(catalog: dict, phrase: str, wanted: object) -> dict[str, object]:
+    """Keep only catalog filters whose chosen value or label appears in phrase."""
     if not isinstance(wanted, dict):
         return {}
     fields = [item for item in (catalog.get("filters") or []) if isinstance(item, dict)]
@@ -359,6 +355,19 @@ def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object
         if _phrase_has(phrase, value):
             picked[name] = _open_value(value)
     return picked
+
+
+def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object]:
+    """Keep only catalog filters the sentence actually names."""
+    body = _json_object(raw)
+    if not body.get("pull"):
+        return {}
+    return _validate_filter_map(catalog, phrase, body.get("filters"))
+
+
+def validated_catalog_result(catalog: dict, phrase: str) -> dict[str, object]:
+    """Adopt pre-filled POST /filters result entries only if grounded in phrase."""
+    return _validate_filter_map(catalog, phrase, catalog.get("result"))
 
 
 def open_payload(filters: dict[str, object]) -> dict[str, object]:
@@ -467,13 +476,34 @@ def fetch_dashboard_preview(base: str, mrt: str, client) -> tuple[bytes, str]:
     return content, media
 
 
-def fetch_filter_catalog(base: str, client, mrt: str = "") -> dict:
-    """GET /filters. The service runs the dialog SQL unless the caller says otherwise."""
-    url = f"{base.rstrip('/')}/filters"
+def fetch_filter_catalog(
+    base: str,
+    client,
+    mrt: str = "",
+    *,
+    question: str = "",
+) -> dict:
+    """GET /filters (or POST /filters?open=0 with question to pick .mrt type + fill filters)."""
+    root = base.rstrip("/")
     name = (mrt or "").strip()
-    if name:
-        url = f"{url}?mrt={quote(name)}"
-    response = client.get(url)
+    q = (question or "").strip()
+    response = None
+    if q and hasattr(client, "post"):
+        payload: dict[str, object] = {"question": q}
+        if name:
+            payload["mrt"] = name
+        response = client.post(
+            f"{root}/filters?open=0",
+            json=payload,
+            headers={"Accept": "application/json"},
+        )
+        if int(getattr(response, "status_code", 500) or 500) in {404, 405}:
+            response = None
+    if response is None:
+        url = f"{root}/filters"
+        if name:
+            url = f"{url}?mrt={quote(name)}"
+        response = client.get(url)
     status = int(getattr(response, "status_code", 500) or 500)
     try:
         body = response.json()
@@ -545,7 +575,8 @@ def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:
     filters = plan.get("filters")
     if not isinstance(filters, dict) or not filters:
         return plan
-    return {**plan, "viewer": post_open_filters(base, filters, client)}
+    mrt = str(plan.get("mrt") or "").strip()
+    return {**plan, "viewer": post_open_filters(base, filters, client, mrt=mrt)}
 
 
 _SAY_SYSTEM = (
@@ -622,7 +653,8 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
                 return {"pull": False}
         elif named:
             overlay = filters_from_model(catalog, text, raw)
-    filters = {**base_filters, **overlay}
+    result_overlay = validated_catalog_result(catalog, text)
+    filters = {**base_filters, **result_overlay, **overlay}
     if not filters:
         return {
             "pull": False,
@@ -635,12 +667,17 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
         )
     if not say:
         say = _reply_from_filters(filters, catalog)
-    return {
+    out: dict[str, object] = {
         "pull": True,
         "filters": filters,
         "viewer": f"{public_service_base()}/open",
         "reply": say,
     }
+    dash_obj = catalog.get("dashboard") if isinstance(catalog.get("dashboard"), dict) else {}
+    picked_mrt = str(catalog.get("mrt") or dash_obj.get("mrt") or "").strip()
+    if picked_mrt:
+        out["mrt"] = picked_mrt
+    return out
 
 
 def fetch_export(base: str, name: str, client: httpx.Client) -> bytes | None:
