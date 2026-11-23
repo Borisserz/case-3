@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArtifactCard } from "./ArtifactCard";
 import { DashboardChatCard } from "./DashboardChatCard";
+import { shotsSource } from "./domain/dashboardCapture";
+import { dashboardStarterChips } from "./domain/dashboardTables";
 import { ContextPlaque } from "./ContextPlaque";
 import { EmptyState } from "./EmptyState";
 import { IconCopy, IconLiberMark } from "./icons";
@@ -80,6 +82,7 @@ type Props = {
   onReadDashboard?: (card: import("./domain/dashboardCapture").DashboardCard) => void;
   onOpenDashboard?: () => void;
   onPickFile?: () => void;
+  onPickStarter?: (prompt: string) => void;
   onRefineVisual?: (preview: { id: string; kind: string; url: string }) => void;
 };
 
@@ -109,6 +112,7 @@ export function ChatMessages({
   onReadDashboard,
   onOpenDashboard,
   onPickFile,
+  onPickStarter,
   onRefineVisual,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
@@ -467,15 +471,37 @@ export function ChatMessages({
                           <MsgMarkdown text={m.text} />
                         ) : null}
                         {m.dashboard && onOpenDashboardCard ? (
-                          <DashboardChatCard
-                            card={m.dashboard}
-                            onOpen={() => onOpenDashboardCard(m.id)}
-                            onRead={
-                              m.dashboard.shots.length && onReadDashboard
-                                ? () => onReadDashboard(m.dashboard!)
-                                : undefined
-                            }
-                          />
+                          <>
+                            <DashboardChatCard
+                              card={m.dashboard}
+                              onOpen={() => onOpenDashboardCard(m.id)}
+                              onRead={
+                                m.dashboard.shots.length && onReadDashboard
+                                  ? () => onReadDashboard(m.dashboard!)
+                                  : undefined
+                              }
+                            />
+                            {m.dashboard.shots.length > 0 && onPickStarter ? (
+                              <div
+                                className="composer-dash-chips msg-dash-chips"
+                                aria-label="Быстрые запросы по дашборду"
+                              >
+                                {dashboardStarterChips(
+                                  shotsSource(m.dashboard.shots),
+                                  m.dashboard.shots.length,
+                                ).map((chip) => (
+                                  <button
+                                    key={chip.label}
+                                    type="button"
+                                    className="composer-dash-chip"
+                                    onClick={() => onPickStarter(chip.prompt)}
+                                  >
+                                    {chip.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </>
                         ) : null}
                         <ChatTurnNote msg={m} onNewChat={onNewChat} />
                         {m.result &&

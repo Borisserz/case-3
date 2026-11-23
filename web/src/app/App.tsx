@@ -793,6 +793,24 @@ export default function App() {
     return null;
   }, [railArtifact, msgs]);
 
+  /** Active dashboard markdown across current sourceDraft or any message in this chat. */
+  const activeDashboardSource = useMemo((): string => {
+    if (sourceDraft?.text && isDashboardSource(sourceDraft.text)) {
+      return sourceDraft.text;
+    }
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const m = msgs[i];
+      if (m.role === "bot" && m.dashboard?.shots.length) {
+        const src = shotsSource(m.dashboard.shots);
+        if (isDashboardSource(src)) return src;
+      }
+      if (m.role === "user" && m.attachment?.text && isDashboardSource(m.attachment.text)) {
+        return m.attachment.text;
+      }
+    }
+    return "";
+  }, [sourceDraft?.text, msgs]);
+
   // Visual QA all chart types: http://127.0.0.1:5173/?preview=charts-qa
   if (/preview=charts-qa/.test(window.location.search)) {
     return (
@@ -899,6 +917,10 @@ export default function App() {
                   onOpenDashboardCard={openDashboardCard}
                   onOpenDashboard={openFreshDashboard}
                   onPickFile={() => fileRef.current?.click()}
+                  onPickStarter={(prompt) => {
+                    setChat(prompt);
+                    chatRef.current?.focus();
+                  }}
                   onRefineVisual={(preview) => {
                     const isDia =
                       preview.kind === "diagram" || preview.id.startsWith("dia_");
@@ -935,6 +957,7 @@ export default function App() {
                   showPlaque={showPlaque}
                   plaqueDraft={plaqueDraft}
                   sourceDraft={sourceDraft}
+                  activeDashboardSource={activeDashboardSource}
                   file={file}
                   chatRef={chatRef}
                   fileRef={fileRef}

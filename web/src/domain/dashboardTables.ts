@@ -7,7 +7,7 @@ export type DashboardBlock =
   | { kind: "table"; header: string[]; rows: string[][]; numeric: boolean[] };
 
 const MACHINE_LINE =
-  /^(?:# Данные дашборда|Числа скопированы из ячеек PDF\.|Числа в разделе «Таблица PDF».*|Текст ниже — чтение снимка\..*|Раздел «Экран».*)$/;
+  /^(?:# Данные дашборда|Числа скопированы из ячеек PDF\.|Числа в разделе «Таблица PDF».*|Текст ниже — чтение снимка\..*|Раздел «Экран».*|Доли, суммы и отклонения посчитаны из ячеек\..*)$/;
 
 const NUMBER_CELL = /^[+\-−]?\d[\d\s\u00a0]*(?:[.,]\d+)?%?$/;
 
@@ -154,4 +154,177 @@ export function splitDashboardBlocks(markdown: string): DashboardBlock[] {
   }
   flushProse();
   return blocks;
+}
+
+export type DashboardSections = {
+  mainBlocks: DashboardBlock[];
+  derivativeBlocks: DashboardBlock[];
+};
+
+/** Separate main screen/PDF table blocks from auto-calculated `## Производные`. */
+export function splitDashboardSections(markdown: string): DashboardSections {
+  const normalized = (markdown || "").replace(/\r\n/g, "\n");
+  const marker = /^##[ \t]+Производные[ \t]*$/im.exec(normalized);
+  if (!marker || marker.index === undefined) {
+    return {
+      mainBlocks: splitDashboardBlocks(normalized),
+      derivativeBlocks: [],
+    };
+  }
+  const mainMd = normalized.slice(0, marker.index).trim();
+  const derivMd = normalized
+    .slice(marker.index + marker[0].length)
+    .trim();
+  return {
+    mainBlocks: splitDashboardBlocks(mainMd),
+    derivativeBlocks: splitDashboardBlocks(derivMd),
+  };
+}
+
+const TOTAL_ROW_RE =
+  /^(?:итого|всего|промежуточн\p{L}*\s+итог|total|subtotal|grand\s+total|sum|сумма)(?:\b|\s|:|$)/iu;
+
+export function isTotalTableRow(row: string[]): boolean {
+  for (let i = 0; i < Math.min(row.length, 3); i += 1) {
+    const cell = (row[i] || "").trim();
+    if (cell && TOTAL_ROW_RE.test(cell)) return true;
+  }
+  return false;
+}
+
+function parseCellFloat(raw: string): number | null {
+  const cleaned = (raw || "")
+    .trim()
+    .replace(/^[+]/, "")
+    .replace(/^−/, "-")
+    .replace(/%$/, "")
+    .replace(/[\s\u00a0\u202f]/g, "")
+    .replace(",", ".");
+  if (!cleaned || !/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null;
+  const val = Number(cleaned);
+  return Number.isFinite(val) ? val : null;
+}
+
+const COMPLETION_COL_RE = /(?:выполн|%\s*план|план.*%|исполн)/i;
+const DELTA_COL_RE = /(?:откл|разниц|дельта|прирост|изменен|динамик)/i;
+
+/**
+ * Determine semantic tone ("pos" | "neg" | null) for a table cell:
+ * - Explicit negative sign (`-1 353,6` or `−5,2%`) -> "neg"
+ * - Explicit positive sign (`+5 020,0`) -> "pos"
+ * - Plan completion column (`Выполнение, %`): < 100 -> "neg", >= 100 -> "pos"
+ * - Deviation column (`Откл.`): < 0 -> "neg", > 0 -> "pos"
+ */
+export function cellSemanticTone(
+  cellValue: string,
+  columnHeader = "",
+): "pos" | "neg" | null {
+  const trimmed = (cellValue || "").trim();
+  if (!trimmed) return null;
+  const num = parseCellFloat(trimmed);
+  if (num === null) return null;
+  if (/^[-−]/.test(trimmed) && num < 0) return "neg";
+  if (/^\+/.test(trimmed) && num > 0) return "pos";
+  if (COMPLETION_COL_RE.test(columnHeader)) {
+    if (num < 100) return "neg";
+    if (num >= 100) return "pos";
+  }
+  if (DELTA_COL_RE.test(columnHeader)) {
+    if (num < 0) return "neg";
+    if (num > 0) return "pos";
+  }
+  return null;
+}
+
+function escapeCsvField(field: string, sep = ";"): string {
+  const clean = (field || "").replace(/\r?\n/g, " ").trim();
+  if (clean.includes(sep) || clean.includes('"')) {
+    return `"${clean.replace(/"/g, '""')}"`;
+  }
+  return clean;
+}
+
+/** Build UTF-8 BOM semicolon-delimited CSV ready for Russian Microsoft Excel. */
+export function tableToCsv(header: string[], rows: string[][]): string {
+  const lines: string[] = [
+    header.map((h) => escapeCsvField(h)).join(";"),
+    ...rows.map((r) =>
+      header.map((_, i) => escapeCsvField(r[i] || "")).join(";"),
+    ),
+  ];
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
+}
+
+export function tableToTsv(header: string[], rows: string[][]): string {
+  const lines: string[] = [
+    header.map((h) => (h || "").replace(/\t|\r?\n/g, " ").trim()).join("\t"),
+    ...rows.map((r) =>
+      header
+        .map((_, i) => (r[i] || "").replace(/\t|\r?\n/g, " ").trim())
+        .join("\t"),
+    ),
+  ];
+  return lines.join("\n");
+}
+
+export type DashboardStarterChip = {
+  label: string;
+  prompt: string;
+};
+
+/** Context-aware, emoji-free analytical starter chips for 1 or 2+ dashboard shots. */
+export function dashboardStarterChips(
+  sourceText: string,
+  shotCount = 1,
+): DashboardStarterChip[] {
+  const hasMultipleShots =
+    shotCount >= 2 ||
+    (sourceText.match(/(?:^|\n)# Данные дашборда\b/g) || []).length >= 2 ||
+    (sourceText.match(/^===== .+ =====$/gm) || []).length >= 2;
+  const hasRegionsOrGroups =
+    /(?:област|регион|район|инспекц|имнс|бюджет|филиал|подразделен)/i.test(
+      sourceText || "",
+    );
+
+  const chips: DashboardStarterChip[] = [];
+  if (hasMultipleShots) {
+    chips.push({
+      label: "Сравнить снимки в динамике",
+      prompt:
+        "Сравни показатели между снимками дашборда в динамике: покажи таблицу изменений в абсолютных числах и процентах и построй график сравнения.",
+    });
+  }
+  chips.push({
+    label: "Лидеры, отстающие и отклонения",
+    prompt:
+      "Проанализируй данные дашборда: ключевые итоги, кто лидирует, кто отстаёт от плана и где самые заметные отклонения.",
+  });
+  if (hasRegionsOrGroups) {
+    chips.push({
+      label: "Сравнить области и доли",
+      prompt:
+        "Сравни показатели и доли по областям и инспекциям: кто вносит наибольший вклад в общий результат, а где дефицит?",
+    });
+  } else {
+    chips.push({
+      label: "Структура и доли показателей",
+      prompt:
+        "Разбери структуру показателей и их доли в общем итоге: выдели топ-позиции и концентрацию.",
+    });
+  }
+  chips.push(
+    {
+      label: "Построить график",
+      prompt: "Построй наглядный график сравнения основных показателей по этим данным.",
+    },
+    {
+      label: "Собрать отчёт",
+      prompt: "Сделай подробный аналитический отчёт по этому дашборду с таблицами и графиками.",
+    },
+    {
+      label: "Собрать презентацию",
+      prompt: "Сделай презентацию по этим данным с ключевыми выводами и графиками.",
+    },
+  );
+  return chips;
 }

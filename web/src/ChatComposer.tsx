@@ -18,15 +18,9 @@ import {
 } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
 import { isDashboardSource } from "./domain/dashboardCapture";
+import { dashboardStarterChips } from "./domain/dashboardTables";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
-
-const DASHBOARD_STARTERS = [
-  { label: "Проанализируй цифры", prompt: "Проанализируй данные на экране: лидеры, отстающие, отклонения." },
-  { label: "Построй график", prompt: "Построй наглядный график по этим данным." },
-  { label: "Собери отчёт", prompt: "Сделай подробный отчёт по этому дашборду." },
-  { label: "Презентация", prompt: "Сделай презентацию по этим данным." },
-];
 
 type Props = {
   busy: boolean;
@@ -41,6 +35,8 @@ type Props = {
   showPlaque: boolean;
   plaqueDraft: { title: string; subtitle: string; fileName?: string } | null;
   sourceDraft: SourceDraft | null;
+  /** Latest dashboard markdown in the chat session (even after the first message sent). */
+  activeDashboardSource?: string;
   file: File | null;
   chatRef: RefObject<HTMLTextAreaElement | null>;
   fileRef: RefObject<HTMLInputElement | null>;
@@ -92,6 +88,7 @@ export function ChatComposer({
   showPlaque,
   plaqueDraft,
   sourceDraft,
+  activeDashboardSource = "",
   file,
   chatRef,
   fileRef,
@@ -171,20 +168,29 @@ export function ChatComposer({
             onDismiss={onDismissPlaque}
           />
         ) : null}
-        {showPlaque && isDashboardSource(sourceDraft?.text || "") && !busy ? (
-          <div className="composer-dash-chips" aria-label="Быстрые запросы по дашборду">
-            {DASHBOARD_STARTERS.map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                className="composer-dash-chip"
-                onClick={() => onPickStarter?.(chip.prompt)}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {(() => {
+          const dashText = isDashboardSource(sourceDraft?.text || "")
+            ? sourceDraft?.text || ""
+            : isDashboardSource(activeDashboardSource)
+              ? activeDashboardSource
+              : "";
+          if (!dashText || busy) return null;
+          const chips = dashboardStarterChips(dashText);
+          return (
+            <div className="composer-dash-chips" aria-label="Быстрые запросы по дашборду">
+              {chips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  className="composer-dash-chip"
+                  onClick={() => onPickStarter?.(chip.prompt)}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
 
         {deckApplyHint ? (
           <div className="composer-deck-hint" role="status">

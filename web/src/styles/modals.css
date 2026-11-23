@@ -1447,6 +1447,127 @@
   line-height: 1.3;
 }
 
+.stimul-grid tbody tr.is-total-row td {
+  font-weight: 650;
+  border-top: 1.5px solid var(--ink);
+  background: color-mix(in srgb, var(--surface-2) 65%, var(--sheet));
+}
+
+.stimul-grid tbody tr.is-total-row td:first-child {
+  background: color-mix(in srgb, var(--surface-2) 65%, var(--sheet));
+}
+
+.stimul-grid td.is-pos-cell {
+  color: #166534;
+  font-weight: 550;
+  background: color-mix(in srgb, #22c55e 9%, var(--sheet));
+}
+
+.stimul-grid td.is-neg-cell {
+  color: #b91c1c;
+  font-weight: 600;
+  background: color-mix(in srgb, #ef4444 10%, var(--sheet));
+}
+
+.dash-read-head-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.dash-read-search {
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.35rem 0.78rem;
+  min-width: 15.5rem;
+}
+
+.dash-read-search:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  border-color: var(--primary);
+}
+
+.dash-read-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--surface-2);
+  padding: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+}
+
+.dash-read-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 550;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dash-read-tab.is-active {
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.stimul-table-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.stimul-table-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.1rem 0.2rem;
+}
+
+.stimul-table-meta {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.stimul-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.stimul-table-btn {
+  appearance: none;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 550;
+  padding: 0.28rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.stimul-table-btn:hover {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--sheet));
+}
+
 .stimul-drop {
   margin-top: 0.8rem;
   width: 100%;
