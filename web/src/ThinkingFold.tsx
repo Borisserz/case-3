@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  craftProgress,
   effectiveCraftMode,
+  spokenCraftRows,
   formatEtaSuffix,
   formatMmSs,
   type CraftFilmFrame,
@@ -23,6 +23,8 @@ type Props = {
   className?: string;
   /** Current pipeline / slides stage for craft checklist. */
   stage?: string | null;
+  /** Model sentences keyed by craft step. Absent until the model answers. */
+  stageLines?: Record<string, string> | null;
   thinkingMode?: ThinkingMode;
   reduceMotion?: boolean | null;
   /** Nested chart/figure beats from SSE step events. */
@@ -81,6 +83,7 @@ export function ThinkingFold({
   elapsedSec,
   className = "",
   stage,
+  stageLines,
   thinkingMode = "report",
   reduceMotion = false,
   craftSubsteps = [],
@@ -96,7 +99,7 @@ export function ThinkingFold({
   const [tick, setTick] = useState(0);
 
   const craftMode = effectiveCraftMode(thinkingMode, stage);
-  const craft: CraftStepState[] = craftProgress(stage, craftMode, {
+  const craft: CraftStepState[] = spokenCraftRows(stage, craftMode, stageLines, {
     live: live && !craftFrozen,
     skipped: craftSkipped,
     substeps: craftSubsteps,
@@ -122,10 +125,10 @@ export function ThinkingFold({
     return () => window.clearInterval(t);
   }, [live]);
 
-  if (!lines.length && !useCraft && !errorHint && !hasFilm && !craftRecap)
+  if (!useCraft && !errorHint && !hasFilm && !craftRecap && (live || !lines.length))
     return null;
 
-  const n = useCraft ? craft.length : lines.length;
+  const n = useCraft ? craft.length : live ? 0 : lines.length;
   const shownSec = live
     ? tick
     : typeof elapsedSec === "number" && elapsedSec >= 0
@@ -273,7 +276,8 @@ export function ThinkingFold({
                   ) : null}
                 </li>
               ))
-            : lines.map((line, i) => {
+            : !live
+              ? lines.map((line, i) => {
                 const isLast = i === lines.length - 1;
                 const active = live && isLast;
                 return (
@@ -304,7 +308,8 @@ export function ThinkingFold({
                     <span className="thinking-fold-text">{line.text}</span>
                   </li>
                 );
-              })}
+              })
+              : null}
         </ol>
       ) : null}
 

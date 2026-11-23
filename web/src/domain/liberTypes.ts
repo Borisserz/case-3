@@ -80,6 +80,8 @@ export type RunResult = {
   diagrams_planned?: string[];
   warnings: string[];
   media_status?: Record<string, unknown>;
+  /** Sidebar and header name. Not the user's raw message. */
+  title?: string;
   chat_summary?: string;
   /** Line spoken before an artifact job. Same as chat_summary for a chat turn. */
   chat_opening?: string;
@@ -187,6 +189,8 @@ export type BotMsg = {
   thinkingElapsedSec?: number;
   /** Phrase pool: report / diagram / presentation */
   thinkingMode?: ThinkingMode;
+  /** Model sentences for steps that have started. */
+  stageLines?: Record<string, string> | null;
   /** SSE phase 2A: nested chart/figure beats */
   craftSubsteps?: import("./craftSteps").CraftSubstep[];
   /** photos → skip reason */
@@ -201,6 +205,10 @@ export type BotMsg = {
   craftFrozen?: boolean;
   /** Actionable error line under fold */
   errorHint?: string | null;
+  /** Wait line that is not a pipeline stage. */
+  waitLabel?: string;
+  /** Dashboard the user can reopen and shoot again. */
+  dashboard?: import("./dashboardCapture").DashboardCard;
   error?: string;
   /** Same run_id eligible for POST /resume */
   canResume?: boolean;

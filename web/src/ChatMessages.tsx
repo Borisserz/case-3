@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ArtifactCard } from "./ArtifactCard";
+import { DashboardChatCard } from "./DashboardChatCard";
 import { ContextPlaque } from "./ContextPlaque";
 import { EmptyState } from "./EmptyState";
 import { IconCopy, IconLiberMark } from "./icons";
@@ -11,7 +12,6 @@ import type { CraftFilmFrame } from "./domain/craftSteps";
 import type { Msg, RunResult, SourceAttachment, UserPhotoThumb } from "./domain/liberTypes";
 import { reportThumb, reportTitle } from "./domain/runHelpers";
 import { MsgMarkdown } from "./lightMd";
-import { ReportPending } from "./ReportView";
 import { ThinkingFold } from "./ThinkingFold";
 
 function ChatTurnNote({
@@ -73,6 +73,10 @@ type Props = {
   deckDownloadsBlockedMsgId?: string | null;
   /** Finished report card → POST /slides for this run. */
   onMakePresentation?: (msgId: string, result: RunResult) => void;
+  /** Open the saved dashboard card again. */
+  onOpenDashboardCard?: (msgId: string) => void;
+  /** Full-screen table of the shots already on the card. */
+  onReadDashboard?: (card: import("./domain/dashboardCapture").DashboardCard) => void;
 };
 
 export function ChatMessages({
@@ -80,7 +84,6 @@ export function ChatMessages({
   reduceMotion,
   hasStoredReport,
   sessionTitle = null,
-  thinkingLabel,
   workMode = null,
   downloadsPulseMsgId,
   messagesRef,
@@ -98,6 +101,8 @@ export function ChatMessages({
   onNewChat,
   deckDownloadsBlockedMsgId = null,
   onMakePresentation,
+  onOpenDashboardCard,
+  onReadDashboard,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   return (
@@ -226,10 +231,8 @@ export function ChatMessages({
                       <ThinkingFold
                         lines={m.thinking || []}
                         live={slidesLive}
-                        liveLabel={
-                          slidesLive ? "Собираю презентацию" : undefined
-                        }
                         stage={m.pendingStage || m.result?.slides_stage}
+                        stageLines={m.stageLines}
                         thinkingMode={m.thinkingMode || "report"}
                         reduceMotion={reduceMotion}
                         craftSubsteps={m.craftSubsteps}
@@ -358,20 +361,14 @@ export function ChatMessages({
                         text={m.lead || ""}
                         streaming={m.streamingSummary}
                       />
-                    ) : workMode ? (
-                      <ReportPending
-                        label={thinkingLabel || m.text || undefined}
-                        stage={m.pendingStage || "queued"}
-                        detail={m.pendingDetail}
-                        mode={m.thinkingMode || workMode || "report"}
-                      />
                     ) : (
-                      <p className="agent-wait">Отвечаю…</p>
+                      <p className="agent-wait">{m.waitLabel || "Отвечаю…"}</p>
                     )}
                     <ThinkingFold
                       lines={m.thinking || []}
                       live
                       stage={m.pendingStage}
+                      stageLines={m.stageLines}
                       thinkingMode={m.thinkingMode || "report"}
                       reduceMotion={reduceMotion}
                       craftSubsteps={m.craftSubsteps}
@@ -421,6 +418,7 @@ export function ChatMessages({
                         lines={m.thinking || []}
                         live={false}
                         stage={m.pendingStage}
+                        stageLines={m.stageLines}
                         thinkingMode={m.thinkingMode || "report"}
                         reduceMotion={reduceMotion}
                         craftSubsteps={m.craftSubsteps}
@@ -448,6 +446,17 @@ export function ChatMessages({
                           <MsgMarkdown text={m.text} />
                         ) : !(m.lead || "").trim() ? (
                           <MsgMarkdown text={m.text} />
+                        ) : null}
+                        {m.dashboard && onOpenDashboardCard ? (
+                          <DashboardChatCard
+                            card={m.dashboard}
+                            onOpen={() => onOpenDashboardCard(m.id)}
+                            onRead={
+                              m.dashboard.shots.length && onReadDashboard
+                                ? () => onReadDashboard(m.dashboard!)
+                                : undefined
+                            }
+                          />
                         ) : null}
                         <ChatTurnNote msg={m} onNewChat={onNewChat} />
                         {m.result &&

@@ -22,5 +22,6 @@
 | [0016](0016-number-beside-its-word.md) | A historical user number stays beside its word | Accepted |
 | [0017](0017-plaque-wins-over-bare-analyze.md) | A plaque wins over a bare analyze line | Accepted |
 | [0018](0018-p0-analytics-grounding-and-chat-charts.md) | P0 analytics grounding, derivatives, and inline chat charts | Accepted |
+| [0019](0019-dashboard-filter-closes-previous-month.md) | A February filter is the January receipts | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

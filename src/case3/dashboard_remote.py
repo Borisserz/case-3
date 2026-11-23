@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
-from case3.dashboard_source import DashboardSourceError
+from case3.dashboard_source import DashboardSourceError, dashboard_title
 
 
 class DashboardRemoteError(Exception):
@@ -162,9 +162,10 @@ def capture_documents(payload: dict, fetch_named, parse) -> list[dict]:
     except DashboardSourceError as exc:
         raise DashboardRemoteError(exc.message, exc.code) from exc
     source_name = pngs[0].name if pngs else pdfs[0].name
+    title = dashboard_title(result.markdown)
     return [
         {
-            "name": source_name,
+            "name": title or source_name,
             "markdown": result.markdown,
             "warnings": list(getattr(result, "warnings", []) or []),
         }
@@ -428,31 +429,80 @@ def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:
     return {**plan, "viewer": post_open_filters(base, filters, client)}
 
 
-OPEN_REPLY = "Сейчас открою."
+_SAY_SYSTEM = (
+    "Одной фразой по-русски скажи, что открываешь дашборд по этой просьбе. "
+    "Назови период, если он есть в просьбе. Без JSON и без кавычек."
+)
+
+
+def spoken_line(raw: object) -> str:
+    """One chat sentence. JSON and a blank model stay empty."""
+    text = " ".join(str(raw or "").split())
+    if not text or text[0] in "[{":
+        return ""
+    if len(text) > 320:
+        text = text[:317].rstrip() + "…"
+    return text
+
+
+def _say_from_model(raw: str) -> str:
+    return spoken_line(_json_object(raw).get("say"))
+
+
+def _reply_from_filters(filters: dict[str, object], catalog: dict) -> str:
+    """Last resort when the model returned no sentence."""
+    fields = [item for item in (catalog.get("filters") or []) if isinstance(item, dict)]
+    by_name = {str(field.get("name") or ""): field for field in fields}
+    labels: list[str] = []
+    for name, value in filters.items():
+        field = by_name.get(str(name))
+        if field is None:
+            continue
+        wanted = _norm(value)
+        label = ""
+        for key, choice in _choice_pairs(field):
+            if wanted and wanted in {_norm(key), _norm(choice)}:
+                label = choice or key
+                break
+        if label and _norm(label) not in {"все", "0000000", "cumulative"}:
+            labels.append(label)
+    if not labels:
+        return "Открываю дашборд по текущим фильтрам."
+    return "Открываю дашборд: " + ", ".join(labels[:4]) + "."
 
 
 def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
-    """Open with GET /filters values. A named choice overrides only that field."""
+    """Open with GET /filters values. A named choice overrides only that field.
+
+    The chat line is the model's sentence, not a fixed opener.
+    """
     if not might_ask_dashboard(text):
         return {"pull": False}
     base_filters = defaults_from_catalog(catalog)
     overlay: dict[str, object] = {}
-    if phrase_names_choice(text, catalog):
+    say = ""
+    named = phrase_names_choice(text, catalog)
+    if base_filters or named:
         from case3.prompts import load as load_prompt
 
-        raw = complete(
-            system=load_prompt("dashboard_filters"),
-            user_text=(
-                text.strip()
-                + "\n\nКаталог:\n"
-                + json.dumps(catalog, ensure_ascii=False)
-            ),
+        raw = str(
+            complete(
+                system=load_prompt("dashboard_filters"),
+                user_text=(
+                    text.strip()
+                    + "\n\nКаталог:\n"
+                    + json.dumps(catalog, ensure_ascii=False)
+                ),
+            )
+            or ""
         )
-        if not _json_object(str(raw or "")).get("pull"):
-            if not base_filters:
-                return {"pull": False}
-        else:
-            overlay = filters_from_model(catalog, text, str(raw or ""))
+        say = _say_from_model(raw)
+        if named:
+            if not _json_object(raw).get("pull"):
+                if not base_filters:
+                    return {"pull": False}
+            else:
+                overlay = filters_from_model(catalog, text, raw)
     filters = {**base_filters, **overlay}
     if not filters:
         return {
@@ -460,11 +510,17 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
             "asked": True,
             "reply": "В фразе нет фильтра, который есть в дашборде. Назови период как в отчёте.",
         }
+    if not say:
+        say = spoken_line(
+            complete(system=_SAY_SYSTEM, user_text=text.strip())
+        )
+    if not say:
+        say = _reply_from_filters(filters, catalog)
     return {
         "pull": True,
         "filters": filters,
         "viewer": f"{service_base()}/open",
-        "reply": OPEN_REPLY,
+        "reply": say,
     }
 
 

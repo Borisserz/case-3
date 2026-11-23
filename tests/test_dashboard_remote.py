@@ -115,6 +115,24 @@ def test_capture_documents_uses_one_parse_for_png_and_pdf() -> None:
     assert "Таблица PDF" in docs[0]["markdown"]
 
 
+def test_capture_documents_names_the_screen_from_its_heading() -> None:
+    png = b"\x89PNG\r\nhello"
+    payload = {
+        "ok": True,
+        "png": {"name": "dashboard_20261122_100249.png", "data_b64": base64.b64encode(png).decode()},
+    }
+
+    class Parsed:
+        markdown = (
+            "# Данные дашборда\n\n## Экран\n\n## Заголовок\n"
+            "Поступления за январь 2025 года (с нарастающим итогом)\n"
+        )
+        warnings: list[str] = []
+
+    docs = capture_documents(payload, fetch_named=lambda _name: None, parse=lambda **_k: Parsed())
+    assert docs[0]["name"] == "Поступления за январь 2025 года"
+
+
 _CATALOG = {
     "filters": [
         {
@@ -201,16 +219,36 @@ def test_plan_skips_the_model_when_the_sentence_is_not_about_data() -> None:
     assert called is False
 
 
+def test_plan_asks_again_when_the_first_answer_has_no_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+    seen: list[str] = []
+
+    def complete(**kwargs: object) -> str:
+        seen.append(str(kwargs.get("system") or ""))
+        if len(seen) == 1:
+            return '{"pull": true, "filters": {"Month": "Февраль"}}'
+        return "Открываю февраль, на экране будет прошлый месяц."
+
+    plan = plan_dashboard_phrase("хочу данные по февраль 25", _CATALOG, complete)
+    assert len(seen) == 2
+    assert plan["reply"] == "Открываю февраль, на экране будет прошлый месяц."
+
+
 def test_plan_opens_when_the_model_maps_the_phrase(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
 
     def complete(**_kwargs: object) -> str:
-        return '{"pull": true, "filters": {"Month": "Февраль", "Year": "2025"}}'
+        return (
+            '{"pull": true, "filters": {"Month": "Февраль", "Year": "2025"}, '
+            '"say": "Открываю февраль 2025."}'
+        )
 
     plan = plan_dashboard_phrase("хочу данные по февраль 25", _CATALOG, complete)
     assert plan["pull"] is True
     assert plan["filters"] == {"Month": 2, "Year": 2025}
-    assert plan["reply"] == "Сейчас открою."
+    assert plan["reply"] == "Открываю февраль 2025."
     assert plan["viewer"].endswith("/open")
 
 
@@ -287,10 +325,11 @@ def test_open_dashboard_posts_catalog_values_without_a_named_filter(
     def complete(**_kwargs: object) -> str:
         nonlocal called
         called = True
-        return '{"pull": false, "filters": {}}'
+        return '{"pull": false, "filters": {}, "say": "Открываю дашборд как он сейчас настроен."}'
 
     plan = plan_dashboard_phrase("открой дашборд", _LIVE_CATALOG, complete)
-    assert called is False
+    assert called is True
+    assert plan["reply"] == "Открываю дашборд как он сейчас настроен."
     assert plan["pull"] is True
     assert plan["filters"] == {
         "trendtype": "cumulative",

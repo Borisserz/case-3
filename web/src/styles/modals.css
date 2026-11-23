@@ -892,10 +892,31 @@
   align-items: start;
 }
 
+.stimul-modal:has(.stimul-sheet.is-viewer) {
+  padding: 0.55rem;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
 .stimul-sheet.is-viewer {
-  width: min(1180px, 100%);
-  height: min(92vh, 920px);
-  max-height: 92vh;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 14px;
+}
+
+.stimul-sheet.is-viewer .settings-modal-head {
+  padding: 0.55rem 0.85rem 0.4rem;
+}
+
+.stimul-sheet.is-viewer .settings-modal-title {
+  margin-top: 0.05rem;
+  font-size: 1.08rem;
+}
+
+.stimul-sheet.is-viewer .dash-viewer-note,
+.stimul-sheet.is-viewer .dash-viewer-error {
+  padding: 0 0.85rem 0.35rem;
 }
 
 .dash-viewer-actions {
@@ -935,12 +956,53 @@
   color: var(--danger, #9a3412);
 }
 
+.dash-viewer-frame-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .dash-viewer-frame {
   flex: 1;
   width: 100%;
   min-height: 0;
   border: 0;
   background: #fff;
+}
+
+.dash-viewer-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: color-mix(in srgb, var(--sheet) 82%, transparent);
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.dash-viewer-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-top-color: var(--ink);
+  animation: dash-spin 0.8s linear infinite;
+}
+
+@keyframes dash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-viewer-spinner {
+    animation: none;
+  }
 }
 
 .stimul-sheet {
@@ -960,6 +1022,48 @@
   max-width: none;
   max-height: none;
   overflow: visible;
+}
+
+.stimul-sheet.is-read {
+  width: min(1440px, calc(100vw - 2.5rem));
+  height: min(92vh, 960px);
+  max-height: 92vh;
+}
+
+.dash-read-body {
+  gap: 1.4rem;
+}
+
+.dash-read-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  position: sticky;
+  top: -0.85rem;
+  z-index: 5;
+  margin: -0.85rem -1.15rem 0;
+  padding: 0.7rem 1.15rem;
+  background: color-mix(in srgb, var(--sheet) 92%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+}
+
+.dash-read-nav button {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.dash-read-nav button:hover {
+  border-color: color-mix(in srgb, var(--ink) 35%, var(--rule));
 }
 
 .stimul-sheet.is-result .settings-modal-body {

@@ -10,6 +10,7 @@ Loader: `case3.prompts.load(id, **VARS)` · `list_prompt_ids()` · themes via `l
 | `continuation_tex` | `continuation_tex.md` | `generate.build_continuation_prompt` | `MAX_CHARTS` `PARTIAL_TAIL` `SOURCE` |
 | `summary_system` | `summary_system.md` | `chat_summary` (system role) | — |
 | `chat_opening` | `chat_opening.md` | `chat_turn.try_opening` | — |
+| `stage_narration` | `stage_narration.md` | `stage_narration.narrate_stages` | — |
 | `chat_answer` | `chat_answer.md` | `chat_turn.try_chat_answer` | — |
 | `chat_section` | `chat_section.md` | `chat_turn.draft_section` | — |
 | `dashboard_png` | `dashboard_png.md` | `dashboard_source.read_dashboard_png` when a PDF is also present | — |

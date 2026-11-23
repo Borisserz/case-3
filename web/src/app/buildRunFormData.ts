@@ -35,6 +35,8 @@ export type BuildRunFormDataArgs = {
   priorRunId?: string | null;
   /** A file from the previous chat. Its dialogue is not this chat. */
   carriedRunId?: string | null;
+  /** Force chat when the dashboard shots are analyzed. */
+  outputMode?: "chat" | "auto";
 };
 
 export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
@@ -56,6 +58,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     targetSlides,
     priorRunId,
     carriedRunId,
+    outputMode,
   } = args;
 
   const fd = new FormData();
@@ -112,7 +115,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     "forbid_images",
     String((forbidImages && photosSnapshot.length === 0) || photoBudget === 0),
   );
-  fd.append("output_mode", "auto");
+  fd.append("output_mode", outputMode || "auto");
   fd.append("artifact_bias", workMode ?? "");
   fd.append("deck_pack", deckStyle.themePack || "atelier");
   const deckPayload = deckStyleToApiPayload(deckStyle);

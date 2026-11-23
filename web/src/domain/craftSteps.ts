@@ -239,6 +239,33 @@ export type CraftProgressOpts = {
   frozen?: boolean;
 };
 
+/**
+ * Steps the user can see.
+ * While the run is live and the model has not spoken, the menu stays hidden.
+ * A spoken line appears only for a step that has already started.
+ */
+export function spokenCraftRows(
+  stage: string | null | undefined,
+  mode: ThinkingMode = "report",
+  stageLines: Record<string, string> | null | undefined,
+  opts: CraftProgressOpts = {},
+): CraftStepState[] {
+  const arrived = craftProgress(stage, mode, opts).filter(
+    (step) => step.state !== "upcoming",
+  );
+  const spoken = stageLines || {};
+  const ids = Object.keys(spoken).filter((id) => spoken[id]?.trim());
+  if (ids.length) {
+    return arrived.flatMap((step) => {
+      const text = spoken[step.id]?.trim();
+      if (!text) return [];
+      return [{ ...step, label: text }];
+    });
+  }
+  if (opts.live) return [];
+  return arrived;
+}
+
 /** Build checklist states from current stage. */
 export function craftProgress(
   stage?: string | null,

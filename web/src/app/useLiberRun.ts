@@ -168,18 +168,28 @@ export function useLiberRun(deps: LiberSendDeps) {
   } = deps;
 
   return useCallback(
-async (override?: string) => {
+async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; title?: string }) => {
+  const hidden = (quiet?.sourceText || "").trim();
   const chatTrim = (override ?? chat).trim();
-  if (!override && !canSend) return;
+  if (!hidden && !override && !canSend) return;
   const priorRunId = priorRunIdFromMessages(msgs);
-  const draftSnap = sourceDraft;
-  const hasSource = Boolean(file) || Boolean(draftSnap?.text);
+  const quietTitle = (quiet?.title || "Дашборд").trim() || "Дашборд";
+  const draftSnap = hidden
+    ? {
+        title: quietTitle,
+        text: hidden,
+        fileName: `${quietTitle}.md`,
+      }
+    : sourceDraft;
+  const fileForRun = hidden ? null : file;
+  const hasSource = Boolean(fileForRun) || Boolean(draftSnap?.text);
   const intentText = userIntentForRun(chatTrim);
   if (!hasSource && !chatTrim) return;
   setDeckApplyHint(null);
 
   // Soft warn: Image down + photos wanted — run still proceeds (fig_* may skip)
   const wantsPhotos =
+    !hidden &&
     !forbidImages &&
     (attachPhotos.length > 0 || asksForPhoto(chatTrim)) &&
     modeToOutputMode(workMode) !== "diagram";
@@ -192,7 +202,9 @@ async (override?: string) => {
     window.setTimeout(() => setToast(null), 5200);
   }
 
-  const attachment: SourceAttachment | undefined = draftSnap?.text
+  const attachment: SourceAttachment | undefined = hidden || !draftSnap?.text
+    ? undefined
+    : draftSnap?.text
     ? (() => {
         const isDoc =
           draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
@@ -263,10 +275,12 @@ async (override?: string) => {
         : ("report" as const);
   const pendingId = uid();
   const userMsgId = uid();
-  const photoViews = attachPhotos.map((file) => ({
-    name: file.name,
-    url: URL.createObjectURL(file),
-  }));
+  const photoViews = hidden
+    ? []
+    : attachPhotos.map((file) => ({
+        name: file.name,
+        url: URL.createObjectURL(file),
+      }));
   cancelRequestedRef.current = false;
   pendingBotIdRef.current = pendingId;
   activeRunIdRef.current = null;
@@ -278,14 +292,18 @@ async (override?: string) => {
   }
   setMsgs((m) => [
     ...m,
-    {
-      id: userMsgId,
-      role: "user",
-      text: userBody,
-      chips: userChips.length ? userChips : undefined,
-      attachment,
-      photos: photoViews.length ? photoViews : undefined,
-    },
+    ...(hidden
+      ? []
+      : [
+          {
+            id: userMsgId,
+            role: "user" as const,
+            text: userBody,
+            chips: userChips.length ? userChips : undefined,
+            attachment,
+            photos: photoViews.length ? photoViews : undefined,
+          },
+        ]),
     appendBotThinking(
       {
         id: pendingId,
@@ -296,6 +314,7 @@ async (override?: string) => {
         pendingDetail: null,
         thinkingStartedAt: Date.now(),
         thinkingMode,
+        waitLabel: hidden ? "Отвечаю…" : undefined,
       },
       "queued",
       null,
@@ -304,9 +323,9 @@ async (override?: string) => {
   setBusy(true);
   setStopping(false);
   setChatTitle(workMode ? provisionalSessionTitle(workMode) : null);
-  const photosSnapshot = [...attachPhotos];
-  // The document stays in this chat until the user dismisses it.
-  if (!file && draftSnap) {
+  const photosSnapshot = hidden ? [] : [...attachPhotos];
+  // Dashboard shots stay in the chat card. Their table opens from that card, not this rail.
+  if (!hidden && !fileForRun && draftSnap) {
     const isDoc =
       draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
     if (isDoc) {
@@ -339,11 +358,12 @@ async (override?: string) => {
   }
 
   const fd = buildRunFormData({
-    file,
+    file: fileForRun,
     draftSnap,
     chatTrim,
     intentText,
     photosSnapshot,
+    outputMode: quiet?.outputMode,
     forbidCharts,
     forbidImages,
     maxCharts,
@@ -371,9 +391,11 @@ async (override?: string) => {
           : res.statusText;
       throw new Error(formatApiDetailError(data, fallback));
     }
-    setChat("");
-    if (chatRef.current) chatRef.current.style.height = "44px";
-    setAttachPhotos([]);
+    if (!hidden) {
+      setChat("");
+      if (chatRef.current) chatRef.current.style.height = "44px";
+      setAttachPhotos([]);
+    }
 
     // Sync photo-edit response (no poll)
     if (data.mode === "photo_edit" && data.status === "ok") {
@@ -807,6 +829,15 @@ async (override?: string) => {
               );
             },
             onFilm: applyFilm,
+            onNarration: (lines) => {
+              setMsgs((m) =>
+                m.map((msg) =>
+                  msg.id === pendingId && msg.role === "bot"
+                    ? { ...msg, stageLines: lines }
+                    : msg,
+                ),
+              );
+            },
             onChat: (phase, text, mode) => {
               if (mode) liveMode = mode;
               setMsgs((m) =>

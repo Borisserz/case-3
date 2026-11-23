@@ -11,6 +11,8 @@ from case3.dashboard_source import (
     DashboardSourceError,
     choose_grids,
     join_page_tables,
+    dashboard_title,
+    note_closed_month,
     parse_dashboard,
     prefer_ruled_tables,
     read_dashboard_png,
@@ -400,6 +402,123 @@ def _tiny_png() -> bytes:
         + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00"))
         + chunk(b"IEND", b"")
     )
+
+
+_FEBRUARY_SCREEN = """\
+## Заголовок
+Поступления за январь 2025 года (с нарастающим итогом)
+
+## Фильтры
+
+| Фильтр | Выбрано |
+| --- | --- |
+| Дата | на 1 февраля |
+| Год | 2025 |
+"""
+
+_JANUARY_TITLE = """\
+# Данные дашборда
+
+## Экран
+
+## Заголовок
+Поступления за январь 2025 года (с нарастающим итогом)
+
+## Карточки
+Итог: факт 5,83 млн. руб.
+"""
+
+
+def test_screen_heading_becomes_the_dashboard_name() -> None:
+    assert (
+        dashboard_title(_FEBRUARY_SCREEN)
+        == "Поступления за январь 2025 года"
+    )
+    assert dashboard_title("# Данные дашборда\n\n## Экран\n\nкарточка\n") == ""
+
+
+def test_february_filter_is_noted_as_january_receipts() -> None:
+    noted = note_closed_month(_FEBRUARY_SCREEN)
+    assert "закрывает предыдущий месяц" in noted
+    assert "феврал" in noted.casefold()
+    assert "январ" in noted.casefold()
+    assert note_closed_month(noted) == noted
+
+
+def test_february_question_uses_january_receipts_already_in_the_text() -> None:
+    from case3.chat_turn import _user_block
+
+    block = _user_block(_JANUARY_TITLE, "разбери поступления за февраль 2025")
+    assert "закрывает предыдущий месяц" in block
+    assert "5,83" in block
+
+
+def test_a_later_month_is_not_called_the_closed_month() -> None:
+    assert "закрывает предыдущий месяц" not in note_closed_month(
+        _JANUARY_TITLE,
+        "разбери поступления за март 2025",
+    )
+    older = "## Заголовок\nПоступления за январь 2024 года\n"
+    assert "закрывает предыдущий месяц" not in note_closed_month(
+        older,
+        "разбери февраль 2025",
+    )
+
+
+def test_december_closes_on_the_first_of_january() -> None:
+    screen = """\
+## Заголовок
+Поступления за декабрь 2025 года (с нарастающим итогом)
+
+## Фильтры
+
+| Фильтр | Выбрано |
+| --- | --- |
+| Дата | на 1 января |
+| Год | 2026 |
+"""
+    noted = note_closed_month(screen)
+    assert "январ" in noted.casefold()
+    assert "декабр" in noted.casefold()
+    assert "2026" in noted
+    assert "2025" in noted
+
+
+def test_two_months_on_a_chart_are_not_a_filter_lag() -> None:
+    screen = """\
+## Заголовок
+Выручка
+
+## Фильтры
+
+| Фильтр | Выбрано |
+| --- | --- |
+| Год | 2025 |
+
+## График или карта
+Столбцы за январь и февраль.
+"""
+    assert note_closed_month(screen) == screen.strip()
+    assert "закрывает предыдущий месяц" not in note_closed_month(
+        screen,
+        "что было в феврале",
+    )
+
+
+def test_parse_dashboard_keeps_the_closed_month_note() -> None:
+    result = parse_dashboard(png=_tiny_png(), vision=lambda _raw: _FEBRUARY_SCREEN)
+    assert "закрывает предыдущий месяц" in result.markdown
+    assert "5,83" not in result.markdown or "январ" in result.markdown.casefold()
+
+
+def test_prompts_tell_the_model_the_filter_closes_the_previous_month() -> None:
+    chat = prompts.load("chat_answer")
+    assert "предыдущий месяц" in chat
+    assert "не отказывайся" in chat
+    screen = prompts.load("dashboard_png").casefold()
+    only = prompts.load("dashboard_png_only").casefold()
+    assert "не подгоняй заголовок под фильтр" in screen
+    assert "не подгоняй заголовок под фильтр" in only
 
 
 def _word(text: str, x0: float, x1: float, top: float) -> dict[str, float | str]:

@@ -15,9 +15,6 @@ export function memoryStripLine(input: {
   }
   const section = input.section.trim();
   if (section) parts.push(`правили ${section}`);
-  if (input.turn > 0) {
-    parts.push(`ход ${input.turn} из ${input.max ?? 48}`);
-  }
   return parts.join(" · ");
 }
 

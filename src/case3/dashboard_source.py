@@ -1094,12 +1094,247 @@ def _numeric_in_text(text: str) -> int:
     return len(re.findall(r"\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?", text))
 
 
+_MONTH_STEMS: tuple[tuple[int, str, str], ...] = (
+    (0, "январ", "январь"),
+    (1, "феврал", "февраль"),
+    (2, "март", "март"),
+    (3, "апрел", "апрель"),
+    (4, "мая", "май"),
+    (4, "май", "май"),
+    (5, "июн", "июнь"),
+    (6, "июл", "июль"),
+    (7, "август", "август"),
+    (8, "сентябр", "сентябрь"),
+    (9, "октябр", "октябрь"),
+    (10, "ноябр", "ноябрь"),
+    (11, "декабр", "декабрь"),
+)
+_MONTH_WORD = (
+    r"(?:январ|феврал|апрел|сентябр|октябр|ноябр|декабр|август|март|июн|июл|ма[йя])[а-яё]*"
+)
+_MONTH_RE = re.compile(_MONTH_WORD, re.IGNORECASE)
+_AS_OF_RE = re.compile(rf"на\s+1\s+({_MONTH_WORD})", re.IGNORECASE)
+_TITLE_MONTH_RE = re.compile(rf"поступлени\w*\s+за\s+({_MONTH_WORD})", re.IGNORECASE)
+_ZA_MONTH_RE = re.compile(rf"(?<![а-яё])за\s+({_MONTH_WORD})", re.IGNORECASE)
+_CLOSED_MARK = "закрывает предыдущий месяц"
+
+
+class _MonthHit:
+    def __init__(self, index: int, name: str, year: int | None, label: str) -> None:
+        self.index = index
+        self.name = name
+        self.year = year
+        self.label = label
+
+
+_SKIP_HEADS = {
+    "данные дашборда",
+    "экран",
+    "таблица pdf",
+    "производные",
+    "фильтры",
+    "карточки",
+    "график или карта",
+    "заголовок",
+}
+
+
+def dashboard_title(markdown: str) -> str:
+    """Short name from the screen heading, not the file stamp."""
+    text = (markdown or "").replace("\r\n", "\n")
+    found = re.search(
+        r"^##[ \t]+Заголовок[ \t]*\n+([^\n#|][^\n]*)",
+        text,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    raw = found.group(1).strip() if found else ""
+    if not raw:
+        for line in text.splitlines():
+            head = re.match(r"^#{1,3}[ \t]+(.+?)\s*$", line.strip())
+            if not head:
+                continue
+            title = head.group(1).strip()
+            if title.casefold().replace("ё", "е") in _SKIP_HEADS:
+                continue
+            raw = title
+            break
+    return _clean_dashboard_title(raw)
+
+
+def _clean_dashboard_title(raw: str) -> str:
+    text = " ".join((raw or "").split())
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text).strip()
+    text = re.sub(r"[\\/:*?\"<>|]+", " ", text)
+    text = " ".join(text.split())
+    if len(text) > 72:
+        text = text[:69].rstrip() + "…"
+    return text
+
+
+def note_closed_month(markdown: str, question: str = "") -> str:
+    """Say that a February filter is the January receipts already on screen.
+
+    This dashboard closes the previous month: «на 1 февраля» shows «за январь».
+    The chat model was refusing that pair as the wrong period.
+    """
+    text = (markdown or "").strip()
+    if not text or _CLOSED_MARK in text:
+        return text
+    title = _title_hit(text)
+    if title is None:
+        return text
+    chosen = _filter_hit(text)
+    if chosen is not None:
+        if _is_closed_pair(title, chosen):
+            return _closed_sentence(title, chosen) + "\n\n" + text
+        return text
+    asked = _question_hit(question)
+    if asked is not None and _looks_like_receipts(text) and _is_closed_pair(title, asked):
+        return _closed_sentence(title, asked) + "\n\n" + text
+    return text
+
+
+def _looks_like_receipts(text: str) -> bool:
+    folded = text.casefold().replace("ё", "е")
+    return "поступлен" in folded or "нарастающ" in folded
+
+
+def _month_of(word: str) -> tuple[int, str] | None:
+    folded = word.casefold().replace("ё", "е")
+    for index, stem, name in _MONTH_STEMS:
+        if folded.startswith(stem):
+            return index, name
+    return None
+
+
+def _year_after(text: str, end: int) -> int | None:
+    found = re.search(r"20\d\d", text[end : end + 24])
+    if not found:
+        return None
+    return int(found.group(0))
+
+
+def _lone_year(text: str) -> int | None:
+    years = {int(item) for item in re.findall(r"20\d\d", text)}
+    if len(years) == 1:
+        return next(iter(years))
+    return None
+
+
+def _hit(word: str, text: str, end: int, label: str) -> _MonthHit | None:
+    parsed = _month_of(word)
+    if parsed is None:
+        return None
+    index, name = parsed
+    return _MonthHit(index, name, _year_after(text, end), label)
+
+
+def _hits(text: str) -> list[_MonthHit]:
+    found: list[_MonthHit] = []
+    for match in _MONTH_RE.finditer(text or ""):
+        hit = _hit(match.group(0), text, match.end(), match.group(0))
+        if hit is not None:
+            found.append(hit)
+    return found
+
+
+def _filters_section(text: str) -> str:
+    match = re.search(r"^##[ \t]+Фильтры[ \t]*$", text, re.MULTILINE | re.IGNORECASE)
+    if not match:
+        return ""
+    rest = text[match.end() :]
+    nxt = re.search(r"^##[ \t]+", rest, re.MULTILINE)
+    return rest[: nxt.start()] if nxt else rest
+
+
+def _before_filters(text: str) -> str:
+    match = re.search(r"^##[ \t]+Фильтры[ \t]*$", text, re.MULTILINE | re.IGNORECASE)
+    if match:
+        return text[: match.start()]
+    return text[:1200]
+
+
+def _title_hit(text: str) -> _MonthHit | None:
+    match = _TITLE_MONTH_RE.search(text)
+    if match:
+        return _hit(match.group(1), text, match.end(), match.group(1))
+    found = []
+    for item in _ZA_MONTH_RE.finditer(_before_filters(text)):
+        hit = _hit(item.group(1), text, item.end(), item.group(1))
+        if hit is not None:
+            found.append(hit)
+    indexes = {item.index for item in found}
+    if len(indexes) != 1:
+        return None
+    return found[0]
+
+
+def _with_section_year(hit: _MonthHit, section: str, label: str) -> _MonthHit:
+    year = hit.year if hit.year is not None else _lone_year(section)
+    shown = label
+    if year is not None and str(year) not in shown:
+        shown = f"{shown} {year}"
+    return _MonthHit(hit.index, hit.name, year, shown)
+
+
+def _filter_hit(text: str) -> _MonthHit | None:
+    section = _filters_section(text)
+    if not section:
+        return None
+    as_of = _AS_OF_RE.search(section)
+    if as_of:
+        hit = _hit(as_of.group(1), section, as_of.end(), as_of.group(0))
+        if hit is None:
+            return None
+        return _with_section_year(hit, section, as_of.group(0))
+    found = _hits(section)
+    indexes = {item.index for item in found}
+    if len(indexes) != 1:
+        return None
+    hit = found[0]
+    return _with_section_year(hit, section, hit.name)
+
+
+def _question_hit(question: str) -> _MonthHit | None:
+    found = _hits(question or "")
+    indexes = {item.index for item in found}
+    if len(indexes) != 1:
+        return None
+    years = {item.year for item in found if item.year is not None}
+    if len(years) > 1:
+        return None
+    hit = found[0]
+    year = next(iter(years)) if years else hit.year
+    label = hit.name if year is None else f"{hit.name} {year}"
+    return _MonthHit(hit.index, hit.name, year, label)
+
+
+def _is_closed_pair(title: _MonthHit, chosen: _MonthHit) -> bool:
+    if chosen.index != (title.index + 1) % 12:
+        return False
+    if title.year is None or chosen.year is None:
+        return True
+    if title.index == 11 and chosen.index == 0:
+        return chosen.year == title.year + 1
+    return chosen.year == title.year
+
+
+def _closed_sentence(title: _MonthHit, chosen: _MonthHit) -> str:
+    shown = title.name if title.year is None else f"{title.name} {title.year}"
+    return (
+        f"Фильтр «{chosen.label}» закрывает предыдущий месяц. "
+        f"Поступления за {shown} в этом тексте — это данные того фильтра. "
+        f"Разбирай эти числа."
+    )
+
+
 def _finish_screen(text: str, *, keep_table: bool) -> str:
     """A lone screenshot keeps its grid. Beside a PDF the grid is the PDF's."""
     stripped = _strip_fence(text)
-    if keep_table:
-        return stripped.strip()
-    return strip_screen_table(stripped)
+    body = stripped.strip() if keep_table else strip_screen_table(stripped)
+    if not body:
+        return ""
+    return note_closed_month(body)
 
 
 def strip_screen_table(markdown: str) -> str:

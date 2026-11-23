@@ -14,8 +14,8 @@
   position: relative;
   /* Fixed shell width — toggling has-rail used to change max-width and
      recenter the app, so user bubbles hung then snapped. */
-  max-width: min(1760px, 99vw);
-  padding: 0.65rem 0.75rem 0.75rem;
+  max-width: 100%;
+  padding: 0.4rem 0.35rem 0.45rem;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -740,8 +740,8 @@ button:disabled {
 .desk.is-empty-home .empty {
   margin: 0 auto;
   padding: var(--space-2) var(--space-4) var(--space-1);
-  width: min(100%, var(--chat-column));
-  max-width: min(100%, var(--chat-column));
+  width: min(100%, var(--deck-stage-max));
+  max-width: min(100%, var(--deck-stage-max));
 }
 
 /* Active chat: keep composer at stage width (do not shrink vs empty-home) */
@@ -755,12 +755,12 @@ button:disabled {
 }
 
 .desk.chat-desk:not(.is-empty-home) .composer-wrap {
-  width: min(100%, var(--deck-stage-max));
-  max-width: min(100%, var(--deck-stage-max));
-  align-self: center;
-  margin-inline: auto;
-  padding-left: 1.15rem;
-  padding-right: 1.15rem;
+  width: min(100%, var(--chat-column));
+  max-width: min(100%, var(--chat-column));
+  align-self: stretch;
+  margin-inline: 0;
+  padding-left: 1rem;
+  padding-right: 1rem;
   box-sizing: border-box;
 }
 
@@ -894,8 +894,7 @@ button:disabled {
     padding var(--dur-slow) var(--ease-out),
     align-items var(--dur-slow) var(--ease-out);
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .liber-sidebar.is-collapsed {
@@ -1151,8 +1150,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  padding-right: 0.05rem;
-  scrollbar-width: thin;
+  padding-right: 0.2rem;
 }
 
 .liber-sidebar-history-empty {

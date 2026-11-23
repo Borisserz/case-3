@@ -120,6 +120,8 @@ export function reportThumb(result: RunResult): string | null {
 }
 
 export function reportTitle(result: RunResult): string {
+  const named = result.title?.trim();
+  if (named) return named;
   const t = result.preview?.title?.trim();
   if (t) return t;
   if (result.output_mode === "diagram" || result.diagrams?.length) {

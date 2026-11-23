@@ -1268,6 +1268,9 @@ def run_pipeline(
         meta["output_mode"] = "chat"
         meta["chat_summary"] = answer
         meta["chat_opening"] = answer
+        from case3.chat_turn import session_title
+
+        meta["title"] = session_title(user_text, enriched_source)
         if charts_list:
             meta["charts_planned"] = [c["id"] for c in charts_list if c.get("id")]
             meta["media_status"] = media_status
@@ -1291,6 +1294,26 @@ def run_pipeline(
         EVENTS.publish_stage(run_id, "ok", detail="Ответ в чате", scope="pipeline")
         EVENTS.publish_terminal(run_id, "ok")
         return out
+
+    def _publish_stage_lines(kind: str, user_text: str) -> None:
+        """Model sentences for steps. The chat reveals one only when that step starts."""
+        if dry_run:
+            EVENTS.publish(run_id, {"event": "narration", "lines": {}})
+            return
+        try:
+            from case3.chat_turn import _client
+            from case3.stage_narration import narrate_stages
+
+            lines = narrate_stages(
+                user_text,
+                kind,
+                lambda **kw: _client(2048, 45.0).complete(**kw),
+            )
+        except Exception:
+            log.exception("stage narration failed run_id=%s", run_id)
+            lines = {}
+        meta["stage_lines"] = lines
+        EVENTS.publish(run_id, {"event": "narration", "lines": lines})
 
     def _speak_before_artifact(kind: str, user_text: str) -> None:
         from case3.chat_turn import opening_fallback, try_opening
@@ -1336,6 +1359,7 @@ def run_pipeline(
                     clip = clip[:419].rstrip() + "…"
                 spoken_about = f"{spoken_about}\n\nМатериал:\n{clip}".strip()
             _speak_before_artifact(mode, spoken_about or attached[:800])
+            _publish_stage_lines(mode, spoken_about or attached[:800])
 
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")

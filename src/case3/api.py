@@ -388,6 +388,7 @@ def _run_result_payload(
         "downloads": files,
         "previews": _media_previews(run_id, out_dir, media),
         "preview": _build_preview_payload(run_id, out_dir, media),
+        "title": str(meta.get("title") or ""),
         "chat_summary": chat_summary,
         "chat_opening": str(meta.get("chat_opening") or ""),
         "chat_notice": str(meta.get("chat_notice") or ""),

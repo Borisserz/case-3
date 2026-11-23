@@ -123,6 +123,15 @@ describe("liberRunHelpers", () => {
       reportTitle({
         run_id: "r3",
         output_mode: "chat",
+        title: "Поступления за январь 2025 года",
+        chat_summary: "дай мне название данных\n\nРазбор.",
+      } as never),
+      "Поступления за январь 2025 года",
+    );
+    assert.equal(
+      reportTitle({
+        run_id: "r4",
+        output_mode: "chat",
         chat_summary: "Выручка выросла с 10 до 12.\n\n| a | b |",
       } as never),
       "Выручка выросла с 10 до 12.",

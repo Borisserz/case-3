@@ -20,6 +20,7 @@ PROMPT_FILES: dict[str, str] = {
     "diagram_repair": "diagram_repair.md",
     "diagram_refine": "diagram_refine.md",
     "chat_opening": "chat_opening.md",
+    "stage_narration": "stage_narration.md",
     "chat_answer": "chat_answer.md",
     "chat_section": "chat_section.md",
     "dashboard_png": "dashboard_png.md",

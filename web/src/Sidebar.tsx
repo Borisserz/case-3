@@ -411,11 +411,11 @@ export function Sidebar({
                       className="liber-hist-add-folder"
                       onClick={() => setCreating(true)}
                       title="Новая папка"
+                      aria-label="Новая папка"
                     >
                       <span className="liber-hist-add-ico" aria-hidden>
                         <IconPlus size={11} />
                       </span>
-                      <span className="liber-side-label">Новая</span>
                     </button>
                   ) : null}
                 </div>

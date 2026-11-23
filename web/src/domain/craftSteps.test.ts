@@ -4,6 +4,7 @@ import {
   craftParentId,
   craftProgress,
   craftStepForStage,
+  spokenCraftRows,
   craftTemplate,
   effectiveCraftMode,
   formatCraftRecap,
@@ -54,6 +55,26 @@ describe("craftSteps phase 2A", () => {
     assert.equal(charts.substeps?.length, 2);
     assert.equal(photos?.state, "skipped");
     assert.match(photos?.reason || "", /IMAGE/);
+  });
+
+  it("hides the menu until the model speaks, then only the steps already started", () => {
+    assert.deepEqual(spokenCraftRows("llm", "report", undefined, { live: true }), []);
+    const rows = spokenCraftRows(
+      "llm",
+      "presentation",
+      {
+        source: "Смотрю поступления за январь.",
+        layout: "Пишу разбор этих чисел.",
+        slides_pack: "Пакую слайды.",
+      },
+      { live: true },
+    );
+    assert.deepEqual(
+      rows.map((row) => row.id),
+      ["source", "layout"],
+    );
+    assert.equal(rows[0]?.label, "Смотрю поступления за январь.");
+    assert.equal(rows.some((row) => row.id === "slides_pack"), false);
   });
 
   it("formats ETA only when confident", () => {

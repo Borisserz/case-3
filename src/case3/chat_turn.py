@@ -101,6 +101,60 @@ def opening_fallback(kind: str, user_text: str) -> str:
     )
 
 
+_TITLE_LEAD = re.compile(
+    r"^(?:ну[, ]+|пожалуйста[, ]+)?"
+    r"(?:дай(?:те)?(?:\s+мне)?|покажи(?:те)?|скажи(?:те)?|назови(?:те)?|"
+    r"проанализируй(?:те)?|разбери(?:те)?|открой(?:те)?|посмотри(?:те)?|"
+    r"объясни(?:те)?|сделай(?:те)?|расскажи(?:те)?|найди(?:те)?|выведи(?:те)?)\s+",
+    re.IGNORECASE,
+)
+_TITLE_META = re.compile(r"назван|как назвать|что это", re.IGNORECASE)
+_TITLE_SKIP = re.compile(
+    r"^(?:#+\s*)?(?:данные дашборда|экран|таблица pdf|производные|фильтры|"
+    r"карточки|график или карта|заголовок)$",
+    re.IGNORECASE,
+)
+
+
+def _clip_title(text: str) -> str:
+    words = " ".join(text.split())
+    if len(words) > 48:
+        words = words[:45].rstrip(" ,.;:") + "…"
+    if not words:
+        return ""
+    return words[:1].upper() + words[1:]
+
+
+def _source_phrase(source: str) -> str:
+    for raw in (source or "").replace("\r\n", "\n").splitlines():
+        line = raw.strip().lstrip("#").strip()
+        if not line or line.startswith("|") or line.startswith("====="):
+            continue
+        if _TITLE_SKIP.match(line):
+            continue
+        if line.startswith("Фильтр «") or line.startswith("Числа "):
+            continue
+        return _clip_title(line)
+    return ""
+
+
+def session_title(user_text: str, source: str = "") -> str:
+    """Sidebar name. A dashboard heading wins over the user's command."""
+    from case3.dashboard_source import dashboard_title
+
+    named = dashboard_title(source or "")
+    if named:
+        return named
+    first = " ".join((user_text or "").strip().splitlines()[:1]).strip()
+    if first and not _TITLE_META.search(first):
+        topic = _TITLE_LEAD.sub("", first).strip(" ?.!,")
+        if topic and (topic.casefold() != first.casefold() or not _TITLE_LEAD.match(first)):
+            clipped = _clip_title(topic)
+            if len(clipped) >= 3:
+                return clipped
+    return _source_phrase(source) or "Разбор"
+
+
 def chat_fallback() -> str:
     return (
         "Не удалось получить ответ модели. "
@@ -505,8 +559,10 @@ def _user_block(source: str, intent: str) -> str:
     message, memory = _split_message(intent or "")
     message = _keep_question(message)
     memory = _keep_tail(memory, _MEMORY_CAP)
-    full = (source or "").strip()
-    src = _clip_source(source, focus=message)
+    from case3.dashboard_source import note_closed_month
+
+    full = note_closed_month((source or "").strip(), message)
+    src = _clip_source(full, focus=message)
     coverage = _table_coverage_line(full, src)
     if src and len(src) < len(full):
         outline = _source_outline(source)

@@ -14,8 +14,23 @@ import { ArtifactRail } from "../ArtifactRail";
 import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
-import { attachCaptureMarkdowns, captureWarning, phraseMiss, phrasePlan, phraseRoute } from "../domain/dashboardCapture";
-import { ATTACHED_TOAST, screenReadNote, sourceCameFromScreen } from "../domain/sourceCopy";
+import { DashboardReadModal } from "../DashboardReadModal";
+import {
+  captureWarning,
+  DASHBOARD_ANALYSIS_ASK,
+  DASHBOARD_SHOT_TOAST,
+  freshShots,
+  isDashboardSource,
+  phraseMiss,
+  phrasePlan,
+  phraseRoute,
+  shotsSource,
+  shotsTitle,
+  viewerFrameUrl,
+  withShots,
+  type DashboardCard,
+} from "../domain/dashboardCapture";
+import { screenReadNote } from "../domain/sourceCopy";
 import { hideSourcePlaque } from "../domain/sourcePlaque";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
@@ -147,8 +162,13 @@ export default function App() {
   const [sourceDraft, setSourceDraft] = useState<SourceDraft | null>(null);
   const [plaqueDismissed, setPlaqueDismissed] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [dashboardRead, setDashboardRead] = useState<{
+    title: string;
+    text: string;
+  } | null>(null);
   const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
-  const resumeQuery = useRef<string | null>(null);
+  const activeCardId = useRef<string | null>(null);
+  const cardsRef = useRef<Map<string, DashboardCard>>(new Map());
   const chatRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -413,37 +433,72 @@ export default function App() {
     },
   });
 
-  const closeDashboard = useCallback(() => {
-    resumeQuery.current = null;
-    setPhraseViewer(null);
-    setDashboardOpen(false);
-  }, []);
-
-  const onDashboardReady = useCallback(
-    (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
-      setSourceDraft((current) => {
-        const next = attachCaptureMarkdowns(current, docs);
-        if (!next) return next;
-        return { ...next, fromScreen: sourceCameFromScreen(next.text) };
-      });
-      const note = captureWarning(docs);
-      if (note) showToast(note, 5000);
-      else if (docs.length) showToast(ATTACHED_TOAST, 2800);
-      setPlaqueDismissed(false);
-      setFile(null);
-      setPhraseViewer(null);
-      setDashboardOpen(false);
+  const putCard = useCallback(
+    (id: string, card: DashboardCard) => {
+      cardsRef.current.set(id, card);
+      setMsgs((list) =>
+        list.map((msg) =>
+          msg.id === id && msg.role === "bot" ? { ...msg, dashboard: card } : msg,
+        ),
+      );
     },
-    [showToast],
+    [setMsgs],
   );
 
-  useEffect(() => {
-    const query = resumeQuery.current;
-    if (!query || !sourceDraft?.text) return;
-    resumeQuery.current = null;
-    setChat(query);
-    void send(query);
-  }, [sourceDraft, send]);
+  const closeDashboard = useCallback(() => {
+    setDashboardOpen(false);
+    const id = activeCardId.current;
+    if (!id) return;
+    const card = cardsRef.current.get(id);
+    if (!card) return;
+    if (!freshShots(card).length) return;
+    const source = shotsSource(card.shots);
+    if (!source.trim()) return;
+    putCard(id, { ...card, analyzed: card.shots.length });
+    void send(DASHBOARD_ANALYSIS_ASK, {
+      sourceText: source,
+      outputMode: "chat",
+      title: shotsTitle(card.shots),
+    });
+  }, [putCard, send]);
+
+  const onDashboardShot = useCallback(
+    (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
+      const id = activeCardId.current;
+      if (!id) return;
+      const card = cardsRef.current.get(id);
+      if (!card) return;
+      putCard(id, withShots(card, docs));
+      const note = captureWarning(docs);
+      showToast(note || DASHBOARD_SHOT_TOAST, note ? 5000 : 2800);
+    },
+    [putCard, showToast],
+  );
+
+  const openDashboardRead = useCallback((title: string, text: string) => {
+    const body = text.trim();
+    if (!body) return;
+    setDashboardRead({ title: title.trim() || "Данные дашборда", text: body });
+  }, []);
+
+  const openAttached = useCallback(
+    (draft: SourceDraft | SourceAttachment) => {
+      if (isDashboardSource(draft.text || "")) {
+        openDashboardRead(draft.title || draft.fileName || "Данные дашборда", draft.text);
+        return;
+      }
+      openSourceArtifact(draft);
+    },
+    [openDashboardRead, openSourceArtifact],
+  );
+
+  const openDashboardCard = useCallback((id: string) => {
+    const card = cardsRef.current.get(id);
+    if (!card) return;
+    activeCardId.current = id;
+    setPhraseViewer(card.viewer);
+    setDashboardOpen(true);
+  }, []);
 
   const sendFromComposer = useCallback(async () => {
     const text = chat.trim();
@@ -453,6 +508,14 @@ export default function App() {
       void send();
       return;
     }
+    const userId = uid();
+    const botId = uid();
+    setMsgs((list) => [
+      ...list,
+      { id: userId, role: "user", text },
+      { id: botId, role: "bot", text: "", pending: true, waitLabel: "Отвечаю…" },
+    ]);
+    setChat("");
     let body: unknown = null;
     let ok = false;
     try {
@@ -464,39 +527,54 @@ export default function App() {
       body = await res.json().catch(() => null);
       ok = res.ok;
     } catch {
-      void send();
+      setMsgs((list) => list.filter((msg) => msg.id !== userId && msg.id !== botId));
+      void send(text);
       return;
     }
     const route = phraseRoute(ok, body);
     if (route === "send") {
-      void send();
+      setMsgs((list) => list.filter((msg) => msg.id !== userId && msg.id !== botId));
+      void send(text);
       return;
     }
     const missed = phraseMiss(body);
     if (missed) {
-      setMsgs((list) => [
-        ...list,
-        { id: uid(), role: "user", text },
-        { id: uid(), role: "bot", text: missed },
-      ]);
-      setChat("");
+      setMsgs((list) =>
+        list.map((msg) =>
+          msg.id === botId && msg.role === "bot"
+            ? { ...msg, pending: false, waitLabel: undefined, text: missed }
+            : msg,
+        ),
+      );
       return;
     }
     const plan = phrasePlan(body);
     if (!plan) {
-      void send();
+      setMsgs((list) => list.filter((msg) => msg.id !== userId && msg.id !== botId));
+      void send(text);
       return;
     }
-    setMsgs((list) => [
-      ...list,
-      { id: uid(), role: "user", text },
-      { id: uid(), role: "bot", text: plan.reply },
-    ]);
-    setChat("");
-    resumeQuery.current = text;
-    setPhraseViewer(plan.viewer);
-    setDashboardOpen(true);
-  }, [chat, dashboardOpen, send, setChat, setMsgs]);
+    const card: DashboardCard = {
+      viewer: plan.viewer,
+      filters: plan.filters,
+      shots: [],
+      analyzed: 0,
+    };
+    cardsRef.current.set(botId, card);
+    setMsgs((list) =>
+      list.map((msg) =>
+        msg.id === botId && msg.role === "bot"
+          ? {
+              ...msg,
+              pending: false,
+              waitLabel: undefined,
+              text: plan.reply,
+              dashboard: card,
+            }
+          : msg,
+      ),
+    );
+  }, [chat, dashboardOpen, file, send, setChat, setMsgs, sourceDraft?.text]);
 
   const { capturePastedSource, ingestFiles, onDrop } = useSourceIngest({
     setFile,
@@ -531,6 +609,11 @@ export default function App() {
       }
     : null;
   const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
+  const openCardMsg = msgs.find(
+    (msg) => msg.id === activeCardId.current && msg.role === "bot",
+  );
+  const openDashboardShots =
+    openCardMsg?.role === "bot" ? openCardMsg.dashboard?.shots.length || 0 : 0;
 
   const pendingBot = msgs.find((m) => m.role === "bot" && m.pending);
   const thinkingLabel =
@@ -694,7 +777,10 @@ export default function App() {
                   messagesRef={messagesRef}
                   bottomRef={bottomRef}
                   onRestore={restoreLastReport}
-                  onOpenSource={openSourceArtifact}
+                  onOpenSource={openAttached}
+                  onReadDashboard={(card) =>
+                    openDashboardRead(shotsTitle(card.shots), shotsSource(card.shots))
+                  }
                   onOpenIntent={openIntentArtifact}
                   onOpenReport={openReportArtifact}
                   onOpenDiagram={openDiagramArtifact}
@@ -706,6 +792,7 @@ export default function App() {
                   onOpenFilm={(msgId, frame) => openFilmFrame(msgId, frame)}
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
+                  onOpenDashboardCard={openDashboardCard}
                   onNewChat={(kind) => {
                     startNewReport({
                       keepSource: kind === "documents",
@@ -792,7 +879,7 @@ export default function App() {
                     setAttachPhotos((list) => list.filter((_, j) => j !== i))
                   }
                   onOpenSource={() => {
-                    if (sourceDraft) openSourceArtifact(sourceDraft);
+                    if (sourceDraft) openAttached(sourceDraft);
                   }}
                   onDismissPlaque={() => {
                     const next = hideSourcePlaque({ sourceDraft, file });
@@ -805,7 +892,19 @@ export default function App() {
                     chatRef.current?.focus();
                   }}
                   onOpenDashboard={() => {
-                    resumeQuery.current = null;
+                    const id = uid();
+                    const card: DashboardCard = {
+                      viewer: viewerFrameUrl(import.meta.env.VITE_DASHBOARD_VIEWER_URL),
+                      filters: {},
+                      shots: [],
+                      analyzed: 0,
+                    };
+                    cardsRef.current.set(id, card);
+                    activeCardId.current = id;
+                    setMsgs((list) => [
+                      ...list,
+                      { id, role: "bot", text: "", dashboard: card },
+                    ]);
                     setPhraseViewer(null);
                     setDashboardOpen(true);
                   }}
@@ -813,7 +912,8 @@ export default function App() {
                 {dashboardOpen ? (
                   <DashboardPickModal
                     onClose={closeDashboard}
-                    onReady={onDashboardReady}
+                    onShot={onDashboardShot}
+                    shotCount={openDashboardShots}
                     viewerUrl={phraseViewer}
                   />
                 ) : null}
@@ -1156,6 +1256,14 @@ export default function App() {
           showToast("Стиль презентации сохранён", 2200);
         }}
       />
+
+      {dashboardRead ? (
+        <DashboardReadModal
+          title={dashboardRead.title}
+          text={dashboardRead.text}
+          onClose={() => setDashboardRead(null)}
+        />
+      ) : null}
 
       <SettingsModal
         open={settingsOpen}

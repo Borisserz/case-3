@@ -30,6 +30,8 @@ export type RunEventsHandlers = {
   ) => void;
   /** Agent line: opening before an artifact, or the chat answer. */
   onChat?: (phase: string, text: string, mode: string) => void;
+  /** Model sentences for craft steps. Shown only after each step starts. */
+  onNarration?: (lines: Record<string, string>) => void;
   /** SSE failed — caller should fall back to status poll. */
   onFallback?: () => void;
 };
@@ -207,7 +209,21 @@ export function openRunEvents(
   es.addEventListener("step", onStep);
   es.addEventListener("film", onFilm);
   es.addEventListener("artifact", onArtifact);
+  const onNarration = (ev: Event) => {
+    gotEvent = true;
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        lines?: Record<string, string>;
+      };
+      const lines = data.lines && typeof data.lines === "object" ? data.lines : {};
+      handlers.onNarration?.(lines);
+    } catch {
+      /* ignore */
+    }
+  };
+
   es.addEventListener("chat", onChat);
+  es.addEventListener("narration", onNarration);
   es.addEventListener("done", onDone);
   es.addEventListener("cancelled", onCancelled);
   es.addEventListener("error", onErrorEv);
@@ -219,6 +235,7 @@ export function openRunEvents(
     es.removeEventListener("film", onFilm);
     es.removeEventListener("artifact", onArtifact);
     es.removeEventListener("chat", onChat);
+    es.removeEventListener("narration", onNarration);
     es.removeEventListener("done", onDone);
     es.removeEventListener("cancelled", onCancelled);
     es.removeEventListener("error", onErrorEv);

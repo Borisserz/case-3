@@ -85,7 +85,7 @@ export function phrasePlan(data: unknown): PhrasePlan | null {
     }
   }
   if (!Object.keys(filters).length) return null;
-  const reply = typeof row.reply === "string" && row.reply.trim() ? row.reply.trim() : "Сейчас открою.";
+  const reply = typeof row.reply === "string" ? row.reply.trim() : "";
   return { pull: true, viewer, reply, filters };
 }
 
@@ -142,6 +142,167 @@ export function captureWarning(
   return "";
 }
 
+export type DashboardShot = {
+  name: string;
+  markdown: string;
+  warnings: string[];
+};
+
+export type DashboardCard = {
+  viewer: string;
+  filters: Record<string, string>;
+  shots: DashboardShot[];
+  /** How many shots were already sent to the model. */
+  analyzed: number;
+};
+
+export const DASHBOARD_SHOT_TOAST = "Данные текущего экрана попали в чат.";
+
+export const DASHBOARD_ANALYSIS_ASK =
+  "Снятые экраны уже в тексте. Начни с одной фразы, что сейчас разберёшь эти данные и ответишь, затем сделай обычный разбор: что на экране и какой вывод.";
+
+export function cardCaption(filters: Record<string, string>): string {
+  const bits = Object.values(filters)
+    .map((value) => value.trim())
+    .filter((value) => value && value.length <= 40 && !/^0+$/.test(value));
+  const words = bits.filter((value) => /[A-Za-zА-Яа-яЁё]/.test(value));
+  if (!words.length) return "Экран дашборда";
+  const years = bits.filter((value) => /^20\d\d$/.test(value));
+  return [...words, ...years].slice(0, 4).join(" · ");
+}
+
+const _SKIP_HEADS = new Set([
+  "данные дашборда",
+  "экран",
+  "таблица pdf",
+  "производные",
+  "фильтры",
+  "карточки",
+  "график или карта",
+  "заголовок",
+]);
+
+export function dashboardTitle(markdown: string): string {
+  const text = (markdown || "").replace(/\r\n/g, "\n");
+  const heading = text.match(/^##[ \t]+Заголовок[ \t]*\n+([^\n#|][^\n]*)/im);
+  let raw = heading?.[1]?.trim() || "";
+  if (!raw) {
+    for (const match of text.matchAll(/^#{1,3}[ \t]+(.+)$/gm)) {
+      const title = match[1].trim();
+      const key = title.toLocaleLowerCase("ru").replaceAll("ё", "е");
+      if (_SKIP_HEADS.has(key)) continue;
+      raw = title;
+      break;
+    }
+  }
+  return cleanDashboardTitle(raw);
+}
+
+function cleanDashboardTitle(raw: string): string {
+  let text = raw.replace(/\s+/g, " ").trim();
+  text = text.replace(/\s*\([^)]*\)\s*$/g, "").trim();
+  text = text.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+  if (text.length > 72) text = `${text.slice(0, 69).trimEnd()}…`;
+  return text;
+}
+
+function isStampName(name: string): boolean {
+  const base = (name || "").trim().split(/[/\\]/).pop() || "";
+  const stem = base.replace(/\.(png|pdf|md)$/i, "");
+  return /^dashboard([_\-\s]|\d|$)/i.test(stem);
+}
+
+export function shotTitle(name: string, markdown: string): string {
+  const fromText = dashboardTitle(markdown);
+  const stem = markdownDocName(name).replace(/\.md$/i, "").trim();
+  if (fromText && (!stem || isStampName(stem))) return fromText;
+  if (!stem || isStampName(stem)) return "Экран дашборда";
+  return stem;
+}
+
+function uniqueShotTitle(taken: string[], title: string): string {
+  if (!taken.includes(title)) return title;
+  let n = 2;
+  while (taken.includes(`${title} · ${n}`)) n += 1;
+  return `${title} · ${n}`;
+}
+
+export function shotsTitle(shots: DashboardShot[]): string {
+  if (!shots.length) return "Дашборд";
+  if (shots.length === 1) return shots[0].name;
+  const rest = shots.length - 1;
+  const word = rest === 1 ? "экран" : rest < 5 ? "экрана" : "экранов";
+  return `${shots[0].name}, ещё ${rest} ${word}`;
+}
+
+export function withShots(
+  card: DashboardCard,
+  docs: { name: string; markdown: string; warnings?: string[] }[],
+): DashboardCard {
+  const taken = card.shots.map((shot) => shot.name);
+  const shots = docs
+    .map((doc) => {
+      const markdown = doc.markdown.trim();
+      if (!doc.name.trim() || !markdown) return null;
+      const name = uniqueShotTitle(taken, shotTitle(doc.name, markdown));
+      taken.push(name);
+      return {
+        name,
+        markdown,
+        warnings: (doc.warnings || []).map((note) => note.trim()).filter(Boolean),
+      };
+    })
+    .filter((shot): shot is DashboardShot => Boolean(shot));
+  if (!shots.length) return card;
+  return { ...card, shots: [...card.shots, ...shots] };
+}
+
+export function freshShots(card: DashboardCard): DashboardShot[] {
+  return card.shots.slice(Math.max(0, card.analyzed));
+}
+
+const PACKED_DOC = /^===== (.+?) =====$/;
+
+/** Parsed dashboard markdown, including several shots joined for the chat. */
+export function isDashboardSource(text: string): boolean {
+  return /(?:^|\n)# Данные дашборда\s*(?:\n|$)/.test(text || "");
+}
+
+export function splitPackedSources(
+  text: string,
+): { name: string; markdown: string }[] {
+  const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
+  const docs: { name: string; lines: string[] }[] = [];
+  let current: { name: string; lines: string[] } | null = null;
+  for (const line of lines) {
+    const mark = PACKED_DOC.exec(line.trim());
+    if (mark) {
+      current = { name: mark[1].trim(), lines: [] };
+      docs.push(current);
+      continue;
+    }
+    if (!current) {
+      current = { name: "", lines: [] };
+      docs.push(current);
+    }
+    current.lines.push(line);
+  }
+  return docs
+    .map((doc) => ({ name: doc.name, markdown: doc.lines.join("\n").trim() }))
+    .filter((doc) => doc.markdown);
+}
+
+export function shotsSource(shots: DashboardShot[]): string {
+  return shots
+    .map((shot) => {
+      const body = shot.markdown.trim();
+      if (!body) return "";
+      return `===== ${markdownDocName(shot.name)} =====\n${body}`;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function attachCaptureMarkdowns(
   current: SourceDraft | null,
   docs: { name: string; markdown: string }[],
@@ -150,9 +311,10 @@ export function attachCaptureMarkdowns(
   for (const doc of docs) {
     const text = (doc.markdown || "").trim();
     if (!text) continue;
-    const fileName = markdownDocName(doc.name);
+    const title = shotTitle(doc.name, text);
+    const fileName = `${title}.md`;
     next = mergeSourcePack(next, {
-      title: fileName.replace(/\.md$/i, ""),
+      title,
       text,
       fileName,
       viewMode: "text",

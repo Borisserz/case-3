@@ -4,13 +4,21 @@ import {
   attachCaptureMarkdowns,
   captureOriginOk,
   captureWarning,
+  cardCaption,
   documentsFromService,
+  freshShots,
   phrasePlan,
+  shotTitle,
   phraseRoute,
   filesFromCapture,
   markdownDocName,
+  isDashboardSource,
+  shotsSource,
+  splitPackedSources,
   viewerFrameUrl,
+  withShots,
   CAPTURE_MESSAGE,
+  type DashboardCard,
 } from "./dashboardCapture.ts";
 
 describe("viewerFrameUrl", () => {
@@ -61,6 +69,16 @@ describe("phrasePlan", () => {
     });
     assert.equal(plan?.filters.Month, "Февраль");
     assert.equal(plan?.reply, "Сейчас открою.");
+  });
+
+  it("does not invent a sentence when the model sent none", () => {
+    const plan = phrasePlan({
+      pull: true,
+      viewer: "http://127.0.0.1:8040/open",
+      reply: "  ",
+      filters: { Month: "2" },
+    });
+    assert.equal(plan?.reply, "");
   });
 });
 
@@ -129,10 +147,56 @@ describe("attachCaptureMarkdowns", () => {
       { name: "Оплаты_20261121.pdf", markdown: "| a |\n| --- |\n| 1 |" },
     ]);
     assert.equal(next?.parts?.length, 2);
-    assert.equal(next?.parts?.[0].name, "dashboard_20261121.md");
+    assert.equal(next?.parts?.[0].name, "Экран дашборда.md");
     assert.equal(next?.parts?.[1].name, "Оплаты_20261121.md");
-    assert.match(next?.text || "", /===== dashboard_20261121.md =====/);
+    assert.match(next?.text || "", /===== Экран дашборда.md =====/);
     assert.match(next?.text || "", /===== Оплаты_20261121.md =====/);
     assert.equal(markdownDocName("Оплаты_20261121.pdf"), "Оплаты_20261121.md");
+  });
+});
+
+describe("dashboard card shots", () => {
+  const card: DashboardCard = {
+    viewer: "http://127.0.0.1:8040/open",
+    filters: { month: "2", year: "2025" },
+    shots: [],
+    analyzed: 0,
+  };
+
+  it("keeps codes off the card and names a word filter", () => {
+    assert.equal(cardCaption({ month: "2", year: "2025" }), "Экран дашборда");
+    assert.equal(cardCaption({ month: "Февраль", year: "2025" }), "Февраль · 2025");
+  });
+
+  it("sends only shots taken after the last analysis", () => {
+    const taken = withShots(card, [
+      { name: "screen.png", markdown: "# Экран" },
+      { name: " ", markdown: "пусто" },
+    ]);
+    assert.equal(taken.shots.length, 1);
+    const again = withShots(
+      { ...taken, analyzed: 1 },
+      [{ name: "next.png", markdown: "# Ещё" }],
+    );
+    assert.deepEqual(
+      freshShots(again).map((shot) => shot.name),
+      ["next"],
+    );
+    assert.equal(
+      shotTitle(
+        "dashboard_20261121_100249.png",
+        "## Заголовок\nПоступления за январь 2025 года (с нарастающим итогом)\n",
+      ),
+      "Поступления за январь 2025 года",
+    );
+    const packed = shotsSource(freshShots(again));
+    assert.match(packed, /===== next.md =====/);
+    assert.equal(isDashboardSource("# Данные дашборда\n\n## Экран"), true);
+    assert.equal(isDashboardSource("Обычный отчёт"), false);
+    assert.deepEqual(
+      splitPackedSources(packed).map((doc) => doc.name),
+      ["next.md"],
+    );
+    assert.match(shotsSource(freshShots(again)), /# Ещё/);
   });
 });

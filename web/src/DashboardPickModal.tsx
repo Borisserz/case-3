@@ -16,7 +16,9 @@ type Doc = { name: string; markdown: string; warnings?: string[] };
 
 type Props = {
   onClose: () => void;
-  onReady: (docs: Doc[]) => void;
+  onShot: (docs: Doc[]) => void;
+  /** How many screens from this opening are already in the chat. */
+  shotCount?: number;
   /** /open after the API POSTed the filter body. The button path leaves this empty. */
   viewerUrl?: string | null;
 };
@@ -62,7 +64,8 @@ async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
 
 export function DashboardPickModal({
   onClose,
-  onReady,
+  onShot,
+  shotCount = 0,
   viewerUrl: viewerOverride,
 }: Props) {
   const titleId = useId();
@@ -111,7 +114,7 @@ export function DashboardPickModal({
         setError("Сервис не вернул файлы.");
         return;
       }
-      onReady(docs);
+      onShot(docs);
     } catch (exc: unknown) {
       setError(exc instanceof Error ? exc.message : "Сервис снимка недоступен.");
     } finally {
@@ -132,7 +135,7 @@ export function DashboardPickModal({
             setError("Парсер вернул пустой текст.");
             return;
           }
-          onReady(docs);
+          onShot(docs);
         })
         .catch((exc: unknown) => {
           setError(exc instanceof Error ? exc.message : "Не удалось разобрать.");
@@ -141,7 +144,7 @@ export function DashboardPickModal({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [busy, onReady, viewerUrl]);
+  }, [busy, onShot, viewerUrl]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -174,7 +177,7 @@ export function DashboardPickModal({
               onClick={() => void takeFromService()}
               disabled={busy}
             >
-              В данные
+              {busy ? "Снимаю…" : "В данные"}
             </button>
             <button
               type="button"
@@ -188,15 +191,25 @@ export function DashboardPickModal({
         </header>
         <p className="dash-viewer-note">
           {busy
-            ? "Жду снимок сервиса. Это до полутора минут."
-            : "Дойди до нужного экрана и нажми «В данные». Сниму его и прикреплю документ."}
+            ? "Снимаю текущий экран. Окно не закроется."
+            : shotCount
+              ? `В чате уже ${shotCount}. Можно снять ещё экран.`
+              : "Дойди до нужного экрана и нажми «В данные». Окно останется открытым."}
         </p>
         {error ? <p className="dash-viewer-error">{error}</p> : null}
-        <iframe
-          className="dash-viewer-frame"
-          title="Превью Stimulsoft"
-          src={viewerUrl}
-        />
+        <div className="dash-viewer-frame-wrap">
+          <iframe
+            className="dash-viewer-frame"
+            title="Превью Stimulsoft"
+            src={viewerUrl}
+          />
+          {busy ? (
+            <div className="dash-viewer-loader" role="status">
+              <span className="dash-viewer-spinner" />
+              <p>Снимаю экран</p>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
