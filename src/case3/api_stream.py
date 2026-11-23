@@ -85,7 +85,18 @@ async def stream_run_events(run_id: str) -> StreamingResponse:
                 EVENTS.ensure(run_id)
                 EVENTS.scan_artifacts(run_id, out_dir)
             elif playable and st in {"ok", "error", "cancelled"}:
-                pass
+                has_terminal = any(
+                    isinstance(ev, dict)
+                    and str(ev.get("event") or "") in {"done", "error", "cancelled"}
+                    for ev in playable
+                )
+                if not has_terminal:
+                    kind = "done" if st == "ok" else st
+                    payload_t: dict[str, Any] = {"status": st, "t": _time.time()}
+                    if meta.get("error"):
+                        payload_t["error"] = meta.get("error")
+                    yield _sse_pack(kind, payload_t)
+                    return
             elif st == "running":
                 EVENTS.publish_stage(
                     run_id,

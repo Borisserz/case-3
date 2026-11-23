@@ -16,9 +16,9 @@ from pptx.util import Emu, Inches
 
 from case3.color_util import accent_fields
 from case3.slides_html import _pct_from_kicker, parse_hero_metrics
+from case3 import slides_pptx_draw as _pptx_draw
 from case3.slides_pptx_draw import (
     _MARGIN_X,
-    _PPTX_FONT,
     _SLIDE_H,
     _SLIDE_W,
     _add_bullets,
@@ -480,7 +480,7 @@ def _layout_table(
         body_ink=colors["ink"],
         body_fill=body_fill,
         grid=grid,
-        font_name=_PPTX_FONT,
+        font_name=_pptx_draw._PPTX_FONT,
         font_pt=18 if body_rows <= 5 else 14,
     )
     cap = str(s.get("caption") or "").strip()
@@ -888,7 +888,7 @@ def _layout_media(
         if is_dia and diagram_spec:
             from case3.slides_pptx_diagrams import add_native_diagram
 
-            pack = str((style or {}).get("theme_pack") or "atelier")
+            pack = str((style or {}).get("pack_id") or (style or {}).get("theme_pack") or "atelier")
             placed = add_native_diagram(
                 slide,
                 diagram_spec,
@@ -898,7 +898,7 @@ def _layout_media(
                 height=pic_h,
                 colors=colors,
                 palette=pack,
-                font_name=_PPTX_FONT,
+                font_name=_pptx_draw._PPTX_FONT,
             )
         elif is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
             from case3.slides_pptx_charts import add_native_kpi
@@ -981,7 +981,7 @@ def _layout_media(
         if is_dia and diagram_spec:
             from case3.slides_pptx_diagrams import add_native_diagram
 
-            pack = str((style or {}).get("theme_pack") or "atelier")
+            pack = str((style or {}).get("pack_id") or (style or {}).get("theme_pack") or "atelier")
             placed = add_native_diagram(
                 slide,
                 diagram_spec,
@@ -991,7 +991,7 @@ def _layout_media(
                 height=Inches(5.8),
                 colors=colors,
                 palette=pack,
-                font_name=_PPTX_FONT,
+                font_name=_pptx_draw._PPTX_FONT,
             )
         elif is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
             from case3.slides_pptx_charts import add_native_kpi

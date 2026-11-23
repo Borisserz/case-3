@@ -132,3 +132,43 @@ def test_a_column_that_is_already_a_share_is_not_divided_again() -> None:
     )
     block = derivative_block(table)
     assert "доля" not in block.casefold()
+    assert "место 1" in block
+    assert "место 2" in block
+
+
+def test_group_column_does_not_steal_region_label_and_emits_rollups_and_deltas() -> None:
+    table = (
+        "| Округ | Регион | Факт | План |\n"
+        "| --- | --- | --- | --- |\n"
+        "| ЦФО | Москва | 100 | 80 |\n"
+        "| ЦФО | Воронеж | 20 | 25 |\n"
+        "| ЦФО Итого | Итого по ЦФО | 120 | 105 |\n"
+        "| СЗФО | Санкт-Петербург | 80 | 75 |\n"
+    )
+    block = derivative_block(table)
+    # Must label rows by Регион, NOT ЦФО/СЗФО
+    assert "- Москва — доля 50%, место 1" in block
+    assert "- Санкт-Петербург — доля 40%, место 2" in block
+    assert "- Воронеж — доля 10%, место 3" in block
+    # Subtotal row must not double-count into 100%
+    assert "Итого по ЦФО" not in block
+    # Totals, group rollups, and Fact-vs-Plan delta/execution should be computed
+    assert "200" in block  # sum Факт (100+20+80)
+    assert "180" in block  # sum План (80+25+75)
+    assert "111,1%" in block or "111.1%" in block  # 200 / 180
+    assert "+20" in block  # Москва Факт - План
+
+
+def test_negative_thin_nbsp_and_units_still_compute_stats_and_ranks() -> None:
+    table = (
+        "| Регион | Отклонение |\n"
+        "| --- | --- |\n"
+        "| Москва | 1\u202f200 млн |\n"
+        "| Калининград | -300 млн |\n"
+    )
+    block = derivative_block(table)
+    assert "Москва" in block
+    assert "Калининград" in block
+    assert "900" in block  # net sum 1200 + (-300)
+    assert "место 1" in block
+    assert "место 2" in block

@@ -10,12 +10,15 @@ from case3.chat_turn import _NUM, _norm_num, latest_user_line, number_norms, str
 
 _PROTECT = re.compile(
     r"\\includegraphics\s*(?:\[[^\]]*\])?\{[^}]*\}"
-    r"|\\begin\{tabularx?\*?\}\s*\{[^}]*\}"
-    r"|\\(?:label|ref|pageref|cite\w*)\{[^}]*\}"
+    r"|\\begin\{(?:tabularx?\*?|xltabular|tabular\*?)\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?\s*\{(?:[^{}]|\{[^{}]*\})*\}"
+    r"|\\(?:begin|end)\{[^}]*\}(?:\s*\[[^\]]*\])?"
+    r"|\\(?:label|ref|pageref|autoref|eqref|cite\w*)\{[^}]*\}"
     r"|(?<!\\)%[^\n]*"
-    r"|\\(?:vspace|hspace|setlength|fontsize)\{[^}]*\}"
+    r"|\\(?:vspace|hspace|setlength|fontsize|rule)\{[^}]*\}(?:\{[^}]*\})?"
     r"|\\(?:multicolumn|multirow)\{[^}]*\}\{[^}]*\}"
     r"|\\(?:cmidrule|cline|hhline)\{[^}]*\}"
+    r"|\\(?:rowcolor|cellcolor|color)\{[^}]*\}"
+    r"|\\(?:href|url)\{[^}]*\}"
     r"|\\\\\[[^\]]*\]",
     re.IGNORECASE,
 )
@@ -43,7 +46,7 @@ def fact_context(source: str, intent: str) -> tuple[set[str], list[tuple[str, st
     body = rest.split("\n", 1)[1] if "\n" in rest else ""
     line = body.split("\n", 1)[0]
     for match in re.finditer(
-        r"(\d+(?:[.,]\d+)?%?)(?:\s+([0-9A-Za-zА-Яа-яЁё]{3,}))?",
+        rf"({_NUM.pattern})(?:\s+([0-9A-Za-zА-Яа-яЁё]{{3,}}))?",
         line,
     ):
         norm = _norm_num(match.group(1))
@@ -65,6 +68,7 @@ class TableGrid:
         self.shares: dict[tuple[str, str], set[str]] = {}
         self.ranks: dict[tuple[str, str], set[str]] = {}
         self.columns: set[str] = set()
+        self.aggregates: set[str] = set()
 
     def add(
         self,
@@ -172,6 +176,20 @@ def _add_derivatives(grid: TableGrid, source: str) -> None:
         if not match:
             if "Доли и места" in stripped:
                 continue
+            if stripped.startswith(
+                (
+                    "Сумма по строкам:",
+                    "Среднее:",
+                    "По «",
+                    "Сводно:",
+                    "Отклонение и выполнение",
+                    "- По «",
+                )
+            ):
+                # Strip single-row «; макс: ...; мин: ...» tail so extrema stay tied to their own row.
+                agg_part = stripped.split("; макс:", 1)[0].split("; мин:", 1)[0]
+                grid.aggregates.update(number_norms(agg_part))
+                continue
             column = stripped
             continue
         label, share, rank = match.group(1), match.group(2), match.group(3)
@@ -186,11 +204,12 @@ def _add_derivatives(grid: TableGrid, source: str) -> None:
 
 def _mentions_share(clause: str) -> bool:
     folded = (clause or "").casefold().replace("ё", "е")
-    return "дол" in folded or "%" in clause
+    return "%" in (clause or "") or bool(re.search(r"\bдол[яеиюйь]", folded))
 
 
 def _mentions_rank(clause: str) -> bool:
-    return "мест" in (clause or "").casefold()
+    folded = (clause or "").casefold().replace("ё", "е")
+    return bool(re.search(r"\bмест[оаеу]?\b", folded))
 
 
 def _row_mentions(clause: str, grid: TableGrid) -> list[tuple[int, int, str]]:
@@ -219,15 +238,17 @@ def _owner_row(mentions: list[tuple[int, int, str]], start: int) -> str | None:
 def _norms_on_row(grid: TableGrid, row: str, clause: str, columns: list[str]) -> set[str]:
     share = _mentions_share(clause)
     rank = _mentions_rank(clause)
-    buckets = []
+    buckets = [grid.values]
     if share:
         buckets.append(grid.shares)
     if rank:
         buckets.append(grid.ranks)
-    if not share and not rank:
-        buckets.append(grid.values)
     allowed: set[str] = set()
-    for bucket in buckets:
+    # Any value cell on this row is valid even if prose casually names another column («перевыполнила план: 102,3%»).
+    for (key, _col), norms in grid.values.items():
+        if key == row:
+            allowed |= norms
+    for bucket in buckets[1:]:
         if columns:
             for col in columns:
                 allowed |= bucket.get((row, col), set())
@@ -246,6 +267,8 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
     """
     if grid is None or not grid.rows or not norm:
         return None
+    if norm in grid.aggregates:
+        return True
     mentions = _row_mentions(clause, grid)
     if not mentions:
         return None
@@ -374,6 +397,37 @@ def _clause_allows(
     return any(bound == norm and stem and stem in stems for bound, stem in bindings)
 
 
+def _split_commas(chunk: str) -> list[str]:
+    """Split on top-level commas outside TeX {...} groups and not inside decimals."""
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    size = len(chunk)
+    i = 0
+    while i < size:
+        ch = chunk[i]
+        if ch == "\\" and i + 1 < size:
+            i += 2
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+        elif ch == "," and depth == 0:
+            after = chunk[i + 1 : i + 2]
+            if not after.isdigit():
+                parts.append(chunk[start:i])
+                j = i + 1
+                while j < size and chunk[j].isspace():
+                    j += 1
+                start = j
+                i = j
+                continue
+        i += 1
+    parts.append(chunk[start:])
+    return parts
+
+
 def _scrub_bound(
     text: str,
     global_ok: set[str],
@@ -385,6 +439,17 @@ def _scrub_bound(
 ) -> str:
     """Drop a number that is not in Source, this message, or beside its own word."""
     from case3.chat_turn import _SPOKEN_NUMBER, _SPOKEN_RE
+
+    raw_text = text or ""
+    if not raw_text:
+        return ""
+    if not raw_text.strip():
+        return raw_text
+    lead_len = len(raw_text) - len(raw_text.lstrip())
+    lead = raw_text[:lead_len]
+    trail_start = len(raw_text.rstrip())
+    trail = raw_text[trail_start:]
+    core = raw_text[lead_len:trail_start]
 
     def spoken_norm(token: str) -> str:
         stem = token.casefold().replace("ё", "е")
@@ -413,7 +478,11 @@ def _scrub_bound(
         return ""
 
     kept_lines: list[str] = []
-    for line in (text or "").split("\n"):
+    for line in core.split("\n"):
+        if not line.strip():
+            if kept_lines and kept_lines[-1] != "":
+                kept_lines.append("")
+            continue
         bits = re.split(r"([.!?]+(?:\s+|$))", line)
         kept: list[str] = []
         index = 0
@@ -423,10 +492,10 @@ def _scrub_bound(
             index += 2 if delim else 1
             parts = []
             cut = False
-            for part in re.split(r"(?<![{\\]),(?!\d)\s*", chunk):
+            for part in _split_commas(chunk):
                 raw = part.strip()
                 cleaned = clean_clause(part).strip()
-                if not cleaned or re.fullmatch(r"[\s\\%{},.;:–—\-]*", cleaned):
+                if not cleaned or re.fullmatch(r"[\s,.;:–—\-]+", cleaned):
                     if raw and (_NUM.search(raw) or _SPOKEN_RE.search(raw)):
                         cut = True
                     continue
@@ -441,11 +510,15 @@ def _scrub_bound(
                 kept.append(delim)
         if kept:
             kept_lines.append("".join(kept).strip())
+    while kept_lines and kept_lines[-1] == "":
+        kept_lines.pop()
     result = "\n".join(kept_lines)
     result = re.sub(r"[ \t]{2,}", " ", result)
     result = re.sub(r" +([,.;:!?])", r"\1", result)
     result = re.sub(r"\n{3,}", "\n\n", result)
-    return result
+    if not result:
+        return ""
+    return f"{lead}{result}{trail}"
 
 
 def allowed_fact_norms(source: str, intent: str) -> set[str]:
@@ -699,12 +772,57 @@ def ground_generated(
                     item[key], global_ok, bindings, grid=grid, message_ok=message_ok
                 ).strip()
     for item in diagrams:
-        for key in ("title", "caption", "mermaid"):
+        for key in ("title", "caption"):
             if isinstance(item.get(key), str):
                 item[key] = _scrub_bound(
                     item[key], global_ok, bindings, grid=grid, message_ok=message_ok
                 )
+        if isinstance(item.get("mermaid"), str):
+            item["mermaid"] = _scrub_mermaid(
+                item["mermaid"], global_ok, bindings, grid=grid, message_ok=message_ok
+            )
     return tex, charts, figures, diagrams, dropped
+
+
+_MERMAID_DIRECTIVE = re.compile(
+    r"^\s*(?:%%|flowchart\b|graph\b|sequenceDiagram\b|classDiagram\b|stateDiagram(?:-v2)?\b|"
+    r"erDiagram\b|classDef\b|class\b|style\b|linkStyle\b|click\b|direction\b|subgraph\b|end\b)",
+    re.IGNORECASE,
+)
+
+
+def _scrub_mermaid(
+    mermaid: str,
+    global_ok: set[str],
+    bindings: list[tuple[str, str]],
+    *,
+    grid: TableGrid | None = None,
+    message_ok: set[str] | None = None,
+) -> str:
+    """Drop stray numbers in node/edge labels without mangling Mermaid directives or edges."""
+    out_lines: list[str] = []
+    for line in (mermaid or "").splitlines():
+        if _MERMAID_DIRECTIVE.match(line):
+            out_lines.append(line)
+            continue
+
+        def _clean_match(match: re.Match[str]) -> str:
+            norm = _norm_num(match.group(0))
+            if not norm or _clause_allows(
+                line, norm, global_ok, bindings, grid, message_ok
+            ):
+                return match.group(0)
+            return ""
+
+        cleaned = _NUM.sub(_clean_match, line)
+        cleaned = re.sub(r" {2,}", " ", cleaned)
+        cleaned = re.sub(r" +([\]\)\"\|])", r"\1", cleaned)
+        out_lines.append(cleaned)
+    return "\n".join(out_lines)
+
+
+def _kicker_chrome(value: object) -> bool:
+    return bool(re.fullmatch(r"\d{1,2}(?:/\d{1,2})?", str(value or "").strip()))
 
 
 def _scrub_html_bound(
@@ -774,6 +892,8 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
         nxt = dict(slide)
         for key in ("title", "subtitle", "caption", "body", "kicker", "takeaway", "term", "definition"):
             if isinstance(nxt.get(key), str):
+                if key == "kicker" and _kicker_chrome(nxt[key]):
+                    continue
                 nxt[key] = _scrub_bound(
                     str(nxt[key]), global_ok, bindings, grid=grid, message_ok=message_ok
                 ).strip()
@@ -788,10 +908,13 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 )
             ]
         if isinstance(nxt.get("rows"), list):
+            raw_rows = [row for row in nxt["rows"] if isinstance(row, list)]
+            had_digits = [
+                any(bool(_NUM.search(str(cell))) for cell in row) for row in raw_rows
+            ]
             rows: list[list[str]] = []
-            for row in nxt["rows"]:
-                if not isinstance(row, list):
-                    continue
+            row_digits: list[bool] = []
+            for row, row_has_digit in zip(raw_rows, had_digits):
                 cells = [
                     _scrub_bound(
                         str(cell),
@@ -804,10 +927,16 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 ]
                 if any(cell.strip() for cell in cells):
                     rows.append(cells)
+                    row_digits.append(row_has_digit)
             if rows:
                 header, data = rows[0], rows[1:]
-                data = [row for row in data if any(re.search(r"\d", cell) for cell in row)]
-                rows = [header] + data if data else []
+                data_had = row_digits[1:]
+                kept_data = [
+                    row
+                    for row, had in zip(data, data_had)
+                    if not had or any(bool(_NUM.search(cell)) for cell in row)
+                ]
+                rows = [header] + kept_data if kept_data else []
             nxt["rows"] = rows
         if isinstance(nxt.get("cards"), list):
             cards = []
@@ -817,6 +946,8 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                 nxt_card = dict(card)
                 for key in ("title", "body", "kicker"):
                     if isinstance(nxt_card.get(key), str):
+                        if key == "kicker" and _kicker_chrome(nxt_card[key]):
+                            continue
                         nxt_card[key] = _scrub_bound(
                             str(nxt_card[key]),
                             global_ok,
@@ -832,8 +963,9 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
             for kpi in nxt["kpis"]:
                 if not isinstance(kpi, dict):
                     continue
-                label = str(kpi.get("label") or "")
-                value = str(kpi.get("value") or "")
+                nxt_kpi = dict(kpi)
+                label = str(nxt_kpi.get("label") or "")
+                value = str(nxt_kpi.get("value") or "")
                 clause = f"{label} {value}"
                 norms = {_norm_num(token) for token in _NUM.findall(value)}
                 if norms and not all(
@@ -841,7 +973,17 @@ def bind_deck_numbers(deck: dict[str, Any], *, source: str, intent: str) -> dict
                     for norm in norms
                 ):
                     continue
-                kept.append(kpi)
+                for extra_key in ("delta", "hint"):
+                    if isinstance(nxt_kpi.get(extra_key), str):
+                        nxt_kpi[extra_key] = _scrub_bound(
+                            nxt_kpi[extra_key],
+                            global_ok,
+                            bindings,
+                            context=label,
+                            grid=grid,
+                            message_ok=message_ok,
+                        ).strip()
+                kept.append(nxt_kpi)
             nxt["kpis"] = kept
         slides.append(nxt)
     out = dict(deck)

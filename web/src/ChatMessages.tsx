@@ -450,6 +450,67 @@ export function ChatMessages({
                           <MsgMarkdown text={m.text} />
                         ) : null}
                         <ChatTurnNote msg={m} onNewChat={onNewChat} />
+                        {m.result &&
+                          !(
+                            m.result.downloads?.pdf || m.result.downloads?.docx
+                          ) &&
+                          (m.result.previews || []).some(
+                            (p) => p.kind === "chart" || p.id.startsWith("cht_"),
+                          ) && (
+                            <div
+                              className="msg-inline-charts"
+                              style={{
+                                display: "grid",
+                                gap: "10px",
+                                marginTop: "10px",
+                              }}
+                            >
+                              {(m.result.previews || [])
+                                .filter(
+                                  (p) =>
+                                    p.kind === "chart" ||
+                                    p.id.startsWith("cht_"),
+                                )
+                                .map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="msg-inline-chart-card"
+                                    style={{
+                                      borderRadius: "10px",
+                                      border: "1px solid rgba(0,0,0,0.08)",
+                                      overflow: "hidden",
+                                      background: "#fff",
+                                    }}
+                                  >
+                                    <img
+                                      src={p.url}
+                                      alt={p.id}
+                                      style={{
+                                        width: "100%",
+                                        maxWidth: "620px",
+                                        display: "block",
+                                      }}
+                                    />
+                                    <div
+                                      style={{
+                                        padding: "6px 10px",
+                                        display: "flex",
+                                        justifyContent: "flex-end",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      <a
+                                        href={p.url}
+                                        download={`${p.id}.png`}
+                                        style={{ color: "inherit" }}
+                                      >
+                                        Скачать PNG
+                                      </a>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                       </>
                     ) : (
                       <div className="msg-body">{m.text}</div>

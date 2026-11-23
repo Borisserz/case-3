@@ -57,22 +57,27 @@ def test_stat_hero_parses_one_kpi_and_bullets() -> None:
 
 
 def test_timeline_keeps_up_to_six_steps() -> None:
-    ir = _deck(
-        [
-            {"id": "s01", "layout": "title", "title": "День"},
-            {
-                "id": "s02",
-                "layout": "timeline",
-                "title": "Поток дня",
-                "cards": [
-                    {"kicker": "15 мин", "title": "Старт", "body": "Цели на день."},
-                    {"kicker": "40 мин", "title": "Карта", "body": "Формулировка проблемы."},
-                    {"kicker": "45 мин", "title": "Стена", "body": "Варианты без оценки."},
-                    {"kicker": "20 мин", "title": "Финиш", "body": "Владельцы шагов."},
-                ],
-            },
-            {"id": "s03", "layout": "closing", "title": "Выходы", "bullets": ["План"]},
-        ]
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "День"},
+                {
+                    "id": "s02",
+                    "layout": "timeline",
+                    "title": "Поток дня",
+                    "cards": [
+                        {"kicker": "15 мин", "title": "Старт", "body": "Цели на день."},
+                        {"kicker": "40 мин", "title": "Карта", "body": "Формулировка проблемы."},
+                        {"kicker": "45 мин", "title": "Стена", "body": "Варианты без оценки."},
+                        {"kicker": "20 мин", "title": "Финиш", "body": "Владельцы шагов."},
+                    ],
+                },
+                {"id": "s03", "layout": "closing", "title": "Выходы", "bullets": ["План"]},
+            ],
+        },
+        source=SOURCE + " Тайминг: 15 мин старт, 40 мин карта, 45 мин стена, 20 мин финиш.",
     )
     assert len(ir["slides"][1]["cards"]) == 4
 

@@ -28,3 +28,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 case3 = ["templates/*.tex", "templates/*.html", "templates/fonts/*.woff2"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]

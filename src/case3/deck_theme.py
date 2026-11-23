@@ -112,7 +112,7 @@ class ThemeTokens:
             f"--deck-panel:{c.get('panel', c.get('paper', '#f0ede4'))}",
         ]
         split = self.motif.get("split")
-        if isinstance(split, (int, float)):
+        if isinstance(split, (int, float)) and not isinstance(split, bool):
             parts.append(f"--deck-split:{float(split)}")
         return ";".join(parts)
 

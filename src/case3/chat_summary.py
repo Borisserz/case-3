@@ -225,15 +225,22 @@ def _summary_client(client: LLMClient | None) -> LLMClient:
 _REASONING_LEAK_REGEX = re.compile(
     r"(?i)\b("
     r"the user wants|"
+    r"the user says|"
+    r"the user asks|"
+    r"we need to|"
     r"let me check|"
     r"let me draft|"
     r"let me write|"
+    r"let's check|"
+    r"let's analyze|"
+    r"let's look|"
     r"thinking process|"
     r"based on the outline|"
     r"from the outline|"
     r"from media_delivered|"
     r"i need to write|"
     r"i will write|"
+    r"the instruction:|"
     r"first paragraph:|"
     r"second paragraph:|"
     r"structure:|"
@@ -251,7 +258,9 @@ def is_clean_chat_summary(text: str, *, intent: str | None = None) -> bool:
         return False
     cyrillic_chars = len(re.findall(r"[\u0400-\u04FF]", t))
     latin_chars = len(re.findall(r"[A-Za-z]", t))
-    if cyrillic_chars < 20 and latin_chars > 30:
+    if cyrillic_chars < 10 and latin_chars > 30:
+        return False
+    if latin_chars > 120 and latin_chars > cyrillic_chars * 1.5:
         return False
     return True
 

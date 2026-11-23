@@ -22,8 +22,30 @@ type Props = {
 };
 
 async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
+  const pngFile = files.find((f) => f.ext === "png") ?? null;
+  const pdfFiles = files.filter((f) => f.ext === "pdf");
+  const restFiles = files.filter((f) => f !== pngFile && !pdfFiles.includes(f));
   const docs: Doc[] = [];
-  for (const file of files) {
+  if (pngFile || pdfFiles.length) {
+    const pngBin = pngFile ? fileFromCapture(pngFile) : null;
+    const firstPdf = pdfFiles[0] ? fileFromCapture(pdfFiles[0]) : null;
+    const parsed = await parseDashboard(pngBin, firstPdf);
+    docs.push({
+      name: pngFile?.name || pdfFiles[0]!.name,
+      markdown: parsed.markdown,
+      warnings: parsed.warnings,
+    });
+    for (const extraPdf of pdfFiles.slice(1)) {
+      const bin = fileFromCapture(extraPdf);
+      const extraParsed = await parseDashboard(null, bin);
+      docs.push({
+        name: extraPdf.name,
+        markdown: extraParsed.markdown,
+        warnings: extraParsed.warnings,
+      });
+    }
+  }
+  for (const file of restFiles) {
     const bin = fileFromCapture(file);
     const parsed = await parseDashboard(
       file.ext === "png" ? bin : null,

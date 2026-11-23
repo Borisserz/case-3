@@ -39,7 +39,15 @@ _DIAGRAM = re.compile(
     re.IGNORECASE,
 )
 _REPORT = re.compile(
-    r"отч[её]т|\bpdf\b|\bdocx\b|\bword\b|ворд|справк|график|диаграмм",
+    r"отч[её]т|\bpdf\b|\bdocx\b|\bword\b|ворд|справк",
+    re.IGNORECASE,
+)
+_CHART_REQ = re.compile(
+    r"график|диаграмм|чарт|\bchart\b|гистограмм|кругов\w*|линейн\w*",
+    re.IGNORECASE,
+)
+_IN_CHAT = re.compile(
+    r"(?:^|\s)(?:в\s+чат[е]?|без\s+отч[её]т[ао]?)\b",
     re.IGNORECASE,
 )
 _QUESTION = re.compile(
@@ -94,6 +102,16 @@ def _live_kinds(raw: str) -> list[str]:
     return found
 
 
+def wants_chat_chart(text: str | None) -> bool:
+    """True when the user asks to draw a chart/graph without negating it."""
+    raw = _norm(text or "")
+    for match in _CHART_REQ.finditer(raw):
+        window = raw[max(0, match.start() - 32) : match.start()]
+        if not _NEG_BEFORE.search(window):
+            return True
+    return False
+
+
 def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
     """Return chat, report, diagram, or presentation."""
     raw = _norm(text or "")
@@ -105,6 +123,9 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
 
     make = bool(_MAKE.search(raw))
     analyze = bool(_ANALYZE.search(raw))
+    # Explicit «в чате» / «без отчёта» keeps chart/analysis requests out of file builds.
+    if _IN_CHAT.search(raw) and not kinds:
+        return "chat"
     # A question reads the file. It does not start a new one.
     if _QUESTION.search(raw) and not make:
         return "chat"

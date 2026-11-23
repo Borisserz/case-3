@@ -156,40 +156,83 @@ _TABLE_ENV_BLOCK = re.compile(
     re.S,
 )
 _COL_SPEC = re.compile(
-    r"\\begin\{tabularx?\*?\}(?:\{[^}]+\})?\{([^}]+)\}"
+    r"\\begin\{(tabularx?\*?|xltabular)\}(?:\s*\[[^\]]*\])?",
 )
+
+
+def _take_brace_group(text: str, pos: int) -> tuple[str, int] | None:
+    """Read a balanced ``{...}`` group starting at/after ``pos`` (skipping spaces)."""
+    n = len(text)
+    while pos < n and text[pos].isspace():
+        pos += 1
+    if pos >= n or text[pos] != "{":
+        return None
+    depth = 0
+    start = pos + 1
+    i = pos
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i], i + 1
+        i += 1
+    return None
+
+
+def _extract_table_spec_and_body(block: str) -> tuple[str, str] | None:
+    """Return ``(colspec, body)`` for ``tabular*``, ``tabularx*``, or ``xltabular``."""
+    m = _COL_SPEC.search(block or "")
+    if not m:
+        return None
+    env = m.group(1)
+    pos = m.end()
+    if env != "tabular":
+        width_grp = _take_brace_group(block, pos)
+        if width_grp is None:
+            return None
+        pos = width_grp[1]
+    spec_grp = _take_brace_group(block, pos)
+    if spec_grp is None:
+        return None
+    spec, body_start = spec_grp
+    end_tok = rf"\end{{{env}}}"
+    end_at = block.rfind(end_tok, body_start)
+    body = block[body_start:end_at] if end_at >= 0 else block[body_start:]
+    return spec, body
 
 
 def _col_count_from_spec(spec: str) -> int:
     s = (spec or "").strip()
-    # Count X/l/c/r/p{…} roughly
-    n = len(re.findall(r"[Xlcr]", s))
-    n += len(re.findall(r"p\{[^}]*\}", s))
-    return n
+    # Strip @{...}, >{...}, <{...}, !{...} payloads so letters inside them aren't counted.
+    stripped = re.sub(r"[@><!]\{(?:[^{}]|\{[^{}]*\})*\}", "", s)
+    fixed_cols = re.findall(r"[pmb]\{[^}]*\}", stripped)
+    stripped = re.sub(r"[pmb]\{[^}]*\}", "", stripped)
+    return len(re.findall(r"[XYlcr]", stripped)) + len(fixed_cols)
 
 
 def table_needs_landscape(table_block: str) -> bool:
     """True when a table is too wide for portrait A4 even as tabularx."""
     if r"\begin{landscape}" in (table_block or ""):
         return False
-    m = _COL_SPEC.search(table_block or "")
-    if not m:
+    extracted = _extract_table_spec_and_body(table_block or "")
+    if not extracted:
         return False
-    ncols = _col_count_from_spec(m.group(1))
+    spec, body = extracted
+    ncols = _col_count_from_spec(spec)
     if ncols >= 6:
         return True
     # Long average cell text with ≥4 cols
     if ncols < 4:
         return False
-    body_m = re.search(
-        r"\\begin\{tabularx?\*?\}(?:\{[^}]+\})?\{[^}]+\}([\s\S]*?)\\end\{tabularx?\*?\}",
-        table_block or "",
-    )
-    if not body_m:
-        return False
     cells = [
         c.strip()
-        for row in re.split(r"\\\\", body_m.group(1))
+        for row in re.split(r"\\\\", body)
         for c in row.split("&")
         if c.strip() and not re.match(r"^\\(?:top|mid|bottom)rule$", c.strip())
     ]
@@ -200,12 +243,13 @@ def table_needs_landscape(table_block: str) -> bool:
 
 
 def maybe_landscape_wide_tables(tex: str) -> str:
-    """Wrap overly wide ``table`` envs in ``pdflscape`` landscape (once)."""
+    """Wrap overly wide ``table`` / ``xltabular`` envs in ``pdflscape`` landscape (once)."""
     parts: list[str] = []
     pos = 0
     for m in re.finditer(
         r"\\begin\{landscape\}.*?\\end\{landscape\}|"
-        r"\\begin\{table\*?\}.*?\\end\{table\*?\}",
+        r"\\begin\{table\*?\}.*?\\end\{table\*?\}|"
+        r"\\begin\{xltabular\}.*?\\end\{xltabular\}",
         tex or "",
         re.S,
     ):
@@ -268,14 +312,14 @@ def ensure_wrap_columntype(tex: str) -> str:
 
 
 def harden_tabularx_wrap_cols(tex: str) -> str:
-    """Rewrite plain ``l/c/r/X`` tabularx specs to wrapping ``Y`` columns.
+    """Rewrite plain ``l/c/r/X`` tabularx/xltabular specs to wrapping ``Y`` columns.
 
     ``{lXXXX}`` lets the first ``l`` steal width (e.g. «LibreOffice Calc»),
     then long words in narrow ``X`` cells overflow into the next column.
     """
 
     def _repl(m: re.Match[str]) -> str:
-        width, spec, body = m.group(1), m.group(2), m.group(3)
+        env, width, spec, body = m.group(1), m.group(2), m.group(3), m.group(4)
         # Already uses Y or p{…} / >{…} — leave alone.
         if "Y" in spec or "p{" in spec or ">{" in spec:
             return m.group(0)
@@ -287,13 +331,13 @@ def harden_tabularx_wrap_cols(tex: str) -> str:
             return m.group(0)
         new_spec = "Y" * len(letters)
         return (
-            rf"\begin{{tabularx}}{{{width}}}{{{new_spec}}}"
+            rf"\begin{{{env}}}{{{width}}}{{{new_spec}}}"
             + body
-            + r"\end{tabularx}"
+            + rf"\end{{{env}}}"
         )
 
     return re.sub(
-        r"\\begin\{tabularx\}\{([^}]*)\}\{([^}]*)\}([\s\S]*?)\\end\{tabularx\}",
+        r"\\begin\{(tabularx|xltabular)\}\{([^}]*)\}\{([^}]*)\}([\s\S]*?)\\end\{\1\}",
         _repl,
         tex or "",
     )
@@ -370,17 +414,35 @@ def fix_tabularx_colspec_junk(tex: str) -> str:
 
     Models emit both ``{lXX}X r X}`` and
     ``{lXXXX}\\raggedright...}p{2.4cm}…`` — anything between the real
-    colspec ``}`` and the first booktabs rule must go.
+    colspec ``}`` and the first booktabs rule must go, while preserving nested
+    ``@{}`` / ``>{...}`` / ``p{...}`` inside the real colspec.
     """
-    return re.sub(
-        r"(\\begin\{tabularx\}\{[^}]+\}\{[^}]+\})"
-        r"\s*"
-        r"(?:(?!\\(?:toprule|midrule|hline|bottomrule)).)*?"
-        r"(?=\\(?:toprule|midrule|hline|bottomrule))",
-        r"\1\n",
-        tex or "",
-        flags=re.S,
-    )
+    src = tex or ""
+    out: list[str] = []
+    pos = 0
+    for m in re.finditer(r"\\begin\{(?:tabularx|xltabular)\}", src):
+        if m.start() < pos:
+            continue
+        width_grp = _take_brace_group(src, m.end())
+        if width_grp is None:
+            continue
+        spec_grp = _take_brace_group(src, width_grp[1])
+        if spec_grp is None:
+            continue
+        spec_end = spec_grp[1]
+        env_end = re.search(r"\\end\{(?:tabularx|xltabular)\}", src[spec_end:])
+        scope = src[spec_end : spec_end + env_end.start()] if env_end else src[spec_end:]
+        rule_m = re.search(r"\\(?:toprule|midrule|hline|bottomrule)", scope)
+        if not rule_m:
+            continue
+        gap = src[spec_end : spec_end + rule_m.start()]
+        if not gap.strip():
+            continue
+        out.append(src[pos:spec_end])
+        out.append("\n")
+        pos = spec_end + rule_m.start()
+    out.append(src[pos:])
+    return "".join(out)
 
 
 def fix_tabularx_end_mismatch(tex: str) -> str:
@@ -826,11 +888,12 @@ def tex_for_pandoc(tex: str) -> str:
         width, spec = m.group(1), m.group(2)
         return rf"\begin{{tabularx}}{{{width}}}{{{spec.replace('Y', 'X')}}}"
 
-    return re.sub(
-        r"\\begin\{tabularx\}\{([^}]*)\}\{([^}]*)\}",
+    out = re.sub(
+        r"\\begin\{(?:tabularx|xltabular)\}\{([^}]*)\}\{([^}]*)\}",
         _spec,
         out,
     )
+    return out.replace(r"\end{xltabular}", r"\end{tabularx}")
 
 
 

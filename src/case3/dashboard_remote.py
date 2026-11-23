@@ -183,7 +183,6 @@ def fetch_shot_payload(base: str, client: httpx.Client) -> dict:
 
 
 _ASK_BITS = (
-    "данн",
     "дашборд",
     "фильтр",
     "стимул",

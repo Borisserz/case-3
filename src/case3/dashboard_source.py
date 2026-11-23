@@ -27,12 +27,14 @@ MAX_TABLE_COLS = 64
 MAX_TABLE_ROWS = 500
 
 _NUM = re.compile(r"\d")
+_UNIT_TAIL = r"(?:\s*(?:тыс\.?|млн\.?|млрд\.?|руб\.?|коп\.?|₽|\$|€|шт\.?|чел\.?))*"
 _COMPLETE_NUM = re.compile(
-    r"^[+\-−]?(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d+)?%?$"
+    rf"^[+\-−]?(?:\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+|\d+)(?:[.,]\d+)?(?:%|{_UNIT_TAIL})?$",
+    re.IGNORECASE,
 )
 _SHORT_NUM = re.compile(r"^[+\-−]?\d{1,3}$")
 _THOUSANDS_TAIL = re.compile(r"^\d{3}(?:[.,]\d+)?%?$")
-_NUM_TOKEN = re.compile(r"[+\-−]?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d+)?%?")
+_NUM_TOKEN = re.compile(r"[+\-−]?\d{1,3}(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?%?")
 _FENCE = re.compile(r"^```(?:markdown|md)?[^\n]*\n(.*)\n?```$", re.DOTALL)
 _WORD_GAP = 8.0
 _LINE_BAND = 3.0
@@ -239,19 +241,42 @@ def table_block(rows: list[list[object | None]]) -> tuple[str, str | None]:
 
 
 _TOTAL_LABEL = re.compile(
-    r"^(?:итого|всего|total|sum|сумма)(?!\w)",
+    r"(?:^|\b)(?:итого|всего|промежуточн\w*\s+итог|в\s+том\s+числе|из\s+них|total|subtotal|grand\s+total|sum|сумма)(?!\w)",
     re.IGNORECASE,
 )
 _YEAR_HEADER = re.compile(r"^(год|года|year|years)$", re.IGNORECASE)
 _CODE_HEADER = re.compile(r"(код|номер|№|\bid\b)", re.IGNORECASE)
+_NON_ADDITIVE_HEADER = re.compile(
+    r"(?:средн|ср\.|индекс|на\s+душу|рентаб|марж|темп|прирост|динамик|yoy|nps|ранг|место)",
+    re.IGNORECASE,
+)
 _MD_SEP = re.compile(r"^\|?[\s\-:|]+\|?$")
 
 
+def _fmt_num_ru(value: Decimal, *, signed: bool = False) -> str:
+    """Format Decimal cleanly for Russian analytical summaries."""
+    q = value.quantize(Decimal("0.1")) if value != value.to_integral_value() else value.to_integral_value()
+    sign = "+" if signed and q > 0 else ("-" if q < 0 else "")
+    abs_s = f"{abs(q)}"
+    if "." in abs_s:
+        whole, frac = abs_s.split(".", 1)
+        frac = frac.rstrip("0")
+    else:
+        whole, frac = abs_s, ""
+    chunks = []
+    while len(whole) > 3:
+        chunks.append(whole[-3:])
+        whole = whole[:-3]
+    chunks.append(whole)
+    grouped = " ".join(reversed(chunks))
+    return f"{sign}{grouped},{frac}" if frac else f"{sign}{grouped}"
+
+
 def derivative_block(markdown: str) -> str:
-    """Shares and ranks from markdown tables. Empty when there is nothing to divide.
+    """Shares, ranks, totals, group rollups, and Fact-vs-Plan deltas from tables.
 
     One decimal. The tenths are handed out so a column sums to 100%.
-    A total row and a year column stay out of the sum.
+    Total/subtotal rows and year/code columns stay out of sums.
     """
     blocks: list[str] = []
     for title, rows in _markdown_tables(markdown):
@@ -264,7 +289,7 @@ def derivative_block(markdown: str) -> str:
         blocks.append("")
     if not blocks:
         return ""
-    head = "Доли и места посчитаны из ячеек. Копируй их как здесь."
+    head = "Доли, суммы и отклонения посчитаны из ячеек. Копируй их как здесь."
     return head + "\n\n" + "\n".join(blocks).rstrip() + "\n"
 
 
@@ -286,7 +311,14 @@ def _markdown_tables(markdown: str) -> list[tuple[str, list[list[str]]]]:
                 index += 1
                 if _MD_SEP.match(row) and "-" in row:
                     continue
-                rows.append([cell.strip() for cell in row.strip("|").split("|")])
+                inner = row[1:] if row.startswith("|") else row
+                if inner.endswith("|") and not inner.endswith(r"\|"):
+                    inner = inner[:-1]
+                cells = [
+                    cell.strip().replace(r"\|", "|")
+                    for cell in re.split(r"(?<!\\)\|", inner)
+                ]
+                rows.append(cells)
             if len(rows) >= 2:
                 found.append((title, rows))
             continue
@@ -306,6 +338,42 @@ def _looks_like_table(lines: list[str], index: int) -> bool:
     return bool(_MD_SEP.match(sep) and "-" in sep)
 
 
+def _group_columns(rows: list[list[str]], label_at: int) -> list[int]:
+    """Text columns distinct from label_at that repeat across >=2 groups."""
+    width = max(len(row) for row in rows)
+    groups: list[int] = []
+    for col in range(width):
+        if col == label_at:
+            continue
+        cells = [row[col].strip() if col < len(row) else "" for row in rows]
+        filled = [c for c in cells if c]
+        if len(filled) < 2:
+            continue
+        text = sum(1 for c in filled if _cell_decimal(c) is None)
+        if text * 2 < len(filled):
+            continue
+        uniq = len(set(filled))
+        if 2 <= uniq < len(filled):
+            groups.append(col)
+    return groups
+
+
+def _find_fact_plan_pair(header: list[str]) -> tuple[int, int] | None:
+    fact_col = None
+    plan_col = None
+    for idx, raw in enumerate(header):
+        low = (raw or "").strip().casefold()
+        if not low or "%" in low or "выполн" in low or "откл" in low or "доля" in low:
+            continue
+        if fact_col is None and re.search(r"\bфакт\b", low):
+            fact_col = idx
+        elif plan_col is None and re.search(r"\bплан\b", low):
+            plan_col = idx
+    if fact_col is not None and plan_col is not None and fact_col != plan_col:
+        return fact_col, plan_col
+    return None
+
+
 def _column_shares(rows: list[list[str]]) -> list[str]:
     header, body = rows[0], rows[1:]
     data = [row for row in body if not _is_total_row(row)]
@@ -316,6 +384,8 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
         return []
     width = max(len(row) for row in rows)
     lines: list[str] = []
+    group_cols = _group_columns(data, label_at)
+
     for col in range(width):
         if col == label_at:
             continue
@@ -325,68 +395,175 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
         parsed = _measure_column(data, col, label_at)
         if parsed is None:
             continue
-        labels, values = parsed
-        shares = _share_tenths(values)
+        labels, values, is_pct, has_neg, row_indices = parsed
         ranks = _ranks(values)
-        lines.append(name)
-        for label, tenths, rank in zip(labels, shares, ranks):
-            lines.append(f"- {label} — доля {_fmt_share(tenths)}, место {rank}")
+        heading = "Позиции (%)" if is_pct and "дол" in name.casefold() else name
+        lines.append(heading)
+        non_additive = is_pct or bool(_NON_ADDITIVE_HEADER.search(name))
+        if not non_additive and not has_neg:
+            shares = _share_tenths(values)
+            for label, tenths, rank in zip(labels, shares, ranks):
+                lines.append(f"- {label} — доля {_fmt_share(tenths)}, место {rank}")
+        else:
+            for label, rank in zip(labels, ranks):
+                lines.append(f"- {label} — место {rank}")
+
+        total = sum(values, Decimal(0))
+        mean = total / Decimal(len(values))
+        max_idx = max(range(len(values)), key=lambda i: values[i])
+        min_idx = min(range(len(values)), key=lambda i: values[i])
+        if not is_pct and not bool(_NON_ADDITIVE_HEADER.search(name)):
+            lines.append(
+                f"Сумма по строкам: {_fmt_num_ru(total)}; среднее: {_fmt_num_ru(mean)}; "
+                f"макс: {_fmt_num_ru(values[max_idx])} ({labels[max_idx]}); "
+                f"мин: {_fmt_num_ru(values[min_idx])} ({labels[min_idx]})"
+            )
+        else:
+            lines.append(
+                f"Среднее: {_fmt_num_ru(mean)}; "
+                f"макс: {_fmt_num_ru(values[max_idx])} ({labels[max_idx]}); "
+                f"мин: {_fmt_num_ru(values[min_idx])} ({labels[min_idx]})"
+            )
+
+        if not non_additive and group_cols:
+            gcol = group_cols[0]
+            gname = header[gcol].strip() if gcol < len(header) else "Группа"
+            by_group: dict[str, Decimal] = {}
+            for r_idx, val in zip(row_indices, values):
+                gval = data[r_idx][gcol].strip() if gcol < len(data[r_idx]) else ""
+                if gval:
+                    by_group[gval] = by_group.get(gval, Decimal(0)) + val
+            if len(by_group) >= 2:
+                g_items = sorted(by_group.items(), key=lambda kv: -kv[1])
+                g_shares = _share_tenths([v for _, v in g_items]) if not has_neg and total > 0 else []
+                parts = []
+                for idx_g, (gk, gv) in enumerate(g_items):
+                    if g_shares:
+                        parts.append(f"{gk}: {_fmt_num_ru(gv)} ({_fmt_share(g_shares[idx_g])})")
+                    else:
+                        parts.append(f"{gk}: {_fmt_num_ru(gv)}")
+                lines.append(f"По «{gname}»: " + "; ".join(parts))
         lines.append("")
+
+    pair = _find_fact_plan_pair(header)
+    if pair is not None:
+        fcol, pcol = pair
+        paired: list[tuple[str, str, Decimal, Decimal]] = []
+        gcol_fp = group_cols[0] if group_cols else None
+        for idx, row in enumerate(data):
+            f_val = _cell_decimal(row[fcol].strip()) if fcol < len(row) else None
+            p_val = _cell_decimal(row[pcol].strip()) if pcol < len(row) else None
+            if f_val is None or p_val is None:
+                continue
+            lbl = (row[label_at].strip() if label_at < len(row) else "") or f"строка {idx + 1}"
+            gkey = (row[gcol_fp].strip() if gcol_fp is not None and gcol_fp < len(row) else "")
+            paired.append((lbl, gkey, f_val, p_val))
+        if paired:
+            tot_f = sum((x[2] for x in paired), Decimal(0))
+            tot_p = sum((x[3] for x in paired), Decimal(0))
+            tot_diff = tot_f - tot_p
+            tot_pct = (tot_f * Decimal(100) / tot_p) if tot_p > 0 else None
+            pct_s = f", вып. {_fmt_num_ru(tot_pct)}%" if tot_pct is not None else ""
+            lines.append("Отклонение и выполнение (Факт − План, база 100%):")
+            lines.append(
+                f"Сводно: факт {_fmt_num_ru(tot_f)} vs план {_fmt_num_ru(tot_p)}, "
+                f"откл. {_fmt_num_ru(tot_diff, signed=True)}{pct_s}"
+            )
+            if gcol_fp is not None:
+                gname_fp = header[gcol_fp].strip() if gcol_fp < len(header) else "Группа"
+                g_fp: dict[str, tuple[Decimal, Decimal]] = {}
+                for _lbl, gk, fv, pv in paired:
+                    if not gk:
+                        continue
+                    prev_f, prev_p = g_fp.get(gk, (Decimal(0), Decimal(0)))
+                    g_fp[gk] = (prev_f + fv, prev_p + pv)
+                if len(g_fp) >= 2:
+                    for gk, (gf, gp) in g_fp.items():
+                        gdiff = gf - gp
+                        gpct = (gf * Decimal(100) / gp) if gp > 0 else None
+                        gpct_s = f", вып. {_fmt_num_ru(gpct)}%" if gpct is not None else ""
+                        lines.append(
+                            f"- По «{gname_fp}» ({gk}): факт {_fmt_num_ru(gf)} vs план {_fmt_num_ru(gp)}, "
+                            f"откл. {_fmt_num_ru(gdiff, signed=True)}{gpct_s}"
+                        )
+            for lbl, _gk, fv, pv in paired:
+                diff = fv - pv
+                rpct = (fv * Decimal(100) / pv) if pv > 0 else None
+                rpct_s = f", вып. {_fmt_num_ru(rpct)}%" if rpct is not None else ""
+                lines.append(f"- {lbl}: откл. {_fmt_num_ru(diff, signed=True)}{rpct_s}")
+            lines.append("")
     return lines
 
 
 def _is_total_row(row: list[str]) -> bool:
     for cell in row:
-        if _TOTAL_LABEL.match(cell.strip()):
+        if _TOTAL_LABEL.search(cell.strip()):
             return True
     return False
 
 
 def _label_column(rows: list[list[str]]) -> int | None:
     width = max(len(row) for row in rows)
+    best: tuple[int, int] | None = None
     for col in range(width):
         cells = [row[col].strip() if col < len(row) else "" for row in rows]
         filled = [cell for cell in cells if cell]
         if not filled:
             continue
         text = sum(1 for cell in filled if _cell_decimal(cell) is None)
-        if text * 2 >= len(filled):
-            return col
-    return None
+        if text * 2 < len(filled):
+            continue
+        uniq = len(set(filled))
+        score = (uniq, -col)
+        if best is None or score > best:
+            best = score
+    return -best[1] if best is not None else None
 
 
 def _measure_column(
     rows: list[list[str]], col: int, label_at: int
-) -> tuple[list[str], list[Decimal]] | None:
+) -> tuple[list[str], list[Decimal], bool, bool, list[int]] | None:
     labels: list[str] = []
     values: list[Decimal] = []
     raw: list[str] = []
+    row_indices: list[int] = []
     for index, row in enumerate(rows):
         cell = row[col].strip() if col < len(row) else ""
-        if not cell:
+        if not cell or cell in {"—", "-", "–", "н/д", "Н/Д"}:
             continue
         raw.append(cell)
         number = _cell_decimal(cell)
-        if number is None or number < 0:
+        if number is None:
             return None
         raw_label = row[label_at].strip() if label_at < len(row) else ""
         label = raw_label or f"строка {index + 1}"
         labels.append(label)
         values.append(number)
-    if len(values) < 2 or any("%" in cell for cell in raw):
+        row_indices.append(index)
+    if len(values) < 2:
         return None
     if all(_is_year(value) for value in values):
         return None
-    return labels, values
+    is_pct = any("%" in cell for cell in raw)
+    has_neg = any(v < 0 for v in values)
+    return labels, values, is_pct, has_neg, row_indices
 
 
 def _cell_decimal(cell: str) -> Decimal | None:
     text = cell.strip().replace("−", "-")
     if not _COMPLETE_NUM.match(text):
         return None
-    if text.endswith("%"):
-        text = text[:-1]
-    compact = text.replace(" ", "").replace("\u00a0", "").replace(",", ".")
+    # Strip trailing % or unit suffixes matched by _COMPLETE_NUM
+    num_m = re.match(r"^([+\-]?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[.,]\d+)?)", text)
+    if not num_m:
+        return None
+    compact = (
+        num_m.group(1)
+        .replace(" ", "")
+        .replace("\u00a0", "")
+        .replace("\u202f", "")
+        .replace(",", ".")
+    )
     try:
         return Decimal(compact)
     except InvalidOperation:

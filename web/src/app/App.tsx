@@ -447,7 +447,9 @@ export default function App() {
 
   const sendFromComposer = useCallback(async () => {
     const text = chat.trim();
-    if (!text || dashboardOpen) {
+    const hasAttachedSource = Boolean(file || sourceDraft?.text);
+    const explicitlyWantsDashboard = /дашборд|стимул|фильтр/i.test(text);
+    if (!text || dashboardOpen || (hasAttachedSource && !explicitlyWantsDashboard)) {
       void send();
       return;
     }

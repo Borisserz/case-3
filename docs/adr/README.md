@@ -21,5 +21,6 @@
 | [0015](0015-user-stated-numbers.md) | User-stated numbers join the allow-list | Accepted, amended by 0016 |
 | [0016](0016-number-beside-its-word.md) | A historical user number stays beside its word | Accepted |
 | [0017](0017-plaque-wins-over-bare-analyze.md) | A plaque wins over a bare analyze line | Accepted |
+| [0018](0018-p0-analytics-grounding-and-chat-charts.md) | P0 analytics grounding, derivatives, and inline chat charts | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

@@ -1142,9 +1142,11 @@ def run_pipeline(
     # Heartbeat BEFORE FileHandler / load_timings: on Win those can stall (AV lock)
     # and Liber sat forever on status=running stage=queued («Читаю Source»).
     # Preserve deck style stamped by /api/run (auto-kick slides needs structure_id).
+    from case3.chart_style import palette_from_intent
     from case3.run_meta import read_meta as _read_meta_desk
 
     prev_desk = _read_meta_desk(out)
+    chart_palette0 = palette_from_intent(intent or "")
     meta: dict = {
         "run_id": run_id,
         "source": str(text_path),
@@ -1157,6 +1159,7 @@ def run_pipeline(
         "max_diagrams": diagrams_budget,
         "images_opt_in": images_opt_in,
         "user_figures": [f.get("id") for f in user_figs],
+        "chart_palette": chart_palette0,
         "started_at": stamp,
         "status": "running",
         "stage": "llm",
@@ -1220,10 +1223,25 @@ def run_pipeline(
 
     def _finish_chat_answer(user_text: str, source_text: str) -> Path:
         bump("chat", "отвечаю…")
-        from case3.chat_turn import chat_report_block, try_chat_answer
+        from case3.chat_turn import (
+            chat_fallback,
+            chat_report_block,
+            generate_chat_charts,
+            try_chat_answer,
+        )
+        from case3.dashboard_source import derivative_block
+        from case3.turn_route import wants_chat_chart
+
+        enriched_source = source_text or ""
+        if "## Производные" not in enriched_source:
+            deriv = derivative_block(enriched_source)
+            if deriv:
+                enriched_source = (enriched_source + "\n\n## Производные\n\n" + deriv).strip()
 
         if user_figs:
             materialize_user_figures(user_figs, out / "figures")
+        charts_list: list[dict[str, Any]] = []
+        media_status: dict[str, dict[str, Any]] = {}
         if dry_run:
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
             _emit_chat("answer", answer, "chat")
@@ -1232,15 +1250,35 @@ def run_pipeline(
                 root, str(meta.get("prior_run_id") or ""), user_text
             )
             answer = try_chat_answer(
-                source_text,
+                enriched_source,
                 user_text,
                 report=report,
                 on_delta=lambda piece: _emit_chat("answer", piece, "chat"),
             )
+            if wants_chat_chart(user_text) and charts_budget > 0:
+                bump("charts", "рисую график…")
+                charts_list, media_status = generate_chat_charts(
+                    enriched_source,
+                    intent or user_text,
+                    max_charts=charts_budget,
+                    palette_id=str(meta.get("chart_palette") or "atelier"),
+                    figs_dir=out / "figures",
+                    charts_dir=work / "charts",
+                )
         meta["output_mode"] = "chat"
         meta["chat_summary"] = answer
         meta["chat_opening"] = answer
-        meta["summary_status"] = "ok"
+        if charts_list:
+            meta["charts_planned"] = [c["id"] for c in charts_list if c.get("id")]
+            meta["media_status"] = media_status
+            meta["charts_ok"] = sum(
+                1 for v in media_status.values() if isinstance(v, dict) and v.get("ok")
+            )
+        if not dry_run and answer == chat_fallback():
+            log.error("chat answer fell back to unavailable message run_id=%s", run_id)
+            meta["summary_status"] = "error"
+        else:
+            meta["summary_status"] = "ok"
         meta["status"] = "ok"
         meta["stage"] = "ok"
         meta["artifacts"] = {}
@@ -1313,6 +1351,7 @@ def run_pipeline(
             diag_cfg = LLMConfig(
                 base_url=cfg.base_url,
                 api_key=cfg.api_key,
+                api_keys=cfg.api_keys,
                 model=cfg.model,
                 timeout_s=min(cfg.timeout_s, 90.0),
                 max_retries=1,

@@ -265,17 +265,17 @@ def _content(data: Any) -> tuple[str, str]:
     if not isinstance(message, dict):
         raise LLMError(f"unexpected response: {str(data)[:200]}")
 
+    content_blob = _as_text(message.get("content"))
+    got = _usable_assistant_text(content_blob)
+    if got:
+        return got, finish
+
     blobs = [
-        _as_text(message.get("content")),
+        content_blob,
         _as_text(message.get("reasoning_content")),
         _as_text(message.get("reasoning")),
     ]
-    for blob in blobs:
-        got = _usable_assistant_text(blob)
-        if got:
-            return got, finish
-
-    # Last resort: any field that still contains a latex/json fence
+    # Last resort: only accept reasoning/unwrapped blobs that actually carry LaTeX or JSON output.
     for blob in blobs:
         if _has_tex_signal(blob):
             return blob.strip(), finish
@@ -292,8 +292,16 @@ def _content(data: Any) -> tuple[str, str]:
 
 
 def _http_body(exc: urllib.error.HTTPError) -> str:
+    cached = getattr(exc, "_case3_body_txt", None)
+    if isinstance(cached, str):
+        return cached
     try:
-        return " ".join(exc.read()[:300].decode("utf-8", "replace").split())
+        text = " ".join(exc.read()[:300].decode("utf-8", "replace").split())
+        try:
+            setattr(exc, "_case3_body_txt", text)
+        except Exception:
+            pass
+        return text
     except (OSError, http.client.HTTPException):
         return ""
 
@@ -396,44 +404,38 @@ def build_body(
     return body
 
 
-_ACTIVE_KEY_INDEX: int = 0
-
-
 class LLMClient:
     def __init__(self, config: LLMConfig, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self.config = config
         self._sleep = sleep
         self.last_finish_reason: str = ""
-        global _ACTIVE_KEY_INDEX
+        self._lock = threading.Lock()
         self.api_keys: list[str] = list(
             config.api_keys or ([config.api_key] if config.api_key else [])
         )
-        if self.api_keys:
-            self._key_index: int = min(_ACTIVE_KEY_INDEX, len(self.api_keys) - 1)
-        else:
-            self._key_index = 0
+        self._key_index: int = 0
 
     @property
     def current_api_key(self) -> str | None:
-        if not self.api_keys:
-            return self.config.api_key
-        return self.api_keys[self._key_index]
+        with self._lock:
+            if not self.api_keys:
+                return self.config.api_key
+            return self.api_keys[self._key_index]
 
     def rotate_key(self) -> str | None:
         """Switch to next fallback key; returns new key or None if pool exhausted."""
-        global _ACTIVE_KEY_INDEX
-        if self._key_index + 1 < len(self.api_keys):
-            self._key_index += 1
-            _ACTIVE_KEY_INDEX = self._key_index
-            k = self.api_keys[self._key_index]
-            masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
-            log.warning(
-                "Switched LLM API key to fallback [%d/%d]: %s",
-                self._key_index + 1,
-                len(self.api_keys),
-                masked,
-            )
-            return k
+        with self._lock:
+            if self._key_index + 1 < len(self.api_keys):
+                self._key_index += 1
+                k = self.api_keys[self._key_index]
+                masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
+                log.warning(
+                    "Switched LLM API key to fallback [%d/%d]: %s",
+                    self._key_index + 1,
+                    len(self.api_keys),
+                    masked,
+                )
+                return k
         return None
 
     def _headers(self, key: str | None = None) -> dict[str, str]:
@@ -596,13 +598,15 @@ class LLMClient:
                 if exc.code < 500 and exc.code != 429:
                     raise error from exc
             except TimeoutError as exc:
-                raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+                error = LLMError(f"timed out after {self.config.timeout_s:.0f}s")
+                error.__cause__ = exc
             except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:
                 if isinstance(getattr(exc, "reason", None), TimeoutError):
-                    raise LLMError(
-                        f"timed out after {self.config.timeout_s:.0f}s"
-                    ) from exc
-                error = LLMError(f"{type(exc).__name__}: {exc}")
+                    error = LLMError(f"timed out after {self.config.timeout_s:.0f}s")
+                    error.__cause__ = exc
+                else:
+                    error = LLMError(f"{type(exc).__name__}: {exc}")
+                    error.__cause__ = exc
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                 raise LLMError(f"invalid JSON from {self.config.endpoint}") from exc
             attempt += 1
@@ -632,63 +636,119 @@ class LLMClient:
             stream=True,
         )
         data = json.dumps(body).encode("utf-8")
-        try:
-            while True:
-                headers = self._headers()
-                req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
-                try:
-                    with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
-                        # Prefer line iteration for true streaming; fall back to full read.
-                        line_iter: Any
-                        if hasattr(resp, "__iter__") and not isinstance(resp, (bytes, str)):
-                            line_iter = resp
-                        else:
-                            line_iter = io.BytesIO(resp.read())
+        attempt = 0
+        yielded = 0
+        while attempt <= self.config.max_retries:
+            if attempt:
+                self._sleep(float(min(attempt, 3)))
+            think_buf = ""
+            in_think = False
 
-                        for raw_line in line_iter:
-                            if isinstance(raw_line, bytes):
-                                line = raw_line.decode("utf-8", "replace")
-                            else:
-                                line = str(raw_line)
-                            line = line.strip()
-                            if not line or line.startswith(":"):
-                                continue
-                            if not line.startswith("data:"):
-                                continue
-                            payload = line[5:].strip()
-                            if payload == "[DONE]":
-                                break
-                            try:
-                                obj = json.loads(payload)
-                            except json.JSONDecodeError:
-                                continue
-                            choices = obj.get("choices") or []
-                            if not choices:
-                                continue
-                            delta = choices[0].get("delta") or {}
-                            piece = _as_text(delta.get("content"))
-                            if piece:
-                                yield piece
-                            fr = choices[0].get("finish_reason")
-                            if fr:
-                                self.last_finish_reason = str(fr)
-                    break
-                except urllib.error.HTTPError as exc:
-                    body_txt = _http_body(exc)
-                    if exc.code in (401, 403, 429) and self.rotate_key() is not None:
-                        log.warning(
-                            "Stream HTTP %d from %s (%s) — retrying with fallback API key",
-                            exc.code,
-                            self.config.endpoint,
-                            body_txt[:100],
-                        )
-                        continue
+            def _filter_chunk(chunk: str) -> str:
+                nonlocal think_buf, in_think
+                if not chunk:
+                    return ""
+                think_buf += chunk
+                out: list[str] = []
+                while think_buf:
+                    if in_think:
+                        end = think_buf.find("</think>")
+                        if end < 0:
+                            if len(think_buf) > 8:
+                                think_buf = think_buf[-8:]
+                            break
+                        think_buf = think_buf[end + len("</think>") :]
+                        in_think = False
+                    else:
+                        start = think_buf.find("<think>")
+                        if start < 0:
+                            hold = 0
+                            for k in range(min(6, len(think_buf)), 0, -1):
+                                if "<think>".startswith(think_buf[-k:]):
+                                    hold = k
+                                    break
+                            emit_len = len(think_buf) - hold
+                            if emit_len > 0:
+                                out.append(think_buf[:emit_len])
+                                think_buf = think_buf[emit_len:]
+                            break
+                        if start > 0:
+                            out.append(think_buf[:start])
+                        think_buf = think_buf[start + len("<think>") :]
+                        in_think = True
+                return "".join(out)
+
+            headers = self._headers()
+            req = urllib.request.Request(self.config.endpoint, data=data, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=self.config.timeout_s) as resp:
+                    # Prefer line iteration for true streaming; fall back to full read.
+                    line_iter: Any
+                    if hasattr(resp, "__iter__") and not isinstance(resp, (bytes, str)):
+                        line_iter = resp
+                    else:
+                        line_iter = io.BytesIO(resp.read())
+
+                    for raw_line in line_iter:
+                        if isinstance(raw_line, bytes):
+                            line = raw_line.decode("utf-8", "replace")
+                        else:
+                            line = str(raw_line)
+                        line = line.strip()
+                        if not line or line.startswith(":"):
+                            continue
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = obj.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        piece = _filter_chunk(_as_text(delta.get("content")))
+                        if piece:
+                            yielded += len(piece)
+                            yield piece
+                        fr = choices[0].get("finish_reason")
+                        if fr:
+                            self.last_finish_reason = str(fr)
+                if not in_think and think_buf:
+                    yielded += len(think_buf)
+                    yield think_buf
+                if yielded == 0:
                     raise LLMError(
-                        f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
-                    ) from exc
-        except TimeoutError as exc:
-            raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
-        except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:
-            if isinstance(getattr(exc, "reason", None), TimeoutError):
-                raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
-            raise LLMError(f"{type(exc).__name__}: {exc}") from exc
+                        "empty stream response from "
+                        f"{self.config.endpoint} (finish_reason={self.last_finish_reason!r})"
+                    )
+                return
+            except urllib.error.HTTPError as exc:
+                body_txt = _http_body(exc)
+                if exc.code in (401, 403, 429) and self.rotate_key() is not None:
+                    log.warning(
+                        "Stream HTTP %d from %s (%s) — retrying with fallback API key",
+                        exc.code,
+                        self.config.endpoint,
+                        body_txt[:100],
+                    )
+                    continue
+                raise LLMError(
+                    f"HTTP {exc.code} from {self.config.endpoint}: {body_txt}"
+                ) from exc
+            except TimeoutError as exc:
+                if yielded > 0 or attempt >= self.config.max_retries:
+                    raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+                attempt += 1
+            except (urllib.error.URLError, ConnectionError, http.client.HTTPException) as exc:
+                if isinstance(getattr(exc, "reason", None), TimeoutError):
+                    if yielded > 0 or attempt >= self.config.max_retries:
+                        raise LLMError(f"timed out after {self.config.timeout_s:.0f}s") from exc
+                    attempt += 1
+                    continue
+                if yielded > 0 or attempt >= self.config.max_retries:
+                    raise LLMError(f"{type(exc).__name__}: {exc}") from exc
+                attempt += 1

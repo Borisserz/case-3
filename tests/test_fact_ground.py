@@ -749,3 +749,83 @@ def test_a_slide_does_not_keep_a_hole_where_the_number_was():
     assert "раза" not in blob
     assert "против" not in blob
     assert any(slide.get("title") == "Касса" for slide in deck["slides"])
+
+
+def test_table_row_with_percent_and_multicolumn_header_survive_grounding():
+    source = (
+        "| Регион | Факт | План | Выполнение |\n"
+        "| --- | --- | --- | --- |\n"
+        "| Москва | 105865.2 | 100000.0 | 105.9% |\n"
+        "| Тюмень | 24650.9 | 26000.0 | 94.8% |\n"
+    )
+    tex = r"""
+\documentclass{article}
+\begin{document}
+В таблице~\ref{tab:rev} приведены данные B2B. Москва продолжает рост: 105865,2.
+
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\multicolumn{1}{c}{Регион} & \multicolumn{1}{c}{Факт} & \multicolumn{1}{c}{План} & \multicolumn{1}{c}{Выполнение, \%} \\
+\midrule
+Москва & 105865,2 & 100000,0 & 105,9\% \\
+Тюмень & 24650,9 & 26000,0 & 94,8\% \\
+\bottomrule
+\end{tabularx}
+
+%CASE3_CHART:cht_01%
+
+Текст после слота.
+\end{document}
+"""
+    charts = [{"id": "cht_01", "caption": "Откл.", "html": "data: [-38, -12.5]"}]
+    diagrams = [
+        {
+            "id": "dia_01",
+            "title": "Поток",
+            "mermaid": "flowchart TD\nA1[B2B] --> B2[OK]\nclassDef start fill:#DCE6F0,stroke:#4E79A7,color:#1a2e22",
+        }
+    ]
+    out, out_charts, _figs, out_diags, _dropped = ground_generated(
+        tex,
+        charts,
+        [],
+        diagrams,
+        source=source + "\nОтклонение -38 и -12,5.",
+        intent="отчёт",
+    )
+    assert r"\multicolumn{1}{c}{Выполнение, \%} \\" in out
+    assert r"Москва & 105865,2 & 100000,0 & 105,9\% \\" in out
+    assert r"Тюмень & 24650,9 & 26000,0 & 94,8\% \\" in out
+    assert "Москва продолжает рост: 105865,2" in out
+    assert "данные B2B" in out
+    assert r"В таблице~\ref{tab:rev} приведены" in out
+    assert "\n%CASE3_CHART:cht_01%\n" in out
+    assert "null" not in out_charts[0]["html"]
+    assert "-38" in out_charts[0]["html"]
+    assert "classDef start fill:#DCE6F0,stroke:#4E79A7,color:#1a2e22" in out_diags[0]["mermaid"]
+
+
+def test_bind_deck_numbers_keeps_kicker_chrome_and_strips_ui_block_on_empty_chat():
+    from case3.fact_ground import bind_deck_numbers
+
+    ui_only_intent = "Требования UI:\n- canvas 1100×560\n- hex #004D47"
+    deck = bind_deck_numbers(
+        {
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Итоги", "kicker": "01"},
+                {
+                    "id": "s02",
+                    "layout": "table_hero",
+                    "title": "Сравнение",
+                    "rows": [["Канал", "Факт"], ["B2B", "быстро"]],
+                },
+                {"id": "s03", "layout": "bullets", "title": "Холст", "bullets": ["Ширина 1100"]},
+            ]
+        },
+        source="Канал B2B работает.",
+        intent=ui_only_intent,
+    )
+    assert deck["slides"][0]["kicker"] == "01"
+    assert deck["slides"][1]["rows"] == [["Канал", "Факт"], ["B2B", "быстро"]]
+    # 1100 from Требования UI must NOT slip into slides
+    assert "1100" not in str(deck)

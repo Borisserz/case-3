@@ -899,9 +899,12 @@ def apply_mode_caps(
     formats: str,
     no_charts: bool,
     no_images: bool,
+    allow_chat_charts: bool = False,
 ) -> tuple[int, int, int, str, bool, bool]:
     """Chat and scheme drop print media. A deck still gets dia_* for its slides."""
     if out_mode == "chat":
+        if allow_chat_charts and not no_charts and max_charts > 0:
+            return min(int(max_charts), 2), 0, 0, "none", False, True
         return 0, 0, 0, "none", True, True
     if out_mode == "diagram":
         return 0, 0, max(1, max_diagrams), "none", True, True
@@ -1280,6 +1283,9 @@ async def api_run(
     max_images = max(0, min(int(max_images), 8))
     # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
     max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
+    from case3.input_validation import user_text_before_ui
+    from case3.turn_route import wants_chat_chart
+
     # Chat and scheme skip print. Presentation keeps charts and dia_* for the deck.
     max_charts, max_images, max_diagrams, formats, no_charts, no_images = apply_mode_caps(
         out_mode,
@@ -1289,6 +1295,7 @@ async def api_run(
         formats=formats,
         no_charts=no_charts,
         no_images=no_images,
+        allow_chat_charts=out_mode == "chat" and wants_chat_chart(user_text_before_ui(intent)),
     )
 
     # FastAPI may pass a single UploadFile when the client sends one file.
@@ -1502,9 +1509,11 @@ async def api_run(
                 }
         except json.JSONDecodeError:
             style_settings0 = None
+    from case3.chart_style import normalize_palette_id
     from case3.chat_memory import chain_notice_for_prior, newest_edit
     from case3.slides_beat_planner import clamp_slide_target
 
+    chart_palette0 = normalize_palette_id(chart_palette or "atelier")
     slides_target0 = clamp_slide_target(target_slides)
     slides_style0 = {
         "theme_pack": pack0,
@@ -1530,6 +1539,7 @@ async def api_run(
         "max_diagrams": max_diagrams,
         "images_opt_in": images_opt_in,
         "user_figures": [f.get("id") for f in user_figures],
+        "chart_palette": chart_palette0,
         "deck_pack": pack0,
         "slides_theme_pack": pack0,
         "slides_structure_id": structure0,

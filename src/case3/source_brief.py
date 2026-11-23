@@ -22,7 +22,7 @@ _METHOD = re.compile(
 )
 
 _BRIEF_AT = 8000
-_BRIEF_MAX = 14000
+_BRIEF_MAX = 24000
 _FACTS_PER_SECTION = 8
 _CODE_MAX = 4
 _TERM_MAX = 48
@@ -179,10 +179,19 @@ def _fact_lines(body: str, *, limit: int) -> list[str]:
             if len(flat) > 240:
                 flat = flat[:239].rstrip() + "…"
             out.append(flat)
-            if len(out) >= 48:
+            if len(out) >= 120:
                 break
         return out
-    sentences = [s.strip() for s in _SENT_SPLIT.split(body or "") if s.strip()]
+    candidates: list[str] = []
+    for raw_line in (body or "").splitlines():
+        ln = raw_line.strip()
+        if not ln:
+            continue
+        if re.match(r"^(?:[-*•]|\d+[.)])\s+", ln):
+            candidates.append(re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", ln).strip())
+        else:
+            candidates.extend(s.strip() for s in _SENT_SPLIT.split(ln) if s.strip())
+    sentences = [s for s in candidates if s]
     numbered = [s for s in sentences if re.search(r"\d", s)]
     chosen = numbered or sentences[:1]
     out: list[str] = []

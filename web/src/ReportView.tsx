@@ -300,12 +300,14 @@ export function ReportView({
         target?.isContentEditable;
       if (typing) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      if (e.key === "z" && !e.shiftKey) {
+      if (!mod || e.altKey) return;
+      const isZ = e.code === "KeyZ" || e.key.toLowerCase() === "z";
+      const isY = e.code === "KeyY" || e.key.toLowerCase() === "y";
+      if (isZ && !e.shiftKey) {
         if (!editHistory?.canUndo) return;
         e.preventDefault();
         void onHistoryUndo?.();
-      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
+      } else if ((isZ && e.shiftKey) || isY) {
         if (!editHistory?.canRedo) return;
         e.preventDefault();
         void onHistoryRedo?.();

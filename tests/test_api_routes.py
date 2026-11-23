@@ -147,10 +147,17 @@ def test_run_rejects_second_while_busy(client: TestClient) -> None:
         assert "перезапуск" not in detail
         assert "holder_test" not in detail
     finally:
-        api_mod._bg_run_pipeline = original
+        # Release/drain queued waiter while _fake_bg is still stubbed so no real thread escapes.
         api_mod._release_pipeline_slot("holder_test")
         if api_mod._PIPELINE_SLOT.locked():
             api_mod._release_pipeline_slot()
+        for _ in range(25):
+            if started:
+                break
+            import time
+
+            time.sleep(0.01)
+        api_mod._bg_run_pipeline = original
 
 
 def test_chart_edit_404_missing_run(client: TestClient) -> None:

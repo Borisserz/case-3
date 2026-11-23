@@ -278,7 +278,7 @@
 .settings-modal {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 1250;
   display: grid;
   place-items: center;
   padding: 1.25rem;
@@ -478,7 +478,7 @@
 .deck-export-sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 1250;
   background: color-mix(in srgb, var(--primary) 14%, rgba(20, 22, 18, 0.28));
   backdrop-filter: blur(10px) saturate(0.92);
   -webkit-backdrop-filter: blur(10px) saturate(0.92);
@@ -735,7 +735,7 @@
 .liber-confirm-modal {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 1350;
   display: grid;
   place-items: center;
   padding: 1.25rem;
@@ -880,7 +880,7 @@
 .stimul-modal {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 1250;
   display: grid;
   place-items: center;
   padding: 1.25rem;

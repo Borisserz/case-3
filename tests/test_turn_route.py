@@ -30,9 +30,11 @@ def test_explicit_deck_wins_over_plaque_and_over_analyze():
     assert resolve_turn("Проанализируй и собери презентацию", "report") == "presentation"
 
 
-def test_a_chart_request_builds_a_report_and_a_scheme_stays_a_scheme():
-    assert resolve_turn("Построй график по областям", None) == "report"
-    assert resolve_turn("Нарисуй диаграмму продаж", None) == "report"
+def test_a_chart_request_runs_in_chat_unless_report_requested():
+    assert resolve_turn("Построй график по областям", None) == "chat"
+    assert resolve_turn("Нарисуй диаграмму продаж", None) == "chat"
+    assert resolve_turn("Построй график по областям", "report") == "report"
+    assert resolve_turn("Сделай отчёт с графиками продаж", None) == "report"
     assert resolve_turn("Нарисуй схему онбординга", None) == "diagram"
 
 

@@ -585,8 +585,13 @@ export function PresentationPane({
         go(1);
         return;
       }
-      // Undo / Redo in presentation editing (catches Cmd+Z / Ctrl+Z cleanly, even if inside an input)
-      if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      // Undo / Redo in presentation editing (catches Cmd+Z / Ctrl+Z cleanly, incl. RU layout)
+      if (
+        editing &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        (e.code === "KeyZ" || e.key.toLowerCase() === "z")
+      ) {
         e.preventDefault();
         if (
           typeof document !== "undefined" &&

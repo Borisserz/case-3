@@ -135,7 +135,7 @@ def _number_variants(num: str) -> list[str]:
 
 
 def _is_section_index_chrome(num: str, blob: str = "") -> bool:
-    """A kicker that is only ``01`` or ``1``…``24``.
+    """A kicker that is only ``01`` or ``1``…``24`` (or ``01 / HEADLINE``).
 
     The same digits in a sentence or a table cell are a fact and need Source.
     """
@@ -144,7 +144,7 @@ def _is_section_index_chrome(num: str, blob: str = "") -> bool:
     short = bool(re.fullmatch(r"[1-9]|1[0-9]|2[0-4]", n))
     if not padded and not short:
         return False
-    return bool(re.fullmatch(r"\s*[0-9]{1,3}\s*", blob or ""))
+    return bool(re.fullmatch(r"\s*[0-9]{1,3}(?:\s*[/·:\-]\s*\D.*)?\s*", blob or ""))
 
 
 def _boundary_hit(num: str, source_norm: str) -> bool:

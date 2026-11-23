@@ -968,6 +968,7 @@ def generate_document(
             cfg = LLMConfig(
                 base_url=cfg.base_url,
                 api_key=cfg.api_key,
+                api_keys=cfg.api_keys,
                 model=cfg.model,
                 timeout_s=cfg.timeout_s,
                 max_retries=cfg.max_retries,
@@ -1094,15 +1095,6 @@ def generate_document(
             len(charts),
         )
 
-    preferred = preferred_types_from_intent(intent_text)
-    if preferred:
-        charts = coerce_chart_types(charts, preferred)
-    else:
-        # Auto mode: still fix type=kpi + canvas-bar etc.
-        charts = ensure_all_charts_match_types(charts)
-    # Model often ignores Intent palette / emits ghostly hbar fills — enforce.
-    charts = polish_charts(charts, palette_id=palette_from_intent(intent_text))
-
     forced_title = doc_title_from_intent(intent_text)
     if forced_title:
         tex = apply_doc_title(tex, forced_title)
@@ -1151,6 +1143,20 @@ def generate_document(
         source=source_text,
         intent=intent_text,
     )
+    if dropped:
+        log.warning(
+            "fact_ground dropped ungrounded number(s): %s",
+            ", ".join(dropped[:12]),
+        )
+
+    preferred = preferred_types_from_intent(intent_text)
+    if preferred:
+        charts = coerce_chart_types(charts, preferred)
+    else:
+        # Auto mode: still fix type=kpi + canvas-bar etc.
+        charts = ensure_all_charts_match_types(charts)
+    # Model often ignores Intent palette / emits ghostly hbar fills — enforce after grounding.
+    charts = polish_charts(charts, palette_id=palette_from_intent(intent_text))
     if dropped:
         log.warning(
             "dropped fact numbers absent from Source and the user message: %s",

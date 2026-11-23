@@ -24,11 +24,18 @@ _DONE_CLAIM = re.compile(r"(?i)\b(готово|собрано|pdf готов|п�
 _ASIDE_YEAR = re.compile(r"(?:19|20)\d{2}")
 _ASIDE_AFTER = re.compile(r"^\s*(?:место|раз|раза)\b", re.IGNORECASE)
 # Spaced thousands are one value: «105 865,2», not 105 and 865,2.
+# Boundaries protect hex colors (#4E79A7), IDs (B2B, s01, cht_01), and CSS (2px).
 _NUM = re.compile(
-    r"\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?%?"
-    r"|\d+(?:\\,\d{3})+(?:[.,]\d+)?%?"
-    r"|\d+\{,\}\d+(?:\\%|%)?"
-    r"|\d+(?:[.,]\d+)?(?:\\%|%)?"
+    r"(?<![0-9A-Za-zА-Яа-яЁё#_])"
+    r"(?:(?<![0-9A-Za-zА-Яа-яЁё#_.,])[-−])?"
+    r"(?:"
+    r"\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?"
+    r"|\d+(?:\\,\d{3})+(?:[.,]\d+)?"
+    r"|\d+\{,\}\d+"
+    r"|\d+(?:[.,]\d+)?"
+    r")"
+    r"(?:\\%|%)?"
+    r"(?![0-9A-Za-z_])"
 )
 # Longer stems first so «двадцать» is not read as «два».
 _SPOKEN_NUMBER = (
@@ -182,7 +189,15 @@ def _focus_table(para: str, stems: set[str], budget: int) -> str | None:
     if rest and re.match(r"^\|?[\s\-:|]+\|?$", rest[0].strip()):
         header.append(rest[0])
         rest = rest[1:]
-    first = [index for index, row in enumerate(rest) if _focus_hits(row, stems) >= 1]
+    scored = [
+        (_focus_hits(row, stems), index)
+        for index, row in enumerate(rest)
+    ]
+    first = [
+        index
+        for score, index in sorted(scored, key=lambda item: (-item[0], item[1]))
+        if score >= 1
+    ]
     if not first:
         first = list(range(min(4, len(rest))))
     order = first + [index for index in range(len(rest)) if index not in set(first)]
@@ -217,8 +232,14 @@ def _clip_source(source: str, limit: int = _CHAT_SOURCE_CAP, focus: str = "") ->
     ]
     if not paras:
         return text[: limit - 1].rstrip() + "…"
+    if len(paras) == 1:
+        single = paras[0]
+        if len(single) <= limit:
+            return single
+        return single[: limit - 1].rstrip() + "…"
     head, head_n = _fit_front(paras, max(200, (limit * 2) // 5))
-    tail, tail_at = _fit_back(paras, max(200, limit // 4))
+    tail, tail_at_rel = _fit_back(paras[head_n:], max(200, limit // 4))
+    tail_at = head_n + tail_at_rel
     if head_n > tail_at:
         chunks = [part for part in ("\n\n".join(head), "\n\n".join(tail)) if part]
         body = "\n\n…\n\n".join(chunks)
@@ -524,7 +545,15 @@ def _speak(
         if on_delta:
             on_delta(piece)
 
-    if hasattr(client, "stream"):
+    if on_delta is None and hasattr(client, "complete"):
+        emit(
+            client.complete(
+                system=system,
+                user_text=user_text,
+                reasoning="off",
+            )
+        )
+    elif hasattr(client, "stream"):
         for piece in client.stream(
             system=system,
             user_text=user_text,
@@ -549,7 +578,7 @@ def _client(max_tokens: int, timeout_s: float) -> LLMClient:
         replace(
             cfg,
             timeout_s=min(float(cfg.timeout_s), timeout_s),
-            max_retries=0,
+            max_retries=max(1, int(cfg.max_retries or 0)),
             max_tokens=max_tokens,
             reasoning="off",
         )
@@ -667,12 +696,21 @@ def _aside_number(text: str, match: re.Match[str]) -> bool:
     return bool(_ASIDE_AFTER.match(text[match.end() : match.end() + 16]))
 
 
+_MEMORY_HEADS = tuple(marker.lstrip("\n") for marker in _MEMORY_AT)
+
+
 def latest_user_line(intent: str | None) -> str:
     """The user's own words. Memory pasted after them is not a new statement."""
     text = intent or ""
     cut = len(text)
     for marker in _MEMORY_AT:
         at = text.find(marker)
+        if at != -1:
+            cut = min(cut, at)
+    for head in _MEMORY_HEADS:
+        if text.startswith(head):
+            return ""
+        at = text.find("\n" + head)
         if at != -1:
             cut = min(cut, at)
     return text[:cut].strip()
@@ -904,7 +942,95 @@ def choice_instruction(intent: str) -> tuple[str, set[str]]:
 
 def _allowed_norms(source: str, intent: str, drop: set[str]) -> set[str]:
     have = number_norms(source) | number_norms(_request_blob(intent)) | user_stated_norms(intent)
+    # Prose often phrases negative deviations as positive magnitudes («отставание на 1 527»).
+    have = have | {n[1:] for n in have if n.startswith("-")}
     return have - drop
+
+
+def generate_chat_charts(
+    source: str,
+    intent: str,
+    *,
+    max_charts: int,
+    palette_id: str = "atelier",
+    figs_dir,
+    charts_dir,
+    client: LLMClient | None = None,
+) -> tuple[list[dict], dict[str, dict]]:
+    """Build and render 1..max_charts grounded Chart.js PNGs for an inline chat turn."""
+    from pathlib import Path
+
+    from case3.chart_coerce import (
+        coerce_chart_types,
+        ensure_all_charts_match_types,
+        polish_charts,
+    )
+    from case3.chart_html import CHART_TYPES
+    from case3.chart_style import intent_palette_lines, normalize_palette_id
+    from case3.charts import render_charts_batch
+    from case3.fact_ground import ground_generated
+    from case3.generate import preferred_types_from_intent
+    from case3.parse_output import _load_media_payload, _parse_charts_list, _pick_fences
+
+    cap = max(1, min(int(max_charts or 1), 2))
+    palette = normalize_palette_id(palette_id)
+    types_list = ", ".join(sorted(CHART_TYPES))
+    palette_hint = "\n".join(intent_palette_lines(palette))
+    system = (
+        "Ты визуализатор аналитики Liber. Построй по запросу 1-"
+        f"{cap} Chart.js график(а) строго по числам из Source.\n"
+        f"Допустимые type: {types_list}.\n"
+        f"{palette_hint}\n"
+        "Пиши компактный <canvas id='c'> + <script>new Chart(...)</script> (до 25 строк, без CSS и комментариев).\n"
+        "Верни ТОЛЬКО JSON-объект в блоке ```json вида:\n"
+        '{"charts": [{"id": "cht_01", "type": "bar", "caption": "...", "html": "<canvas id=\'c\'></canvas><script>...</script>"}]}'
+    )
+    message = latest_user_line(intent) or intent or "Построй график по данным."
+    clipped_src = _clip_source(source, focus=message)
+    user_prompt = f"ЗАПРОС:\n{message}\n\nSOURCE:\n{clipped_src}"
+
+    llm = client or _client(_CHAT_ANSWER_TOKENS, 120.0)
+    try:
+        raw = llm.complete(system=system, user_text=user_prompt, reasoning="off")
+    except (LLMError, LLMConfigError, OSError, ValueError) as exc:
+        log.warning("chat chart generation failed: %s", exc)
+        return [], {}
+
+    _tex, json_body = _pick_fences(raw or "")
+    data = _load_media_payload(raw or "", json_body)
+    parsed = _parse_charts_list((data or {}).get("charts"), max_charts=cap)
+    if not parsed:
+        return [], {}
+
+    _tex_out, grounded, _figs, _diags, _dropped = ground_generated(
+        "",
+        parsed,
+        [],
+        [],
+        source=source,
+        intent=intent,
+    )
+    if not grounded:
+        return [], {}
+
+    preferred = preferred_types_from_intent(intent or "")
+    if preferred:
+        grounded = coerce_chart_types(grounded, preferred)
+    else:
+        grounded = ensure_all_charts_match_types(grounded)
+    grounded = polish_charts(grounded, palette_id=palette)
+
+    out_figs = Path(figs_dir)
+    out_charts = Path(charts_dir)
+    out_figs.mkdir(parents=True, exist_ok=True)
+    out_charts.mkdir(parents=True, exist_ok=True)
+    batch_items = [
+        (item["id"], item, out_figs / f"{item['id']}.png", out_charts)
+        for item in grounded
+        if isinstance(item, dict) and item.get("id")
+    ]
+    status = render_charts_batch(batch_items) if batch_items else {}
+    return grounded, status
 
 
 def _ask_model(client: LLMClient, system: str, user_text: str) -> str:
@@ -919,7 +1045,7 @@ def _ask_model(client: LLMClient, system: str, user_text: str) -> str:
             )
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
-        log.warning("chat answer failed: %s", exc)
+        log.error("chat answer failed: %s", exc)
         return ""
 
 
@@ -1174,14 +1300,20 @@ def try_chat_answer(
     said = latest_user_line(intent)
     wrong = wrong_row_tokens(text, source, said) if text and not stray else []
     if stray:
+        first_text, first_stray = text, stray
         retry = (
             user
             + "\n\nПовтор: не пиши числа, которых нет в сообщении и в тексте: "
             + ", ".join(stray)
             + ". Если цифры не хватает, так и напиши, без новой цифры."
         )
-        text = _ask_model(llm, system, retry)
-        stray = stray_numbers(text, allowed) if text else []
+        retried = _ask_model(llm, system, retry)
+        if retried:
+            text = retried
+            stray = stray_numbers(text, allowed)
+        else:
+            text = first_text
+            stray = first_stray
     if stray:
         kept = _without_stray(text, stray)
         if len(re.findall(r"[А-Яа-яЁё]", kept)) >= 12:
@@ -1189,6 +1321,7 @@ def try_chat_answer(
         else:
             spoken = invention_question(stray)
     elif wrong:
+        first_text, first_wrong = text, wrong
         retry = (
             user
             + "\n\nПовтор: это число стоит в другой строке таблицы. "
@@ -1196,8 +1329,13 @@ def try_chat_answer(
             + ", ".join(wrong)
             + "."
         )
-        text = _ask_model(llm, system, retry)
-        wrong = wrong_row_tokens(text, source, said) if text else []
+        retried = _ask_model(llm, system, retry)
+        if retried:
+            text = retried
+            wrong = wrong_row_tokens(text, source, said)
+        else:
+            text = _without_stray(first_text, first_wrong)
+            wrong = wrong_row_tokens(text, source, said) if text else first_wrong
         if wrong:
             spoken = (
                 "Число из другой строки таблицы сюда не переношу. "
@@ -1269,10 +1407,13 @@ def _hide_memory_marks(text: str) -> str:
 
 def _norm_num(token: str) -> str:
     compact = re.sub(r"[ \u00a0\u202f]+", "", token or "")
+    compact = compact.replace("−", "-")
     compact = compact.replace("{,}", ",").replace("{.}", ".")
     compact = compact.replace("\\,", "")
     compact = compact.replace("\\%", "")
-    return compact.replace(",", ".").replace("%", "")
+    compact = compact.replace(",", ".").replace("%", "")
+    compact = re.sub(r"\.0+$", "", compact)
+    return "0" if compact == "-0" else compact
 
 
 def _numbers_grounded(draft: str, allowed: str) -> bool:

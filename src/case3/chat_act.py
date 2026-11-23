@@ -870,6 +870,17 @@ def edit_clauses(text: str | None) -> list[str]:
     return parts
 
 
+_NEW_BUILD_ARTIFACT = re.compile(
+    r"\b(?:сделай|собери|подготовь|оформи|сверстай|сгенерируй|напиши|создай)\b"
+    r"[^.!?\n]{0,40}\b(?:новый\s+|новую\s+)?(?:отчет|презентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
+    re.IGNORECASE,
+)
+
+
+def _explicit_new_artifact(raw: str) -> bool:
+    return bool(_NEW_BUILD_ARTIFACT.search(raw or ""))
+
+
 def resolve_act(
     text: str | None,
     *,
@@ -1422,8 +1433,11 @@ def resolve_act(
             say=f"Переставляю слайд {source} на место {dest}.",
         )
 
-    if not question and re.search(r"график", raw, re.IGNORECASE) and re.search(
-        r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE
+    if (
+        not question
+        and not _explicit_new_artifact(raw)
+        and re.search(r"график", raw, re.IGNORECASE)
+        and re.search(r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE)
     ):
         if not (has_report or has_deck):
             return ChatAct(
@@ -1529,7 +1543,7 @@ def resolve_act(
             say=f"Добавляю слайд «{topic}». Новых чисел нет.",
         )
 
-    if not question and _EDIT.search(raw):
+    if not question and not _explicit_new_artifact(raw) and _EDIT.search(raw):
         return ChatAct(
             kind="revise",
             op="ask",

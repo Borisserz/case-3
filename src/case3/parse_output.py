@@ -171,6 +171,15 @@ def _json_candidates(raw: str) -> list[str]:
     m_open = re.search(r"```json\s*\n([\s\S]*)$", raw or "", re.I)
     if m_open:
         _add(m_open.group(1))
+    # Unfenced root JSON objects (e.g. {"charts": [...]} before ```latex ... ```)
+    outside = re.sub(r"```[\s\S]*?```", "\n", raw or "")
+    pos = 0
+    while pos < len(outside):
+        obj = _first_json_object(outside[pos:])
+        if not obj:
+            break
+        _add(obj)
+        pos = outside.find(obj, pos) + len(obj)
     return out
 
 
@@ -289,11 +298,19 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
             except json.JSONDecodeError:
                 continue
             if not isinstance(obj, dict) or "id" not in obj:
-                # Root or wrapper object — keep scanning inside via next `{`.
-                if i == end and chunk.startswith("{") and len(chunk) > 2:
-                    # already advanced to end; nested objects were skipped.
-                    # Re-scan interior by not jumping over children: step in.
-                    pass
+                if isinstance(obj, dict):
+                    for item in obj.get("figures") or []:
+                        if isinstance(item, dict) and str(item.get("id", "")) not in seen_fig:
+                            figures.append(item)
+                            seen_fig.add(str(item.get("id", "")))
+                    for item in obj.get("charts") or []:
+                        if isinstance(item, dict) and str(item.get("id", "")) not in seen_cht:
+                            charts.append(item)
+                            seen_cht.add(str(item.get("id", "")))
+                    for item in obj.get("diagrams") or []:
+                        if isinstance(item, dict) and str(item.get("id", "")) not in seen_dia:
+                            diagrams.append(item)
+                            seen_dia.add(str(item.get("id", "")))
                 continue
             oid = str(obj.get("id", ""))
             if "html" in obj and oid and oid not in seen_cht:
@@ -664,18 +681,24 @@ def parse_model_output(
         figures = []
 
     # Charts: soft-fail — drop invalid slots from TeX instead of aborting the run.
-    # Critical: if JSON has charts but LaTeX forgot slots, APPEND slots (do not wipe charts).
+    # Critical: if JSON has charts missing slots in LaTeX, APPEND slots (do not wipe charts).
     if max_charts > 0 and charts:
-        if not chart_slots:
+        missing_chart_slots = [
+            c["id"]
+            for c in charts[:max_charts]
+            if isinstance(c, dict) and c.get("id") and c["id"] not in chart_slots
+        ]
+        if missing_chart_slots:
             log.warning(
                 "JSON charts without slots — appending %s",
-                [c["id"] for c in charts],
+                missing_chart_slots,
             )
             tex = _append_missing_slots(
                 tex,
-                chart_ids=[c["id"] for c in charts[:max_charts]],
+                chart_ids=missing_chart_slots,
                 figure_ids=[],
             )
+            tex = deduplicate_slots_in_tex(tex)
             chart_slots = _ids(_CHART_SLOT, tex)
         by_id = {c["id"]: c for c in charts}
         aligned = [by_id[s] for s in chart_slots if s in by_id][:max_charts]
@@ -691,19 +714,25 @@ def parse_model_output(
         charts = []
 
     # Diagrams: soft-fail — drop invalid slots from TeX instead of aborting the run.
-    # If JSON has diagrams but LaTeX forgot slots, append slots.
+    # If JSON has diagrams missing slots in LaTeX, append slots.
     if max_diagrams > 0 and diagrams:
-        if not diag_slots:
+        missing_diag_slots = [
+            d["id"]
+            for d in diagrams[:max_diagrams]
+            if isinstance(d, dict) and d.get("id") and d["id"] not in diag_slots
+        ]
+        if missing_diag_slots:
             log.warning(
                 "JSON diagrams without slots — appending %s",
-                [d["id"] for d in diagrams],
+                missing_diag_slots,
             )
             tex = _append_missing_slots(
                 tex,
                 chart_ids=[],
                 figure_ids=[],
-                diagram_ids=[d["id"] for d in diagrams[:max_diagrams]],
+                diagram_ids=missing_diag_slots,
             )
+            tex = deduplicate_slots_in_tex(tex)
             diag_slots = _ids(_DIAG_SLOT, tex)
         by_did = {d["id"]: d for d in diagrams}
         aligned_diags = [by_did[s] for s in diag_slots if s in by_did][:max_diagrams]

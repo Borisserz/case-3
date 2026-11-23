@@ -304,10 +304,7 @@ async (override?: string) => {
   setBusy(true);
   setStopping(false);
   setChatTitle(workMode ? provisionalSessionTitle(workMode) : null);
-  setChat("");
-  if (chatRef.current) chatRef.current.style.height = "44px";
   const photosSnapshot = [...attachPhotos];
-  setAttachPhotos([]);
   // The document stays in this chat until the user dismisses it.
   if (!file && draftSnap) {
     const isDoc =
@@ -374,6 +371,9 @@ async (override?: string) => {
           : res.statusText;
       throw new Error(formatApiDetailError(data, fallback));
     }
+    setChat("");
+    if (chatRef.current) chatRef.current.style.height = "44px";
+    setAttachPhotos([]);
 
     // Sync photo-edit response (no poll)
     if (data.mode === "photo_edit" && data.status === "ok") {
@@ -460,6 +460,9 @@ async (override?: string) => {
 
     // 202 async job: poll until ok/error
     if (res.status === 202 || data.status === "started" || data.status === "running") {
+      if (typeof data.output_mode === "string" && data.output_mode) {
+        liveMode = data.output_mode;
+      }
       const runId = asString(data.run_id);
       if (!runId) throw new Error("server did not return run_id");
       activeRunIdRef.current = runId;
