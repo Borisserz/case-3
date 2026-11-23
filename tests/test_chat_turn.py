@@ -856,3 +856,110 @@ def test_chat_answer_Rejects_thousands_collapsed_into_decimal() -> None:
     assert "105,8652" not in ans
     assert "105 865,2" in ans
 
+
+def test_chart_followup_rejects_stale_prior_turn_reserve_calculation() -> None:
+    source = (
+        "| Код ИМНС | Область | Инспекция | План, тыс. руб. | Факт, тыс. руб. | Выполнение (%) |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| 101 | г. Минск | ИМНС по Центральному району | 179 500,0 | 184 520,0 | 102,8% |\n"
+        "| 403 | Брестская область | ИМНС по Пинскому району | 12 200,0 | 10 790,0 | 88,4% |\n"
+    )
+    intent = (
+        "Построй в чате столбчатый график факта поступлений по областям.\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "450 резерв\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 2. Запрос: Если Пинскому району добавить резерв 450 тыс. руб., сколько станет его факт?\n"
+        "Ответ (chat): Новый факт: 11 240,0 тыс. руб. Новое выполнение плана: 92,1%."
+    )
+    client = _Seq(
+        [
+            "**Строка:** 403\n**Новый факт:** 11 240,0 тыс. руб. (10 790,0 + 450,0)\n**Новое выполнение плана:** 92,1%",
+            "По факту поступлений по областям: г. Минск — 184 520,0 тыс. руб., Брестская область — 10 790,0 тыс. руб.",
+        ]
+    )
+    ans = try_chat_answer(source, intent, client=client)
+    assert client.calls == 2
+    assert "11 240" not in ans
+    assert "92,1" not in ans
+    assert "184 520" in ans
+    assert "ТЕКУЩИЙ ЗАПРОС" in client.seen[0]
+    assert client.seen[0].rindex("ТЕКУЩИЙ ЗАПРОС") > client.seen[0].rindex("92,1%")
+
+
+def test_chart_followup_keeps_prior_numbers_when_scenario_explicitly_requested() -> None:
+    source = "| Область | План | Факт |\n| --- | --- | --- |\n| Брестская область | 12 200,0 | 10 790,0 |\n"
+    intent = (
+        "Построй график по этому сценарию с резервом.\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "450 резерв\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 2. Запрос: Добавь резерв 450.\n"
+        "Ответ (chat): Новый факт 11 240,0, выполнение 92,1%."
+    )
+    client = _Seq(["По сценарию с резервом 450 новый факт Брестской области 11 240,0 (92,1%)."])
+    ans = try_chat_answer(source, intent, client=client)
+    assert client.calls == 1
+    assert "11 240" in ans
+    assert "92,1" in ans
+
+
+def test_chart_followup_generic_metric_stem_in_user_numbers_does_not_trigger_prior_scenario() -> None:
+    source = (
+        "| Область | План, тыс. руб. | Факт, тыс. руб. |\n"
+        "| --- | --- | --- |\n"
+        "| г. Минск | 179 500,0 | 184 520,0 |\n"
+        "| Брестская область | 59 200,0 | 57 846,4 |\n"
+    )
+    intent = (
+        "Построй в чате столбчатый график факта поступлений по областям.\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "450 факт\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 2. Запрос: Если к факту добавить 450, сколько станет?\n"
+        "Ответ (chat): Новый факт 58 296,4."
+    )
+    client = _Seq(
+        [
+            "Новый факт с добавкой 450 составит 58 296,4.",
+            "Факт поступлений по областям: г. Минск — 184 520,0, Брестская область — 57 846,4.",
+        ]
+    )
+    ans = try_chat_answer(source, intent, client=client)
+    assert client.calls == 2
+    assert "58 296,4" not in ans
+    assert "184 520,0" in ans
+
+
+def test_generate_chat_charts_strips_stale_user_number_on_non_scenario_turn(tmp_path: Path, monkeypatch) -> None:
+    from case3.chat_turn import generate_chat_charts
+
+    source = "| Область | Факт |\n| --- | --- |\n| г. Минск | 184 520 |\n| Брестская область | 57 846 |\n"
+    intent = (
+        "Построй в чате столбчатый график факта поступлений по областям.\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n"
+        "450 резерв\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Ход 2. Запрос: Добавь резерв 450.\n"
+        "Ответ (chat): Новый факт 11 240."
+    )
+
+    class _ChartLLM:
+        def complete(self, *, system: str, user_text: str, reasoning: str = "off", **_kw) -> str:
+            return (
+                '```json\n{"charts": [{"id": "cht_01", "type": "bar", "caption": "Факт", '
+                '"html": "<canvas id=\\\'c\\\'></canvas><script>new Chart(document.getElementById(\\\'c\\\'), '
+                '{type:\\\'bar\\\',data:{labels:[\\\'Минск\\\',\\\'Резерв\\\'],datasets:[{label:\\\'Факт\\\',data:[184520,450]}]}});</script>"}]}\n```'
+            )
+
+    monkeypatch.setattr("case3.charts.render_charts_batch", lambda items: {"cht_01": {"ok": True}})
+    charts, _status = generate_chat_charts(
+        source,
+        intent,
+        max_charts=1,
+        figs_dir=tmp_path / "figs",
+        charts_dir=tmp_path / "charts",
+        client=_ChartLLM(),
+    )
+    # 450 from Turn 2 must NOT be grounded on Turn 3 (chart dropped or 450 stripped)
+    assert not any("450" in str(c.get("html") or "") for c in charts)

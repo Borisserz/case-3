@@ -196,7 +196,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
   const wantsPhotos =
     !hidden &&
     !forbidImages &&
-    (attachPhotos.length > 0 || asksForPhoto(chatTrim)) &&
+    asksForPhoto(chatTrim) &&
     modeToOutputMode(workMode) !== "diagram";
   if (wantsPhotos && health && !imageChip.ok) {
     setToast(
@@ -250,7 +250,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     outMode === "diagram"
       ? "схема"
       : outMode === "presentation"
-        ? `презентация · ${deckStyle.themePack} · ${targetSlides} сл.`
+        ? `презентация · ${targetSlides} сл.`
         : outMode === "report"
           ? "отчёт"
           : null,
@@ -269,7 +269,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     workMode
       ? `≤${outMode === "diagram" ? Math.max(maxDiagrams, 1) : maxDiagrams} схем`
       : null,
-    dryRun ? "dry-run" : null,
+    dryRun ? "тестовый прогон" : null,
   ].filter((x): x is string => Boolean(x));
 
   const thinkingMode = effectiveThinkingMode(workMode, quiet?.outputMode);
@@ -442,6 +442,11 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             }>)
           : [],
       });
+      const nextPreviews = Array.isArray(data.previews)
+        ? (data.previews as RunResult["previews"])
+        : undefined;
+      const nextMemorySection =
+        typeof data.memory_section === "string" ? data.memory_section : undefined;
       setMsgs((m) =>
         m.map((msg) => {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -457,6 +462,10 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
                   isolated,
                   output_mode: asString(data.output_mode, "chat"),
                   chat_summary: line,
+                  ...(nextPreviews ? { previews: nextPreviews } : {}),
+                  ...(nextMemorySection !== undefined
+                    ? { memory_section: nextMemorySection }
+                    : {}),
                 } as RunResult)
               : msg.result,
           };
@@ -478,7 +487,12 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               openReportArtifact,
             },
             step.artifactRunId || asString(data.artifact_run_id),
-            { remember: !isolated, isolated, op: step.op || asString(data.op) },
+            {
+              remember: !isolated,
+              isolated,
+              op: step.op || asString(data.op),
+              memorySection: nextMemorySection,
+            },
           );
         }
       })().finally(() => finishIdle());

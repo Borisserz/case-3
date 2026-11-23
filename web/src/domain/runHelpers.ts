@@ -330,22 +330,22 @@ export function paradeHintFromHealth(health: {
   image_api_ok?: boolean;
   image_api_error?: string | null;
 } | null): string {
-  if (!health) return "проверка…";
+  if (!health) return "проверка сервисов…";
   const imageConfigured =
     health.image_api_configured || health.kandinsky_configured;
   let visionBit: string | null = null;
-  if (health.vision_ok) visionBit = "Vision ok";
-  else if (health.vision_configured) visionBit = "Vision slow";
+  if (health.vision_ok) visionBit = "Модель готова";
+  else if (health.vision_configured) visionBit = "Модель отвечает медленно";
   let imageBit: string | null = null;
   if (imageConfigured) {
-    imageBit = health.image_api_ok ? "Image ok" : "Image down";
+    imageBit = health.image_api_ok ? "Фото готовы" : "Фото недоступны";
   }
   return (
     [
       visionBit,
-      health.docker_ok ? "Docker" : null,
-      health.playwright_ok ? "Playwright" : null,
-      health.soffice_ok ? "LibreOffice" : null,
+      health.docker_ok ? "PDF" : null,
+      health.playwright_ok ? "Графики" : null,
+      health.soffice_ok ? "Слайды" : null,
       imageBit,
     ]
       .filter(Boolean)
@@ -361,22 +361,22 @@ export function imageChipFromHealth(health: {
   image_api_error?: string | null;
 } | null): { label: string; ok: boolean; hint: string } {
   if (!health) {
-    return { label: "Image · …", ok: false, hint: "проверка сервиса изображений…" };
+    return { label: "", ok: false, hint: "Проверка сервиса изображений…" };
   }
   const configured =
     health.image_api_configured || health.kandinsky_configured;
   if (!configured) {
     return {
-      label: "Image · off",
+      label: "",
       ok: false,
       hint: "Генерация изображений отключена",
     };
   }
   if (health.image_api_ok) {
-    return { label: "Image · ok", ok: true, hint: "Сервис изображений отвечает" };
+    return { label: "Фото: готово", ok: true, hint: "Сервис изображений отвечает" };
   }
   return {
-    label: "Image · down",
+    label: "",
     ok: false,
     hint:
       health.image_api_error ||

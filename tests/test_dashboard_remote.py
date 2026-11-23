@@ -682,3 +682,15 @@ def test_plan_dashboard_phrase_adopts_validated_catalog_result_only_when_in_phra
     # region=99 ("Брест") is NOT in phrase -> stays default 10 ("Минск").
     assert plan["filters"] == {"month": 2, "region": 10}
 
+
+def test_finish_dashboard_phrase_calls_post_open_when_zero_filters() -> None:
+    poster = _Poster(url="http://127.0.0.1:8040/open?mrt=plain.mrt")
+    done = finish_dashboard_phrase(
+        {"pull": True, "filters": {}, "mrt": "plain.mrt", "reply": "Открываю."},
+        "http://127.0.0.1:8040",
+        poster,
+    )
+    assert poster.posts == [
+        ("http://127.0.0.1:8040/open?open=0", {"filters": {}, "mrt": "plain.mrt"})
+    ]
+    assert done["viewer"] == "http://127.0.0.1:8040/open?mrt=plain.mrt"

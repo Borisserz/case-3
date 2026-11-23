@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from case3.input_validation import user_text_before_ui
+from case3.input_validation import current_turn_user_text
 from case3.user_photos import split_image_budget
 
 # Negative wins over any positive cue.
@@ -67,7 +67,7 @@ _SHOW_VISUAL = re.compile(
 
 def wants_generated_images(intent: str | None, source: str | None) -> bool:
     """True when chat/Source explicitly asks for a generated photo/illustration."""
-    chat = user_text_before_ui(intent)
+    chat = current_turn_user_text(intent)
     src = (source or "").strip()
     blob = f"{chat}\n{src}".strip()
     if not blob:

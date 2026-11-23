@@ -48,6 +48,13 @@ def _note(
 ) -> None:
     def mut(meta: dict[str, Any]) -> None:
         append_dialogue(meta, user, assistant)
+        if getattr(act, "op", "") == "undo" and "Отменил" in (assistant or ""):
+            prev = dict(meta.get("last_edit") or {}) if isinstance(meta.get("last_edit"), dict) else {}
+            prev["op"] = "undo"
+            if surface:
+                prev["surface"] = surface
+            meta["last_edit"] = prev
+            return
         remembered = _remembered(act, assistant) or {}
         # A failed line («нужно 3 ячейки») must not replace the last real edit.
         if surface and remembered.get("op"):
@@ -138,6 +145,35 @@ def _surface(act: Any) -> str:
     return ""
 
 
+def _has_chart(meta: dict[str, Any], path: Path | None = None) -> bool:
+    planned = meta.get("charts_planned")
+    if isinstance(planned, list) and any(str(item or "").strip() for item in planned):
+        return True
+    if path is not None and (path / "figures.json").is_file():
+        return bool(_chart_ids(path))
+    return False
+
+
+def _chart_previews(run_id: str, out_dir: Path) -> list[dict[str, str]]:
+    figs = out_dir / "figures"
+    if not figs.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    for cid in _chart_ids(out_dir):
+        png = figs / f"{cid}.png"
+        if not png.is_file():
+            continue
+        try:
+            stamp = int(png.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        url = f"/api/runs/{run_id}/figures/{png.name}"
+        if stamp:
+            url += f"?v={stamp}"
+        out.append({"id": cid, "kind": "chart", "url": url})
+    return out
+
+
 def _payload(
     run_id: str,
     say: str,
@@ -147,8 +183,10 @@ def _payload(
     surface: str = "",
     artifact_run_id: str = "",
     isolate: bool = False,
+    previews: list[dict[str, str]] | None = None,
+    memory_section: str | None = None,
 ) -> dict[str, Any]:
-    payload = {
+    payload: dict[str, Any] = {
         "mode": "chat_revise",
         "status": "ok",
         "run_id": run_id,
@@ -160,6 +198,10 @@ def _payload(
     }
     if isolate:
         payload["isolate"] = True
+    if previews:
+        payload["previews"] = previews
+    if memory_section is not None:
+        payload["memory_section"] = memory_section
     return payload
 
 
@@ -207,6 +249,7 @@ def _batch_edits(
     has_deck: bool,
     has_report: bool,
     has_diagram: bool,
+    has_chart: bool = False,
     last_section: str,
     last_op: str,
 ) -> dict[str, Any] | None:
@@ -221,6 +264,7 @@ def _batch_edits(
             has_deck=has_deck,
             has_report=has_report,
             has_diagram=has_diagram,
+            has_chart=has_chart,
             last_section=last_section,
             last_op=last_op,
         )
@@ -286,13 +330,14 @@ def try_chat_revise(
         carried_id = ""
     if not rows and carried_path is None:
         return None
-    has_deck = has_report = has_diagram = False
+    has_deck = has_report = has_diagram = has_chart = False
     edit: dict[str, Any] = {}
     for _run_id, path, row in rows:
         deck, report, diagram = _flags(row, path)
         has_deck = has_deck or deck
         has_report = has_report or report or any(path.glob("*.tex"))
         has_diagram = has_diagram or diagram
+        has_chart = has_chart or _has_chart(row, path)
         edit = merge_edit(edit, row.get("last_edit"))
     carried_meta: dict[str, Any] = _read(carried_path) if carried_path else {}
     if carried_path is not None:
@@ -300,6 +345,7 @@ def try_chat_revise(
         has_deck = has_deck or deck
         has_report = has_report or report or any(carried_path.glob("*.tex"))
         has_diagram = has_diagram or diagram
+        has_chart = has_chart or _has_chart(carried_meta, carried_path)
         if not edit:
             edit = merge_edit(edit, carried_meta.get("last_edit"))
     if rows:
@@ -316,6 +362,7 @@ def try_chat_revise(
         has_deck=has_deck,
         has_report=has_report,
         has_diagram=has_diagram,
+        has_chart=has_chart,
         last_section=str(edit.get("section") or ""),
         last_op=str(edit.get("op") or ""),
     )
@@ -327,6 +374,7 @@ def try_chat_revise(
         has_deck=has_deck,
         has_report=has_report,
         has_diagram=has_diagram,
+        has_chart=has_chart,
         last_section=str(edit.get("section") or ""),
         last_op=str(edit.get("op") or ""),
     )
@@ -374,7 +422,6 @@ def try_chat_revise(
             work_id, work_dir = picked
     elif act.op in {
         "rewrite",
-        "recolor_charts",
         "rename_heading",
         "replace_cell",
         "replace_item",
@@ -409,10 +456,9 @@ def try_chat_revise(
             if any((path / "figures").glob("usr_*.png")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op in {"retype_charts", "retype_chart"}:
+    elif act.op in {"retype_charts", "retype_chart", "recolor_charts"}:
         for run_id, path, row in reversed(rows):
-            planned = row.get("charts_planned")
-            if (path / "figures.json").is_file() or (isinstance(planned, list) and planned):
+            if _has_chart(row, path):
                 work_id, work_dir = run_id, path
                 break
     elif act.op == "retitle":
@@ -434,7 +480,6 @@ def try_chat_revise(
     if carried_path is not None and work_id != carried_id:
         tex_ops = {
             "rewrite",
-            "recolor_charts",
             "rename_heading",
             "replace_cell",
             "replace_item",
@@ -457,15 +502,9 @@ def try_chat_revise(
             work_id, work_dir = carried_id, carried_path
         elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
             work_id, work_dir = carried_id, carried_path
-        elif act.op in {"retype_charts", "retype_chart"}:
-            planned = _read(work_dir).get("charts_planned")
-            has_here = (work_dir / "figures.json").is_file() or (
-                isinstance(planned, list) and bool(planned)
-            )
-            planned_carried = carried_meta.get("charts_planned")
-            has_carried = (carried_path / "figures.json").is_file() or (
-                isinstance(planned_carried, list) and bool(planned_carried)
-            )
+        elif act.op in {"retype_charts", "retype_chart", "recolor_charts"}:
+            has_here = _has_chart(_read(work_dir), work_dir)
+            has_carried = _has_chart(carried_meta, carried_path)
             if not has_here and has_carried:
                 work_id, work_dir = carried_id, carried_path
         elif (
@@ -544,6 +583,14 @@ def try_chat_revise(
     # One note, on the chat head. The screen walks every turn, so a second
     # copy on the older file shows the same line twice.
     noted_surface = history_surface if act.op in {"undo", "redo"} and history_surface else _surface(act)
+    chart_previews: list[dict[str, str]] | None = None
+    if (
+        act.op in {"retype_charts", "retype_chart", "recolor_charts"}
+        and not any(work_dir.glob("*.tex"))
+        and not _flags(work_meta)[0]
+    ):
+        noted_surface = "chat"
+        chart_previews = _chart_previews(work_id, work_dir)
     if rows and head_dir.is_dir() and head_id in chain_ids:
         _note(head_dir, text, say, act, surface=noted_surface)
     elif work_id in chain_ids and work_dir.is_dir():
@@ -556,6 +603,8 @@ def try_chat_revise(
         surface=noted_surface,
         artifact_run_id=work_id,
         isolate=isolate,
+        previews=chart_previews,
+        memory_section="" if act.op == "undo" and "Отменил" in (say or "") else None,
     )
 
 
@@ -742,6 +791,52 @@ def _add_slide(run_id: str, out_dir: Path, title: str) -> str:
     return f"Добавляю слайд «{topic}». Новых чисел нет."
 
 
+def _friendly_chart_edit_error(exc: Exception) -> str:
+    import logging
+
+    logging.getLogger(__name__).warning("chart revise failed: %s", exc)
+    msg = str(exc or "").strip()
+    low = msg.lower()
+    raw_markers = (
+        "chart render failed",
+        "chart js error",
+        "style rewrite failed",
+        "document rebuild failed",
+        "figures.json",
+        "not found",
+        "has no html",
+        "unreadable",
+        "playwright",
+        "llm returned",
+        "cannot read properties",
+        "typeerror",
+        "referenceerror",
+    )
+    if (
+        msg
+        and any("а" <= ch.lower() <= "я" or ch in "ёЁ" for ch in msg)
+        and not any(marker in low for marker in raw_markers)
+    ):
+        return msg
+    if (
+        "chart render failed" in low
+        or "chart js error" in low
+        or "playwright" in low
+        or "blank chart" in low
+    ):
+        return (
+            "Не удалось отрисовать обновлённый график. "
+            "Попробуйте другой тип графика или перестройте его в чате заново."
+        )
+    if "style rewrite failed" in low or "llm" in low:
+        return "Не удалось обновить оформление графика. Попробуйте сформулировать изменение иначе."
+    if "document rebuild failed" in low:
+        return "График обновился, но пересобрать файл отчёта не удалось."
+    if "figures.json" in low or "not found" in low or "has no html" in low or "unreadable" in low:
+        return "Графиков в этом материале нет или их данные недоступны."
+    return "Не удалось изменить график. Попробуйте ещё раз или перестройте его в чате заново."
+
+
 def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
     from case3.chart_edit import ChartEditError, edit_chart_in_run
     from case3.chat_act import CHART_SAY
@@ -756,7 +851,7 @@ def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
     try:
         edit_chart_in_run(out_dir, ids[index - 1], chart_type=chart_type, formats=formats)
     except ChartEditError as exc:
-        return str(exc)
+        return _friendly_chart_edit_error(exc)
     return f"Меняю график {index} на {label}. Числа те же."
 
 
@@ -778,7 +873,7 @@ def _retype_charts(out_dir: Path, chart_type: str) -> str:
                 formats=formats,
             )
         except ChartEditError as exc:
-            return str(exc)
+            return _friendly_chart_edit_error(exc)
     return f"Меняю графики на {label}. Числа те же."
 
 
@@ -1866,7 +1961,7 @@ def _recolor_charts(out_dir: Path, palette: str) -> str:
     try:
         recolor_all_charts_in_run(out_dir, palette, formats=formats)
     except ChartEditError as exc:
-        return str(exc)
+        return _friendly_chart_edit_error(exc)
     if formats:
         return f"Перекрасил графики в {label}. PDF и DOCX тоже."
     return f"Перекрасил графики в {label}."

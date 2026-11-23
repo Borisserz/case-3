@@ -197,6 +197,7 @@ def render_deck_pngs(
     out_dir: Path,
     chart_png_by_id: dict[str, Path] | None = None,
     media_png_by_id: dict[str, Path] | None = None,
+    diagrams_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> list[Path]:
     """Write HTML work dirs + PNGs for each slide; return ordered PNG paths."""
     import re
@@ -216,6 +217,7 @@ def render_deck_pngs(
     media = dict(chart_png_by_id or {})
     if media_png_by_id:
         media.update(media_png_by_id)
+    diagrams = diagrams_by_id or {}
     palette = str(deck.get("palette") or "atelier")
     language = str(deck.get("language") or "ru")
     style = deck.get("style") if isinstance(deck.get("style"), dict) else None
@@ -247,6 +249,7 @@ def render_deck_pngs(
             media_png=media_path,
             style=style,
             slide_index=i - 1,
+            diagram_spec=diagrams.get(asset_id) if asset_id.startswith("dia_") else None,
         )
         dest = out_dir / f"slide_{i:02d}.png"
         tasks.append((work, dest))

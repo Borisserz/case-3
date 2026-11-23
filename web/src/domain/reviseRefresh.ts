@@ -157,7 +157,7 @@ export async function refreshRevisedArtifact(
   msgId: string,
   hosts: RefreshHosts,
   artifactRunId = "",
-  options?: { remember?: boolean; isolated?: boolean; op?: string },
+  options?: { remember?: boolean; isolated?: boolean; op?: string; memorySection?: string },
 ): Promise<void> {
   const plan = revisedRailPlan(runId, artifactRunId, surface, options?.op || "");
   let result = await readStatus(plan.fetchId);
@@ -181,6 +181,11 @@ export async function refreshRevisedArtifact(
     result = { ...result, chain_head: plan.chainHead };
   }
   if (options?.isolated) result = { ...result, isolated: true };
+  if (typeof options?.memorySection === "string") {
+    result = { ...result, memory_section: options.memorySection };
+  } else if (options?.op === "undo") {
+    result = { ...result, memory_section: "" };
+  }
   hosts.setMsgs((msgs) =>
     msgs.map((msg) => {
       if (msg.id !== msgId || msg.role !== "bot") return msg;

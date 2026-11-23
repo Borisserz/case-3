@@ -1,6 +1,7 @@
 /** Compact inline editor for one active preview prose / heading / list block. */
 
 import { useEffect, useRef, useState } from "react";
+import { submitChord } from "./domain/undoChord";
 
 type Common = {
   busy?: boolean;
@@ -147,7 +148,7 @@ function ProseInline({
       {hideActions ? (
         <div className="inline-block-hint-row">
           <p className="inline-block-hint is-solo">
-            {kind === "paragraph" ? "⌘↵ · Esc · клик вне поля" : "Enter · Esc · клик вне поля"}
+            {kind === "paragraph" ? `${submitChord()} · Esc · клик вне поля` : "Enter · Esc · клик вне поля"}
           </p>
           {onDelete && (
             <button
@@ -208,7 +209,7 @@ function ProseInline({
             </button>
           )}
           {kind === "paragraph" ? (
-            <span className="inline-block-hint">⌘↵ · Esc</span>
+            <span className="inline-block-hint">{submitChord()} · Esc</span>
           ) : (
             <span className="inline-block-hint">Enter · Esc</span>
           )}
@@ -310,7 +311,7 @@ function ListInline({
       />
       {hideActions ? (
         <div className="inline-block-hint-row">
-          <p className="inline-block-hint is-solo">⌘↵ · Esc · клик вне поля</p>
+          <p className="inline-block-hint is-solo">{submitChord()} · Esc · клик вне поля</p>
           {onDelete && (
             <button
               type="button"
@@ -369,7 +370,7 @@ function ListInline({
               Удалить
             </button>
           )}
-          <span className="inline-block-hint">⌘↵ · Esc</span>
+          <span className="inline-block-hint">{submitChord()} · Esc</span>
         </div>
       )}
       {error ? <p className="err">{error}</p> : null}

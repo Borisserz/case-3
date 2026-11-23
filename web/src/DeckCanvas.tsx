@@ -1267,20 +1267,34 @@ function SlideBody({
     const line = slide.caption || slide.takeaway || "";
     const isDiagram = layout !== "chart_hero";
     const legend = diagramLegendStrokes(diagramPalette);
+    const mermaidSrc = (diagramMermaid || "").trim();
+    const isFlowchart = !mermaidSrc || /^(?:flowchart|graph)\b/i.test(mermaidSrc);
+    const roleMeta: { key: keyof typeof legend; label: string }[] = [
+      { key: "start", label: "Старт" },
+      { key: "decision", label: "Решение" },
+      { key: "ok", label: "Успех" },
+      { key: "warn", label: "Риск" },
+    ];
+    const usedRoles = isFlowchart
+      ? roleMeta.filter((r) =>
+          mermaidSrc
+            ? new RegExp(`:::${r.key}\\b|classDef\\s+${r.key}\\b`, "i").test(mermaidSrc)
+            : true,
+        )
+      : [];
     return (
       <div className={`deck-cv-inner deck-cv-chart-field${isDiagram ? " is-diagram" : ""}`}>
         <aside className="deck-cv-chart-rail">
-          <div className="deck-cv-brand">{brand}</div>
+          {brand ? <div className="deck-cv-brand">{brand}</div> : null}
           <Head slide={slide} editing={editing} onField={onField} compact />
           {line && line.trim() !== (slide.title || "").trim() ? (
             <div className="deck-cv-chart-line">{line}</div>
           ) : null}
-          {isDiagram ? (
+          {isDiagram && usedRoles.length > 0 ? (
             <ul className="deck-cv-dia-legend">
-              <li><i style={{ background: legend.start }} />Старт</li>
-              <li><i style={{ background: legend.decision }} />Решение</li>
-              <li><i style={{ background: legend.ok }} />Успех</li>
-              <li><i style={{ background: legend.warn }} />Риск</li>
+              {usedRoles.map((r) => (
+                <li key={r.key}><i style={{ background: legend[r.key] }} />{r.label}</li>
+              ))}
             </ul>
           ) : null}
         </aside>
@@ -1307,7 +1321,7 @@ function SlideBody({
     return (
       <div className="deck-cv-inner deck-cv-chart-field">
         <aside className="deck-cv-chart-rail">
-          <div className="deck-cv-brand">{brand}</div>
+          {brand ? <div className="deck-cv-brand">{brand}</div> : null}
           <Head slide={slide} editing={editing} onField={onField} compact />
           {line && line.trim() !== (slide.title || "").trim() ? (
             <div className="deck-cv-chart-line">{line}</div>
@@ -1329,10 +1343,25 @@ function SlideBody({
   if (layout === "chart_split" || layout === "media_split") {
     const splitDiagram = layout === "media_split" && String(slide.media_id || "").startsWith("dia_");
     const legend = diagramLegendStrokes(diagramPalette);
+    const mermaidSrc = (diagramMermaid || "").trim();
+    const isFlowchart = !mermaidSrc || /^(?:flowchart|graph)\b/i.test(mermaidSrc);
+    const roleMeta: { key: keyof typeof legend; label: string }[] = [
+      { key: "start", label: "Старт" },
+      { key: "decision", label: "Решение" },
+      { key: "ok", label: "Успех" },
+      { key: "warn", label: "Риск" },
+    ];
+    const usedRoles = isFlowchart
+      ? roleMeta.filter((r) =>
+          mermaidSrc
+            ? new RegExp(`:::${r.key}\\b|classDef\\s+${r.key}\\b`, "i").test(mermaidSrc)
+            : true,
+        )
+      : [];
     return (
       <div className={`deck-cv-inner deck-cv-chart-field${splitDiagram ? " is-diagram" : ""}`}>
         <div className="deck-cv-chart-copy">
-          <div className="deck-cv-brand">{brand}</div>
+          {brand ? <div className="deck-cv-brand">{brand}</div> : null}
           <Head slide={slide} editing={editing} onField={onField} />
           <Bullets
             slide={slide}
@@ -1344,12 +1373,11 @@ function SlideBody({
             onHoverBullet={setHoveredBulletIdx}
             highlightedBulletIdx={highlightedBulletIdx}
           />
-          {splitDiagram ? (
+          {splitDiagram && usedRoles.length > 0 ? (
             <ul className="deck-cv-dia-legend">
-              <li><i style={{ background: legend.start }} />Старт</li>
-              <li><i style={{ background: legend.decision }} />Решение</li>
-              <li><i style={{ background: legend.ok }} />Успех</li>
-              <li><i style={{ background: legend.warn }} />Риск</li>
+              {usedRoles.map((r) => (
+                <li key={r.key}><i style={{ background: legend[r.key] }} />{r.label}</li>
+              ))}
             </ul>
           ) : null}
         </div>
@@ -1627,7 +1655,7 @@ export function DeckCanvas({
 }: Props) {
   const slides = deck.slides || [];
   const slide = slides[Math.min(Math.max(0, index), Math.max(0, slides.length - 1))];
-  const brand = deck.style?.brand_mark || "LIBER · ATELIER";
+  const brand = deck.style?.brand_mark || "";
   const packId = deck.style?.pack_id || "";
   const darkBleed =
     packId === "botanical" ||

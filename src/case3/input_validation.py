@@ -151,12 +151,33 @@ def _format_refusal_message(output_mode: str) -> str:
 
 
 def user_text_before_ui(intent: str | None) -> str:
-    """Chat text only. A leading «Требования UI» block is not the user's words."""
+    """Chat text before the injected UI block (preserving prior chat memory)."""
     text = intent or ""
     for marker in ("\n\nТребования UI:", "\nТребования UI:", "Требования UI:"):
-        if marker in text:
-            text = text.split(marker, 1)[0]
+        idx = text.find(marker)
+        if idx != -1:
+            text = text[:idx]
             break
+    return text.strip()
+
+
+def current_turn_user_text(intent: str | None) -> str:
+    """Current turn chat text only, before injected chat memory or UI blocks."""
+    text = user_text_before_ui(intent)
+    markers = (
+        "\n\nЧисла из реплик пользователя",
+        "\n\nКарточка этого чата",
+        "\n\nРазговор этого чата",
+        "\n\nПредыдущий ход этого чата",
+        "\n\nОдин прошлый ход",
+    )
+    earliest: int | None = None
+    for marker in markers:
+        idx = text.find(marker)
+        if idx != -1 and (earliest is None or idx < earliest):
+            earliest = idx
+    if earliest is not None:
+        text = text[:earliest]
     return text.strip()
 
 

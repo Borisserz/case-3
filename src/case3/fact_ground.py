@@ -69,8 +69,12 @@ class TableGrid:
         self.ranks: dict[tuple[str, str], set[str]] = {}
         self.columns: set[str] = set()
         self.aggregates: set[str] = set()
+        self.column_sums: set[str] = set()
+        self.row_shares: dict[str, set[str]] = {}
+        self.share_values: set[str] = set()
         self.all_row_norms: set[str] = set()
         self.phrase_norms: list[tuple[re.Pattern[str], set[str]]] = []
+        self.full_phrase_norms: list[tuple[re.Pattern[str], set[str], set[str]]] = []
 
     def add(
         self,
@@ -107,6 +111,17 @@ _GENERIC_ROW = frozenset(
         "всего",
         "всег",
         "total",
+        "имнс",
+        "инспекц",
+        "инспекци",
+        "отдел",
+        "управлен",
+        "управлени",
+        "город",
+        "республик",
+        "комитет",
+        "департамент",
+        "филиал",
     }
 )
 _DERIV_LINE = re.compile(
@@ -203,6 +218,7 @@ def table_grid(source: str) -> TableGrid:
             row_entries.append((label or full_label, lkey, stems, cells))
 
     phrase_map: dict[str, tuple[str, set[str]]] = {}
+    all_phrase_map: dict[str, tuple[set[str], set[str]]] = {}
     for raw_label, lkey, stems, cells in row_entries:
         unique = {stem for stem in stems if len(stem_labels.get(stem, set())) == 1}
         keys = unique or stems
@@ -218,6 +234,9 @@ def table_grid(source: str) -> TableGrid:
         if lkey and row_all_norms and len(stem_labels) > 0 and not unique and stems:
             prev_raw, prev_norms = phrase_map.get(lkey, (raw_label, set()))
             phrase_map[lkey] = (prev_raw, prev_norms | row_all_norms)
+        if lkey and row_all_norms and stems:
+            prev_vals, prev_sh = all_phrase_map.get(lkey, (set(), set()))
+            all_phrase_map[lkey] = (prev_vals | row_all_norms, prev_sh)
     for lkey, (raw_label, pnorms) in phrase_map.items():
         tokens = lkey.split()
         if len(tokens) >= 2:
@@ -261,6 +280,16 @@ def table_grid(source: str) -> TableGrid:
             cstem = max(named_col, key=len) if named_col else ""
             non_additive = is_pct or bool(_NON_ADDITIVE_HEADER.search(name))
             shares = _share_tenths(values) if (not non_additive and not has_neg) else []
+            if shares:
+                for idx_r, lbl in enumerate(labels):
+                    lkey_r = _label_key(lbl)
+                    sh_norms = number_norms(_fmt_share(shares[idx_r]))
+                    grid.share_values.update(sh_norms)
+                    for rstem in _name_stems(lbl):
+                        grid.row_shares.setdefault(rstem, set()).update(sh_norms)
+                    if lkey_r in all_phrase_map:
+                        pv, ps = all_phrase_map[lkey_r]
+                        all_phrase_map[lkey_r] = (pv, ps | sh_norms)
             if has_explicit_derivatives:
                 for idx_r, lbl in enumerate(labels):
                     lkey_r = _label_key(lbl)
@@ -278,6 +307,7 @@ def table_grid(source: str) -> TableGrid:
                         phrase_map[lkey_r] = (pr, pn | number_norms(_fmt_share(shares[idx_r])))
             total = sum(values, Decimal(0))
             mean = total / Decimal(len(values))
+            grid.column_sums.update(number_norms(_fmt_num_ru(total)))
             if has_explicit_derivatives:
                 grid.aggregates.update(number_norms(_fmt_num_ru(total)))
                 grid.aggregates.update(number_norms(_fmt_num_ru(mean)))
@@ -315,7 +345,14 @@ def table_grid(source: str) -> TableGrid:
                 rpct = (fv * Decimal(100) / pv) if pv > 0 else None
                 diff_norms = number_norms(_fmt_num_ru(diff, signed=True)) if has_explicit_derivatives else set()
                 pct_norms = number_norms(_fmt_num_ru(rpct)) if rpct is not None else set()
+                if pct_norms:
+                    grid.share_values.update(pct_norms)
+                    for rstem in _name_stems(lbl):
+                        grid.row_shares.setdefault(rstem, set()).update(pct_norms)
                 lkey_r = _label_key(lbl)
+                if lkey_r in all_phrase_map and (diff_norms or pct_norms):
+                    pv_set, ps_set = all_phrase_map[lkey_r]
+                    all_phrase_map[lkey_r] = (pv_set | diff_norms, ps_set | pct_norms)
                 stems_r = _name_stems(lbl)
                 unique_r = {s for s in stems_r if len(stem_labels.get(s, set())) == 1}
                 keys_r = unique_r or stems_r
@@ -354,6 +391,19 @@ def table_grid(source: str) -> TableGrid:
                 re.IGNORECASE,
             )
             grid.phrase_norms.append((pat, pnorms))
+    grid.full_phrase_norms.clear()
+    for lkey, (pvals, pshares) in sorted(
+        all_phrase_map.items(), key=lambda kv: -len(kv[0].split())
+    ):
+        tokens = lkey.split()
+        if len(tokens) >= 2:
+            pat = re.compile(
+                r"(?<![0-9a-zа-я])"
+                + r"[\s.,()\"«»-]+".join(re.escape(t) for t in tokens)
+                + r"[0-9a-zа-я]*",
+                re.IGNORECASE,
+            )
+            grid.full_phrase_norms.append((pat, pvals, pshares))
 
     # Also compute cross-table differences for the same entity (e.g., Feb cumulative minus Jan cumulative)
     tables_count = len(_markdown_tables(source or ""))
@@ -471,15 +521,56 @@ def _row_mentions(clause: str, grid: TableGrid) -> list[tuple[int, int, str]]:
     return found
 
 
-def _owner_row(mentions: list[tuple[int, int, str]], start: int) -> str | None:
-    """The region name closest to this number. The one before it wins a tie."""
+def _inside_parens(text: str, pos: int) -> bool:
+    before = text[:pos]
+    return before.rfind("(") > before.rfind(")")
+
+
+def _owner_row(
+    mentions: list[tuple[int, int, str]],
+    start: int,
+    clause: str = "",
+) -> str | None:
+    """The region name closest to this number. Parenthetical qualifiers defer to the entity outside."""
+    from case3.chat_turn import _ABBR_DOT
+
     before = [item for item in mentions if item[1] <= start]
     if before:
-        return max(before, key=lambda item: item[1])[2]
+        best = max(before, key=lambda item: item[1])
+        if clause and _inside_parens(clause, best[0]):
+            # If an earlier mention in the same contiguous entity phrase is outside (...), prefer it.
+            for item in reversed(before[:-1]):
+                if _inside_parens(clause, item[0]):
+                    continue
+                gap = _ABBR_DOT.sub(r"\1", clause[item[1] : best[0]])
+                if not re.search(r"[\d,;.]|\b(?:и|или|против|чем)\b", gap, re.IGNORECASE):
+                    return item[2]
+        return best[2]
     after = [item for item in mentions if item[0] >= start]
     if after:
         return min(after, key=lambda item: item[0])[2]
     return None
+
+
+def _matched_full_phrase(
+    clause: str, start: int, grid: TableGrid, share: bool
+) -> set[str] | None:
+    """If a full multi-word row label ends right before ``start``, return its scoped norms."""
+    if not grid.full_phrase_norms or start <= 0:
+        return None
+    prefix = (clause[:start] or "").casefold().replace("ё", "е")
+    best_end = -1
+    best_norms: set[str] | None = None
+    for pat, pvals, pshares in grid.full_phrase_norms:
+        for m in pat.finditer(prefix):
+            tail = prefix[m.end() :]
+            # Only trivial punctuation/parens/words like "району" between label match and number
+            if len(tail) > 16 or re.search(r"[\d,;.]|\b(?:и|или|против|чем)\b", tail):
+                continue
+            if m.end() > best_end:
+                best_end = m.end()
+                best_norms = set(pvals) | (set(pshares) if share else set())
+    return best_norms
 
 
 def _norms_on_row(grid: TableGrid, row: str, clause: str, columns: list[str]) -> set[str]:
@@ -531,9 +622,15 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
         for match in _NUM.finditer(clause)
         if _norm_num(match.group(0)) == norm
     ]
+    share = _mentions_share(clause)
     if len(rows) > 1 and spans:
         for start in spans:
-            owner = _owner_row(mentions, start)
+            full_norms = _matched_full_phrase(clause, start, grid, share)
+            if full_norms is not None:
+                if not _has_norm(full_norms, norm):
+                    return False
+                continue
+            owner = _owner_row(mentions, start, clause)
             if owner is None or norm not in _norms_on_row(grid, owner, clause, columns):
                 return False
         return True
@@ -560,7 +657,7 @@ def wrong_row_tokens(
     message: str | None = "",
 ) -> list[str]:
     """A number that exists, but on a different row from the one named here."""
-    from case3.chat_turn import _is_list_marker
+    from case3.chat_turn import _ABBR_DOT, _is_list_marker
 
     grid = table_grid(source or "")
     if not grid.rows:
@@ -570,7 +667,9 @@ def wrong_row_tokens(
     found: list[str] = []
     seen: set[str] = set()
     for line in (text or "").split("\n"):
-        for chunk in re.split(r"[.!?]+", line):
+        protected = _ABBR_DOT.sub("\\1\x00", line)
+        for chunk in re.split(r"[.!?]+", protected):
+            chunk = chunk.replace("\x00", ".")
             for part in re.split(r",(?!\d)\s*", chunk):
                 for match in _NUM.finditer(part):
                     if _is_list_marker(part, match.start(), match.end()):
@@ -692,7 +791,7 @@ def _verifies_math(
                 continue
     pool_operands: list[Decimal] = list(clause_operands)
     for src_set in (extra_operands or set(),):
-        for cand in src_set:
+        for cand in sorted(src_set):
             if cand == norm or cand in seen_op:
                 continue
             try:
@@ -706,12 +805,33 @@ def _verifies_math(
     tol = max(Decimal("0.15"), abs(target) * Decimal("0.005"))
 
     # 1. Unit scaling (thousands <-> millions)
-    for val in pool_operands:
-        if val == 0:
-            continue
-        for factor in (Decimal("1000"), Decimal("0.001"), Decimal("1000000"), Decimal("0.000001")):
-            if abs(val * factor - target) <= tol:
-                return True
+    scale_match = re.search(
+        r"(?:\bтыс\.?|\bтысяч|\bмлн\.?|\bмиллион|\bмлрд\.?|\bмиллиард)",
+        clause or "",
+        re.IGNORECASE,
+    )
+    if scale_match:
+        has_big_scale = bool(
+            re.search(
+                r"(?:\bмлн\.?|\bмиллион|\bмлрд\.?|\bмиллиард)",
+                clause or "",
+                re.IGNORECASE,
+            )
+        )
+        frac_len = len(norm.partition(".")[2]) if "." in norm else 0
+        for val in pool_operands:
+            if val == 0:
+                continue
+            for factor in (
+                Decimal("1000"),
+                Decimal("0.001"),
+                Decimal("1000000"),
+                Decimal("0.000001"),
+            ):
+                if factor < 1 and frac_len >= 3 and not has_big_scale:
+                    continue
+                if abs(val * factor - target) <= tol:
+                    return True
 
     # 2. Multi-addend sum from grounded operands present in the sentence/clause
     if len(clause_operands) >= 2:
@@ -746,6 +866,34 @@ def _verifies_math(
                 for calc in cands:
                     if abs(calc - target) <= tol:
                         return True
+
+    # 3. 2-step combinations over up to 10 operands (e.g. (fact + reserve) / plan * 100)
+    ops = pool_operands[:10]
+    if len(ops) >= 3:
+        for i in range(len(ops)):
+            a = ops[i]
+            for j in range(i + 1, len(ops)):
+                b = ops[j]
+                mids = [a + b, a - b, b - a]
+                if abs(a * b) <= Decimal("1e12"):
+                    mids.append(a * b)
+                if b != 0:
+                    mids.append(a / b)
+                if a != 0:
+                    mids.append(b / a)
+                for k in range(len(ops)):
+                    if k == i or k == j:
+                        continue
+                    c = ops[k]
+                    for mid in mids:
+                        two_step = [mid + c, mid - c, c - mid]
+                        if c != 0:
+                            two_step.extend([mid * Decimal(100) / c, (mid - c) * Decimal(100) / c])
+                        if mid != 0:
+                            two_step.extend([c * Decimal(100) / mid, (c - mid) * Decimal(100) / mid])
+                        for calc in two_step:
+                            if abs(calc - target) <= tol:
+                                return True
     return False
 
 
@@ -1185,7 +1333,13 @@ def ground_generated(
                 ).strip()
         if isinstance(item.get("html"), str):
             item["html"] = _scrub_html_bound(
-                item["html"], global_ok, bindings, grid, message_ok
+                item["html"],
+                global_ok,
+                bindings,
+                grid,
+                message_ok,
+                chart_type=str(item.get("type") or ""),
+                caption=str(item.get("caption") or ""),
             )
         rows = []
         for row in item.get("highlights") or []:
@@ -1269,12 +1423,24 @@ def _kicker_chrome(value: object) -> bool:
     return bool(re.fullmatch(r"\d{1,2}(?:/\d{1,2})?", str(value or "").strip()))
 
 
+def _row_shares_for_label(label: str, grid: TableGrid | None) -> set[str] | None:
+    if grid is None or not grid.row_shares:
+        return None
+    hits = [stem for stem in _name_stems(label) if stem in grid.row_shares]
+    if len(hits) != 1:
+        return None
+    return grid.row_shares[hits[0]]
+
+
 def _scrub_html_bound(
     html: str,
     global_ok: set[str],
     bindings: list[tuple[str, str]],
     grid: TableGrid | None = None,
     message_ok: set[str] | None = None,
+    *,
+    chart_type: str = "",
+    caption: str = "",
 ) -> str:
     """Chart data takes only Source, this message, and matching user bindings.
 
@@ -1285,6 +1451,22 @@ def _scrub_html_bound(
 
     labels = _chart_labels(html)
     html_stems = _stem_set(html)
+    is_share_chart = (
+        (chart_type or "").strip().lower() == "donut"
+        or bool(re.search(r"type\s*:\s*['\"]doughnut['\"]", html or "", re.I))
+        or _mentions_share(caption)
+        or _mentions_share(html)
+        or bool(re.search(r"(?:доля|процент|выполнен|структур)", f"{caption} {html}", re.I))
+    )
+    chart_row_pool: set[str] = set()
+    if grid is not None:
+        chart_row_pool |= grid.column_sums | grid.aggregates
+        for lbl in labels:
+            rn = _row_norms_for_label(lbl, grid)
+            if rn:
+                chart_row_pool |= rn
+    if message_ok:
+        chart_row_pool |= set(message_ok)
 
     def _bound_allows(norm: str, slot: int | None = None) -> bool:
         if not bindings:
@@ -1303,7 +1485,18 @@ def _scrub_html_bound(
             return False
         if _has_norm(global_ok, norm) or (message_ok and _has_norm(message_ok, norm)):
             return False
-        return not _bound_allows(norm)
+        if _bound_allows(norm):
+            return False
+        if is_share_chart and grid is not None:
+            if _has_norm(grid.share_values, norm):
+                return False
+            if _verifies_math(f"{caption} {html}", norm, global_ok | chart_row_pool, chart_row_pool):
+                return False
+        if (bindings or message_ok) and _verifies_math(
+            f"{caption} {html}", norm, global_ok | chart_row_pool, chart_row_pool
+        ):
+            return False
+        return True
 
     def slot_reject(token: str, slot: int) -> bool:
         norm = _norm_num(token)
@@ -1316,7 +1509,27 @@ def _scrub_html_bound(
         allowed = _row_norms_for_label(labels[slot], grid)
         if allowed is None:
             return False
-        return not _has_norm(allowed, norm)
+        if _has_norm(allowed, norm):
+            return False
+        if is_share_chart:
+            row_sh = _row_shares_for_label(labels[slot], grid)
+            if row_sh and _has_norm(row_sh, norm):
+                return False
+            if _verifies_math(
+                labels[slot],
+                norm,
+                allowed | chart_row_pool,
+                allowed | chart_row_pool,
+            ):
+                return False
+        if (bindings or message_ok) and _verifies_math(
+            labels[slot],
+            norm,
+            allowed | chart_row_pool,
+            allowed | chart_row_pool,
+        ):
+            return False
+        return True
 
     def repl(match: re.Match[str]) -> str:
         kind = match.group(1)

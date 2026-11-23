@@ -58,7 +58,7 @@ def build_native_pptx(
     brand_mark = (
         str(style["brand_mark"]).strip()
         if style and isinstance(style.get("brand_mark"), str) and style["brand_mark"].strip()
-        else "LIBER · ATELIER"
+        else ""
     )
     if style and isinstance(style.get("chart_series"), list):
         for hx in style["chart_series"]:

@@ -72,8 +72,18 @@ _EMPTY_RAF_SHELL = re.compile(
 )
 
 
+def _skip_js_comment(text: str, i: int) -> int | None:
+    if text.startswith("//", i):
+        nl = text.find("\n", i + 2)
+        return len(text) if nl < 0 else nl + 1
+    if text.startswith("/*", i):
+        end = text.find("*/", i + 2)
+        return len(text) if end < 0 else end + 2
+    return None
+
+
 def _brace_object_span(text: str, open_idx: int) -> tuple[int, int] | None:
-    """Return [start, end) of `{...}` starting at open_idx, respecting strings."""
+    """Return [start, end) of `{...}` starting at open_idx, respecting strings and comments."""
     if open_idx < 0 or open_idx >= len(text) or text[open_idx] != "{":
         return None
     depth = 0
@@ -90,6 +100,10 @@ def _brace_object_span(text: str, open_idx: int) -> tuple[int, int] | None:
             elif ch == in_str:
                 in_str = None
             i += 1
+            continue
+        after_comment = _skip_js_comment(text, i)
+        if after_comment is not None:
+            i = after_comment
             continue
         if ch in ("'", '"', "`"):
             in_str = ch
@@ -151,7 +165,7 @@ def _strip_function_props(text: str, prop: str) -> str:
 
 
 def _balance_chart_call(script: str) -> str:
-    """Drop extra `}` / insert missing `}` inside `new Chart(...)` args."""
+    """Drop extra `}` / insert missing `}` and `)` inside `new Chart(...)` args."""
     m = re.search(r"new\s+Chart\s*\(", script, re.I)
     if not m:
         return script
@@ -160,6 +174,7 @@ def _balance_chart_call(script: str) -> str:
     i = start + 1
     paren = 1
     brace = 0
+    bracket = 0
     in_str: str | None = None
     escape = False
     while i < len(script):
@@ -173,6 +188,11 @@ def _balance_chart_call(script: str) -> str:
             elif ch == in_str:
                 in_str = None
             i += 1
+            continue
+        after_comment = _skip_js_comment(script, i)
+        if after_comment is not None:
+            out.append(script[i:after_comment])
+            i = after_comment
             continue
         if ch in ("'", '"', "`"):
             in_str = ch
@@ -189,11 +209,21 @@ def _balance_chart_call(script: str) -> str:
                 continue
             brace -= 1
             out.append(ch)
+        elif ch == "[":
+            bracket += 1
+            out.append(ch)
+        elif ch == "]":
+            if bracket > 0:
+                bracket -= 1
+            out.append(ch)
         elif ch == "(":
             paren += 1
             out.append(ch)
         elif ch == ")":
             if paren == 1:
+                if bracket > 0:
+                    out.append("]" * bracket)
+                    bracket = 0
                 if brace > 0:
                     out.append("}" * brace)
                     brace = 0
@@ -202,36 +232,77 @@ def _balance_chart_call(script: str) -> str:
                 return "".join(out)
             paren -= 1
             out.append(ch)
+        elif ch == ";" and paren == 1 and brace == 0 and bracket == 0:
+            # Missing closing ')' before statement semicolon: `new Chart(ctx, {...};`
+            out.append(")")
+            out.append(script[i:])
+            return "".join(out)
         else:
             out.append(ch)
         i += 1
+    if bracket > 0:
+        out.append("]" * bracket)
     if brace > 0:
         out.append("}" * brace)
+    if paren > 0:
+        out.append(")" * paren)
     return "".join(out)
+
+
+def _clean_script_body(body: str) -> str:
+    body = _READY_RAF_SHELL.sub("", body)
+    body = _READY_ASSIGN.sub("", body)
+    body = _EMPTY_RAF_SHELL.sub("", body)
+    body = _strip_keyed_objects(body, "tooltip")
+    body = _strip_function_props(body, "callback")
+    body = _balance_chart_call(body)
+    body = body.strip()
+    if body and not body.endswith(";"):
+        body += ";"
+    return body
+
+
 def _repair_scripts(text: str) -> str:
-    """Strip fragile LLM callbacks and rebalance Chart() args inside <script>."""
+    """Strip fragile LLM callbacks, orphan </script> READY tails, and rebalance Chart() args."""
+    # Remove malformed duplicate tail `</script>window.__CASE3_CHART_READY=true;</script>`
+    cleaned = re.sub(
+        r"(?is)</script>\s*(?:window\s*\.\s*)?__CASE3_CHART_READY\s*=\s*true\s*;?\s*</script>",
+        "</script>",
+        text,
+    )
 
-    def _fix(m: re.Match[str]) -> str:
-        body = m.group(1)
-        body = _READY_RAF_SHELL.sub("", body)
-        body = _READY_ASSIGN.sub("", body)
-        body = _EMPTY_RAF_SHELL.sub("", body)
-        body = _strip_keyed_objects(body, "tooltip")
-        body = _strip_function_props(body, "callback")
-        body = _balance_chart_call(body)
-        body = body.strip()
-        if not body.endswith(";"):
-            body += ";"
-        return f"<script>{body}{_DEFER_READY}</script>"
+    if re.search(r"(?is)<script\b", cleaned):
+        # Close an unclosed <script> if no </script> follows it
+        last_open = max(
+            (m.start() for m in re.finditer(r"(?is)<script\b[^>]*>", cleaned)),
+            default=-1,
+        )
+        last_close = max(
+            (m.start() for m in re.finditer(r"(?is)</script>", cleaned)),
+            default=-1,
+        )
+        if last_open > last_close:
+            cleaned += "</script>"
 
-    if re.search(r"(?is)<script\b", text):
-        return re.sub(r"(?is)<script>(.*?)</script>", _fix, text)
-    repaired = _READY_RAF_SHELL.sub("", text)
-    repaired = _READY_ASSIGN.sub("", repaired)
-    repaired = _EMPTY_RAF_SHELL.sub("", repaired)
-    repaired = _strip_keyed_objects(repaired, "tooltip")
-    repaired = _strip_function_props(repaired, "callback")
-    repaired = _balance_chart_call(repaired)
+        parts: list[str] = []
+        pos = 0
+        for m in re.finditer(r"(?is)<script(?:\s[^>]*)?>(.*?)</script>", cleaned):
+            outside = cleaned[pos : m.start()]
+            outside = re.sub(r"(?is)</script>", "", outside)
+            outside = _READY_RAF_SHELL.sub("", outside)
+            outside = _READY_ASSIGN.sub("", outside)
+            parts.append(outside)
+            body = _clean_script_body(m.group(1))
+            parts.append(f"<script>{body}{_DEFER_READY}</script>")
+            pos = m.end()
+        tail = cleaned[pos:]
+        tail = re.sub(r"(?is)</script>", "", tail)
+        tail = _READY_RAF_SHELL.sub("", tail)
+        tail = _READY_ASSIGN.sub("", tail)
+        parts.append(tail)
+        return "".join(parts)
+
+    repaired = _clean_script_body(cleaned)
     return repaired + f"<script>{_DEFER_READY}</script>"
 
 
@@ -291,6 +362,9 @@ def sanitize_chart_html(html: str) -> str:
         flags=re.I,
     )
     text = nest_orphan_scale_titles(text)
+    from case3.chart_harden import repair_misplaced_scales_keys
+
+    text = repair_misplaced_scales_keys(text)
     # Drop broken tooltip/tick callbacks; defer READY via a single double-rAF.
     text = _repair_scripts(text)
     return text

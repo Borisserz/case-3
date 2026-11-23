@@ -12,7 +12,7 @@ export const LIBER_MODE_PILLS: {
   {
     id: "presentation",
     label: "Презентация",
-    hint: "Одна преза · PPTX и PDF — без отчёта, схемы на слайдах",
+    hint: "Только презентация · PPTX и PDF — без отчёта, схемы на слайдах",
   },
 ];
 

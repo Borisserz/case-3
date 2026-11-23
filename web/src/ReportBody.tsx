@@ -671,7 +671,7 @@ export function ReportBody({
                 {isEditingTable && (
                   <div className="report-table-busy" aria-live="polite">
                     <p className="fig-press-label">Пересобираю таблицу в отчёте…</p>
-                    <p className="fig-press-hint">TeX · PDF · DOCX</p>
+                    <p className="fig-press-hint">PDF и Word</p>
                   </div>
                 )}
                 {tableOpen && onEditTable && (
@@ -877,13 +877,13 @@ export function ReportBody({
                       )}
                       <p className="fig-press-label">
                         {isPhoto
-                          ? "Генерирую фото на столе…"
+                          ? "Генерирую фото…"
                           : isDiagram
-                            ? "Пересобираю схему на столе…"
-                            : "Пересобираю рисунок на столе…"}
+                            ? "Пересобираю схему…"
+                            : "Пересобираю график…"}
                       </p>
                       <p className="fig-press-hint">
-                        {isPhoto ? "Image API · PDF" : isDiagram ? "Mermaid · PDF" : "тип · палитра · PDF"}
+                        {isPhoto ? "Фото и PDF" : isDiagram ? "Схема и PDF" : "График и PDF"}
                       </p>
                     </div>
                   )}

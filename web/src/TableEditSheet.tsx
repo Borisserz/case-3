@@ -1,6 +1,7 @@
 /** Liber desk: edit one report table — caption + spreadsheet-feel grid. */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { submitChord } from "./domain/undoChord";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type TableEditRequest = {
@@ -32,7 +33,7 @@ type Props = {
 };
 
 const MAX_COLS = 40;
-const MAX_ROWS = 20;
+const MAX_ROWS = 200;
 
 function cloneGrid(headers: string[], rows: string[][]): {
   headers: string[];
@@ -337,8 +338,8 @@ export function TableEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Черновик выше. Нажмите «В превью», чтобы обновить черновик; PDF и DOCX
-          обновятся по кнопке «Готово». ⌘↵ / Ctrl+Enter.
+          Черновик выше. Нажмите «В превью», чтобы обновить черновик; PDF и Word
+          обновятся по кнопке «Готово». {submitChord()}.
         </p>
         <div className="chart-edit-actions">
           <button

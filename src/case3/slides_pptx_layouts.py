@@ -643,7 +643,14 @@ def _layout_card_row(
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
     top = Inches(max(y_in + 0.12, 2.15))
-    card_h = Inches(3.55)
+    max_body = max((len(str(c.get("body") or "").strip()) for c in cards), default=0)
+    has_pct = any(_pct_from_kicker(str(c.get("kicker") or "")) is not None for c in cards)
+    if max_body == 0 and not has_pct:
+        card_h = Inches(1.85)
+    elif max_body <= 85 and not has_pct:
+        card_h = Inches(2.55)
+    else:
+        card_h = Inches(3.55)
     foil = colors.get("foil", colors["accent"])
     for i, c in enumerate(cards):
         shape = slide.shapes.add_shape(
@@ -764,8 +771,8 @@ def _layout_kpi(
     usable = Inches(11.9)
     card_w = Emu(int((usable - gap * (n - 1)) / n))
     left = _MARGIN_X
-    # Pin cards under the title (HTML twin) — avoid floating mid-slide void.
-    card_h = Inches(1.55)
+    has_extra = any(str(k.get("hint") or "").strip() or str(k.get("delta") or "").strip() for k in kpis)
+    card_h = Inches(1.75) if has_extra else Inches(1.35)
     top = Inches(max(y_in + 0.18, 2.05))
     for i, k in enumerate(kpis):
         shape = slide.shapes.add_shape(

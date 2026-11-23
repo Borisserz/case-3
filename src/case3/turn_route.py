@@ -106,8 +106,8 @@ def _live_kinds(raw: str) -> list[str]:
     found: list[str] = []
     for kind, pattern in (
         ("presentation", _PRESENTATION),
-        ("diagram", _DIAGRAM),
         ("report", _REPORT),
+        ("diagram", _DIAGRAM),
     ):
         for match in pattern.finditer(raw):
             window = raw[max(0, match.start() - 32) : match.start()]
@@ -173,6 +173,8 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
     ):
         return "chat"
     if kinds and (make or not analyze):
+        if plaque and plaque in kinds:
+            return plaque
         return kinds[0]
     if analyze:
         if plaque and not kinds and not _plaque_blocked(raw, plaque):
@@ -181,5 +183,7 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
     if plaque:
         return plaque
     if kinds:
+        if plaque and plaque in kinds:
+            return plaque
         return kinds[0]
     return "chat"

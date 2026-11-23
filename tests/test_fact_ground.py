@@ -1028,3 +1028,79 @@ def test_cross_shot_differences_and_comma_enumerations_survive_grounding() -> No
     assert "Брестская (96,7\\%)" in out
     assert "Могилёвская (98,0\\%)" in out
 
+
+def test_imns_multi_row_with_parenthetical_city_not_blocked_by_wrong_row_tokens() -> None:
+    from case3.fact_ground import wrong_row_tokens
+
+    source = (
+        "| Инспекция | План | Факт |\n"
+        "| --- | --- | --- |\n"
+        "| ИМНС по г. Минску | 150 000,0 | 140 000,0 |\n"
+        "| ИМНС по Центральному району (г. Минск) | 64 000,0 | 65 420,5 |\n"
+        "| ИМНС по Советскому району (г. Минск) | 50 000,0 | 48 100,0 |\n"
+    )
+    ok_text = (
+        "ИМНС по Центральному району (г. Минск): 65 420,5.\n"
+        "ИМНС по г. Минску: 140 000,0; ИМНС по Советскому району (г. Минск): 48 100,0."
+    )
+    assert wrong_row_tokens(ok_text, source) == []
+    bad_text = "ИМНС по Центральному району (г. Минск): 140 000,0."
+    assert wrong_row_tokens(bad_text, source) == ["140 000,0"]
+
+
+def test_verifies_math_two_step_what_if_formula() -> None:
+    from case3.chat_turn import _filter_verifiable_stray, number_norms
+    from case3.fact_ground import ground_generated
+
+    source = (
+        "| Инспекция | План | Факт |\n"
+        "| --- | --- | --- |\n"
+        "| Гомельская | 8200 | 7544 |\n"
+    )
+    intent = "Допустим, для Гомельской выделили резерв 450"
+    # Intermediate 7994 is NOT stated — only (7544 + 450) / 8200 * 100 = 97.49%
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Для Гомельской с учётом резерва 450 при плане 8200 выполнение составит 97,5\\%.\n"
+        "\\end{document}\n"
+    )
+    out, _c, _f, _d, _dropped = ground_generated(
+        tex, [], [], [], source=source, intent=intent
+    )
+    assert "97,5" in out
+
+    # Also verify chat_turn's stray filter keeps 97,5% in chat answers
+    chat_text = "С учётом резерва 450 при плане 8200 выполнение по Гомельской составит 97,5%."
+    allowed = number_norms(source) | number_norms(intent)
+    stray = _filter_verifiable_stray(
+        chat_text, ["97,5%"], allowed, source, message_ok=number_norms(intent)
+    )
+    assert stray == []
+
+
+def test_chart_computed_shares_survive_grounding() -> None:
+    source = (
+        "| Инспекция | План | Факт |\n"
+        "| --- | --- | --- |\n"
+        "| Альфа | 600 | 610 |\n"
+        "| Бета | 400 | 390 |\n"
+    )
+    # Donut chart computes plan shares (60%, 40%) even without ## Производные
+    html = (
+        "<canvas id='c1' width='520' height='520'></canvas>"
+        "<script>new Chart(document.getElementById('c1'),{"
+        "type:'doughnut',data:{labels:['Альфа','Бета'],"
+        "datasets:[{label:'Доля, %',data:[60,40]}]}});</script>"
+    )
+    _tex, charts, _figs, _diags, _dropped = ground_generated(
+        "",
+        [{"id": "cht_01", "type": "donut", "caption": "Доля в плане, %", "html": html}],
+        [],
+        [],
+        source=source,
+        intent="Построй круговую диаграмму долей плана",
+    )
+    out_html = charts[0]["html"]
+    assert "null" not in out_html
+    assert "60" in out_html
+    assert "40" in out_html

@@ -1,6 +1,7 @@
 /** Liber desk: edit one report paragraph — plain text → TeX patch. */
 
 import { useEffect, useId, useRef, useState } from "react";
+import { submitChord } from "./domain/undoChord";
 import { useFocusTrap } from "./useFocusTrap";
 
 export type ParagraphEditRequest = {
@@ -60,7 +61,7 @@ export function ParagraphEditSheet({
     >
       <header className="chart-edit-head">
         <div>
-          <p className="chart-edit-eyebrow">правка на столе · абзац</p>
+          <p className="chart-edit-eyebrow">Редактирование абзаца</p>
           <h3 className="chart-edit-title">Абзац {paragraphIndex}</h3>
         </div>
         <button
@@ -94,7 +95,7 @@ export function ParagraphEditSheet({
           }}
         />
         <p className="chart-edit-style-hint">
-          ⌘↵ сохранить · только этот абзац в TeX · числа не выдумывать
+          {submitChord()} сохранить · только этот абзац · числа не выдумывать
         </p>
       </section>
 
@@ -102,7 +103,7 @@ export function ParagraphEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          «Сохранить в отчёт» перепишет абзац в .tex и пересоберёт PDF/DOCX.
+          «Сохранить в отчёт» обновит абзац и пересоберёт PDF и Word.
         </p>
         <div className="chart-edit-actions">
           <button

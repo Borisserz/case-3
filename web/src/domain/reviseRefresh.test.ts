@@ -91,3 +91,44 @@ test("reload reopens only the chat that was open", () => {
   assert.equal(chatToReopen(items, "missing", false), "");
   assert.equal(chatToReopen(items, "", false), "");
 });
+
+test("refreshRevisedArtifact preserves cleared memorySection on undo", async () => {
+  const { refreshRevisedArtifact } = await import("./reviseRefresh");
+  const origFetch = globalThis.fetch;
+  const origWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = globalThis;
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      run_id: "r1",
+      status: "ok",
+      memory_section: "Введение",
+    }),
+  })) as unknown as typeof fetch;
+
+  let msgs = [{ id: "m1", role: "bot", text: "ok", pending: true }] as unknown as import("./liberTypes").Msg[];
+  let remembered: import("./liberTypes").RunResult | null = null;
+  try {
+    await refreshRevisedArtifact(
+      "r1",
+      "report",
+      "m1",
+      {
+        setMsgs: (fn) => {
+          msgs = fn(msgs);
+        },
+        rememberRun: (res) => {
+          remembered = res;
+        },
+        openReportArtifact: () => {},
+      },
+      "r1",
+      { op: "undo", memorySection: "" },
+    );
+    assert.equal(msgs[0]?.result?.memory_section, "");
+    assert.equal((remembered as import("./liberTypes").RunResult | null)?.memory_section, "");
+  } finally {
+    globalThis.fetch = origFetch;
+    (globalThis as { window?: unknown }).window = origWindow;
+  }
+});

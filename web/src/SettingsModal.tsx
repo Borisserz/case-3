@@ -112,7 +112,7 @@ export function SettingsModal({
       <div className="settings-modal-sheet">
         <header className="settings-modal-head">
           <div>
-            <p className="settings-modal-eyebrow">atelier · настройки</p>
+            <p className="settings-modal-eyebrow">Настройки</p>
             <h2 id={titleId} className="settings-modal-title">
               Как собрать отчёт
             </h2>
@@ -178,7 +178,7 @@ export function SettingsModal({
             <div className="row settings-limits-row">
               <div>
                 <label className="field" htmlFor="set-slides">
-                  Слайдов в презе
+                  Слайдов в презентации
                 </label>
                 <input
                   id="set-slides"
@@ -191,7 +191,7 @@ export function SettingsModal({
               </div>
             </div>
             <p className="hint">
-              Желаемая длина 6–24. Если в тексте мало фактов, преза будет короче — цифры не выдумываются. Шаблон повторяет свои раскладки, чтобы длинный документ поместился.
+              Желаемая длина 6–24. Если в тексте мало фактов, презентация будет короче — цифры не выдумываются. Шаблон повторяет свои раскладки, чтобы длинный документ поместился.
             </p>
             <label className="check">
               <input
@@ -207,7 +207,7 @@ export function SettingsModal({
                 checked={forbidImages}
                 onChange={(e) => onForbidImages(e.target.checked)}
               />
-              Без фото (Image API)
+              Без генерации фото
             </label>
             <label className="check">
               <input
@@ -215,7 +215,7 @@ export function SettingsModal({
                 checked={dryRun}
                 onChange={(e) => onDryRun(e.target.checked)}
               />
-              Dry-run (без LLM)
+              Тестовый прогон (без ИИ)
             </label>
           </section>
 
@@ -260,16 +260,16 @@ export function SettingsModal({
             aria-labelledby="set-health"
           >
             <h3 className="settings-block-title" id="set-health">
-              Desk
+              Состояние сервисов
             </h3>
-            {!health && <p className="hint">Проверка API…</p>}
+            {!health && <p className="hint">Проверка сервисов…</p>}
             {health && (
               <ul className="desk-health-list">
                 {(
                   health.probes || [
                     {
                       id: "vision",
-                      label: "Qwen / Vision",
+                      label: "Языковая модель",
                       status: health.vision_ok
                         ? "green"
                         : health.vision_configured
@@ -277,57 +277,75 @@ export function SettingsModal({
                           : "red",
                       hint: health.vision_configured
                         ? null
-                        : "VISION_API_BASE_URL",
+                        : "Сервис модели не настроен",
                     },
                     {
                       id: "image",
-                      label: "Image API",
+                      label: "Генерация фото",
                       status: health.image_api_ok
                         ? "green"
-                        : health.image_api_configured ||
-                            health.kandinsky_configured
-                          ? "amber"
-                          : "amber",
-                      hint: health.image_api_error,
+                        : "amber",
+                      hint: health.image_api_ok ? null : "Сервис изображений не подключён",
                     },
                     {
                       id: "docker",
-                      label: "Docker TeX",
+                      label: "Сборка PDF",
                       status: health.docker_ok ? "green" : "red",
-                      hint: health.docker_error,
+                      hint: health.docker_ok ? null : "Модуль печати PDF недоступен",
                     },
                     {
                       id: "soffice",
-                      label: "LibreOffice",
+                      label: "Конвертация офисных файлов",
                       status: health.soffice_ok ? "green" : "amber",
-                      hint: health.soffice_hint,
+                      hint: health.soffice_ok ? null : "Офисный конвертер недоступен",
                     },
                     {
                       id: "playwright",
-                      label: "Playwright",
+                      label: "Отрисовка графиков и слайдов",
                       status: health.playwright_ok ? "green" : "red",
-                      hint: null,
+                      hint: health.playwright_ok ? null : "Компонент отрисовки недоступен",
                     },
                   ]
-                ).map((p) => (
-                  <li key={p.id} className="desk-health-row">
-                    <span
-                      className={`desk-health-dot is-${p.status}`}
-                      aria-hidden
-                    />
-                    <span className="desk-health-label">{p.label}</span>
-                    <span className={`desk-health-val is-${p.status}`}>
-                      {p.status === "green"
-                        ? "ok"
-                        : p.status === "amber"
-                          ? "внимание"
-                          : "нет"}
-                    </span>
-                    {p.hint ? (
-                      <span className="desk-health-hint">{p.hint}</span>
-                    ) : null}
-                  </li>
-                ))}
+                ).map((p) => {
+                  const friendlyLabel: Record<string, string> = {
+                    vision: "Языковая модель",
+                    image: "Генерация фото",
+                    docker: "Сборка PDF",
+                    soffice: "Конвертация офисных файлов",
+                    playwright: "Отрисовка графиков и слайдов",
+                  };
+                  const friendlyHint: Record<string, string> = {
+                    vision: "Сервис языковой модели недоступен или не настроен",
+                    image: "Иллюстрации не подключены — отчёты и слайды собираются без них",
+                    docker: "Модуль печати PDF недоступен",
+                    soffice: "Офисный конвертер недоступен — слайды собираются как изображения",
+                    playwright: "Компонент отрисовки графиков недоступен",
+                  };
+                  const label = friendlyLabel[p.id] || p.label;
+                  const hint =
+                    p.status === "green"
+                      ? null
+                      : friendlyHint[p.id] || p.hint;
+                  return (
+                    <li key={p.id} className="desk-health-row">
+                      <span
+                        className={`desk-health-dot is-${p.status}`}
+                        aria-hidden
+                      />
+                      <span className="desk-health-label">{label}</span>
+                      <span className={`desk-health-val is-${p.status}`}>
+                        {p.status === "green"
+                          ? "готово"
+                          : p.status === "amber"
+                            ? "внимание"
+                            : "нет"}
+                      </span>
+                      {hint ? (
+                        <span className="desk-health-hint">{hint}</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <p className="health-foot">{paradeHint}</p>

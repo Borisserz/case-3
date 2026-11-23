@@ -231,7 +231,7 @@ export function ChartEditSheet({
       <header className="chart-edit-head">
         <div>
           <p className="chart-edit-eyebrow">
-            правка на столе
+            настройка графика
             {liveLoading
               ? " · обновляю превью…"
               : dirtyType || dirtyPalette

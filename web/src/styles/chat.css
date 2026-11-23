@@ -6,8 +6,8 @@
   align-items: center;
   gap: 1.85rem;
   /* Extra bottom pad so card CTAs clear sticky-feel composer + source plaque */
-  padding: 1.35rem 1rem 3.5rem;
-  scroll-padding-bottom: 6.5rem;
+  padding: 1.35rem 1rem 9.5rem;
+  scroll-padding-bottom: 10.5rem;
 }
 
 /* Session title — top of transcript, scrolls with chat (not pinned over cards) */
@@ -38,7 +38,7 @@
 .artifact-card,
 .deck-file-card,
 .msg-attach-row {
-  scroll-margin-bottom: 5.5rem;
+  scroll-margin-bottom: 10.5rem;
 }
 
 .msg {

@@ -74,3 +74,10 @@ def test_negated_artifact_is_not_a_request():
 def test_describe_stays_chat_even_if_the_noun_is_present():
     assert resolve_turn("Опиши отчёт по этим цифрам", "report") == "chat"
     assert resolve_turn("Кратко сделай презу", None) == "presentation"
+
+
+def test_report_with_diagram_stays_report_not_diagram_only():
+    assert resolve_turn("Сделай отчёт с таблицей и схемой", "report") == "report"
+    assert resolve_turn("Сделай отчёт с таблицей и схемой", None) == "report"
+    assert resolve_turn("Собери презентацию со схемой", "presentation") == "presentation"
+    assert resolve_turn("Собери презентацию со схемой", None) == "presentation"

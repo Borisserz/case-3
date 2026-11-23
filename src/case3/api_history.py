@@ -82,17 +82,41 @@ def _save_user_history(data: dict[str, Any], workspace_id: str = "default") -> N
                 log.warning("failed to save history: %s (fallback: %s)", last_err, fallback_err)
 
 
+_GENERIC_HISTORY_TITLES = re.compile(
+    r"^(?:(?:сделай|собери|собрать|подготовь|напиши|создай|построй|нарисуй|покажи)\s+)?"
+    r"(?:новый\s+|новую\s+)?(?:отч[её]т|документ|справк[уа]|презентаци[юя]|през[уа]|схем[уа]|график|word|ворд|pdf|docx|pptx)[.!? ]*$",
+    re.IGNORECASE,
+)
+
+
 def _title_from_meta(meta: dict[str, Any], run_id: str) -> str:
-    title = ""
     prev = meta.get("preview")
     if isinstance(prev, dict) and prev.get("title"):
-        title = str(prev.get("title")).strip()
-    elif meta.get("title"):
-        title = str(meta.get("title")).strip()
-    elif meta.get("intent"):
-        intent_line = str(meta.get("intent")).strip().split("\n")[0]
-        title = intent_line[:60]
-    return title or run_id
+        t = str(prev.get("title")).strip()
+        if t and not _GENERIC_HISTORY_TITLES.match(t):
+            return t[:64]
+    if meta.get("title"):
+        t = str(meta.get("title")).strip()
+        if t and not _GENERIC_HISTORY_TITLES.match(t):
+            return t[:64]
+    for key in ("source_title", "source_name"):
+        val = str(meta.get(key) or "").strip()
+        if val and not _GENERIC_HISTORY_TITLES.match(val):
+            return val[:64]
+    if meta.get("intent"):
+        intent_line = str(meta.get("intent")).strip().split("\n")[0].strip()
+        if intent_line and not _GENERIC_HISTORY_TITLES.match(intent_line):
+            return intent_line[:60]
+    summary = str(meta.get("chat_summary") or "").strip()
+    if summary:
+        first_line = next(
+            (ln.strip() for ln in summary.splitlines() if ln.strip() and not ln.strip().startswith("|")),
+            "",
+        )
+        first_line = re.sub(r"[*_`#]+", "", first_line).strip()
+        if first_line and not _GENERIC_HISTORY_TITLES.match(first_line):
+            return first_line[:60]
+    return run_id
 
 
 def _index_path() -> Path:

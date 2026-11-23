@@ -500,7 +500,10 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
             # Preview: unwrap landscape and parse inner table if present
             inner = body[m.end() : m.start() + em.start()]
             tm = re.search(
-                r"\\begin\{table\*?\}.*?\\end\{table\*?\}", inner, re.S
+                r"\\begin\{table\*?\}.*?\\end\{table\*?\}|"
+                r"\\begin\{xltabular\}.*?\\end\{xltabular\}",
+                inner,
+                re.S,
             )
             if tm:
                 table = _parse_table_block(tm.group(0))

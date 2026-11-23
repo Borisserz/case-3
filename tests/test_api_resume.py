@@ -198,6 +198,10 @@ def test_create_run_queues_one_waiter_and_third_writes_nothing(
         assert status.status_code == 200
         assert status.json()["status"] == "queued"
     finally:
+        from case3.api import _drop_queued_waiter
+
+        if "run_id" in locals() and run_id:
+            _drop_queued_waiter(run_id)
         _release_pipeline_slot("busy_run_123")
         if _PIPELINE_SLOT.locked():
             _release_pipeline_slot()

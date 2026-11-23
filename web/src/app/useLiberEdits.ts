@@ -52,6 +52,7 @@ type EditPayloadData = {
   media_status?: RunResult["media_status"];
   diagrams?: RunResult["diagrams"];
   undo?: UndoApi;
+  memory_section?: string;
 };
 
 type Args = {
@@ -112,6 +113,9 @@ export function useLiberEdits({
                   : msg.result.warnings,
               media_status: data.media_status ?? msg.result.media_status,
               diagrams: data.diagrams ?? msg.result.diagrams,
+              ...(typeof data.memory_section === "string"
+                ? { memory_section: data.memory_section }
+                : {}),
             },
           };
           if (next.result) rememberRun(next.result);
@@ -181,6 +185,12 @@ export function useLiberEdits({
             : undefined,
           media_status: data.media_status as RunResult["media_status"],
           undo: data.undo as UndoApi,
+          memory_section:
+            typeof data.memory_section === "string"
+              ? data.memory_section
+              : path === "undo"
+                ? ""
+                : undefined,
         },
         opts?.quiet ? "" : okToast,
         { pulseDownloads: opts?.rebuild !== false && !opts?.quiet },
@@ -530,7 +540,7 @@ export function useLiberEdits({
         msgId,
         figureId: `tab:${req.tableIndex}`,
         message:
-          "Нет run_id — открой отчёт из свежего запуска, не из пустой сессии",
+          "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }
@@ -589,7 +599,7 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: `para:${req.paragraphIndex}`,
-        message: "Нет run_id — открой отчёт из свежего запуска",
+        message: "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }
@@ -646,7 +656,7 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: "para:insert",
-        message: "Нет run_id — открой отчёт из свежего запуска",
+        message: "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }
@@ -709,7 +719,7 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: `heading:${req.headingIndex}`,
-        message: "Нет run_id — открой отчёт из свежего запуска",
+        message: "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }
@@ -762,7 +772,7 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: "doc_title",
-        message: "Нет run_id — открой отчёт из свежего запуска",
+        message: "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }
@@ -814,7 +824,7 @@ export function useLiberEdits({
       setEditError({
         msgId,
         figureId: `list:${req.listIndex}`,
-        message: "Нет run_id — открой отчёт из свежего запуска",
+        message: "Откройте сохранённый отчёт, чтобы внести правку",
       });
       return false;
     }

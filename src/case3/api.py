@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -132,6 +132,34 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="case-3 demo", version="0.4.0", lifespan=lifespan)
+
+_RUN_PATH_RE = re.compile(r"^/api/runs/([A-Za-z0-9_.-]+)(?:/|$)")
+
+
+@app.middleware("http")
+async def _enforce_run_workspace_middleware(request: Request, call_next):
+    match = _RUN_PATH_RE.match(request.url.path)
+    if match:
+        run_id = match.group(1)
+        x_wid = request.headers.get("X-Workspace-Id")
+        if x_wid and _RUN_ID_OK.match(run_id):
+            out_dir = (run_store.ROOT / "runs" / "out" / run_id).resolve()
+            out_root = (run_store.ROOT / "runs" / "out").resolve()
+            if out_dir.is_relative_to(out_root):
+                meta_dir = (
+                    out_dir
+                    if (out_dir / "meta.json").is_file()
+                    else (run_store.ROOT / "runs" / "logs" / run_id)
+                )
+                try:
+                    run_store.assert_run_workspace(meta_dir, x_wid)
+                except HTTPException as exc:
+                    return JSONResponse(
+                        status_code=exc.status_code, content={"detail": exc.detail}
+                    )
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -303,6 +331,8 @@ def _memory_section(run_id: str) -> str:
     from case3.chat_memory import newest_edit
 
     edit = newest_edit(run_store.ROOT, run_id)
+    if edit.get("op") == "undo":
+        return ""
     return str(edit.get("section") or "")
 
 
@@ -1372,10 +1402,10 @@ async def api_run(
             400, detail="artifact_bias must be report|diagram|presentation"
         )
     if out_mode == "auto":
-        from case3.input_validation import user_text_before_ui
+        from case3.input_validation import current_turn_user_text
         from case3.turn_route import resolve_turn
 
-        out_mode = resolve_turn(user_text_before_ui(intent), bias or None)
+        out_mode = resolve_turn(current_turn_user_text(intent), bias or None)
     if out_mode not in {"report", "diagram", "presentation", "chat"}:
         raise HTTPException(
             400, detail="output_mode must be report|diagram|presentation|chat|auto"
@@ -1395,7 +1425,7 @@ async def api_run(
     max_images = max(0, min(int(max_images), 8))
     # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
     max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
-    from case3.input_validation import user_text_before_ui
+    from case3.input_validation import current_turn_user_text
     from case3.turn_route import wants_chat_chart
 
     # Chat and scheme skip print. Presentation keeps charts and dia_* for the deck.
@@ -1427,7 +1457,7 @@ async def api_run(
         no_charts=no_charts,
         no_images=no_images,
         allow_chat_charts=out_mode == "chat"
-        and wants_chat_chart(user_text_before_ui(intent), has_prior_chart=has_prior_chart),
+        and wants_chat_chart(current_turn_user_text(intent), has_prior_chart=has_prior_chart),
     )
 
     # FastAPI may pass a single UploadFile when the client sends one file.
@@ -1475,7 +1505,7 @@ async def api_run(
     from case3.prior_turn import insert_prior_turn, prior_block_for_form
 
     from case3.chat_revise import continue_or_limit
-    from case3.input_validation import user_text_before_ui as _user_line
+    from case3.input_validation import current_turn_user_text as _user_line
 
     user_line = _user_line(intent)
     try:
@@ -1495,21 +1525,6 @@ async def api_run(
     )
     if revised is not None:
         return JSONResponse(revised)
-
-    from case3.chat_act import resolve_act
-
-    unclear = resolve_act(_user_line(intent), bias=bias or None)
-    if unclear.kind == "revise" and unclear.op == "ask":
-        return JSONResponse(
-            {
-                "mode": "chat_revise",
-                "status": "ok",
-                "run_id": (prior_run_id or "").strip(),
-                "chat": unclear.say,
-                "op": "ask",
-                "output_mode": "chat",
-            }
-        )
 
     # A chat answer does not take the build slot. A report can keep running,
     # and the one queued report stays queued.

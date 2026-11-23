@@ -95,9 +95,9 @@ export function DeckStyleSheet({
         <header className="deck-style-sheet-head">
           <div>
             <p className="deck-style-eyebrow">презентация · стиль</p>
-            <h2 id={titleId}>Стиль деки</h2>
+            <h2 id={titleId}>Стиль презентации</h2>
             <p className="deck-style-hint">
-              Только для PPTX и превью слайдов. Отчёт PDF/DOCX не меняется.
+              Только для слайдов и презентации. Отчёт PDF/DOCX не меняется.
             </p>
           </div>
           <div className="deck-style-sheet-actions">

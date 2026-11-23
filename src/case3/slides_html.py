@@ -43,7 +43,9 @@ def _esc(s: str) -> str:
 
 
 def _brand(mark: str | None = None) -> str:
-    text = (mark or "LIBER · ATELIER").strip() or "LIBER · ATELIER"
+    text = (mark or "").strip()
+    if not text:
+        return ""
     # Split on first · / middle dot for Liber span styling when possible.
     if "·" in text:
         left, right = text.split("·", 1)
@@ -271,11 +273,31 @@ def _title_panel_inner(
     return '<p class="takeaway takeaway--hero"></p>'
 
 
-def _diagram_legend(palette: str) -> str:
-    """Four role dots under the diagram sentence."""
-    from case3.diagram_style import role_colors_for_palette
+def _diagram_legend(
+    palette: str,
+    *,
+    diagram_spec: dict[str, Any] | None = None,
+) -> str:
+    """Role legend dots under diagram caption — real roles from diagram_spec when provided."""
+    from case3.diagram_style import ROLE_LABEL_RU, extract_diagram_legend, role_colors_for_palette
 
     colors = role_colors_for_palette(palette)
+    if diagram_spec is not None:
+        dtype = str(diagram_spec.get("type") or "").strip().lower()
+        mermaid = str(diagram_spec.get("mermaid") or "")
+        if dtype and dtype not in ("flowchart", "graph"):
+            return ""
+        entries = extract_diagram_legend(mermaid)
+        if not entries:
+            return ""
+        lis = []
+        for ent in entries:
+            role = str(ent.get("role") or "")
+            stroke = (colors.get(role) or {}).get("stroke") or str(ent.get("fill") or "#6b8f76")
+            label = str(ent.get("label") or ROLE_LABEL_RU.get(role, role))
+            lis.append(f'<li><i style="background:{stroke}"></i>{_esc(label)}</li>')
+        return f'<ul class="dia-legend">{"".join(lis)}</ul>'
+
     items = (
         ("start", "Старт"),
         ("decision", "Решение"),
@@ -299,6 +321,7 @@ def _body_for_slide(
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
     palette: str = "atelier",
+    diagram_spec: dict[str, Any] | None = None,
 ) -> str:
     layout = str(slide.get("layout") or "")
     brand = _brand(brand_mark)
@@ -756,7 +779,7 @@ def _body_for_slide(
         if kind == "diagram":
             return (
                 f'<div class="slide-inner media-hero media-hero--diagram">'
-                f'<aside class="chart-hero__rail">{brand}{head_html}{line}{_diagram_legend(pack_key)}</aside>'
+                f'<aside class="chart-hero__rail">{brand}{head_html}{line}{_diagram_legend(pack_key, diagram_spec=diagram_spec)}</aside>'
                 f'<div class="chart-hero__plot"><div class="diagram-stage">{img}</div></div>'
                 f"</div>"
             )
@@ -779,7 +802,7 @@ def _body_for_slide(
             f'<p class="media-split__body">{_esc(body)}</p>' if body else ""
         )
         bullets = _bullets_html(slide.get("bullets") or [], bands=True)
-        legend_html = _diagram_legend(pack_key) if kind == "diagram" else ""
+        legend_html = _diagram_legend(pack_key, diagram_spec=diagram_spec) if kind == "diagram" else ""
         cap = str(slide.get("caption") or "").strip()
         cap_html = (
             f'<p class="media-aside-caption">{_esc(cap)}</p>' if cap else ""
@@ -960,13 +983,14 @@ def render_slide_html(
     language: str = "ru",
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
+    diagram_spec: dict[str, Any] | None = None,
 ) -> str:
     """Return a full HTML document for one slide (1920×1080)."""
     cmap = _theme_color_map(palette, style)
     href = media_png_href if media_png_href is not None else chart_png_href
-    brand_mark = "LIBER · ATELIER"
+    brand_mark = ""
     if isinstance(style, dict) and style.get("brand_mark"):
-        brand_mark = str(style.get("brand_mark")).strip() or brand_mark
+        brand_mark = str(style.get("brand_mark")).strip()
     body = _body_for_slide(
         slide,
         media_png_href=href,
@@ -974,6 +998,7 @@ def render_slide_html(
         style=style,
         slide_index=slide_index,
         palette=palette,
+        diagram_spec=diagram_spec,
     )
     layout = str(slide.get("layout") or "")
     footer = _esc(brand_mark)
@@ -1029,6 +1054,7 @@ def write_slide_work(
     media_png: Path | None = None,
     style: dict[str, Any] | None = None,
     slide_index: int = 0,
+    diagram_spec: dict[str, Any] | None = None,
 ) -> Path:
     """Write index.html (+ fonts + optional media.png) into work_dir."""
     work_dir = Path(work_dir)
@@ -1059,6 +1085,7 @@ def write_slide_work(
         language=language,
         style=style,
         slide_index=slide_index,
+        diagram_spec=diagram_spec,
     )
     index = work_dir / "index.html"
     index.write_text(html_doc, encoding="utf-8")

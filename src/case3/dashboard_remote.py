@@ -401,7 +401,9 @@ def catalog_file() -> Path:
     raw = (os.environ.get("DASHBOARD_FILTERS_FILE") or "").strip()
     if raw:
         return Path(raw)
-    return Path(__file__).resolve().parents[2] / "local" / "dashboard_filters.json"
+    from case3 import run_store
+
+    return Path(run_store.ROOT) / "local" / "dashboard_filters.json"
 
 
 def read_filter_catalog(path: Path | None = None) -> dict | None:
@@ -573,9 +575,11 @@ def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:
     if not plan.get("pull"):
         return plan
     filters = plan.get("filters")
-    if not isinstance(filters, dict) or not filters:
+    if not isinstance(filters, dict):
         return plan
     mrt = str(plan.get("mrt") or "").strip()
+    if not filters and not mrt:
+        return plan
     return {**plan, "viewer": post_open_filters(base, filters, client, mrt=mrt)}
 
 
@@ -632,6 +636,8 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
     overlay: dict[str, object] = {}
     say = ""
     named = phrase_names_choice(text, catalog)
+    dash_obj = catalog.get("dashboard") if isinstance(catalog.get("dashboard"), dict) else {}
+    picked_mrt = str(catalog.get("mrt") or dash_obj.get("mrt") or "").strip()
     if base_filters or named:
         from case3.prompts import load as load_prompt
 
@@ -655,7 +661,8 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
             overlay = filters_from_model(catalog, text, raw)
     result_overlay = validated_catalog_result(catalog, text)
     filters = {**base_filters, **result_overlay, **overlay}
-    if not filters:
+    explicit_plain_open = bool(picked_mrt and _EXPLICIT_DASHBOARD_OPEN.search(text or ""))
+    if not filters and not explicit_plain_open:
         return {
             "pull": False,
             "asked": True,
@@ -673,8 +680,6 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
         "viewer": f"{public_service_base()}/open",
         "reply": say,
     }
-    dash_obj = catalog.get("dashboard") if isinstance(catalog.get("dashboard"), dict) else {}
-    picked_mrt = str(catalog.get("mrt") or dash_obj.get("mrt") or "").strip()
     if picked_mrt:
         out["mrt"] = picked_mrt
     return out

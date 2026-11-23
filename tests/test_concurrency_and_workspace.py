@@ -286,3 +286,30 @@ def test_write_meta_and_carry_preserve_workspace_id(tmp_path: Path) -> None:
     assert fresh.get("prior_run_id") == "r0"
 
 
+def test_run_endpoints_enforce_workspace_isolation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from fastapi.testclient import TestClient
+    from case3.api import app
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    run_id = "source_20261123T140000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps({"run_id": run_id, "status": "ok", "workspace_id": "ws_alpha"}),
+        encoding="utf-8",
+    )
+    (out / "report.tex").write_text(
+        r"\documentclass{article}\begin{document}Hi\end{document}",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    assert client.get(f"/api/runs/{run_id}/status", headers={"X-Workspace-Id": "ws_alpha"}).status_code == 200
+    assert client.get(f"/api/runs/{run_id}/status", headers={"X-Workspace-Id": "ws_beta"}).status_code == 404
+    assert client.get(f"/api/runs/{run_id}/preview", headers={"X-Workspace-Id": "ws_beta"}).status_code == 404
+    assert client.get(f"/api/runs/{run_id}/memory", headers={"X-Workspace-Id": "ws_beta"}).status_code == 404
+    assert client.post(f"/api/runs/{run_id}/cancel", headers={"X-Workspace-Id": "ws_beta"}).status_code == 404
+    # Omitted header (e.g. CLI / EventSource / img tag) keeps working
+    assert client.get(f"/api/runs/{run_id}/status").status_code == 200

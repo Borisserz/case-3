@@ -178,8 +178,8 @@ export function ImageEditModal({
           ) : null}
         </div>
         <p className="chart-edit-foot-hint" style={{ marginTop: "0.45rem" }}>
-          {mode === "generate" && "Image API сгенерирует новое изображение по вашему описанию"}
-          {mode === "edit" && "Image API изменит детали поверх текущего изображения (пользовательского или сгенерированного)"}
+          {mode === "generate" && "Сервис создаст новое изображение по вашему описанию"}
+          {mode === "edit" && "Сервис изменит детали поверх текущего изображения"}
           {mode === "upload" && "Загрузить своё изображение с компьютера (.png, .jpg, .webp)"}
         </p>
       </section>
@@ -276,8 +276,8 @@ export function ImageEditModal({
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
           {mode === "upload"
-            ? "Файл мгновенно сохранится в слайд и обновит PPTX/превью."
-            : "Запрос будет отправлен в Image API контура Liber."}
+            ? "Файл сохранится на слайд и обновит презентацию и превью."
+            : "Изображение будет обновлено и сохранено в документе."}
         </p>
         <div className="chart-edit-actions">
           {onDelete && (

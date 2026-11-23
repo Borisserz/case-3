@@ -165,3 +165,17 @@ def test_attachments_with_meaningful_request_pass():
     )
     assert valid
     assert msg is None
+
+
+def test_current_turn_user_text_strips_chat_memory():
+    from case3.input_validation import current_turn_user_text, user_text_before_ui
+
+    intent = (
+        "Какая доля у Минской области?\n\n"
+        "Разговор этого чата (не Source).\n"
+        "Запрос: построй график по регионам\n\n"
+        "Требования UI:\n- палитра: atelier"
+    )
+    assert "Разговор этого чата" in user_text_before_ui(intent)
+    assert "Требования UI" not in user_text_before_ui(intent)
+    assert current_turn_user_text(intent) == "Какая доля у Минской области?"

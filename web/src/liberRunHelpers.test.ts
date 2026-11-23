@@ -23,7 +23,7 @@ describe("liber surface copy", () => {
     const presentation = LIBER_MODE_PILLS.find((p) => p.id === "presentation");
     assert.equal(
       presentation?.hint,
-      "Одна преза · PPTX и PDF — без отчёта, схемы на слайдах",
+      "Только презентация · PPTX и PDF — без отчёта, схемы на слайдах",
     );
   });
 

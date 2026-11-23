@@ -146,7 +146,7 @@ export function DiagramPane({
   const doApplyEdit = useCallback(
     async (mermaid: string, title: string) => {
       if (!runId || !diagram) {
-        setErr("Нет run_id");
+        setErr("Сначала откройте сохранённый материал");
         return;
       }
       setEditBusy(true);
@@ -187,7 +187,7 @@ export function DiagramPane({
 
   const doRegenerate = useCallback(async () => {
     if (!runId) {
-      setErr("Нет run_id");
+      setErr("Сначала откройте сохранённый материал");
       return;
     }
     setBusy(true);
@@ -368,7 +368,7 @@ export function DiagramPane({
             type="button"
             className="btn ghost"
             disabled={busy}
-            title="Редактировать исходный код Mermaid"
+            title="Редактировать код схемы"
             onClick={() => {
               setCodeOpen(true);
               setErr(null);

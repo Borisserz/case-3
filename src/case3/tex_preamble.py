@@ -213,7 +213,7 @@ def _col_count_from_spec(spec: str) -> int:
     stripped = re.sub(r"[@><!]\{(?:[^{}]|\{[^{}]*\})*\}", "", s)
     fixed_cols = re.findall(r"[pmb]\{[^}]*\}", stripped)
     stripped = re.sub(r"[pmb]\{[^}]*\}", "", stripped)
-    return len(re.findall(r"[XYlcr]", stripped)) + len(fixed_cols)
+    return len(re.findall(r"[XYZlcr]", stripped)) + len(fixed_cols)
 
 
 def table_needs_landscape(table_block: str) -> bool:
@@ -242,6 +242,185 @@ def table_needs_landscape(table_block: str) -> bool:
     return avg >= 28 and ncols >= 5
 
 
+def _plain_cell_len(cell: str) -> int:
+    s = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?\{([^{}]*)\}", r"\1", cell or "")
+    s = re.sub(r"\\[,\s]", " ", s)
+    s = re.sub(r"\\[a-zA-Z]+\*?", "", s)
+    return len(" ".join(s.split()))
+
+
+def _cell_looks_numeric_tex(cell: str) -> bool:
+    s = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?\{([^{}]*)\}", r"\1", cell or "")
+    s = s.replace(r"\%", "%").replace(r"\,", "").replace("~", "").replace(" ", "").strip()
+    if not s or s in {"—", "-", "–"}:
+        return False
+    return bool(re.fullmatch(r"[+\-−]?\d[\d.,]*(?:%|тыс\.?|млн\.?|руб\.?)*", s, re.I))
+
+
+def _proportional_colspec(spec: str, body: str) -> str:
+    """Turn equal-width YYYYYY into compact l/r for narrow code/number cols + Y for wide text cols."""
+    clean_spec = (spec or "").strip()
+    if not re.fullmatch(r"[lcrXYZ\s]+", clean_spec):
+        return clean_spec
+    letters = re.findall(r"[lcrXYZ]", clean_spec)
+    ncols = len(letters)
+    if ncols < 2:
+        return clean_spec
+    data_rows: list[list[str]] = []
+    for chunk in re.split(r"\\\\", body or ""):
+        s = chunk.strip()
+        if not s or "&" not in s:
+            continue
+        s = re.sub(r"^\\(?:toprule|midrule|bottomrule|hline|endhead|endfoot|endfirsthead|endlastfoot)\s*", "", s)
+        if "&" not in s:
+            continue
+        cells = [c.strip() for c in re.split(r"(?<!\\)&", s)]
+        if len(cells) >= ncols:
+            data_rows.append(cells[:ncols])
+    if len(data_rows) < 2:
+        return clean_spec
+    header_row = data_rows[0]
+    body_only = data_rows[1:] if len(data_rows) > 1 else data_rows
+    max_lens: list[int] = [0] * ncols
+    new_cols: list[str] = []
+    for ci in range(ncols):
+        col_cells = [r[ci] for r in body_only if ci < len(r)]
+        mlen = max((_plain_cell_len(c) for c in col_cells), default=0)
+        hlen = _plain_cell_len(header_row[ci]) if ci < len(header_row) else 0
+        max_lens[ci] = max(mlen, hlen)
+        num_cnt = sum(1 for c in col_cells if _cell_looks_numeric_tex(c))
+        non_empty = sum(1 for c in col_cells if _plain_cell_len(c) > 0)
+        is_num = non_empty > 0 and (num_cnt / non_empty >= 0.6)
+        if is_num and mlen <= 18:
+            if hlen <= 16:
+                new_cols.append("r")
+            else:
+                new_cols.append("Z")
+        elif ci == 0 and mlen <= 10 and hlen <= 12:
+            new_cols.append("l")
+        elif (
+            mlen <= 10
+            and hlen <= 12
+            and not any(" " in c.strip() for c in col_cells if _plain_cell_len(c) > 8)
+        ):
+            new_cols.append("l")
+        else:
+            new_cols.append("Y")
+    if "Y" not in new_cols:
+        widest = max(range(ncols), key=lambda idx: max_lens[idx])
+        new_cols[widest] = "Y"
+    return "".join(new_cols)
+
+
+def _landscape_table_upgrade(chunk: str) -> str:
+    """Inside landscape, convert [H]/long wide tabularx into page-breaking xltabular with smart cols."""
+    s = (chunk or "").strip()
+    # Unwrap outer landscape if called on an already-landscaped block
+    had_land = s.startswith(r"\begin{landscape}") and s.endswith(r"\end{landscape}")
+    inner = s
+    if had_land:
+        inner = re.sub(r"^\\begin\{landscape\}\s*", "", inner)
+        inner = re.sub(r"\s*\\end\{landscape\}$", "", inner).strip()
+
+    tm = re.search(
+        r"\\begin\{table\*?\}(?:\s*\[([^\]]*)\])?(.*?)\\end\{table\*?\}",
+        inner,
+        re.S,
+    )
+    if not tm:
+        xm_bare = re.search(
+            r"\\begin\{(tabularx|xltabular)\}\{([^}]*)\}\{([^}]*)\}([\s\S]*?)\\end\{\1\}",
+            inner,
+        )
+        if not xm_bare:
+            return chunk
+        env_b, _w_b, spec_b, tbody_b = (
+            xm_bare.group(1),
+            xm_bare.group(2),
+            xm_bare.group(3),
+            xm_bare.group(4),
+        )
+        smart_b = _proportional_colspec(spec_b, tbody_b)
+        if smart_b == spec_b:
+            return chunk
+        inner_b = (
+            inner[: xm_bare.start()]
+            + rf"\begin{{{env_b}}}{{\linewidth}}{{{smart_b}}}{tbody_b}\end{{{env_b}}}"
+            + inner[xm_bare.end() :]
+        )
+        return f"\\begin{{landscape}}\n{inner_b.strip()}\n\\end{{landscape}}"
+    float_opt = (tm.group(1) or "").strip()
+    table_body = tm.group(2)
+    xm = re.search(
+        r"\\begin\{(tabularx|xltabular)\}\{([^}]*)\}\{([^}]*)\}([\s\S]*?)\\end\{\1\}",
+        table_body,
+    )
+    if not xm:
+        return chunk
+    env, _width, spec, tbody = xm.group(1), xm.group(2), xm.group(3), xm.group(4)
+    smart_spec = _proportional_colspec(spec, tbody)
+    row_count = len([c for c in re.split(r"\\\\", tbody) if "&" in c])
+    should_xltabular = (
+        env == "xltabular"
+        or float_opt.upper() == "H"
+        or row_count >= 10
+    )
+    if not should_xltabular:
+        if smart_spec != spec:
+            updated = (
+                table_body[: xm.start()]
+                + rf"\begin{{{env}}}{{\linewidth}}{{{smart_spec}}}{tbody}\end{{{env}}}"
+                + table_body[xm.end() :]
+            )
+            inner_new = (
+                inner[: tm.start()]
+                + rf"\begin{{table}}[{float_opt or 'htbp'}]{updated}\end{{table}}"
+                + inner[tm.end() :]
+            )
+            return f"\\begin{{landscape}}\n{inner_new}\n\\end{{landscape}}"
+        return chunk
+
+    cap_m = re.search(r"\\caption\*?\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", table_body)
+    caption_line = rf"\caption{{{cap_m.group(1).strip()}}} \\" if cap_m else ""
+    # Split header (up to \midrule) and body rows
+    clean_body = tbody.strip()
+    clean_body = re.sub(r"^\\toprule\s*", "", clean_body)
+    clean_body = re.sub(r"\s*\\bottomrule\s*$", "", clean_body)
+    if r"\midrule" in clean_body:
+        head_part, data_part = clean_body.split(r"\midrule", 1)
+    else:
+        parts = re.split(r"\\\\", clean_body, maxsplit=1)
+        head_part = (parts[0] + r" \\") if parts else ""
+        data_part = parts[1] if len(parts) > 1 else ""
+    head_part = head_part.strip()
+    data_part = re.sub(r"^\s*\\end(?:first)?head\s*", "", data_part).strip()
+    data_part = re.sub(r"\s*\\(?:bottomrule|end(?:last)?foot)\s*", "\n", data_part).strip()
+
+    xl_lines = [
+        r"{\small",
+        r"\setlength{\tabcolsep}{4pt}",
+        rf"\begin{{xltabular}}{{\linewidth}}{{{smart_spec}}}",
+    ]
+    if caption_line:
+        xl_lines.append(caption_line)
+    xl_lines.extend(
+        [
+            r"\toprule",
+            head_part,
+            r"\midrule",
+            r"\endhead",
+            r"\bottomrule",
+            r"\endfoot",
+            data_part,
+            r"\end{xltabular}",
+            r"}",
+        ]
+    )
+    xl_block = "\n".join(line for line in xl_lines if line)
+    inner_new = inner[: tm.start()] + xl_block + inner[tm.end() :]
+    return f"\\begin{{landscape}}\n{inner_new.strip()}\n\\end{{landscape}}"
+
+
 def maybe_landscape_wide_tables(tex: str) -> str:
     """Wrap overly wide ``table`` / ``xltabular`` envs in ``pdflscape`` landscape (once)."""
     parts: list[str] = []
@@ -256,10 +435,12 @@ def maybe_landscape_wide_tables(tex: str) -> str:
         parts.append(tex[pos : m.start()])
         chunk = m.group(0)
         if chunk.lstrip().startswith(r"\begin{landscape}"):
-            parts.append(chunk)
+            parts.append(_landscape_table_upgrade(chunk))
         elif table_needs_landscape(chunk):
             parts.append(
-                "\\begin{landscape}\n" + chunk.strip() + "\n\\end{landscape}"
+                _landscape_table_upgrade(
+                    "\\begin{landscape}\n" + chunk.strip() + "\n\\end{landscape}"
+                )
             )
         else:
             parts.append(chunk)
@@ -293,22 +474,32 @@ def strip_invented_cites(tex: str, *, allowed_keys: set[str] | None = None) -> s
 _Y_COLUMNTYPE = (
     r"\newcolumntype{Y}{>{\hspace{0pt}\raggedright\arraybackslash}X}"
 )
+_Z_COLUMNTYPE = (
+    r"\newcolumntype{Z}{>{\hspace{0pt}\raggedleft\arraybackslash}p{2.5cm}}"
+)
 
 
 def ensure_wrap_columntype(tex: str) -> str:
-    """Define wrapping tabularx column ``Y`` (ragged + hyphenation)."""
+    """Define wrapping tabularx columns ``Y`` (ragged text) and ``Z`` (numeric + wrapped header)."""
     out = tex or ""
-    if r"\newcolumntype{Y}" in out:
+    need_y = r"\newcolumntype{Y}" not in out
+    need_z = r"\newcolumntype{Z}" not in out
+    if not need_y and not need_z:
         return out
+    defs = "\n".join(
+        line
+        for flag, line in ((need_y, _Y_COLUMNTYPE), (need_z, _Z_COLUMNTYPE))
+        if flag
+    )
     # Prefer right after array or tabularx package.
     for needle in (r"\usepackage{array}", r"\usepackage{tabularx}"):
         if needle in out:
-            return out.replace(needle, needle + "\n" + _Y_COLUMNTYPE, 1)
+            return out.replace(needle, needle + "\n" + defs, 1)
     parts = _split_preamble(out)
     if not parts:
         return out
     head, body = parts
-    return head.rstrip() + "\n" + _Y_COLUMNTYPE + "\n" + body
+    return head.rstrip() + "\n" + defs + "\n" + body
 
 
 def harden_tabularx_wrap_cols(tex: str) -> str:
@@ -320,8 +511,8 @@ def harden_tabularx_wrap_cols(tex: str) -> str:
 
     def _repl(m: re.Match[str]) -> str:
         env, width, spec, body = m.group(1), m.group(2), m.group(3), m.group(4)
-        # Already uses Y or p{…} / >{…} — leave alone.
-        if "Y" in spec or "p{" in spec or ">{" in spec:
+        # Already uses Y/Z or p{…} / >{…} — leave alone.
+        if "Y" in spec or "Z" in spec or "p{" in spec or ">{" in spec:
             return m.group(0)
         letters = re.findall(r"[lcrX]", spec)
         if len(letters) < 2:
@@ -869,9 +1060,9 @@ def tex_for_pandoc(tex: str) -> str:
     Custom ``Y`` wrap columns are PDF-only; pandoc dumps them as literal text.
     """
     out = tex or ""
-    # Strip \newcolumntype{Y}{…} even with nested braces inside >{…}.
+    # Strip \newcolumntype{Y|Z}{…} even with nested braces inside >{…}.
     while True:
-        m_y = re.search(r"\\newcolumntype\{Y\}\{", out)
+        m_y = re.search(r"\\newcolumntype\{[YZ]\}\{", out)
         if not m_y:
             break
         i = m_y.end()
@@ -884,16 +1075,27 @@ def tex_for_pandoc(tex: str) -> str:
             i += 1
         out = out[: m_y.start()] + out[i:].lstrip("\n")
 
-    def _spec(m: re.Match[str]) -> str:
-        width, spec = m.group(1), m.group(2)
-        return rf"\begin{{tabularx}}{{{width}}}{{{spec.replace('Y', 'X')}}}"
-
-    out = re.sub(
-        r"\\begin\{(?:tabularx|xltabular)\}\{([^}]*)\}\{([^}]*)\}",
-        _spec,
-        out,
-    )
-    return out.replace(r"\end{xltabular}", r"\end{tabularx}")
+    parts: list[str] = []
+    pos = 0
+    for m in re.finditer(r"\\begin\{(?:tabularx|xltabular)\}", out):
+        if m.start() < pos:
+            continue
+        w_grp = _take_brace_group(out, m.end())
+        if w_grp is None:
+            continue
+        s_grp = _take_brace_group(out, w_grp[1])
+        if s_grp is None:
+            continue
+        width, spec, end_pos = w_grp[0], s_grp[0], s_grp[1]
+        clean_spec = spec.replace("Y", "X").replace("Z", "r")
+        parts.append(out[pos : m.start()])
+        parts.append(rf"\begin{{tabularx}}{{{width}}}{{{clean_spec}}}")
+        pos = end_pos
+    parts.append(out[pos:])
+    out = "".join(parts)
+    out = re.sub(r"\\(?:endfirsthead|endhead|endfoot|endlastfoot)\s*", "", out)
+    out = out.replace(r"\end{xltabular}", r"\end{tabularx}")
+    return out
 
 
 

@@ -282,7 +282,7 @@ export function ChatComposer({
                 type="button"
                 className="composer-data"
                 disabled={busy}
-                title="Открыть превью Stimulsoft и забрать текущий экран"
+                title="Открыть дашборд и забрать текущий экран"
                 onClick={onOpenDashboard}
               >
                 Выбрать данные

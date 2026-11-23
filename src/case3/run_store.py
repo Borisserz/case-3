@@ -21,6 +21,27 @@ ROOT = repo_root()
 
 RUN_ID_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
 FILE_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
+_WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,48}$")
+
+
+def assert_run_workspace(run_dir: Path, workspace_id: str | None) -> None:
+    """Enforce X-Workspace-Id ownership when a non-default workspace header is supplied."""
+    raw = (workspace_id or "").strip()
+    if not raw or not _WORKSPACE_ID_RE.match(raw) or raw == "default":
+        return
+    meta_path = run_dir if run_dir.name == "meta.json" else run_dir / "meta.json"
+    if not meta_path.is_file():
+        return
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(meta, dict):
+        return
+    owner = str(meta.get("workspace_id") or "").strip()
+    owner_clean = owner if _WORKSPACE_ID_RE.match(owner) else "default"
+    if owner_clean != raw:
+        raise HTTPException(404, detail="run not found")
 
 
 def parse_formats_form(raw: str | None) -> set[str]:

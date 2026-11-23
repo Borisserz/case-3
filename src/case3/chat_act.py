@@ -211,6 +211,16 @@ def next_deck_pack(current: str) -> str:
 def _clean_name(name: str) -> str:
     cleaned = " ".join((name or "").split()).strip(" «»\"")
     cleaned = re.split(r"\s+(?:мне|пожалуйста)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    while True:
+        trimmed = re.sub(
+            r"\s+(?:покороче|короче|кратко|вкратце|подробнее|подробней|детальнее|проще|попроще|понятнее|понятней|лучше|аккуратнее|красивее|строже|деловитее|сжатее|полнее|целиком)\s*$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        if trimmed == cleaned:
+            break
+        cleaned = trimmed
     cleaned = cleaned.strip(" «»\"")
     if not cleaned:
         return ""
@@ -898,12 +908,13 @@ def resolve_act(
     has_deck: bool = False,
     has_report: bool = False,
     has_diagram: bool = False,
+    has_chart: bool = False,
     last_section: str = "",
     last_op: str = "",
 ) -> ChatAct:
     """Classify one user message. Build wins when they name a new artifact."""
     raw = _norm(text or "").strip()
-    has_any = has_deck or has_report or has_diagram
+    has_any = has_deck or has_report or has_diagram or has_chart
 
     if _unsupported_shape(raw):
         return ChatAct(kind="talk")
@@ -924,7 +935,7 @@ def resolve_act(
                     op="ask",
                     say=f"Какой цвет графиков: {names}? Фиолетового нет.",
                 )
-            if not has_report and not has_deck:
+            if not (has_report or has_deck or has_chart):
                 return ChatAct(
                     kind="talk",
                     say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
@@ -1451,7 +1462,7 @@ def resolve_act(
         and re.search(r"график", raw, re.IGNORECASE)
         and re.search(r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE)
     ):
-        if not (has_report or has_deck):
+        if not (has_report or has_deck or has_chart):
             return ChatAct(
                 kind="talk",
                 say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",

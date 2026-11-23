@@ -158,7 +158,7 @@ def _colors_from_style(
 
 _PPTX_FONT = "Calibri"
 _PPTX_TITLE_FONT = "Georgia"
-_BRAND_MARK = "LIBER · ATELIER"
+_BRAND_MARK = ""
 _CTX_PPTX_FONT: ContextVar[str | None] = ContextVar("_CTX_PPTX_FONT", default=None)
 _CTX_PPTX_TITLE_FONT: ContextVar[str | None] = ContextVar("_CTX_PPTX_TITLE_FONT", default=None)
 _CTX_BRAND_MARK: ContextVar[str | None] = ContextVar("_CTX_BRAND_MARK", default=None)
@@ -173,7 +173,8 @@ def active_pptx_title_font() -> str:
 
 
 def active_brand_mark() -> str:
-    return _CTX_BRAND_MARK.get() or _BRAND_MARK
+    val = _CTX_BRAND_MARK.get()
+    return _BRAND_MARK if val is None else val
 
 
 @contextmanager
@@ -186,7 +187,7 @@ def use_pptx_theme(
     """Scope font & brand mark per thread/render without mutating module globals."""
     t_font = _CTX_PPTX_FONT.set((font or _PPTX_FONT).strip() or "Calibri")
     t_title = _CTX_PPTX_TITLE_FONT.set((title_font or _PPTX_TITLE_FONT).strip() or "Georgia")
-    t_brand = _CTX_BRAND_MARK.set((brand_mark or _BRAND_MARK).strip() or "LIBER · ATELIER")
+    t_brand = _CTX_BRAND_MARK.set((brand_mark if brand_mark is not None else _BRAND_MARK).strip())
     try:
         yield
     finally:
@@ -319,13 +320,16 @@ def _top_bar(
 
 
 def _brand(slide, colors: dict[str, RGBColor]) -> None:
+    mark = active_brand_mark().strip()
+    if not mark:
+        return
     _add_textbox(
         slide,
         _MARGIN_X,
         Inches(0.22),
         Inches(5.5),
         Inches(0.3),
-        active_brand_mark(),
+        mark,
         size_pt=9,
         bold=True,
         color=colors["muted"],

@@ -57,7 +57,7 @@ export function useDeskBootstrap({
             playwright_ok: false,
             vision_configured: false,
             kandinsky_configured: false,
-            docker_error: "API unreachable — scripts\\api.cmd на :8000",
+            docker_error: "Сервер временно недоступен",
           });
         }
       });

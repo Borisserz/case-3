@@ -945,3 +945,36 @@ def test_plain_question_still_goes_to_the_model(tmp_path: Path):
     assert try_chat_revise("что с кассой", report, root=tmp_path) is None
     assert try_chat_revise("поменяй числа на графике", report, root=tmp_path) is None
     assert try_chat_revise("почему бы не убрать слайд 2?", report, root=tmp_path) is None
+
+
+def test_retype_chart_hides_raw_english_js_error_from_user(tmp_path: Path, monkeypatch):
+    from case3.chart_edit import ChartEditError
+
+    run_id = "source_20261123T173136Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "output_mode": "chat",
+                "charts_planned": ["cht_01"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def boom(*_args, **_kwargs):
+        raise ChartEditError(
+            "chart render failed: chart JS error: Cannot read properties of undefined (reading 'axis')"
+        )
+
+    monkeypatch.setattr("case3.chart_edit.edit_chart_in_run", boom)
+    result = try_chat_revise("сделай этот график линейным", run_id, root=tmp_path)
+    assert result is not None
+    msg = result["chat"]
+    assert "chart render failed" not in msg
+    assert "chart JS error" not in msg
+    assert "reading 'axis'" not in msg
+    assert any("а" <= ch.lower() <= "я" for ch in msg)

@@ -260,6 +260,8 @@ def add_native_chart(
 
     try:
         chart.font.size = Pt(10)
+        if chart_type == XL_CHART_TYPE.BAR_CLUSTERED and len(cats) >= 8:
+            chart.category_axis.tick_labels.font.size = Pt(9)
     except Exception:
         log.debug("pptx chart: font size failed", exc_info=True)
 

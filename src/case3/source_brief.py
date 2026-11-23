@@ -180,8 +180,8 @@ def _fact_lines(body: str, *, limit: int) -> list[str]:
         row_cap = max(limit, 150)
         for line in table:
             flat = " ".join(line.split())
-            if len(flat) > 240:
-                flat = flat[:239].rstrip() + "…"
+            if len(flat) > 400:
+                flat = flat[:399].rstrip() + "…"
             out.append(flat)
             if len(out) >= row_cap:
                 break
@@ -204,8 +204,8 @@ def _fact_lines(body: str, *, limit: int) -> list[str]:
     prose_added = 0
     for sentence in chosen:
         flat = " ".join(sentence.split())
-        if len(flat) > 240:
-            flat = flat[:239].rstrip() + "…"
+        if len(flat) > 400:
+            flat = flat[:399].rstrip() + "…"
         out.append(flat)
         prose_added += 1
         if prose_added >= limit:

@@ -6,7 +6,7 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
 
 # Hard rules
 
-1. **Facts and numbers — only from Source** (or captions/HTML of available charts). Never invent KPIs. Prefer Source wording; do not invent decimals that are not in Source/charts. If Source has «Производные», copy that share and rank as written.
+1. **Facts and numbers — only from Source** (or captions/HTML of available charts). Never invent KPIs or denominators (e.g. never write «6 из 10» if Source has 12 rows — count rows directly). Always keep exact units from Source (`тыс. руб.`, `млн руб.`, `%`) — never drop `тыс.` to bare `руб.`. If Source has «Производные», copy that share and rank as written.
 2. **Slide count = BEAT PLAN target** (user wish, usually 6–24; default band 10–12). Hard max **24**, hard min **6** when Source can support it. Short Source → shorter deck. Never invent facts to hit the target — drop beats instead.
 3. **Layouts only:** `title` | `section` | `kpi_row` | `scorecard` | `card_row` | `chart_hero` | `chart_split` | `media_hero` | `media_split` | `table_hero` | `callout` | `quote` | `bullets` | `closing` | `stat_hero` | `timeline` | `compare`.
 4. **Arc (mandatory):**
@@ -15,7 +15,7 @@ Output **only** one JSON object (no LaTeX, no markdown fences, no commentary).
    - At most **2 consecutive** `bullets` slides
    - Prefer **≥1** `section` chapter splash when the story has clear parts
    - Prefer **`scorecard`** (with `delta` when Source has change) over plain `kpi_row` when comparing periods
-5. Prefer variety: charts → `chart_*`; photos/`fig_*`/`usr_*` → `media_*`; Mermaid `dia_*` → prefer **`media_hero`** (full-bleed readable scheme; avoid tiny `media_split` for diagrams). Mermaid: **`flowchart LR`** for wide chains, **`flowchart TD`** for short vertical processes (TD fills height better on 16:9). Tables in Source → **`table_hero`** (header row + ≥1 data row; cells only from Source). If the user message includes images, they are the real files for those ids. A logo goes on `title` or one `media_hero`. A product screenshot goes on `media_split` with only labels you can actually see — do not invent button names, menus, or a wordmark.
+5. Prefer variety: charts → `chart_*`; photos/`fig_*`/`usr_*` → `media_*`; Mermaid `dia_*` → prefer **`media_hero`** (full-bleed readable scheme; avoid tiny `media_split` for diagrams). Mermaid: **`flowchart LR`** for wide chains, **`flowchart TD`** for short vertical processes (TD fills height better on 16:9). Keep diagrams concise (6–12 nodes max; never 20–40 node webs). Tables in Source → **`table_hero`** (header row + ≥1 data row; cells only from Source). If the user message includes images, they are the real files for those ids. A logo goes on `title` or one `media_hero`. A product screenshot goes on `media_split` with only labels you can actually see — do not invent button names, menus, or a wordmark.
 6. Liber look: calm editorial. No purple, neon, emoji.
 7. Limits: title ≤80; subtitle ≤120; kicker ≤40; bullet ≤140; ≤5 bullets; KPI label ≤40; KPI value ≤24; takeaway ≤120; term ≤56; definition ≤280; card title ≤72; card body ≤240. `table_hero`: at most 14 rows including the header, at most 8 columns.
    A bullet, a card `body`, and a callout `definition` are a full sentence from Source (about 12–25 words), not a two-word label. Do not invent words to fill the box.

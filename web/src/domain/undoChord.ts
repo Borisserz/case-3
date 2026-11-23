@@ -17,3 +17,7 @@ export function undoChord(platform?: string): string {
 export function redoChord(platform?: string): string {
   return isMacPlatform(platform) ? "⌘⇧Z" : "Ctrl+Shift+Z";
 }
+
+export function submitChord(platform?: string): string {
+  return isMacPlatform(platform) ? "⌘↵" : "Ctrl+Enter";
+}

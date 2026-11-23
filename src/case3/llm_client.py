@@ -83,12 +83,10 @@ class _AbortHTTPHandler(urllib.request.HTTPHandler):
 
 class _AbortHTTPSHandler(urllib.request.HTTPSHandler):
     def https_open(self, req):  # type: ignore[no-untyped-def]
-        return self.do_open(
-            _AbortHTTPSConnection,
-            req,
-            context=self._context,
-            check_hostname=self._check_hostname,
-        )
+        kwargs: dict[str, Any] = {"context": getattr(self, "_context", None)}
+        if hasattr(self, "_check_hostname"):
+            kwargs["check_hostname"] = self._check_hostname
+        return self.do_open(_AbortHTTPSConnection, req, **kwargs)
 
 
 def _ensure_abort_opener() -> None:
@@ -600,6 +598,15 @@ class LLMClient:
                     and "reasoning" in body
                     and "reasoning" in body_txt.lower()
                 ):
+                    low = body_txt.lower()
+                    compact = {"effort": "low", "exclude": True}
+                    if ("mandatory" in low or "required" in low) and body.get("reasoning") != compact:
+                        log.warning(
+                            "LLM 400 reasoning mandatory — retrying with compact reasoning: %s",
+                            body_txt[:160],
+                        )
+                        body["reasoning"] = dict(compact)
+                        continue
                     log.warning(
                         "LLM 400 reasoning param rejected — retrying without reasoning: %s",
                         body_txt[:160],
@@ -851,6 +858,15 @@ class LLMClient:
                     and "reasoning" in body
                     and "reasoning" in body_txt.lower()
                 ):
+                    low = body_txt.lower()
+                    compact = {"effort": "low", "exclude": True}
+                    if ("mandatory" in low or "required" in low) and body.get("reasoning") != compact:
+                        log.warning(
+                            "Stream LLM 400 reasoning mandatory — retrying with compact reasoning: %s",
+                            body_txt[:160],
+                        )
+                        body["reasoning"] = dict(compact)
+                        continue
                     log.warning(
                         "Stream LLM 400 reasoning rejected — retrying without reasoning: %s",
                         body_txt[:160],

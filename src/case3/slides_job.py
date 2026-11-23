@@ -1022,6 +1022,7 @@ def _materialize_deck_artifacts(
         work_root=work_root,
         out_dir=slides_dir,
         media_png_by_id=media_map,
+        diagrams_by_id=diagram_specs,
     )
     if not pngs:
         raise RuntimeError("no slide PNGs produced")

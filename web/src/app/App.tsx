@@ -242,7 +242,9 @@ export default function App() {
     for (const msg of msgs) {
       if (msg.role !== "bot" || !msg.result || msg.result.isolated) continue;
       if (typeof msg.result.turn_count === "number") turn = msg.result.turn_count;
-      if (msg.result.memory_section) section = msg.result.memory_section;
+      if (typeof msg.result.memory_section === "string") {
+        section = msg.result.memory_section;
+      }
     }
     const documents = sourceDraft?.parts?.length || (sourceDraft?.text?.trim() ? 1 : 0);
     return memoryStripLine({ documents, section, turn });
@@ -602,7 +604,10 @@ export default function App() {
           (msg) => msg.role === "bot" && Boolean(msg.result?.run_id || msg.dashboard),
         ),
     );
-    const explicitlyWantsDashboard = /дашборд|стимул|фильтр/i.test(text);
+    const explicitlyWantsDashboard =
+      /\b(?:открой|покажи|загрузи|выбери|переключи|сбрось|обнови)\b[^.?!\n]{0,40}\b(?:дашборд|стимул|фильтр)/i.test(
+        text,
+      ) || /^(?:дашборд|стимул)\b/i.test(text);
     if (!text || dashboardOpen || (hasAttachedSource && !explicitlyWantsDashboard)) {
       void send();
       return;

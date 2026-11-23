@@ -465,11 +465,17 @@ def harden_russian_typography(tex: str) -> str:
     body = re.sub(r"\\\[[\s\S]*?\\\]", _stash, body)
     # 2. Stash inline/display math $ ... $
     body = re.sub(r"(?<!\\)\${1,2}[\s\S]*?(?<!\\)\${1,2}", _stash, body)
-    # 3. Stash TeX comments
+    # 3. Stash table environments (non-breaking ~ unit chains inside narrow cells cause overflow)
+    body = re.sub(
+        r"\\begin\{(?P<tenv>tabularx?\*?|xltabular|longtable\*?)\}[\s\S]*?\\end\{(?P=tenv)\}",
+        _stash,
+        body,
+    )
+    # 4. Stash TeX comments
     body = re.sub(r"%.*$", _stash, body, flags=re.M)
-    # 4. Stash structural TeX macros whose content must not change
+    # 5. Stash structural TeX macros whose content must not change
     body = _STRUCTURAL_MACROS.sub(_stash, body)
-    # 5. Stash other macro heads (e.g. \centering, \section, \item, \textbf)
+    # 6. Stash other macro heads (e.g. \centering, \section, \item, \textbf)
     body = re.sub(r"\\[a-zA-Z]+\*?", _stash, body)
 
     def _repl_units(m: re.Match[str]) -> str:
@@ -480,11 +486,13 @@ def harden_russian_typography(tex: str) -> str:
     # Apply typography substitutions
     body = _RU_PREP_REGEX.sub(r"\1~", body)
     body = _RU_UNITS_REGEX.sub(_repl_units, body)
+    body = re.sub(r"(?<!\.)\.\.(?!\.)", ".", body)
 
     # Restore stashed tokens in reverse
     for idx in range(len(stashed) - 1, -1, -1):
         body = body.replace(f"\x00TYPO{idx}\x00", stashed[idx])
 
+    body = re.sub(r"(?<!\.)\.\.(?!\.)", ".", body)
     return prefix + body + suffix
 
 

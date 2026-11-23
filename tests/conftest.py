@@ -10,6 +10,28 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _reset_shared_runtime_state() -> Iterator[None]:
+    """Prevent pipeline slot/waiter or LLM key cooldown state leaking across tests."""
+    from case3 import api as api_mod
+    from case3.llm_client import clear_key_cooldowns
+
+    def _clear() -> None:
+        with api_mod._PIPELINE_ACTIVE_GUARD:
+            api_mod._PIPELINE_ACTIVE.clear()
+            api_mod._PIPELINE_WAITERS.clear()
+            api_mod._PIPELINE_WAITER = None
+            api_mod._WAITER_RESERVED = False
+            api_mod._WAITER_RESERVED_COUNT = 0
+        clear_key_cooldowns()
+
+    _clear()
+    try:
+        yield
+    finally:
+        _clear()
+
+
 @pytest.fixture()
 def repo_root(tmp_path: Path) -> Path:
     """Isolated fake repo root with runs/{out,work,logs,uploads}."""

@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from case3.chat_act import resolve_act
 
 
@@ -530,3 +533,118 @@ def test_new_build_artifact_handles_long_middle_phrase_and_rebuilds():
     rebuild = resolve_act("перестрой презентацию", has_deck=True)
     assert rebuild.kind == "build"
     assert rebuild.build == "presentation"
+
+
+def test_inline_chat_chart_retype_and_recolor_in_chat_revise(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+    from case3.chat_revise import try_chat_revise
+
+    act = resolve_act("Сделай этот график линейным", has_chart=True)
+    assert act.kind == "revise"
+    assert act.op == "retype_charts"
+    assert act.chart == "line"
+
+    run_id = "source_20261123T120000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    figs = out / "figures"
+    figs.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps({"run_id": run_id, "status": "ok", "output_mode": "chat", "charts_planned": ["cht_01"]}),
+        encoding="utf-8",
+    )
+    (out / "figures.json").write_text(
+        json.dumps(
+            {
+                "figures": [],
+                "diagrams": [],
+                "charts": [
+                    {
+                        "id": "cht_01",
+                        "type": "bar",
+                        "caption": "Регионы",
+                        "html": "<canvas id='c' width='1100' height='560'></canvas><script>new Chart(document.getElementById('c'),{type:'bar',data:{labels:['А','Б'],datasets:[{label:'Факт',data:[10,20]}]}});</script>",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def _fake_render(_chart, dest: Path, **_kw) -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    monkeypatch.setattr("case3.chart_edit.render_chart_png", _fake_render)
+    res = try_chat_revise("Сделай этот график линейным", run_id, root=tmp_path)
+    assert res is not None
+    assert res["mode"] == "chat_revise"
+    assert res["op"] == "retype_charts"
+    assert res.get("previews") and res["previews"][0]["id"] == "cht_01"
+    saved = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert saved["charts"][0]["type"] == "line"
+
+
+def test_section_target_strips_trailing_adverbs_and_history_title_skips_generic() -> None:
+    from case3.api_history import _title_from_meta
+    from case3.chat_act import section_target
+
+    assert section_target("переделай введение покороче") == "Введение"
+    assert section_target("сократи раздел Итоги кратко") == "Итоги"
+    assert (
+        _title_from_meta(
+            {
+                "intent": "Сделай отчёт",
+                "chat_summary": "Поступления за январь составили 412 850,4 тыс. руб.",
+            },
+            "source_20261123T120000Z",
+        )
+        == "Поступления за январь составили 412 850,4 тыс. руб."
+    )
+
+
+def test_undo_clears_memory_section_for_chat_and_button_undo(tmp_path: Path, monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from case3.api import _memory_section, app
+    from case3.chat_memory import newest_edit
+    from case3.chat_revise import try_chat_revise
+
+    run_id = "source_20261123T120500Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "status": "ok",
+                "output_mode": "report",
+                "last_edit": {"op": "rewrite", "section": "Введение", "surface": "report"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (out / "report.tex").write_text("\\documentclass{article}\\begin{document}Hi\\end{document}", encoding="utf-8")
+
+    monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
+    monkeypatch.setattr("case3.run_undo.apply_undo", lambda *_a, **_kw: {"kind": "prose", "target": "Введение"})
+
+    res = try_chat_revise("отмени", run_id, root=tmp_path)
+    assert res is not None
+    assert res.get("memory_section") == ""
+    # Follow-up edits ("короче") still remember the section, while UI plaque clears.
+    assert newest_edit(tmp_path, run_id).get("section") == "Введение"
+    assert _memory_section(run_id) == ""
+
+    # Also test UI button undo endpoint resets memory_section
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    meta["last_edit"] = {"op": "rewrite", "section": "Итоги", "surface": "report"}
+    (out / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    client = TestClient(app)
+    resp = client.post(f"/api/runs/{run_id}/undo?rebuild=0")
+    assert resp.status_code == 200
+    assert resp.json()["memory_section"] == ""
+    status_resp = client.get(f"/api/runs/{run_id}/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["memory_section"] == ""

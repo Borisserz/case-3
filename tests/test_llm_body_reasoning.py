@@ -226,7 +226,7 @@ def test_complete_retries_openrouter_length_empty_with_reasoning_disabled_and_40
         seen.append(payload)
         if len(seen) == 1:
             return _Resp({"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
-        if len(seen) == 2:
+        if len(seen) in (2, 3):
             raise urllib.error.HTTPError(
                 req.full_url,
                 400,
@@ -244,6 +244,32 @@ def test_complete_retries_openrouter_length_empty_with_reasoning_disabled_and_40
     assert seen[0].get("reasoning") == {"enabled": False}
     assert seen[1].get("reasoning") == {"enabled": False}
     assert seen[1]["max_tokens"] == 6144
-    assert "reasoning" not in seen[2]
+    assert seen[2].get("reasoning") == {"effort": "low", "exclude": True}
     assert seen[2]["max_tokens"] == 6144
+    assert "reasoning" not in seen[3]
+    assert seen[3]["max_tokens"] == 6144
 
+
+def test_abort_https_handler_works_without_check_hostname_attr() -> None:
+    import urllib.request
+    from case3.llm_client import _AbortHTTPSConnection, _AbortHTTPSHandler
+
+    handler = _AbortHTTPSHandler()
+    # Python 3.12+ removed self._check_hostname from urllib.request.HTTPSHandler.
+    if hasattr(handler, "_check_hostname"):
+        delattr(handler, "_check_hostname")
+
+    captured: dict[str, object] = {}
+
+    def fake_do_open(cls, req, **kwargs):  # type: ignore[no-untyped-def]
+        captured["cls"] = cls
+        captured["req"] = req
+        captured["kwargs"] = kwargs
+        return "ok"
+
+    handler.do_open = fake_do_open  # type: ignore[method-assign]
+    req = urllib.request.Request("https://example.com/v1/chat/completions")
+    assert handler.https_open(req) == "ok"
+    assert captured["cls"] is _AbortHTTPSConnection
+    assert "check_hostname" not in captured["kwargs"]  # type: ignore[operator]
+    assert "context" in captured["kwargs"]  # type: ignore[operator]

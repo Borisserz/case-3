@@ -59,15 +59,27 @@ def html_matches_type(html: str, want: str) -> bool:
         return bool(re.search(r"""type\s*:\s*['"]bar['"]""", h, flags=re.I))
     return True
 
+def _skip_js_comment(text: str, i: int) -> int | None:
+    """If ``text[i:]`` starts a JS ``//`` or ``/* ... */`` comment, return index after it."""
+    if text.startswith("//", i):
+        nl = text.find("\n", i + 2)
+        return len(text) if nl < 0 else nl + 1
+    if text.startswith("/*", i):
+        end = text.find("*/", i + 2)
+        return len(text) if end < 0 else end + 2
+    return None
+
+
 def _bracket_span(text: str, open_idx: int, open_ch: str, close_ch: str) -> tuple[int, int] | None:
     """Return [start, end) of balanced open/close starting at open_idx."""
     if open_idx < 0 or open_idx >= len(text) or text[open_idx] != open_ch:
         return None
     depth = 0
     i = open_idx
+    n = len(text)
     in_str: str | None = None
     escape = False
-    while i < len(text):
+    while i < n:
         ch = text[i]
         if in_str:
             if escape:
@@ -78,7 +90,11 @@ def _bracket_span(text: str, open_idx: int, open_ch: str, close_ch: str) -> tupl
                 in_str = None
             i += 1
             continue
-        if ch in ("'", '"'):
+        after_comment = _skip_js_comment(text, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if ch in ("'", '"', "`"):
             in_str = ch
             i += 1
             continue
@@ -785,6 +801,341 @@ def _colorize_hbar_categories(html: str, palette_id: str = "atelier") -> str:
     out = re.sub(r"borderColor\s*:\s*'[^']+'\s*,?", "", out, count=1, flags=re.I)
     return out
 
+def _find_top_level_key_brace(obj_text: str, key: str) -> int | None:
+    """Inside a JS object body (without outer `{}`), return index of `{` for top-level `key: {`."""
+    pat = re.compile(
+        rf"""(?:(?P<q>['"]){re.escape(key)}(?P=q)|\b{re.escape(key)})\s*:\s*\{{"""
+    )
+    depth = 0
+    i = 0
+    n = len(obj_text)
+    in_str: str | None = None
+    escape = False
+    while i < n:
+        ch = obj_text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_str:
+                in_str = None
+            i += 1
+            continue
+        after_comment = _skip_js_comment(obj_text, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if depth == 0:
+            m = pat.match(obj_text, i)
+            if m and (
+                ch in ("'", '"')
+                or i == 0
+                or not (obj_text[i - 1].isalnum() or obj_text[i - 1] == "_")
+            ):
+                return m.end() - 1
+        if ch in ("'", '"', "`"):
+            in_str = ch
+            i += 1
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth = max(0, depth - 1)
+        i += 1
+    return None
+
+
+def _ensure_hbar_y_ticks(html: str) -> str:
+    """Disable Chart.js Y-axis label autoSkip on horizontal bars so all row labels appear."""
+    out = html or ""
+    if re.search(r"autoSkip\s*:\s*false", out, flags=re.I):
+        return out
+    y_ticks = "ticks:{autoSkip:false,font:{size:12}}"
+    m_scales = re.search(r"\bscales\s*:\s*\{", out)
+    if m_scales:
+        scales_open = m_scales.end() - 1
+        scales_span = _bracket_span(out, scales_open, "{", "}")
+        if scales_span is not None:
+            s_start, s_end = scales_span
+            scales_body = out[s_start + 1 : s_end - 1]
+            y_rel = _find_top_level_key_brace(scales_body, "y")
+            if y_rel is not None:
+                y_open = s_start + 1 + y_rel
+                y_span = _bracket_span(out, y_open, "{", "}")
+                if y_span is not None:
+                    y_start, y_end = y_span
+                    y_body = out[y_start + 1 : y_end - 1]
+                    t_rel = _find_top_level_key_brace(y_body, "ticks")
+                    if t_rel is not None:
+                        t_open = y_start + 1 + t_rel
+                        return out[: t_open + 1] + "autoSkip:false," + out[t_open + 1 :]
+                    return out[: y_open + 1] + f"{y_ticks}," + out[y_open + 1 :]
+            return out[: scales_open + 1] + f"y:{{{y_ticks}}}," + out[scales_open + 1 :]
+    if re.search(r"options\s*:\s*\{", out):
+        return re.sub(
+            r"(options\s*:\s*\{)",
+            rf"\1scales:{{y:{{{y_ticks}}}}},",
+            out,
+            count=1,
+        )
+    return out
+
+
+_SCALES_PLUGIN_CHILDREN = frozenset(
+    {"title", "subtitle", "legend", "tooltip", "datalabels"}
+)
+_SCALES_MISPLACED_SUBKEYS = frozenset(
+    {"ticks", "grid", "border", "font", "anglelines", "pointlabels"}
+)
+_SCALES_OPTION_KEYS = frozenset(
+    {
+        "animation",
+        "responsive",
+        "maintainAspectRatio",
+        "layout",
+        "indexAxis",
+        "cutout",
+        "interaction",
+        "elements",
+        "hover",
+        "aspectRatio",
+        "devicePixelRatio",
+    }
+)
+_AXIS_KEYS = frozenset({"x", "y", "r", "x0", "x1", "y0", "y1", "y2", "x2"})
+_OPTIONS_KEY_RE = re.compile(r"""(?:(?P<q>['"])options(?P=q)|\boptions)\s*:\s*\{""")
+_SCALES_KEY_RE = re.compile(r"""(?:(?P<q>['"])scales(?P=q)|\bscales)\s*:\s*\{""")
+
+
+def _split_js_entries(obj_body: str) -> list[tuple[str, str, str]]:
+    """Split top-level `key: value` entries inside `{...}` body, respecting strings/comments/brackets."""
+    entries: list[tuple[str, str, str]] = []
+    n = len(obj_body)
+    i = 0
+    start = 0
+    brace = 0
+    bracket = 0
+    paren = 0
+    in_str: str | None = None
+    escape = False
+
+    def _push(end_idx: int) -> None:
+        chunk = obj_body[start:end_idx].strip()
+        if not chunk:
+            return
+        head = re.sub(
+            r"^(?:\s*(?://[^\n]*(?:\n|$)|/\*[\s\S]*?\*/))+",
+            "",
+            chunk,
+        ).strip()
+        if not head:
+            return
+        m = re.match(r"^(['\"]?)([A-Za-z_$][A-Za-z0-9_$]*)\1\s*:\s*([\s\S]+)$", head)
+        if m:
+            entries.append((m.group(2), m.group(3).strip(), chunk))
+        else:
+            entries.append(("", chunk, chunk))
+
+    while i < n:
+        ch = obj_body[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_str:
+                in_str = None
+            i += 1
+            continue
+        after_comment = _skip_js_comment(obj_body, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if ch in ("'", '"', "`"):
+            in_str = ch
+            i += 1
+            continue
+        if ch == "{":
+            brace += 1
+        elif ch == "}":
+            brace = max(0, brace - 1)
+        elif ch == "[":
+            bracket += 1
+        elif ch == "]":
+            bracket = max(0, bracket - 1)
+        elif ch == "(":
+            paren += 1
+        elif ch == ")":
+            paren = max(0, paren - 1)
+        elif ch == "," and brace == 0 and bracket == 0 and paren == 0:
+            _push(i)
+            start = i + 1
+        i += 1
+    _push(n)
+    return entries
+
+
+def _insert_into_object(html: str, obj_open_idx: int, prefix: str) -> str:
+    if not prefix:
+        return html
+    return html[: obj_open_idx + 1] + prefix + html[obj_open_idx + 1 :]
+
+
+def _relocate_to_options(
+    html: str,
+    *,
+    plugin_entries: list[tuple[str, str]],
+    plugins_wrapper_val: str | None,
+    option_entries: list[tuple[str, str]],
+) -> str:
+    """Safely relocate misplaced scales children into `options` / `options.plugins`."""
+    if not plugin_entries and not plugins_wrapper_val and not option_entries:
+        return html
+    m_opt = _OPTIONS_KEY_RE.search(html)
+    if not m_opt:
+        return html
+    opt_open = m_opt.end() - 1
+    opt_span = _bracket_span(html, opt_open, "{", "}")
+    if not opt_span:
+        return html
+    opt_body = html[opt_span[0] + 1 : opt_span[1] - 1]
+
+    # Collect existing top-level option keys and plugins children.
+    existing_opt = {k.lower() for k, _v, _raw in _split_js_entries(opt_body) if k}
+
+    # Build plugin additions from misplaced `plugins:{...}` wrapper + direct children.
+    merged_plugins: list[tuple[str, str]] = []
+    if plugins_wrapper_val and plugins_wrapper_val.startswith("{") and plugins_wrapper_val.endswith("}"):
+        for pk, pv, _praw in _split_js_entries(plugins_wrapper_val[1:-1]):
+            if pk:
+                merged_plugins.append((pk, pv))
+    merged_plugins.extend(plugin_entries)
+
+    out = html
+    if merged_plugins:
+        p_rel = _find_top_level_key_brace(opt_body, "plugins")
+        if p_rel is not None:
+            p_open = opt_open + 1 + p_rel
+            p_span = _bracket_span(out, p_open, "{", "}")
+            if p_span:
+                p_body = out[p_span[0] + 1 : p_span[1] - 1]
+                existing_p = {k.lower() for k, _v, _raw in _split_js_entries(p_body) if k}
+                add_parts: list[str] = []
+                for k, v in merged_plugins:
+                    kl = k.lower()
+                    if kl not in existing_p:
+                        existing_p.add(kl)
+                        add_parts.append(f"{k}:{v},")
+                out = _insert_into_object(out, p_open, "".join(add_parts))
+        else:
+            seen_p: set[str] = set()
+            uniq_p: list[str] = []
+            for k, v in merged_plugins:
+                if k.lower() not in seen_p:
+                    seen_p.add(k.lower())
+                    uniq_p.append(f"{k}:{v}")
+            if uniq_p:
+                out = _insert_into_object(out, opt_open, f"plugins:{{{','.join(uniq_p)}}},")
+
+    # Re-locate `options:{` after possible insertion above.
+    m_opt2 = _OPTIONS_KEY_RE.search(out)
+    if m_opt2 and option_entries:
+        opt_open2 = m_opt2.end() - 1
+        add_opt_parts: list[str] = []
+        for k, v in option_entries:
+            kl = k.lower()
+            if kl not in existing_opt:
+                existing_opt.add(kl)
+                add_opt_parts.append(f"{k}:{v},")
+        out = _insert_into_object(out, opt_open2, "".join(add_opt_parts))
+    return out
+
+
+def repair_misplaced_scales_keys(html: str) -> str:
+    """Strip/relocate misplaced `plugins`/`title`/`legend`/`tooltip`/option keys out of `scales:{...}`.
+
+    Chart.js v4 treats every direct key in `options.scales` as a scale ID; misplaced
+    keys like `scales: {x: {...}, y: {...}, title: {...}}` throw
+    `TypeError: Cannot read properties of undefined (reading 'axis')`.
+    """
+    src = html or ""
+    if not src or "scales" not in src:
+        return src
+    m_scales = _SCALES_KEY_RE.search(src)
+    if not m_scales:
+        return src
+    s_open = m_scales.end() - 1
+    s_span = _bracket_span(src, s_open, "{", "}")
+    if not s_span:
+        return src
+
+    s_body = src[s_open + 1 : s_span[1] - 1]
+    entries = _split_js_entries(s_body)
+    if not entries:
+        return src
+
+    axis_entries = [k for k, _v, _raw in entries if k.lower() in _AXIS_KEYS]
+    kept: list[tuple[str, str, str]] = []
+    plugin_entries: list[tuple[str, str]] = []
+    plugins_wrapper_val: str | None = None
+    option_entries: list[tuple[str, str]] = []
+    single_axis_title: str | None = None
+
+    changed = False
+    for k, v, raw in entries:
+        kl = k.lower()
+        if kl == "plugins":
+            changed = True
+            if plugins_wrapper_val is None:
+                plugins_wrapper_val = v
+            continue
+        if kl in _SCALES_PLUGIN_CHILDREN:
+            changed = True
+            if kl == "title" and len(axis_entries) == 1 and v.startswith("{"):
+                single_axis_title = v
+            else:
+                plugin_entries.append((k, v))
+            continue
+        if kl in {opt.lower() for opt in _SCALES_OPTION_KEYS}:
+            changed = True
+            option_entries.append((k, v))
+            continue
+        if kl in _SCALES_MISPLACED_SUBKEYS:
+            changed = True
+            continue
+        kept.append((k, v, raw))
+
+    if not changed:
+        return src
+
+    if single_axis_title and len(axis_entries) == 1:
+        sole_axis = axis_entries[0]
+        rebuilt_kept: list[str] = []
+        for k, v, raw in kept:
+            if k == sole_axis and v.startswith("{") and v.endswith("}"):
+                inner = v[1:-1].strip()
+                if re.search(r"\btitle\s*:", inner):
+                    rebuilt_kept.append(raw)
+                elif inner:
+                    rebuilt_kept.append(f"{k}:{{{inner},title:{single_axis_title}}}")
+                else:
+                    rebuilt_kept.append(f"{k}:{{title:{single_axis_title}}}")
+            else:
+                rebuilt_kept.append(raw)
+        new_scales_body = ", ".join(rebuilt_kept)
+    else:
+        new_scales_body = ", ".join(raw for _k, _v, raw in kept)
+
+    out = src[: s_open + 1] + new_scales_body + src[s_span[1] - 1 :]
+    return _relocate_to_options(
+        out,
+        plugin_entries=plugin_entries,
+        plugins_wrapper_val=plugins_wrapper_val,
+        option_entries=option_entries,
+    )
+
+
 def harden_chart_html(
     html: str,
     chart_type: str,
@@ -793,14 +1144,14 @@ def harden_chart_html(
 ) -> str:
     """Fix sparse / washed-out Chart.js HTML for known types (esp. horizontal_bar)."""
     want = (chart_type or "").strip()
-    out = html or ""
+    out = repair_misplaced_scales_keys(html or "")
     # D7: clamp over-tall print canvases (hbar has its own denser height).
     if want != "horizontal_bar" and out:
         out = _clamp_canvas_height(out)
     if want == "horizontal_bar" and out:
         n = _count_labels(out)
-        # 36px per region so a 15-row ranking stays readable. Print cap is 900.
-        h = max(300, min(900, 80 + n * 36))
+        # 40px per region so a 15-row ranking stays readable without auto-skipping labels.
+        h = max(320, min(960, 90 + n * 40))
         out = re.sub(
             r'(<canvas\b[^>]*\bheight=")(\d+)(")',
             rf"\g<1>{h}\3",
@@ -833,6 +1184,7 @@ def harden_chart_html(
             )
         out = _solidify_pale_bar_fill(out)
         out = _colorize_hbar_categories(out, palette_id)
+        out = _ensure_hbar_y_ticks(out)
     elif want in {"bar", "grouped_bar", "stacked_bar"} and out:
         out = _solidify_pale_bar_fill(out)
         out = _relax_vertical_bar_labels(out)
@@ -844,16 +1196,53 @@ def harden_chart_html(
         out = _ensure_line_point_size(out)
     return out
 
+
+def _datasets_array_body(src: str) -> str | None:
+    """Return balanced substring inside ``datasets: [...]`` (nested data arrays intact)."""
+    m = re.search(r"\bdatasets\s*:\s*\[", src, flags=re.I)
+    if not m:
+        return None
+    start = m.end()
+    depth = 1
+    i = start
+    n = len(src)
+    in_sq = False
+    in_dq = False
+    esc = False
+    while i < n:
+        ch = src[i]
+        if esc:
+            esc = False
+        elif ch == "\\":
+            esc = True
+        elif in_sq:
+            if ch == "'":
+                in_sq = False
+        elif in_dq:
+            if ch == '"':
+                in_dq = False
+        elif ch == "'":
+            in_sq = True
+        elif ch == '"':
+            in_dq = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return src[start:i]
+        i += 1
+    return None
+
+
 def _hide_legend_if_unnamed_dataset(html: str) -> str:
     """Donut→bar leaves datasets without ``label`` → Chart.js legend shows «undefined»."""
     src = html or ""
-    # Count dataset objects that already have an explicit label key.
-    ds_blocks = re.findall(r"datasets\s*:\s*\[([^\]]*)\]", src, flags=re.I)
-    if not ds_blocks:
+    body = _datasets_array_body(src)
+    if body is None:
         return src
-    body = ds_blocks[0]
     # Multiple labeled series keep the legend; unlabeled single series → hide.
-    labeled = len(re.findall(r"""\blabel\s*:\s*['"]""", body))
+    labeled = len(re.findall(r"""\blabel\s*:\s*['"][^'"]+['"]""", body))
     series = len(re.findall(r"\{", body))
     if series >= 2 and labeled >= 1:
         return src

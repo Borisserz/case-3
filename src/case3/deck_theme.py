@@ -242,7 +242,7 @@ def resolve_deck_theme(
         fonts=fonts,
         chart_series=tuple(series),
         table=table,
-        brand_mark=str(raw.get("brand_mark") or "LIBER · ATELIER"),
+        brand_mark=str(raw.get("brand_mark") or ""),
         motif=motif,
     )
 

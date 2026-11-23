@@ -180,7 +180,7 @@ def _number_in_source(num: str, source_norm: str) -> bool:
 
 
 _SCALE_WORD = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(тысяч\w*|тыс\.?|млн\.?|млрд\.?)",
+    r"(\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(тысяч\w*|тыс\.?|млн\.?|млрд\.?)",
     re.IGNORECASE,
 )
 
@@ -247,7 +247,7 @@ def _assert_numbers_allowed(
 
 
 _ORPHAN_UNIT = re.compile(
-    r"(?:°C|°F|℃|℉|%|тыс\.?|млн\.?|млрд\.?|чел\.?|pp|п\.?\s?п\.?)",
+    r"(?:°C|°F|℃|℉|%|(?:тыс\.?|млн\.?|млрд\.?)\s+руб\.?|тыс\.?|млн\.?|млрд\.?|чел\.?|pp|п\.?\s?п\.?)",
     re.IGNORECASE,
 )
 _ORPHAN_UNIT_ONLY = re.compile(
@@ -257,19 +257,19 @@ _ORPHAN_UNIT_ONLY = re.compile(
 
 
 def _strip_orphan_units(text: str) -> str:
-    """Remove unit tokens left after digit scrub (e.g. '— °C', 'тыс. чел.')."""
+    """Remove unit tokens left orphaned after digit scrub (never strip units beside kept digits)."""
     out = text or ""
-    # dash/colon + unit
+    # dash/colon + unit (when not preceded by a digit)
     out = re.sub(
-        rf"\s*[-−–—:]\s*(?:{_ORPHAN_UNIT.pattern})\b",
+        rf"(?<!\d)\s*[-−–—:]\s*(?:{_ORPHAN_UNIT.pattern})(?![\w./])",
         "",
         out,
         flags=re.IGNORECASE,
     )
-    # bare unit tokens
+    # bare unit tokens not preceded by a digit (kept numbers keep their units: 103,2% / 412 850,4 тыс. руб.)
     out = re.sub(
-        rf"(?<![\w./])(?:{_ORPHAN_UNIT.pattern})(?![\w./])",
-        "",
+        rf"(?P<keep>\d[\s\u00a0\u202f]*)?(?<![\w./])(?P<unit>{_ORPHAN_UNIT.pattern})(?![\w./])",
+        lambda m: m.group(0) if m.group("keep") else "",
         out,
         flags=re.IGNORECASE,
     )
@@ -436,7 +436,10 @@ def scrub_invented_numbers(
     allowed = frozenset(allowed_number_strings or ()) | _derived_table_numbers(source)
 
     def _scrub_text(text: str, *, chrome: bool = False) -> str:
+        scrubbed = False
+
         def repl(m: re.Match[str]) -> str:
+            nonlocal scrubbed
             raw_num = m.group(0)
             compact_num = _compact_spaced_thousands(raw_num)
             if _number_is_allowed(
@@ -447,12 +450,14 @@ def scrub_invented_numbers(
                 chrome=chrome,
             ):
                 return raw_num
+            scrubbed = True
             return ""
 
         out = _SPACED_OR_PLAIN_NUMBER.sub(repl, text or "")
         out = re.sub(r"\s{2,}", " ", out)
         out = re.sub(r"\s+([,.;:!?])", r"\1", out)
-        return clean_source_placeholders(_strip_orphan_units(out.strip()))
+        cleaned = _strip_orphan_units(out.strip()) if scrubbed else out.strip()
+        return clean_source_placeholders(cleaned)
 
     slides_out: list[dict[str, Any]] = []
     for s in deck.get("slides") or []:
@@ -1386,16 +1391,22 @@ _CHROME_WORDS = frozenset({"решение", "дальше", "итог", "воп
 
 
 def _strip_unlicensed_scale(text: str, source_norm: str) -> str:
-    """Bare ``19`` does not become ``19 млн``."""
+    """Bare ``19`` does not become ``19 млн`` unless Source declares that unit."""
 
     def repl(match: re.Match[str]) -> str:
         mags = _scaled_magnitudes(match.group(0))
         if any(_number_in_source(mag, source_norm) for mag in mags):
             return match.group(0)
-        num = match.group(1).replace(" ", "")
+        num = _compact_spaced_thousands(match.group(1)).replace(" ", "")
         family = match.group(2).lower()[:3]
+        if num and _number_in_source(num, source_norm) and re.search(
+            rf"(?<![А-Яа-яЁёA-Za-z0-9]){re.escape(family)}(?:[а-яё]*\.?)(?![А-Яа-яЁёA-Za-z0-9])",
+            source_norm or "",
+            re.IGNORECASE,
+        ):
+            return match.group(0)
         for src in _SCALE_WORD.finditer(source_norm or ""):
-            src_num = src.group(1).replace(" ", "")
+            src_num = _compact_spaced_thousands(src.group(1)).replace(" ", "")
             same_num = src_num in {
                 num,
                 num.replace(",", "."),

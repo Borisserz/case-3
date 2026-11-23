@@ -52,3 +52,20 @@ def test_protects_tex_macros_and_math() -> None:
     assert "$E = mc^2$" in res
     assert r"\label{sec:vvedenie}" in res
     assert "Введение в~анализ" in res or "Введение в анализ" in res
+
+
+def test_table_cells_avoid_nonbreaking_unit_chains_and_double_periods() -> None:
+    tex = (
+        r"\documentclass{article}" "\n"
+        r"\begin{document}" "\n"
+        r"Выручка составила 412 850,4 тыс. руб.. Итог по региону." "\n"
+        r"\begin{tabularx}{\textwidth}{lY}" "\n"
+        r"Показатель & \textbf{412 850,4 тыс. руб.} \\" "\n"
+        r"\end{tabularx}" "\n"
+        r"\end{document}"
+    )
+    res = harden_russian_typography(tex)
+    # Table cell must NOT glue 412 850,4~тыс.~руб. with ~ inside narrow table columns
+    assert r"\textbf{412 850,4 тыс. руб.}" in res
+    # Accidental double period after руб.. must collapse to single period
+    assert ".." not in res

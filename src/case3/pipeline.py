@@ -1253,8 +1253,10 @@ def run_pipeline(
             try_chat_answer,
         )
         from case3.dashboard_source import derivative_block
+        from case3.input_validation import current_turn_user_text
         from case3.turn_route import wants_chat_chart, wants_chat_diagram
 
+        turn_text = current_turn_user_text(user_text)
         enriched_source = source_text or ""
         def _prior_chat_visuals(prev_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
             if not prev_id:
@@ -1277,8 +1279,8 @@ def run_pipeline(
 
         prior = str(meta.get("prior_run_id") or "")
         prev_chart, prev_diagram = _prior_chat_visuals(prior)
-        picture = wants_chat_chart(user_text, has_prior_chart=prev_chart is not None) or wants_chat_diagram(
-            user_text, has_prior_diagram=prev_diagram is not None
+        picture = wants_chat_chart(turn_text, has_prior_chart=prev_chart is not None) or wants_chat_diagram(
+            turn_text, has_prior_diagram=prev_diagram is not None
         )
         from case3.chat_memory import (
             dashboard_screens,
@@ -1288,10 +1290,10 @@ def run_pipeline(
         enriched_source = source_for_followup(
             enriched_source,
             dashboard_screens(root, prior),
-            user_text,
+            turn_text,
             picture=picture,
         )
-        landing = dashboard_landing(user_text)
+        landing = dashboard_landing(turn_text)
         asked = user_text
         if not landing:
             remembered = latest_dashboard_note(root, prior)
@@ -1316,7 +1318,7 @@ def run_pipeline(
             BUS.start(run_id)
             _emit_chat("answer", answer, "chat")
         else:
-            report = chat_report_block(root, prior, user_text)
+            report = chat_report_block(root, prior, turn_text)
             BUS.start(run_id)
             answer = try_chat_answer(
                 enriched_source,
@@ -1329,7 +1331,7 @@ def run_pipeline(
                 on_replace=lambda full: BUS.replace(run_id, full),
             )
             eff_charts_budget = charts_budget or (1 if prev_chart is not None else 0)
-            if wants_chat_chart(user_text, has_prior_chart=prev_chart is not None) and eff_charts_budget > 0:
+            if wants_chat_chart(turn_text, has_prior_chart=prev_chart is not None) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
                     enriched_source,
@@ -1341,7 +1343,7 @@ def run_pipeline(
                     extra_context=answer,
                     previous_chart=prev_chart,
                 )
-            if wants_chat_diagram(user_text, has_prior_diagram=prev_diagram is not None):
+            if wants_chat_diagram(turn_text, has_prior_diagram=prev_diagram is not None):
                 bump("charts", "рисую схему…")
                 diagrams, diagram_status = generate_chat_diagram(
                     enriched_source,
@@ -1445,6 +1447,9 @@ def run_pipeline(
         # Tier 1: Restore prior dashboard/document source before input validation.
         source_raw = text_path.read_text(encoding="utf-8") if text_path.is_file() else ""
         user_intent = user_text_before_ui(intent)
+        from case3.input_validation import current_turn_user_text
+
+        turn_text = current_turn_user_text(intent)
         from case3.chat_memory import (
             dashboard_screens,
             prior_document_source,
@@ -1457,8 +1462,8 @@ def run_pipeline(
             screened = source_for_followup(
                 source_raw,
                 dashboard_screens(root, prior),
-                user_intent,
-                picture=wants_chat_chart(user_intent) or wants_chat_diagram(user_intent),
+                turn_text,
+                picture=wants_chat_chart(turn_text) or wants_chat_diagram(turn_text),
             )
             if screened.strip() and screened != source_raw:
                 source_raw = screened
@@ -1466,7 +1471,7 @@ def run_pipeline(
                 text_path.write_text(screened, encoding="utf-8")
             elif (
                 not source_raw.strip()
-                or source_raw.strip() == user_intent.strip()
+                or source_raw.strip() == turn_text.strip()
                 or len(source_raw.strip()) < 240
             ):
                 fallback_doc = prior_document_source(root, prior)
@@ -1477,14 +1482,14 @@ def run_pipeline(
 
         valid_in, refusal_msg = validate_input_heuristics(
             source_raw,
-            user_intent,
+            turn_text,
             output_mode=mode,
             has_attachments=bool(user_figs),
         )
         if not valid_in:
             return _handle_insufficient_data(refusal_msg or "В запросе недостаточно данных.")
-        if not user_intent.strip():
-            intent = with_default_brief(intent, user_intent)
+        if not turn_text.strip():
+            intent = with_default_brief(intent, turn_text)
 
         from case3.dashboard_source import derivative_block
 
@@ -1501,10 +1506,10 @@ def run_pipeline(
         if mode == "chat":
             from case3.chat_memory import focus_source
 
-            asked = str(meta.get("chat_prompt") or user_intent)
+            asked = str(meta.get("chat_prompt") or turn_text)
             return _finish_chat_answer(user_intent, focus_source(source_raw, asked))
         if mode in {"report", "diagram", "presentation"}:
-            spoken_about = user_intent.strip()
+            spoken_about = turn_text.strip()
             attached = source_raw.strip()
             if attached and attached != spoken_about:
                 clip = " ".join(attached.split())

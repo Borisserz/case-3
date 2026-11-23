@@ -171,13 +171,20 @@ def test_two_runs_in_the_same_second_get_different_ids(tmp_path: Path, monkeypat
 
 def test_chat_question_starts_beside_a_queued_report(tmp_path: Path, monkeypatch) -> None:
     """A question must not take the build slot or the single waiter."""
-    from case3.api import _pipeline_active_run
+    import threading
+
+    from case3.api import _drop_queued_waiter, _pipeline_active_run
 
     monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
     monkeypatch.setenv("CASE3_MAX_QUEUED_RUNS", "1")
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
-    monkeypatch.setattr("case3.api._bg_run_pipeline", lambda **kwargs: None)
+    chat_ran = threading.Event()
+    monkeypatch.setattr(
+        "case3.api._bg_run_pipeline",
+        lambda **kwargs: chat_ran.set() if kwargs.get("output_mode") == "chat" else None,
+    )
     assert _claim_pipeline_slot("holder_run") is None
+    report_id = ""
     try:
         client = TestClient(app)
         report = client.post(
@@ -186,6 +193,7 @@ def test_chat_question_starts_beside_a_queued_report(tmp_path: Path, monkeypatch
         )
         assert report.status_code == 202
         assert report.json()["status"] == "queued"
+        report_id = report.json()["run_id"]
         third = client.post(
             "/api/run",
             data={"source_text": "Выручка была 12.", "intent": "Сделай ещё отчёт", "output_mode": "report"},
@@ -203,14 +211,15 @@ def test_chat_question_starts_beside_a_queued_report(tmp_path: Path, monkeypatch
         body = chat.json()
         assert body["status"] == "started"
         assert body["output_mode"] == "chat"
-        assert body["run_id"] != report.json()["run_id"]
+        assert body["run_id"] != report_id
         assert _pipeline_active_run() == "holder_run"
         stored = load_waiter(tmp_path)
         assert stored is not None
-        assert stored["run_id"] == report.json()["run_id"]
+        assert stored["run_id"] == report_id
+        assert chat_ran.wait(2)
     finally:
-        from case3.api import _pipeline_active_run
-
+        if report_id:
+            _drop_queued_waiter(report_id)
         _release_pipeline_slot("holder_run")
         active = _pipeline_active_run()
         if active:

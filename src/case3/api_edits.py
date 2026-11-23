@@ -931,12 +931,14 @@ def _history_response(
 
     out = Path(out_dir)
     media: dict[str, Any] = {}
+    meta_obj: dict[str, Any] = {}
     meta_path = out / "meta.json"
     if meta_path.is_file():
         try:
-            media = (json.loads(meta_path.read_text(encoding="utf-8")) or {}).get(
-                "media_status"
-            ) or {}
+            loaded = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                meta_obj = loaded
+                media = loaded.get("media_status") or {}
         except (OSError, json.JSONDecodeError):
             media = {}
     if not isinstance(media, dict):
@@ -949,6 +951,9 @@ def _history_response(
             sep = "&" if "?" in url else "?"
             block["url"] = f"{url}{sep}v={v}"
 
+    last_edit = meta_obj.get("last_edit") if isinstance(meta_obj.get("last_edit"), dict) else {}
+    memory_section = "" if last_edit.get("op") == "undo" else str(last_edit.get("section") or "")
+
     return {
         "run_id": run_id,
         "status": "ok",
@@ -956,6 +961,7 @@ def _history_response(
         "downloads": artifact_downloads(run_id, out, v),
         "preview": preview,
         "undo": undo_meta(out),
+        "memory_section": memory_section,
         "warnings": (
             [str(result["rebuild_error"])] if result.get("rebuild_error") else []
         ),
@@ -1024,6 +1030,14 @@ async def undo_last_edit(
         )
     except UndoError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    from case3.run_meta import update_meta
+
+    def _mark_undo(m: dict[str, Any]) -> None:
+        prev = dict(m.get("last_edit") or {}) if isinstance(m.get("last_edit"), dict) else {}
+        prev["op"] = "undo"
+        m["last_edit"] = prev
+
+    update_meta(out_dir, _mark_undo)
     return _history_response(run_id, out_dir, result, action_key="undone")
 
 
@@ -1042,6 +1056,15 @@ async def redo_last_edit(
         )
     except UndoError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
+    from case3.run_meta import update_meta
+
+    def _mark_redo(m: dict[str, Any]) -> None:
+        prev = dict(m.get("last_edit") or {}) if isinstance(m.get("last_edit"), dict) else {}
+        if prev.get("op") == "undo":
+            prev["op"] = "redo"
+            m["last_edit"] = prev
+
+    update_meta(out_dir, _mark_redo)
     return _history_response(run_id, out_dir, result, action_key="redone")
 
 

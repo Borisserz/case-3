@@ -1186,12 +1186,18 @@ def _filter_verifiable_stray(
 ) -> list[str]:
     if not stray:
         return []
-    from case3.fact_ground import _is_small_cardinal_in_clause, _verifies_math
+    from case3.fact_ground import _is_small_cardinal_in_clause, _row_mentions, _verifies_math, table_grid
 
     derived = _derived_table_math_norms(source)
+    grid = table_grid(source) if "|" in (source or "") else None
     full_pool = allowed | derived
     verified: set[str] = set()
     for line in (text or "").splitlines():
+        row_pool: set[str] = set()
+        if grid is not None and grid.rows:
+            for _s, _e, rstem in _row_mentions(line, grid):
+                row_pool |= grid.rows.get(rstem, set())
+        extra = (message_ok or set()) | derived | row_pool
         for m in _CHAT_CARDINAL.finditer(line):
             hit = m.group(1) or m.group(2)
             if hit and 1 <= int(hit) <= 50:
@@ -1204,15 +1210,99 @@ def _filter_verifiable_stray(
                 verified.add(norm)
             elif _is_small_cardinal_in_clause(line, norm):
                 verified.add(norm)
-            elif (message_ok or derived) and _verifies_math(
-                line, norm, full_pool, (message_ok or set()) | derived
-            ):
+            elif extra and _verifies_math(line, norm, full_pool | row_pool, extra):
                 verified.add(norm)
     return [tok for tok in stray if _norm_num(tok) not in verified]
 
 
-def _allowed_norms(source: str, intent: str, drop: set[str]) -> set[str]:
-    have = number_norms(source) | number_norms(_request_blob(intent)) | user_stated_norms(intent)
+_PRIOR_SCENARIO_CUE = re.compile(
+    r"(?:сценари|резерв|добав|учт|учест|прошл|предыдущ|ранее|писал|называл|"
+    r"пересчит|скорректир|новый\s+факт|новое\s+выполнен|если|"
+    r"этом\w*\s+(?:график|расч[её]т|вариант)|этому\s+сценари|по\s+нему)",
+    re.IGNORECASE,
+)
+_PRIOR_SCENARIO_GENERIC_STEMS = frozenset(
+    {
+        "факт",
+        "план",
+        "поступлен",
+        "поступлени",
+        "выполнен",
+        "выполнени",
+        "отклонен",
+        "отклонени",
+        "темп",
+        "рост",
+        "выручк",
+        "прибыль",
+        "прибыл",
+        "доход",
+        "расход",
+        "показатель",
+        "показател",
+        "значен",
+        "значени",
+        "данн",
+        "процент",
+        "дол",
+        "рубль",
+        "рубл",
+        "тыс",
+        "тысяч",
+        "млн",
+        "млрд",
+        "итог",
+        "общ",
+        "инспекц",
+        "инспекци",
+        "имнс",
+        "город",
+        "область",
+    }
+)
+
+
+def _user_stated_line(intent: str | None) -> str:
+    text = intent or ""
+    mark = "Числа из реплик пользователя"
+    at = text.find(mark)
+    if at < 0:
+        return ""
+    rest = text[at + len(mark) :]
+    return rest.split("\n", 1)[1].split("\n", 1)[0] if "\n" in rest else ""
+
+
+def _asks_about_prior_scenario(message: str | None, intent: str | None) -> bool:
+    """True when the current message references an earlier scenario or prior user numbers."""
+    msg = (message or "").strip()
+    if not msg:
+        return False
+    if _PRIOR_SCENARIO_CUE.search(msg):
+        return True
+    stated_line = _user_stated_line(intent)
+    if not stated_line.strip():
+        return False
+    msg_nums = number_norms(msg)
+    if msg_nums & number_norms(stated_line):
+        return True
+    msg_stems = set(_content_words(msg))
+    ignore = _STOP_STEMS | _PRIOR_SCENARIO_GENERIC_STEMS
+    stated_stems = {
+        stem for stem in _content_words(stated_line) if stem not in ignore
+    }
+    return bool(msg_stems & stated_stems)
+
+
+def _allowed_norms(
+    source: str,
+    intent: str,
+    drop: set[str],
+    *,
+    include_user_stated: bool = True,
+) -> set[str]:
+    have = number_norms(source) | number_norms(_request_blob(intent))
+    if include_user_stated:
+        have = have | user_stated_norms(intent)
     # Prose often phrases negative deviations as positive magnitudes («отставание на 1 527»).
     have = have | {n[1:] for n in have if n.startswith("-")}
     return have - drop
@@ -1269,7 +1359,7 @@ def generate_chat_charts(
     from case3.generate import preferred_types_from_intent
     from case3.parse_output import _load_media_payload, _parse_charts_list, _pick_fences
 
-    cap = max(1, min(int(max_charts or 1), 2))
+    cap = max(1, min(int(max_charts or 1), 4))
     palette = normalize_palette_id(palette_id)
     types_list = ", ".join(sorted(CHART_TYPES))
     palette_hint = "\n".join(intent_palette_lines(palette))
@@ -1287,6 +1377,7 @@ def generate_chat_charts(
         '{"charts": [{"id": "cht_01", "type": "bar", "caption": "...", "html": "<canvas id=\'c\'></canvas><script>...</script>"}]}'
     )
     message = latest_user_line(intent) or intent or "Построй график по данным."
+    prior_scenario = _asks_about_prior_scenario(message, intent)
     mem_ctx = _visual_memory_context(intent, extra_context)
     clipped_src = _clip_source(source, focus=f"{message}\n{mem_ctx}".strip())
     prompt_parts = [f"ЗАПРОС:\n{message}"]
@@ -1300,6 +1391,11 @@ def generate_chat_charts(
     if mem_ctx:
         prompt_parts.append(mem_ctx)
     prompt_parts.append(f"SOURCE:\n{clipped_src}")
+    if not previous_chart and not prior_scenario:
+        prompt_parts.append(
+            f"ФОКУС ГРАФИКА: строй график строго по запросу «{message}» на исходных данных из SOURCE, "
+            "не подмешивая условные расчёты или добавки из прошлых ходов."
+        )
     user_prompt = "\n\n".join(prompt_parts)
 
     llm = client or _client(_CHAT_ANSWER_TOKENS, 120.0)
@@ -1315,13 +1411,14 @@ def generate_chat_charts(
     if not parsed:
         return [], {}
 
+    ground_intent = intent if (previous_chart or prior_scenario) else message
     _tex_out, grounded, _figs, _diags, _dropped = ground_generated(
         "",
         parsed,
         [],
         [],
         source=source,
-        intent=intent,
+        intent=ground_intent,
     )
     if not grounded:
         return [], {}
@@ -1697,9 +1794,37 @@ def try_chat_answer(
             "\n\nВ чат — не больше четырёх предложений: что на экране и какой вопрос уместен. "
             "Без таблицы и без обзора."
         )
+    said = latest_user_line(intent)
+    from case3.turn_route import wants_chat_chart, wants_chat_diagram
+
+    is_visual_turn = wants_chat_chart(said) or wants_chat_diagram(said)
+    prior_scenario = _asks_about_prior_scenario(said, intent)
+    has_memory = any(
+        marker in user
+        for marker in (
+            "\n\nРазговор этого чата",
+            "\n\nЧисла из реплик пользователя",
+            "\n\nКарточка этого чата",
+            "\n\nПредыдущий ход",
+        )
+    )
+    if said and has_memory and not landing:
+        if is_visual_turn and not prior_scenario:
+            user += (
+                f"\n\nТЕКУЩИЙ ЗАПРОС (ответь строго на него): {said}\n"
+                "Разбери только исходные числа из блока «ТЕКСТ» для запрошенного разреза. "
+                "Не повторяй условные добавки и расчёты из прошлых ходов, если о них не спрашивают в этом сообщении."
+            )
+        else:
+            user += f"\n\nТЕКУЩИЙ ЗАПРОС (ответь именно на него): {said}"
     llm = client or _client(answer_tokens, 60.0 if landing else 180.0)
-    allowed = _allowed_norms(source, intent, drop)
-    msg_ok = number_norms(latest_user_line(intent))
+    allowed = _allowed_norms(
+        source,
+        intent,
+        drop,
+        include_user_stated=not (is_visual_turn and not prior_scenario),
+    )
+    msg_ok = number_norms(said)
     streamed_chunks: list[str] = []
 
     def _emit_chunk(piece: str) -> None:
@@ -1726,16 +1851,25 @@ def try_chat_answer(
     )
     from case3.fact_ground import wrong_row_tokens
 
-    said = latest_user_line(intent)
     wrong = wrong_row_tokens(text, source, said) if text and not stray else []
     if stray:
         first_text, first_stray = text, stray
-        retry = (
-            user
-            + "\n\nПовтор: не пиши числа, которых нет в сообщении и в тексте: "
-            + ", ".join(stray)
-            + ". Если цифры не хватает, так и напиши, без новой цифры."
-        )
+        if is_visual_turn and not prior_scenario:
+            retry = (
+                user
+                + "\n\nПовтор: в текущем запросе просят «"
+                + said
+                + "». Не пиши условные или отсутствующие числа ("
+                + ", ".join(stray)
+                + "); разбери исходные показатели из ТЕКСТ для запрошенного разреза."
+            )
+        else:
+            retry = (
+                user
+                + "\n\nПовтор: не пиши числа, которых нет в сообщении и в тексте: "
+                + ", ".join(stray)
+                + ". Если цифры не хватает, так и напиши, без новой цифры."
+            )
         retried = _ask_model(llm, system, retry, max_tokens=answer_tokens)
         if retried:
             text = retried
@@ -1749,6 +1883,8 @@ def try_chat_answer(
         kept = _without_stray(text, stray)
         if len(re.findall(r"[А-Яа-яЁё]", kept)) >= 12:
             spoken = kept
+        elif is_visual_turn and not prior_scenario:
+            spoken = "Построил график по исходным данным документа для запрошенного разреза."
         else:
             spoken = invention_question(stray)
     elif wrong:
