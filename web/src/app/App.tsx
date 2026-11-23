@@ -26,7 +26,6 @@ import {
   phraseRoute,
   shotsSource,
   shotsTitle,
-  viewerFrameUrl,
   withShots,
   type DashboardCard,
 } from "../domain/dashboardCapture";
@@ -451,6 +450,15 @@ export default function App() {
     if (!id) return;
     const card = cardsRef.current.get(id);
     if (!card) return;
+    if (!card.shots.length) {
+      cardsRef.current.delete(id);
+      setMsgs((list) =>
+        list.filter(
+          (msg) => !(msg.id === id && msg.role === "bot" && !msg.text.trim()),
+        ),
+      );
+      return;
+    }
     if (!freshShots(card).length) return;
     const source = shotsSource(card.shots);
     if (!source.trim()) return;
@@ -460,7 +468,7 @@ export default function App() {
       outputMode: "chat",
       title: shotsTitle(card.shots),
     });
-  }, [putCard, send]);
+  }, [putCard, send, setMsgs]);
 
   const onDashboardShot = useCallback(
     (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
@@ -468,11 +476,20 @@ export default function App() {
       if (!id) return;
       const card = cardsRef.current.get(id);
       if (!card) return;
-      putCard(id, withShots(card, docs));
+      const next = withShots(card, docs);
+      cardsRef.current.set(id, next);
+      setMsgs((list) => {
+        if (!list.some((msg) => msg.id === id)) {
+          return [...list, { id, role: "bot", text: "", dashboard: next }];
+        }
+        return list.map((msg) =>
+          msg.id === id && msg.role === "bot" ? { ...msg, dashboard: next } : msg,
+        );
+      });
       const note = captureWarning(docs);
       showToast(note || DASHBOARD_SHOT_TOAST, note ? 5000 : 2800);
     },
-    [putCard, showToast],
+    [setMsgs, showToast],
   );
 
   const openDashboardRead = useCallback((title: string, text: string) => {
@@ -496,7 +513,7 @@ export default function App() {
     const card = cardsRef.current.get(id);
     if (!card) return;
     activeCardId.current = id;
-    setPhraseViewer(card.viewer);
+    setPhraseViewer(card.viewer.includes("/open") ? card.viewer : null);
     setDashboardOpen(true);
   }, []);
 
@@ -894,17 +911,13 @@ export default function App() {
                   onOpenDashboard={() => {
                     const id = uid();
                     const card: DashboardCard = {
-                      viewer: viewerFrameUrl(import.meta.env.VITE_DASHBOARD_VIEWER_URL),
+                      viewer: "",
                       filters: {},
                       shots: [],
                       analyzed: 0,
                     };
                     cardsRef.current.set(id, card);
                     activeCardId.current = id;
-                    setMsgs((list) => [
-                      ...list,
-                      { id, role: "bot", text: "", dashboard: card },
-                    ]);
                     setPhraseViewer(null);
                     setDashboardOpen(true);
                   }}
@@ -915,6 +928,12 @@ export default function App() {
                     onShot={onDashboardShot}
                     shotCount={openDashboardShots}
                     viewerUrl={phraseViewer}
+                    onOpened={(url) => {
+                      const id = activeCardId.current;
+                      const card = id ? cardsRef.current.get(id) : undefined;
+                      if (!id || !card) return;
+                      putCard(id, { ...card, viewer: url });
+                    }}
                   />
                 ) : null}
               </div>

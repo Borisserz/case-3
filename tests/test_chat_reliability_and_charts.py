@@ -197,7 +197,10 @@ def test_turn_route_routes_standalone_chart_to_chat_and_report_chart_to_report()
     assert resolve_turn("Построй график по областям", "report") == "report"
     assert resolve_turn("Сделай отчёт и график по областям", None) == "report"
     assert wants_chat_chart("Построй график по областям") is True
+    assert wants_chat_chart("можешь построить график по этим данным") is True
     assert wants_chat_chart("без графиков, просто расскажи") is False
+    assert resolve_turn("Построй схему по этим данным", None) == "chat"
+    assert resolve_turn("Сделай схему", None) == "diagram"
 
 
 def test_chat_pipeline_renders_inline_chart_when_requested(
@@ -261,3 +264,19 @@ def test_chat_pipeline_renders_inline_chart_when_requested(
     assert meta["output_mode"] == "chat"
     assert (out_dir / "figures" / "cht_01.png").is_file()
     assert meta.get("charts_ok", 0) == 1
+
+
+def test_earlier_source_is_the_previous_document(tmp_path: Path) -> None:
+    from case3.chat_memory import earlier_source
+
+    runs = tmp_path / "runs"
+    doc = runs / "uploads" / "screen.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("| А | Б |\n| --- | --- |\n| Минск | 10 |\n", encoding="utf-8")
+    out = runs / "out" / "source_20261123T120000Z"
+    out.mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps({"source": str(doc)}),
+        encoding="utf-8",
+    )
+    assert "Минск" in earlier_source(tmp_path, "source_20261123T120000Z")

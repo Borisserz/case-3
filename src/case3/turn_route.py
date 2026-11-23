@@ -50,6 +50,10 @@ _IN_CHAT = re.compile(
     r"(?:^|\s)(?:в\s+чат[е]?|без\s+отч[её]т[ао]?)\b",
     re.IGNORECASE,
 )
+_ON_THIS_DATA = re.compile(
+    r"по\s+(?:этим\s+)?данным",
+    re.IGNORECASE,
+)
 _QUESTION = re.compile(
     r"\?\s*$|"
     r"(?:^|[\s,])(?:"
@@ -102,14 +106,23 @@ def _live_kinds(raw: str) -> list[str]:
     return found
 
 
-def wants_chat_chart(text: str | None) -> bool:
-    """True when the user asks to draw a chart/graph without negating it."""
+def _asked(pattern: re.Pattern[str], text: str | None) -> bool:
     raw = _norm(text or "")
-    for match in _CHART_REQ.finditer(raw):
+    for match in pattern.finditer(raw):
         window = raw[max(0, match.start() - 32) : match.start()]
         if not _NEG_BEFORE.search(window):
             return True
     return False
+
+
+def wants_chat_chart(text: str | None) -> bool:
+    """True when the user asks to draw a chart/graph without negating it."""
+    return _asked(_CHART_REQ, text)
+
+
+def wants_chat_diagram(text: str | None) -> bool:
+    """True when the user asks for a schema in the chat, not a file."""
+    return _asked(_DIAGRAM, text)
 
 
 def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
@@ -130,6 +143,12 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
     if _QUESTION.search(raw) and not make:
         return "chat"
 
+    if (
+        kinds == ["diagram"]
+        and plaque != "diagram"
+        and (_ON_THIS_DATA.search(raw) or _IN_CHAT.search(raw))
+    ):
+        return "chat"
     if kinds and (make or not analyze):
         return kinds[0]
     if analyze:

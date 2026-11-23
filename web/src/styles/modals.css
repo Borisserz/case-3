@@ -905,6 +905,48 @@
   border-radius: 14px;
 }
 
+.stimul-sheet.is-pick {
+  width: min(32rem, 100%);
+  max-height: min(36rem, calc(100vh - 2.5rem));
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-pick-list {
+  overflow: auto;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.15rem 1rem 1rem;
+}
+
+.dash-pick-item {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 10px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dash-pick-item:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.dash-pick-title {
+  font-family: var(--serif, Georgia, serif);
+  font-size: 1.02rem;
+}
+
+.dash-pick-file {
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  font-size: 0.78rem;
+}
+
 .stimul-sheet.is-viewer .settings-modal-head {
   padding: 0.55rem 0.85rem 0.4rem;
 }

@@ -7,6 +7,7 @@ import re
 from typing import Callable
 
 _BEATS = {
+    "chat": ("source", "layout"),
     "diagram": ("source", "layout", "pdf"),
     "presentation": (
         "source",

@@ -464,7 +464,11 @@ export function ChatMessages({
                             m.result.downloads?.pdf || m.result.downloads?.docx
                           ) &&
                           (m.result.previews || []).some(
-                            (p) => p.kind === "chart" || p.id.startsWith("cht_"),
+                            (p) =>
+                              p.kind === "chart" ||
+                              p.kind === "diagram" ||
+                              p.id.startsWith("cht_") ||
+                              p.id.startsWith("dia_"),
                           ) && (
                             <div
                               className="msg-inline-charts"
@@ -478,7 +482,9 @@ export function ChatMessages({
                                 .filter(
                                   (p) =>
                                     p.kind === "chart" ||
-                                    p.id.startsWith("cht_"),
+                                    p.kind === "diagram" ||
+                                    p.id.startsWith("cht_") ||
+                                    p.id.startsWith("dia_"),
                                 )
                                 .map((p) => (
                                   <div

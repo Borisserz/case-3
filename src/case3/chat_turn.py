@@ -1089,6 +1089,53 @@ def generate_chat_charts(
     return grounded, status
 
 
+def generate_chat_diagram(
+    source: str,
+    intent: str,
+    *,
+    palette_id: str = "atelier",
+    figs_dir,
+    client: LLMClient | None = None,
+) -> tuple[list[dict], dict[str, dict]]:
+    """One Mermaid schema from the chat text. No report file."""
+    from pathlib import Path
+
+    from case3.chart_style import normalize_palette_id
+    from case3.diagram_generate import complete_diagrams
+    from case3.slides_media import ensure_diagram_pngs
+
+    llm = client or _client(2048, 60.0)
+    try:
+        diagrams = complete_diagrams(
+            intent=latest_user_line(intent) or intent,
+            source_text=_clip_source(source, focus=latest_user_line(intent)),
+            max_diagrams=1,
+            client=llm,
+            palette=normalize_palette_id(palette_id),
+        )
+    except Exception as exc:  # noqa: BLE001 — a picture must not drop the answer
+        log.warning("chat diagram generation failed: %s", exc)
+        return [], {}
+    if not diagrams:
+        return [], {}
+    dest = Path(figs_dir)
+    specs = {
+        str(item.get("id") or "dia_01"): item
+        for item in diagrams
+        if isinstance(item, dict) and (item.get("mermaid") or item.get("code"))
+    }
+    for spec in specs.values():
+        if not spec.get("mermaid") and spec.get("code"):
+            spec["mermaid"] = spec["code"]
+    rendered = ensure_diagram_pngs(specs, dest_dir=dest, palette=normalize_palette_id(palette_id))
+    status = {
+        did: {"ok": True, "path": str(path), "kind": "diagram"}
+        for did, path in rendered.items()
+    }
+    kept = [item for item in diagrams if str(item.get("id") or "") in status]
+    return kept, status
+
+
 def _ask_model(client: LLMClient, system: str, user_text: str) -> str:
     try:
         return _accepted(

@@ -10,7 +10,9 @@ from case3.dashboard_remote import (
     DashboardRemoteError,
     capture_documents,
     files_from_shot,
+    fetch_dashboards,
     fetch_filter_catalog,
+    open_named_dashboard,
     filters_from_model,
     finish_dashboard_phrase,
     might_ask_dashboard,
@@ -414,6 +416,48 @@ def test_finish_uses_the_url_the_service_returns(monkeypatch: pytest.MonkeyPatch
         poster,
     )
     assert plan["viewer"] == "http://localhost:8040/open"
+
+
+def test_open_named_dashboard_reads_filters_then_posts_that_mrt() -> None:
+    class _Client:
+        def __init__(self) -> None:
+            self.gets: list[str] = []
+            self.posts: list[tuple[str, dict]] = []
+
+        def get(self, url: str, **_kwargs):
+            self.gets.append(url)
+            return _Resp(
+                200,
+                {
+                    "mrt": "plan.mrt",
+                    "filters": [{"name": "month", "value": "2"}],
+                },
+            )
+
+        def post(self, url: str, json: dict | None = None, **_kwargs):
+            self.posts.append((url, json or {}))
+            return _Resp(200, {"ok": True, "url": "http://127.0.0.1:8040/open"})
+
+    client = _Client()
+    plan = open_named_dashboard("http://127.0.0.1:8040", "plan.mrt", client)
+    assert client.gets == ["http://127.0.0.1:8040/filters?mrt=plan.mrt"]
+    assert client.posts[0][1]["mrt"] == "plan.mrt"
+    assert "month" in client.posts[0][1]["filters"]
+    assert plan["viewer"] == "http://127.0.0.1:8040/open"
+    assert plan["mrt"] == "plan.mrt"
+
+
+def test_fetch_dashboards_keeps_mrt_names() -> None:
+    class _Client:
+        def get(self, url: str, **_kwargs):
+            assert url.endswith("/dashboards")
+            return _Resp(
+                200,
+                {"dashboards": [{"name": "plan.mrt", "title": "plan"}, {"name": "note.txt"}]},
+            )
+
+    rows = fetch_dashboards("http://127.0.0.1:8040", _Client())
+    assert rows == [{"name": "plan.mrt", "title": "plan"}]
 
 
 def test_fetch_filter_catalog_calls_the_filters_endpoint() -> None:

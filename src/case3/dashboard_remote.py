@@ -378,9 +378,36 @@ def read_filter_catalog(path: Path | None = None) -> dict | None:
     return body
 
 
-def fetch_filter_catalog(base: str, client) -> dict:
+def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
+    """GET /dashboards. Each row is one .mrt in the service local folder."""
+    response = client.get(f"{base.rstrip('/')}/dashboards")
+    status = int(getattr(response, "status_code", 500) or 500)
+    try:
+        body = response.json()
+    except Exception as exc:
+        raise DashboardRemoteError("сервис не вернул список дашбордов", "dashboards") from exc
+    rows = body.get("dashboards") if isinstance(body, dict) else None
+    if status >= 400 or not isinstance(rows, list):
+        raise DashboardRemoteError("нет списка дашбордов", "dashboards")
+    out: list[dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name.lower().endswith(".mrt"):
+            continue
+        title = str(row.get("title") or Path(name).stem).strip() or Path(name).stem
+        out.append({"name": name, "title": title})
+    return out
+
+
+def fetch_filter_catalog(base: str, client, mrt: str = "") -> dict:
     """GET /filters. The service runs the dialog SQL unless the caller says otherwise."""
-    response = client.get(f"{base.rstrip('/')}/filters")
+    url = f"{base.rstrip('/')}/filters"
+    name = (mrt or "").strip()
+    if name:
+        url = f"{url}?mrt={quote(name)}"
+    response = client.get(url)
     status = int(getattr(response, "status_code", 500) or 500)
     try:
         body = response.json()
@@ -398,12 +425,21 @@ def fetch_filter_catalog(base: str, client) -> dict:
     return body
 
 
-def post_open_filters(base: str, filters: dict[str, object], client) -> str:
+def post_open_filters(
+    base: str,
+    filters: dict[str, object],
+    client,
+    mrt: str = "",
+) -> str:
     """POST /open raises the filtered dashboard. open=0 keeps a second OS window shut."""
     root = base.rstrip("/")
+    payload = open_payload(filters)
+    name = (mrt or "").strip()
+    if name:
+        payload["mrt"] = name
     response = client.post(
         f"{root}/open?open=0",
-        json=open_payload(filters),
+        json=payload,
         headers={"Accept": "application/json"},
     )
     status = int(getattr(response, "status_code", 500) or 500)
@@ -417,6 +453,18 @@ def post_open_filters(base: str, filters: dict[str, object], client) -> str:
     if isinstance(body, dict):
         opened = str(body.get("url") or "").strip()
     return opened or f"{root}/open"
+
+
+def open_named_dashboard(base: str, mrt: str, client) -> dict:
+    """GET /filters for this file, then POST /open with those values and the mrt name."""
+    name = (mrt or "").strip()
+    if not name:
+        raise DashboardRemoteError("не выбрано имя дашборда", "mrt")
+    catalog = fetch_filter_catalog(base, client, name)
+    opened_as = str(catalog.get("mrt") or name).strip() or name
+    filters = defaults_from_catalog(catalog)
+    viewer = post_open_filters(base, filters, client, mrt=opened_as)
+    return {"mrt": opened_as, "filters": filters, "viewer": viewer}
 
 
 def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:

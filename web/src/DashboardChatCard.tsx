@@ -17,21 +17,9 @@ export function DashboardChatCard({ card, onOpen, onRead }: Props) {
   return (
     <article className="deck-file-card dash-chat-card">
       <button type="button" className="dash-chat-hit" onClick={onOpen}>
-        <div className="dash-chat-stage" aria-hidden>
-          <div className="dash-chat-stage-bar">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="dash-chat-stage-kpis">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="dash-chat-stage-body">
-            <span className="dash-chat-map" />
-            <span className="dash-chat-grid" />
-          </div>
+        <div className="dash-chat-stage">
+          <p className="dash-chat-stage-kicker">Стимулсофт</p>
+          <p className="dash-chat-stage-name">{lead || "Дашборд"}</p>
         </div>
         <div className="dash-chat-copy">
           <p className="dash-chat-kicker">Дашборд готов</p>

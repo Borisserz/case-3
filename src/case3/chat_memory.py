@@ -754,6 +754,18 @@ def _dialogue(meta: dict[str, Any]) -> list[dict[str, str]]:
     return out[-12:]
 
 
+def earlier_source(root: Path, prior_run_id: str) -> str:
+    """Document of a previous turn. Empty when that turn had no file."""
+    rid = (prior_run_id or "").strip()
+    if not rid:
+        return ""
+    for turn in reversed(load_chain(root, rid)):
+        text = _source_file(root, turn).strip()
+        if text:
+            return text
+    return ""
+
+
 def _source_file(root: Path, meta: dict[str, Any]) -> str:
     raw = str(meta.get("source") or "").strip()
     if not raw:

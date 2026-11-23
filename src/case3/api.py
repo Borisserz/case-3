@@ -39,7 +39,9 @@ from case3.dashboard_remote import (
     capture_documents,
     fetch_export,
     fetch_shot_payload,
+    fetch_dashboards,
     fetch_filter_catalog,
+    open_named_dashboard,
     finish_dashboard_phrase,
     might_ask_dashboard,
     plan_dashboard_phrase,
@@ -1053,6 +1055,43 @@ async def api_dashboard_phrase(payload: dict = Body(...)) -> JSONResponse:
         raise HTTPException(502, detail=exc.message) from exc
     except LLMConfigError as exc:
         raise HTTPException(503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+    return JSONResponse(plan)
+
+
+@app.get("/api/dashboard/dashboards")
+def api_dashboard_dashboards() -> JSONResponse:
+    """Names of the .mrt files in the viewer local folder."""
+    import httpx
+
+    base = service_base()
+    timeout = httpx.Timeout(15.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            rows = fetch_dashboards(base, client)
+    except DashboardRemoteError as exc:
+        raise HTTPException(502, detail=exc.message) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+    return JSONResponse({"dashboards": rows})
+
+
+@app.post("/api/dashboard/open")
+def api_dashboard_open(payload: dict = Body(...)) -> JSONResponse:
+    """Filters for the chosen .mrt, then /open. The iframe loads that page."""
+    import httpx
+
+    name = str((payload or {}).get("mrt") or "").strip()
+    if not name:
+        raise HTTPException(400, detail="нужно имя дашборда")
+    base = service_base()
+    timeout = httpx.Timeout(60.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            plan = open_named_dashboard(base, name, client)
+    except DashboardRemoteError as exc:
+        raise HTTPException(502, detail=exc.message) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
     return JSONResponse(plan)

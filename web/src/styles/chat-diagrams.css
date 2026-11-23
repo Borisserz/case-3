@@ -2503,10 +2503,31 @@ body > .mermaidError {
 
 .dash-chat-stage {
   display: grid;
-  gap: 0.55rem;
-  padding: 0.9rem 1rem 0.7rem;
+  align-content: end;
+  gap: 0.35rem;
+  min-height: 7.5rem;
+  padding: 1rem 1.1rem 0.95rem;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--sheet) 88%, var(--primary) 6%), var(--sheet));
+    linear-gradient(165deg, color-mix(in srgb, var(--ink) 6%, var(--sheet)), var(--sheet) 58%);
+}
+
+.dash-chat-stage-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash-chat-stage-name {
+  margin: 0;
+  max-width: 36rem;
+  font-family: var(--serif);
+  font-size: 1.28rem;
+  font-weight: 560;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .dash-chat-stage-bar,

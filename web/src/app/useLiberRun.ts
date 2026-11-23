@@ -508,10 +508,12 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
           const stage = asString(data.stage, "queued");
           const mode = msg.thinkingMode || "report";
+          const chatAnswer =
+            quiet?.outputMode === "chat" || data.output_mode === "chat";
           return appendBotThinking(
             {
               ...msg,
-              text: stageLabel(stage, null, mode),
+              text: chatAnswer ? msg.text : stageLabel(stage, null, mode),
               pending: true,
               pendingStage: stage,
               pendingDetail: null,

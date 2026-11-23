@@ -61,8 +61,19 @@ function renderTables(src: string): string {
   return out.join("\n");
 }
 
+/** A "2. Вывод" glued to the previous sentence becomes its own paragraph. */
+export function spaceAnswer(raw: string): string {
+  let text = (raw || "").replace(/\r\n/g, "\n");
+  text = text.replace(
+    /([.!?…:%»"])[ \t]+(\d{1,2})\.\s+(?=\p{L})/gu,
+    "$1\n\n$2. ",
+  );
+  text = text.replace(/([^\n])\n(?=\d{1,2}\.\s+\p{L})/gu, "$1\n\n");
+  return text;
+}
+
 export function renderLightMd(raw: string, query = ""): string {
-  let s = escapeHtml(raw);
+  let s = escapeHtml(spaceAnswer(raw));
   s = s.replace(/```([\s\S]*?)```/g, (_m, code: string) => {
     return `<pre class="src-code"><code>${code.trim()}</code></pre>`;
   });

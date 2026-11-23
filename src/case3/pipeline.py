@@ -1227,12 +1227,21 @@ def run_pipeline(
             chat_fallback,
             chat_report_block,
             generate_chat_charts,
+            generate_chat_diagram,
             try_chat_answer,
+            _markdown_data_rows,
         )
         from case3.dashboard_source import derivative_block
-        from case3.turn_route import wants_chat_chart
+        from case3.turn_route import wants_chat_chart, wants_chat_diagram
 
         enriched_source = source_text or ""
+        picture = wants_chat_chart(user_text) or wants_chat_diagram(user_text)
+        if picture and len(_markdown_data_rows(enriched_source)) < 2:
+            from case3.chat_memory import earlier_source
+
+            earlier = earlier_source(root, str(meta.get("prior_run_id") or ""))
+            if len(_markdown_data_rows(earlier)) >= 2:
+                enriched_source = earlier
         if "## Производные" not in enriched_source:
             deriv = derivative_block(enriched_source)
             if deriv:
@@ -1246,6 +1255,7 @@ def run_pipeline(
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
             _emit_chat("answer", answer, "chat")
         else:
+            _publish_stage_lines("chat", user_text or enriched_source[:800])
             report = chat_report_block(
                 root, str(meta.get("prior_run_id") or ""), user_text
             )
@@ -1265,6 +1275,18 @@ def run_pipeline(
                     figs_dir=out / "figures",
                     charts_dir=work / "charts",
                 )
+            if wants_chat_diagram(user_text):
+                bump("charts", "рисую схему…")
+                diagrams, diagram_status = generate_chat_diagram(
+                    enriched_source,
+                    intent or user_text,
+                    palette_id=str(meta.get("chart_palette") or "atelier"),
+                    figs_dir=out / "figures",
+                )
+                media_status.update(diagram_status)
+                if diagrams:
+                    meta["diagrams_planned"] = [d.get("id") for d in diagrams if d.get("id")]
+                    meta["diagrams_ok"] = len(diagram_status)
         meta["output_mode"] = "chat"
         meta["chat_summary"] = answer
         meta["chat_opening"] = answer

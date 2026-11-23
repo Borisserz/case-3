@@ -1,6 +1,10 @@
 """Model step lines stay inside the beats of this job."""
 
-from case3.stage_narration import narrate_stages, parse_stage_lines
+from case3.stage_narration import beats_for, narrate_stages, parse_stage_lines
+
+
+def test_chat_beats_are_read_and_write() -> None:
+    assert beats_for("chat") == ("source", "layout")
 
 
 def test_parse_keeps_only_beats_for_this_job() -> None:
