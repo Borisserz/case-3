@@ -535,6 +535,7 @@ class LLMClient:
         # Extra attempts when we shrink max_tokens (OpenRouter 402 / LAN context 500).
         credit_shrinks = 0
         context_shrinks = 0
+        reasoning_rejected = False
         attempt = 0
         while attempt <= self.config.max_retries + credit_shrinks + context_shrinks:
             if cancel_check is not None:
@@ -583,7 +584,8 @@ class LLMClient:
                     )
                     max_tokens = nxt_tok
                     if (
-                        "openrouter.ai" in (self.config.base_url or "").lower()
+                        not reasoning_rejected
+                        and "openrouter.ai" in (self.config.base_url or "").lower()
                         and r == "off"
                         and "reasoning" not in body
                     ):
@@ -602,8 +604,8 @@ class LLMClient:
                         "LLM 400 reasoning param rejected — retrying without reasoning: %s",
                         body_txt[:160],
                     )
+                    reasoning_rejected = True
                     body.pop("reasoning", None)
-                    attempt += 1
                     continue
                 # Check for rate limit / quota / auth errors that warrant falling back to another key
                 is_quota_or_auth_err = (
@@ -732,6 +734,7 @@ class LLMClient:
         )
         attempt = 0
         yielded = 0
+        reasoning_rejected = False
         while attempt <= self.config.max_retries:
             if attempt:
                 self._sleep(float(min(attempt, 3)))
@@ -828,7 +831,8 @@ class LLMClient:
                         )
                         body["max_tokens"] = nxt_tok
                         if (
-                            "openrouter.ai" in (self.config.base_url or "").lower()
+                            not reasoning_rejected
+                            and "openrouter.ai" in (self.config.base_url or "").lower()
                             and r == "off"
                             and "reasoning" not in body
                         ):
@@ -851,8 +855,8 @@ class LLMClient:
                         "Stream LLM 400 reasoning rejected — retrying without reasoning: %s",
                         body_txt[:160],
                     )
+                    reasoning_rejected = True
                     body.pop("reasoning", None)
-                    attempt += 1
                     continue
                 if exc.code in (401, 403, 429) and self.rotate_key() is not None:
                     log.warning(

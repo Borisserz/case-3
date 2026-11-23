@@ -120,7 +120,7 @@ export function ImageEditModal({
       <header className="chart-edit-head">
         <div>
           <p className="chart-edit-eyebrow">живая правка · фото</p>
-          <h3 className="chart-edit-title">{(initialCaption || "").trim() || figureId}</h3>
+          <h3 className="chart-edit-title">{(initialCaption || "").trim() || "Иллюстрация"}</h3>
         </div>
         <button
           type="button"
@@ -143,7 +143,6 @@ export function ImageEditModal({
           />
           <div className="img-edit-preview-meta">
             <span className="img-edit-preview-label">Текущее изображение</span>
-            <span className="img-edit-preview-fid">{figureId}</span>
           </div>
         </div>
       ) : null}
@@ -290,7 +289,7 @@ export function ImageEditModal({
                 const ok = await confirm({
                   title: "Удалить фото?",
                   eyebrow: "отчёт · иллюстрация",
-                  message: `Удалить иллюстрацию «${(initialCaption || "").trim() || figureId}»? Она будет удалена из документа.`,
+                  message: `Удалить иллюстрацию «${(initialCaption || "").trim() || "Иллюстрация"}»? Она будет удалена из документа.`,
                   confirmLabel: "Удалить фото",
                   danger: true,
                 });

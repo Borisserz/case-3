@@ -789,3 +789,70 @@ def test_opening_fallback_strips_internal_memory_scaffolding() -> None:
     spoken = try_opening("presentation", decorated, client=_FakeLLM())
     assert spoken == "Собираю презентацию по поступлениям."
     assert seen_prompts and "Числа из реплик" not in seen_prompts[0]
+
+
+def test_filter_date_and_wide_table_column_do_not_trigger_false_fact_conflict() -> None:
+    from case3.chat_turn import fact_conflict
+
+    source = (
+        "# Данные дашборда\n\n"
+        "## Заголовок\nПоступления за январь 2025 года\n\n"
+        "## Фильтры\n- Отчётная дата: на 1 февраля 2025\n\n"
+        "## Таблица PDF\n"
+        "| Округ | Инспекция | План | Ожидание | Факт | Выполнение, % |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| Южный | ИМНС по Гомельской области | 90 000,0 | 95 000,0 | 105 865,2 | 105,9% |\n"
+    )
+    # 1. "на 1 февраля 2025" must not clash with "2025" near "Поступления"
+    assert (
+        fact_conflict(
+            "Какие поступления были при фильтре на 1 февраля 2025 у Гомельской области?",
+            source,
+        )
+        is None
+    )
+    # 2. A number from a far column (105 865,2) of the same named row must not clash with column 1 (90 000,0)
+    assert (
+        fact_conflict(
+            "По Гомельской области факт 105 865,2, почему так?",
+            source,
+        )
+        is None
+    )
+
+
+def test_chat_answer_strips_raw_chartjs_json_fences() -> None:
+    raw_json_reply = (
+        "Построил график фактических поступлений за январь.\n\n"
+        "```json\n"
+        '{"type": "bar", "data": {"labels": ["Минск"], "datasets": [{"data": [100]}]}}\n'
+        "```\n"
+    )
+    ans = try_chat_answer(
+        "Минск: 100.",
+        "Построй в чате график поступлений",
+        client=_Fake(raw_json_reply),
+    )
+    assert '"datasets"' not in ans
+    assert "```json" not in ans
+    assert "Построил график" in ans
+
+
+def test_chat_answer_Rejects_thousands_collapsed_into_decimal() -> None:
+    source = (
+        "| Инспекция | Факт |\n"
+        "| --- | --- |\n"
+        "| ИМНС по Гомельской области | 105 865,2 |\n"
+        "| ИМНС по Минской области | 94 073,5 |\n"
+    )
+    client = _Seq(
+        [
+            "У Гомельской области факт 105,8652, а у Минской — 94,0735.",
+            "У Гомельской области факт 105 865,2, а у Минской — 94 073,5.",
+        ]
+    )
+    ans = try_chat_answer(source, "Назови факт по областям", client=client)
+    assert client.calls == 2
+    assert "105,8652" not in ans
+    assert "105 865,2" in ans
+

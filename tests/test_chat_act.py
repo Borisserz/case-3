@@ -64,6 +64,27 @@ def test_rewrite_with_a_section_and_text_is_parsed():
         "Введение",
         "выручка была 10, стала 12.",
     )
+    # An editing instruction after ':' or '—' must NOT be treated as literal replacement prose!
+    assert (
+        parse_rewrite(
+            "Перепиши раздел Сводные итоги: сделай акцент на лидерах роста и отстающих инспекциях"
+        )
+        is None
+    )
+    assert (
+        parse_rewrite(
+            "Поправь раздел Введение — сократи и убери лишнюю воду"
+        )
+        is None
+    )
+    act_instr = resolve_act(
+        "Перепиши раздел Сводные итоги: сделай акцент на лидерах роста и отстающих инспекциях",
+        has_report=True,
+    )
+    assert act_instr.op == "rewrite"
+    assert act_instr.section == "Сводные итоги"
+    assert act_instr.brief != "supplied"
+
     assert parse_rewrite("Перепиши тот раздел") is None
     act = resolve_act("Перепиши тот раздел", has_report=True)
     assert act.op == "ask"

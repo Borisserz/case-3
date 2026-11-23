@@ -231,7 +231,7 @@ def _batch_edits(
         for clause, preview in zip(clauses, previews)
         if preview.kind == "revise" and preview.op not in {"", "ask"}
     ]
-    if len({preview.op for _clause, preview in runnable}) < 2:
+    if len(runnable) < 2:
         return None
     done: list[dict[str, Any]] = []
     for clause, _preview in runnable:
@@ -1102,7 +1102,7 @@ def _heading_titles(tex: str) -> list[str]:
     for start, end in find_heading_spans(tex):
         match = re.search(r"\{([^{}]*)\}", tex[start:end])
         if match and match.group(1).strip():
-            titles.append(match.group(1).strip())
+            titles.append(match.group(1).replace("~", " ").strip())
     return titles
 
 

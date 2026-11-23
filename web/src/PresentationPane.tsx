@@ -211,10 +211,12 @@ export function PresentationPane({
     deck?.slides?.[safeIdx]?.title ||
     (n ? `Слайд ${safeIdx + 1}` : "Презентация");
 
+  const prevDeckPropRef = useRef(deckProp);
   useEffect(() => {
-    // A parent poll must not wipe rows that are already written locally
-    // and not yet echoed back. After «Готово» dirty clears and the prop wins.
-    if (dirtyRef.current) return;
+    const externalChange = prevDeckPropRef.current !== deckProp;
+    prevDeckPropRef.current = deckProp;
+    if (dirtyRef.current && !externalChange) return;
+    dirtyRef.current = false;
     setDeck(deckProp);
   }, [deckProp]);
 
@@ -1212,8 +1214,8 @@ export function PresentationPane({
         <p className="presentation-empty-kicker">Презентация</p>
         <h3 className="presentation-empty-title">Превью появится здесь</h3>
         <p className="presentation-empty-copy">
-          После сборки в чате два файла — PPTX и PDF. Нажмите карточку:
-          сразу twin / film, без «Собрать».
+          После сборки в чате появятся два файла — PPTX и PDF. Нажмите карточку,
+          чтобы открыть просмотр и редактор слайдов.
         </p>
       </div>
     );
@@ -1782,6 +1784,11 @@ export function PresentationPane({
             open
             trapFocus
             figureId={openMediaId}
+            caption={
+              deck?.slides?.[safeIdx]?.caption ||
+              deck?.slides?.[safeIdx]?.title ||
+              "График"
+            }
             runId={runId}
             palettes={palettes}
             catalogTypes={catalogTypes}
@@ -1833,6 +1840,11 @@ export function PresentationPane({
             open
             trapFocus
             figureId={openMediaId}
+            caption={
+              deck?.slides?.[safeIdx]?.caption ||
+              deck?.slides?.[safeIdx]?.title ||
+              "Иллюстрация"
+            }
             previewUrl={mediaUrl(runId, openMediaId, mediaVersion) || undefined}
             busy={editingFigureId === openMediaId || imageUploading || saving}
             error={

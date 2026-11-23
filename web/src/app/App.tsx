@@ -17,6 +17,7 @@ import { DashboardPickModal } from "../DashboardPickModal";
 import { DashboardReadModal } from "../DashboardReadModal";
 import {
   captureWarning,
+  dashboardCardFromSource,
   DASHBOARD_SHOT_TOAST,
   isDashboardSource,
   matchDashboardFile,
@@ -574,17 +575,23 @@ export default function App() {
 
   const openFreshDashboard = useCallback(() => {
     const id = uid();
-    const card: DashboardCard = {
-      viewer: "",
-      filters: {},
-      shots: [],
-      analyzed: 0,
-    };
+    const existing =
+      sourceDraft?.text && isDashboardSource(sourceDraft.text)
+        ? dashboardCardFromSource(sourceDraft.text)
+        : null;
+    const card: DashboardCard = existing
+      ? { ...existing, viewer: "" }
+      : {
+          viewer: "",
+          filters: {},
+          shots: [],
+          analyzed: 0,
+        };
     cardsRef.current.set(id, card);
     activeCardId.current = id;
     setPhraseViewer(null);
     setDashboardOpen(true);
-  }, []);
+  }, [sourceDraft]);
 
   const sendFromComposer = useCallback(async () => {
     const text = chat.trim();
@@ -772,11 +779,10 @@ export default function App() {
   const reportSourceAttachment = useMemo((): SourceAttachment | null => {
     if (railArtifact?.kind !== "report") return null;
     const idx = msgs.findIndex((m) => m.id === railArtifact.msgId);
-    if (idx < 0) return null;
-    for (let i = idx - 1; i >= 0; i--) {
+    const startIdx = idx >= 0 ? idx - 1 : msgs.length - 1;
+    for (let i = startIdx; i >= 0; i--) {
       const m = msgs[i];
       if (m.role === "user" && m.attachment) return m.attachment;
-      if (m.role === "bot") break;
     }
     return null;
   }, [railArtifact, msgs]);

@@ -22,7 +22,14 @@ _KIND_LABEL = {
 _DONE_CLAIM = re.compile(r"(?i)\b(готово|собрано|pdf готов|презентац\w* готов\w*)\b")
 # A year or a rank is not a rival cell. «за 2025», «1 место», «в 2 раза».
 _ASIDE_YEAR = re.compile(r"(?:19|20)\d{2}")
-_ASIDE_AFTER = re.compile(r"^\s*(?:место|раз|раза)\b", re.IGNORECASE)
+_ASIDE_AFTER = re.compile(
+    r"^\s*(?:"
+    r"место|раз|раза|квартал\w*|полугоди\w*|"
+    r"январ\w*|феврал\w*|март\w*|апрел\w*|ма[йяюем]|июн\w*|июл\w*|август\w*|"
+    r"сентябр\w*|октябр\w*|ноябр\w*|декабр\w*"
+    r")\b",
+    re.IGNORECASE,
+)
 # Spaced thousands are one value: «105 865,2», not 105 and 865,2.
 # Boundaries protect hex colors (#4E79A7), IDs (B2B, s01, cht_01), and CSS (2px).
 _NUM = re.compile(
@@ -964,6 +971,9 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
     """User number and a different document number about the same word."""
     raw = user_text or ""
     doc = source or ""
+    from case3.fact_ground import table_grid
+
+    grid = table_grid(doc) if "|" in doc else None
     for hit in _NUM.finditer(raw):
         if _is_list_marker(raw, hit.start(), hit.end()) or _aside_number(raw, hit):
             continue
@@ -972,6 +982,18 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
         if not user_stems:
             continue
         user_norm = _norm_num(hit.group())
+        if grid is not None and grid.rows:
+            if any(
+                user_norm in grid.rows.get(stem, set())
+                or user_norm in grid.aggregates
+                for stem in user_stems
+            ):
+                continue
+            row_stems = user_stems & set(grid.rows.keys())
+            if row_stems and all(
+                user_norm in grid.rows.get(stem, set()) for stem in row_stems
+            ):
+                continue
         same_subject_same_value = False
         for other in _NUM.finditer(doc):
             if _norm_num(other.group()) != user_norm:
@@ -983,6 +1005,8 @@ def fact_conflict(user_text: str | None, source: str | None) -> tuple[str, str, 
         if same_subject_same_value:
             continue
         for other in _NUM.finditer(doc):
+            if _is_list_marker(doc, other.start(), other.end()) or _aside_number(doc, other):
+                continue
             if _norm_num(other.group()) == user_norm:
                 continue
             shared = user_stems & _subjects_near(doc, other.start())
@@ -1817,10 +1841,17 @@ def _without_stray(text: str, stray: list[str]) -> str:
     return "\n".join(kept_lines).strip()
 
 
+_CHART_JSON_FENCE = re.compile(
+    r"```(?:json|javascript|js|html)?\s*[\{\[][\s\S]*?(?:\"datasets\"|\"labels\"|\"charts\"|\"mermaid\"|new\s+Chart)[\s\S]*?```",
+    re.IGNORECASE,
+)
+
+
 def _hide_memory_marks(text: str) -> str:
-    """The model must not read the memory labels aloud."""
+    """The model must not read the memory labels aloud or dump raw chart JSON fences."""
+    cleaned = _CHART_JSON_FENCE.sub("", text or "")
     kept: list[str] = []
-    for line in (text or "").split("\n"):
+    for line in cleaned.split("\n"):
         bare = line.strip().lstrip("#").strip()
         if bare.startswith(
             (
@@ -1835,7 +1866,10 @@ def _hide_memory_marks(text: str) -> str:
             .replace("Разговор этого чата", "этот разговор")
             .replace("Карточка этого чата", "этот разговор")
         )
-    return "\n".join(kept).strip()
+    out = "\n".join(kept).strip()
+    if not out and (text or "").strip():
+        return "Построил визуализацию по данным."
+    return out
 
 
 def _norm_num(token: str) -> str:
@@ -1849,9 +1883,20 @@ def _norm_num(token: str) -> str:
     return "0" if compact == "-0" else compact
 
 
-def _numbers_grounded(draft: str, allowed: str) -> bool:
+def _numbers_grounded(draft: str, allowed: str, source: str = "") -> bool:
+    from case3.fact_ground import _is_small_cardinal_in_clause, table_grid
+
     have = {_norm_num(token) for token in _fact_tokens(allowed)}
-    return all(_norm_num(token) in have for token in _fact_tokens(draft))
+    if source:
+        grid = table_grid(source)
+        have |= grid.all_row_norms | grid.aggregates | _derived_table_math_norms(source)
+    have |= {n[1:] for n in have if n.startswith("-")}
+    for token in _fact_tokens(draft):
+        norm = _norm_num(token)
+        if norm in have or _is_small_cardinal_in_clause(draft, norm):
+            continue
+        return False
+    return True
 
 
 def draft_section(
@@ -1888,6 +1933,6 @@ def draft_section(
         log.warning("section draft failed: %s", exc)
         text = ""
     allowed = f"{current}\n{source}\n{said}"
-    if not text or not _numbers_grounded(text, allowed):
+    if not text or not _numbers_grounded(text, allowed, source=source):
         return ""
     return " ".join(text.split())

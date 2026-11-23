@@ -47,6 +47,7 @@ export function reviseSurface(
 export type RefreshStep = {
   surface: "deck" | "report";
   artifactRunId: string;
+  op?: string;
 };
 
 export function refreshSteps(data: {
@@ -61,10 +62,12 @@ export function refreshSteps(data: {
     const surface =
       item?.surface === "deck" || item?.surface === "report" ? item.surface : null;
     if (!surface) continue;
-    steps.push({
+    const step: RefreshStep = {
       surface,
       artifactRunId: (item.artifact_run_id || "").trim(),
-    });
+    };
+    if (item.op === "refine_diagram") step.op = "refine_diagram";
+    steps.push(step);
   }
   if (steps.length) return steps;
   const single =
@@ -72,20 +75,31 @@ export function refreshSteps(data: {
       ? data.surface
       : reviseSurface(data.op || "");
   if (!single) return [];
-  return [{ surface: single, artifactRunId: (data.artifact_run_id || "").trim() }];
+  const step: RefreshStep = {
+    surface: single,
+    artifactRunId: (data.artifact_run_id || "").trim(),
+  };
+  if (data.op === "refine_diagram") step.op = "refine_diagram";
+  return [step];
 }
 
 export function revisedRailPlan(
   head: string,
   artifact: string,
   surface: "deck" | "report",
-): { fetchId: string; chainHead: string; tab: "presentation" | "preview" } {
+  op = "",
+): { fetchId: string; chainHead: string; tab: "presentation" | "preview" | "diagram" } {
   const chainHead = head.trim();
   const file = artifact.trim() || chainHead;
   return {
     fetchId: file,
     chainHead,
-    tab: surface === "deck" ? "presentation" : "preview",
+    tab:
+      surface === "deck"
+        ? "presentation"
+        : op === "refine_diagram"
+          ? "diagram"
+          : "preview",
   };
 }
 
@@ -143,9 +157,9 @@ export async function refreshRevisedArtifact(
   msgId: string,
   hosts: RefreshHosts,
   artifactRunId = "",
-  options?: { remember?: boolean; isolated?: boolean },
+  options?: { remember?: boolean; isolated?: boolean; op?: string },
 ): Promise<void> {
-  const plan = revisedRailPlan(runId, artifactRunId, surface);
+  const plan = revisedRailPlan(runId, artifactRunId, surface, options?.op || "");
   let result = await readStatus(plan.fetchId);
   if (!result) return;
   if (surface === "deck") {

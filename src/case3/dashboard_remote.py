@@ -36,8 +36,18 @@ def service_base() -> str:
     return raw.rstrip("/") or "http://127.0.0.1:8040"
 
 
+def public_service_base() -> str:
+    """Browser-facing Stimulsoft URL (for iframe src when backend runs in Docker)."""
+    raw = (
+        os.environ.get("DASHBOARD_PUBLIC_URL")
+        or os.environ.get("DASHBOARD_SERVICE_URL")
+        or "http://127.0.0.1:8040"
+    ).strip()
+    return raw.rstrip("/") or "http://127.0.0.1:8040"
+
+
 def viewer_url() -> str:
-    return f"{service_base()}/viewer"
+    return f"{public_service_base()}/viewer"
 
 
 def _ext(item: dict) -> str:
@@ -220,6 +230,13 @@ def _norm(value: object) -> str:
     return str(value or "").strip().casefold().replace("ё", "е")
 
 
+_EXPLICIT_DASHBOARD_OPEN = re.compile(
+    r"(?:открой|покажи|загрузи|выведи|подтяни)\s+(?:мне\s+)?(?:дашборд|стимул\w*|экран|витрин\w*)"
+    r"|(?:дашборд|стимул\w*)\s+(?:открой|покажи)",
+    re.IGNORECASE,
+)
+
+
 def _phrase_has(phrase: str, needle: object) -> bool:
     left = _norm(phrase)
     right = _norm(needle)
@@ -236,6 +253,13 @@ def _phrase_has(phrase: str, needle: object) -> bool:
     digits = "".join(ch for ch in right if ch.isdigit())
     if len(digits) >= 4 and re.search(rf"(?<!\d){re.escape(digits[-2:])}(?!\d)", left):
         return True
+    from case3.chat_memory import _stem
+
+    right_words = [w for w in re.findall(r"[а-яa-z0-9]{3,}", right) if not w.isdigit()]
+    if right_words:
+        left_stems = {_stem(w) for w in re.findall(r"[а-яa-z0-9]{3,}", left)}
+        if all(_stem(w) in left_stems for w in right_words):
+            return True
     return False
 
 
@@ -494,10 +518,12 @@ def post_open_filters(
     if isinstance(body, dict):
         rel = str(body.get("path") or "").strip()
         if rel.startswith("/"):
-            opened = f"{root}{rel}"
+            pub = (os.environ.get("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/")
+            opened = f"{pub or root}{rel}"
         else:
             opened = str(body.get("url") or "").strip()
-    return opened or f"{root}/open"
+    pub_fallback = (os.environ.get("DASHBOARD_PUBLIC_URL") or "").strip().rstrip("/") or root
+    return opened or f"{pub_fallback}/open"
 
 
 def open_named_dashboard(base: str, mrt: str, client) -> dict:
@@ -590,12 +616,12 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
             or ""
         )
         say = _say_from_model(raw)
-        if named:
-            if not _json_object(raw).get("pull"):
-                if not base_filters:
-                    return {"pull": False}
-            else:
-                overlay = filters_from_model(catalog, text, raw)
+        model_pull = bool(_json_object(raw).get("pull"))
+        if not model_pull:
+            if not (base_filters and _EXPLICIT_DASHBOARD_OPEN.search(text or "")):
+                return {"pull": False}
+        elif named:
+            overlay = filters_from_model(catalog, text, raw)
     filters = {**base_filters, **overlay}
     if not filters:
         return {
@@ -612,7 +638,7 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
     return {
         "pull": True,
         "filters": filters,
-        "viewer": f"{service_base()}/open",
+        "viewer": f"{public_service_base()}/open",
         "reply": say,
     }
 

@@ -147,7 +147,7 @@ function ProseInline({
       {hideActions ? (
         <div className="inline-block-hint-row">
           <p className="inline-block-hint is-solo">
-            {kind === "paragraph" ? "⌘↵ · Esc · blur" : "Enter · Esc · blur"}
+            {kind === "paragraph" ? "⌘↵ · Esc · клик вне поля" : "Enter · Esc · клик вне поля"}
           </p>
           {onDelete && (
             <button
@@ -310,7 +310,7 @@ function ListInline({
       />
       {hideActions ? (
         <div className="inline-block-hint-row">
-          <p className="inline-block-hint is-solo">⌘↵ · Esc · blur</p>
+          <p className="inline-block-hint is-solo">⌘↵ · Esc · клик вне поля</p>
           {onDelete && (
             <button
               type="button"

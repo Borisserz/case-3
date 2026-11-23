@@ -300,7 +300,38 @@ def delete_figure_in_run(
         except Exception:
             pass
 
-    # 3. Update meta.json
+    # 3. Update meta.json and remove PNG + deck references
+    fig_png = out_dir / "figures" / f"{figure_id}.png"
+    try:
+        fig_png.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    deck_json_path = out_dir / "slides" / "deck.json"
+    if deck_json_path.is_file():
+        try:
+            deck_data = json.loads(deck_json_path.read_text(encoding="utf-8"))
+            if isinstance(deck_data, dict) and isinstance(deck_data.get("slides"), list):
+                changed_deck = False
+                for sl in deck_data["slides"]:
+                    if not isinstance(sl, dict):
+                        continue
+                    if sl.get("chart_id") == figure_id or sl.get("media_id") == figure_id:
+                        changed_deck = True
+                        sl.pop("chart_id", None)
+                        sl.pop("media_id", None)
+                        if sl.get("layout") in ("chart_hero", "chart_split", "media_hero", "media_split"):
+                            sl["layout"] = "bullets"
+                            if not sl.get("bullets"):
+                                sl["bullets"] = [str(sl.get("caption") or sl.get("title") or "Тезис")]
+                if changed_deck:
+                    deck_json_path.write_text(
+                        json.dumps(deck_data, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+        except Exception:
+            pass
+
     from case3.run_meta import update_meta
 
     media: dict[str, Any] = {}

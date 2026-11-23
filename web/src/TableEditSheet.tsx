@@ -337,8 +337,8 @@ export function TableEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Черновик выше. Apply → Preview; PDF/DOCX — на «Готово». ⌘↵ /
-          Ctrl+Enter.
+          Черновик выше. Нажмите «В превью», чтобы обновить черновик; PDF и DOCX
+          обновятся по кнопке «Готово». ⌘↵ / Ctrl+Enter.
         </p>
         <div className="chart-edit-actions">
           <button

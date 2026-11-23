@@ -478,7 +478,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               openReportArtifact,
             },
             step.artifactRunId || asString(data.artifact_run_id),
-            { remember: !isolated, isolated },
+            { remember: !isolated, isolated, op: step.op || asString(data.op) },
           );
         }
       })().finally(() => finishIdle());

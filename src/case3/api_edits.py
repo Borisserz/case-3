@@ -622,8 +622,14 @@ async def upload_run_figure(
 
         from case3.run_rebuild import rebuild_run_docs
 
+        has_report_tex = any(
+            (out_dir / cand).is_file()
+            for cand in ("report.tex", "main.tex", f"{out_dir.name}.tex")
+        ) or bool(list(out_dir.glob("*.tex")))
+        has_print = (out_dir / "report.pdf").is_file() or (out_dir / "report.docx").is_file()
+        rebuild_fmts = {"pdf", "docx"} if (has_report_tex and has_print) else {"none"}
         try:
-            artifacts = rebuild_run_docs(out_dir, formats={"none"})
+            artifacts = rebuild_run_docs(out_dir, formats=rebuild_fmts)
         except Exception:
             artifacts = {}
 

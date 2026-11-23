@@ -147,11 +147,13 @@ export function reportTitle(result: RunResult): string {
   if (named) return named;
   const t = result.preview?.title?.trim();
   if (t) return t;
+  const isRawStamp = /^source_[0-9]{8}T[0-9]{6}Z/i.test(result.run_id || "");
+  const suffix = result.run_id && !isRawStamp ? ` · ${result.run_id}` : "";
   if (result.output_mode === "diagram" || result.diagrams?.length) {
-    return `Схема · ${result.run_id}`;
+    return `Схема${suffix}`;
   }
   if (result.output_mode === "presentation") {
-    return `Презентация · ${result.run_id}`;
+    return `Презентация${suffix}`;
   }
   if (result.output_mode === "chat") {
     const line = (result.chat_summary || "")
@@ -161,7 +163,7 @@ export function reportTitle(result: RunResult): string {
     const short = (line || "").replace(/\*\*/g, "").slice(0, 52).trim();
     return short || "Ответ";
   }
-  return `Отчёт · ${result.run_id}`;
+  return `Отчёт${suffix}`;
 }
 
 /** Slides job already accepted (POST 202) — attach SSE/poll, do not POST again. */
@@ -269,7 +271,7 @@ export function formatRunStatusError(
     failedC.length ? `график ${failedC.join(", ")}` : null,
     failedF.length ? `фото ${failedF.join(", ")}` : null,
     logHint ? `TeX: ${logHint}` : null,
-    runId ? `run ${runId}` : null,
+    runId && !/^source_[0-9]{8}T[0-9]{6}Z/i.test(runId) ? `run ${runId}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -301,7 +303,11 @@ export function formatApiDetailError(
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object" && !Array.isArray(detail)) {
     const d = detail as { message?: string; run_id?: string; hint?: string };
-    return [d.message, d.run_id ? `run ${d.run_id}` : null, d.hint]
+    const showRun =
+      d.run_id && !/^source_[0-9]{8}T[0-9]{6}Z/i.test(d.run_id)
+        ? `run ${d.run_id}`
+        : null;
+    return [d.message, showRun, d.hint]
       .filter(Boolean)
       .join(" · ");
   }

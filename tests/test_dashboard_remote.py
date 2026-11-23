@@ -208,6 +208,15 @@ def test_model_refusal_stays_a_normal_message() -> None:
 
     plan = plan_dashboard_phrase("хочу данные по февраль 25", _CATALOG, complete)
     assert plan == {"pull": False}
+    # Even when catalog has default values (_LIVE_CATALOG), if the user asks a normal report/presentation
+    # request mentioning a month ("Сделай презентацию про итоги за январь: выручка 100") and model says pull=false,
+    # it MUST NOT hijack the message into a dashboard card!
+    plan_live = plan_dashboard_phrase(
+        "Сделай презентацию про продажи за февраль: выручка 100 млн",
+        _LIVE_CATALOG,
+        complete,
+    )
+    assert plan_live == {"pull": False}
 
 
 def test_plan_skips_the_model_when_the_sentence_is_not_about_data() -> None:

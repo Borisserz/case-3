@@ -966,3 +966,65 @@ def test_clause_allows_metadata_unsigned_delta_small_counts_and_verifiable_math(
     assert "5 регионов" in out
     assert "топ-3" in out
     assert "43,1" in out
+
+
+def test_table_grid_computes_all_rows_and_group_shares_even_when_compact() -> None:
+    from case3.dashboard_source import derivative_block
+    from case3.fact_ground import ground_generated, table_grid
+
+    rows = [
+        "| Округ | Инспекция | План | Факт |",
+        "| --- | --- | --- | --- |",
+    ]
+    for i in range(1, 21):
+        okrug = "Центральный" if i <= 10 else "Западный"
+        rows.append(f"| {okrug} | Инспекция_{i:02d} | {100 * i} | {110 * i} |")
+    table_md = "\n".join(rows)
+    source = table_md + "\n\n## Производные\n\n" + derivative_block(table_md)
+    grid = table_grid(source)
+    # Compact mode (>16 rows) must still populate shares, ranks, and group shares in TableGrid
+    assert "центральн" in grid.rows
+    assert "западн" in grid.rows
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "На Центральный округ приходится 26,2\\% факта, тогда как на Западный — 73,8\\%.\n"
+        "По Инспекция_18 отклонение составило +180 при выполнении 110,0\\%.\n"
+        "\\end{document}\n"
+    )
+    out, _c, _f, _d, _dropped = ground_generated(tex, [], [], [], source=source, intent="отчёт")
+    assert "тогда как на Западный — 73,8\\%" in out
+    assert "+180" in out
+
+
+def test_cross_shot_differences_and_comma_enumerations_survive_grounding() -> None:
+    from case3.fact_ground import ground_generated
+
+    source = (
+        "===== Январь =====\n"
+        "| Округ | Инспекция | План | Факт | Вып., % |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| Центральный | ИМНС по г. Минску | 140 000,0 | 152 340,0 | 108,8% |\n"
+        "| Восточный | ИМНС по Могилёвской области | 60 000,0 | 58 200,0 | 97,0% |\n"
+        "| Северный | ИМНС по Витебской области | 68 000,0 | 64 500,0 | 94,9% |\n"
+        "| Южный | ИМНС по Брестской области | 75 000,0 | 71 200,0 | 94,9% |\n\n"
+        "===== Февраль =====\n"
+        "| Округ | Инспекция | План | Факт | Вып., % |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| Центральный | ИМНС по г. Минску | 280 000,0 | 310 500,0 | 110,9% |\n"
+        "| Восточный | ИМНС по Могилёвской области | 120 000,0 | 117 600,0 | 98,0% |\n"
+        "| Северный | ИМНС по Витебской области | 136 000,0 | 130 200,0 | 95,7% |\n"
+        "| Южный | ИМНС по Брестской области | 150 000,0 | 145 000,0 | 96,7% |\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "Наибольший прирост за февраль обеспечила ИМНС по г. Минску (158\\,160,0 млн руб.), "
+        "наименьший --- ИМНС по Могилёвской области (59\\,400,0 млн руб.).\n"
+        "Зона риска --- три инспекции с выполнением ниже 100\\%: Витебская (95,7\\%), Брестская (96,7\\%) и Могилёвская (98,0\\%).\n"
+        "\\end{document}\n"
+    )
+    out, _c, _f, _d, _dropped = ground_generated(tex, [], [], [], source=source, intent="отчёт")
+    assert "158\\,160,0" in out
+    assert "59\\,400,0" in out
+    assert "Брестская (96,7\\%)" in out
+    assert "Могилёвская (98,0\\%)" in out
+

@@ -43,7 +43,43 @@ _DOCKER_TIMEOUT_S = 900.0
 _DOCKER_PROBE_TIMEOUT_S = 45.0
 
 
+def _use_local_tex() -> bool:
+    """Run latexmk/pandoc directly inside the backend container instead of Docker-in-Docker."""
+    val = (os.environ.get("CASE3_TEX_LOCAL") or "").strip().lower()
+    if val in {"1", "true", "yes", "on"}:
+        return True
+    if val in {"0", "false", "no", "off"}:
+        return False
+    if Path("/.dockerenv").exists() and shutil.which("latexmk") and shutil.which("pandoc"):
+        return True
+    return False
+
+
 def _docker_run(workdir: Path, *cmd: str) -> None:
+    if _use_local_tex():
+        env = dict(os.environ)
+        env["HOME"] = str(workdir.resolve())
+        env["XDG_CACHE_HOME"] = str((workdir / ".cache").resolve())
+        log.info("exec (local tex): %s", " ".join(cmd))
+        try:
+            run_captured(
+                list(cmd),
+                cwd=workdir.resolve(),
+                env=env,
+                check=True,
+                timeout=_DOCKER_TIMEOUT_S,
+            )
+            return
+        except subprocess.TimeoutExpired as exc:
+            raise RenderError(
+                f"{' '.join(cmd[:2])} timed out after {_DOCKER_TIMEOUT_S:.0f}s"
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            tail = ((exc.stderr or "") + "\n" + (exc.stdout or ""))[-2000:]
+            raise RenderError(
+                f"{' '.join(cmd[:2])} failed (exit {exc.returncode}): {tail.strip()}"
+            ) from exc
+
     if os.name == "nt":
         args = [
             "docker",
@@ -102,6 +138,11 @@ def _docker_run(workdir: Path, *cmd: str) -> None:
 
 def ensure_image() -> None:
     """Retry lookup — Docker daemon can flap under parallel load."""
+    if _use_local_tex():
+        missing = [tool for tool in ("latexmk", "pandoc") if not shutil.which(tool)]
+        if missing:
+            raise RenderError(f"Local TeX mode enabled, but missing binaries: {', '.join(missing)}")
+        return
     import time
 
     last = None
@@ -138,6 +179,9 @@ def warmup_docker(*, background: bool = True) -> bool:
 
     def _do_warmup() -> bool:
         global _DOCKER_WARMED
+        if _use_local_tex():
+            _DOCKER_WARMED = True
+            return True
         try:
             ensure_image()
             r = run_captured(["docker", "run", "--rm", IMAGE, "true"], timeout=45.0)

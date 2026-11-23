@@ -1553,10 +1553,12 @@ def run_pipeline(
                 except Exception as exc:  # noqa: BLE001
                     log.warning("presentation diagrams failed (soft): %s", exc)
                     diagrams = []
+            from case3.tex_safe import escape_tex_text
+
             plain_intent = str(meta.get("chat_prompt") or "").strip()
             if not plain_intent:
                 plain_intent = (intent or "").split("\n\n", 1)[0].strip()
-            title = plain_intent[:60].strip() or "Презентация"
+            title = escape_tex_text(plain_intent[:60].strip() or "Презентация")
             stub_lines = [
                 f"\\documentclass{{article}}",
                 f"\\title{{{title}}}",
@@ -1612,12 +1614,15 @@ def run_pipeline(
                     )
                 except InsufficientDataError as exc:
                     return _handle_insufficient_data(exc.message)
+            from case3.tex_safe import escape_tex_text
+
             figures = []
             charts = []
-            title = (intent or "").split("\n", 1)[0][:60].strip() or "Схема"
+            title = escape_tex_text((intent or "").split("\n", 1)[0][:60].strip() or "Схема")
+            safe_source_head = escape_tex_text(source_text[:1000])
             stub = (
                 f"\\documentclass{{article}}\n\\title{{{title}}}\n\\begin{{document}}\n"
-                f"\\maketitle\n{source_text[:1000]}\n\\end{{document}}\n"
+                f"\\maketitle\n{safe_source_head}\n\\end{{document}}\n"
             )
             tex_path.write_text(stub, encoding="utf-8")
             fj = {"figures": [], "charts": [], "diagrams": diagrams}

@@ -268,6 +268,12 @@ def _parse_subgraph_header(line: str) -> tuple[str, str] | None:
     return None
 
 
+def _clean_mermaid_label(text: str) -> str:
+    s = re.sub(r"<br\s*/?>", "\n", text or "", flags=re.IGNORECASE)
+    s = s.replace("#quot;", '"').replace("&quot;", '"').replace("#39;", "'").replace("&amp;", "&")
+    return s.strip()
+
+
 def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
     """Parse a Mermaid flowchart string into a structured DiagramGraph.
 
@@ -341,7 +347,7 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
             else:
                 role = "process"
 
-        nodes[nid] = DiagramNode(id=nid, label=label, shape=shape, role=role)
+        nodes[nid] = DiagramNode(id=nid, label=_clean_mermaid_label(label), shape=shape, role=role)
 
     # Second pass: parse edges, implicit nodes, and subgraphs
     subgraphs: list[DiagramSubgraph] = []
@@ -368,7 +374,7 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
         edge_matches = list(_RE_EDGE.finditer(line))
         for em in edge_matches:
             src = em.group(1)
-            edge_lbl = (em.group(3) or "").strip()
+            edge_lbl = _clean_mermaid_label(em.group(3) or "")
             dst = em.group(4)
             edges.append(DiagramEdge(src=src, dst=dst, label=edge_lbl))
             if src not in nodes:

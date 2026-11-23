@@ -161,20 +161,20 @@ export function DeckStyleSheet({
                       <span className="deck-style-pack-thumb-kicker">{p.label}</span>
                       <span className="deck-style-pack-thumb-title">
                         {p.id === "botanical"
-                          ? "A softer close"
+                          ? "Мягкий финал"
                           : p.id === "voltage"
-                            ? "Less friction"
+                            ? "Быстрый старт"
                             : p.id === "studio"
-                              ? "Owned outputs"
+                              ? "Рабочая сессия"
                               : p.id === "ink"
-                                ? "Growth with signal"
+                                ? "Сигнал роста"
                                 : p.id === "relay"
-                                  ? "Quarterly review"
+                                  ? "Итоги квартала"
                                   : p.id === "signal"
-                                    ? "Signal brief"
+                                    ? "Главный тезис"
                                     : p.id === "atelier"
-                                      ? "Campaign week"
-                                      : "Board update"}
+                                      ? "Неделя запуска"
+                                      : "Отчёт совету"}
                       </span>
                       {p.id === "botanical" ? (
                         <span className="deck-style-pack-thumb-fern" aria-hidden />
@@ -197,28 +197,28 @@ export function DeckStyleSheet({
 
             <div className="deck-style-colors">
               <ColorField
-                label="Primary"
+                label="Основной"
                 value={style.primary}
                 onChange={(primary) =>
                   onChange({ ...style, primary, presetId: "custom" })
                 }
               />
               <ColorField
-                label="Accent"
+                label="Акцент"
                 value={style.accent}
                 onChange={(accent) =>
                   onChange({ ...style, accent, presetId: "custom" })
                 }
               />
               <ColorField
-                label="Background"
+                label="Фон"
                 value={style.background}
                 onChange={(background) =>
                   onChange({ ...style, background, presetId: "custom" })
                 }
               />
               <ColorField
-                label="Text"
+                label="Текст"
                 value={style.text}
                 onChange={(text) =>
                   onChange({ ...style, text, presetId: "custom" })

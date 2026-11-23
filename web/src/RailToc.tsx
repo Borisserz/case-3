@@ -56,9 +56,14 @@ export function RailToc({
   }, [activeId]);
 
   useEffect(() => {
-    if (!root || !onActiveChange || items.length < 2) return;
+    const scrollRoot =
+      root ??
+      (scrollerRef.current?.closest(
+        ".artifact-rail-body, .rail-body",
+      ) as HTMLElement | null);
+    if (!scrollRoot || !onActiveChange || items.length < 2) return;
     const nodes = items
-      .map((it) => root.querySelector(`#${CSS.escape(it.id)}`))
+      .map((it) => scrollRoot.querySelector(`#${CSS.escape(it.id)}`))
       .filter(Boolean) as HTMLElement[];
     if (!nodes.length) return;
 
@@ -71,7 +76,7 @@ export function RailToc({
         if (top?.id) onActiveChange(top.id);
       },
       // Top band under sticky TOC (~rail-toc height); root = .artifact-rail-body.
-      { root, rootMargin: "-12% 0px -70% 0px", threshold: [0, 0.15, 0.5, 1] },
+      { root: scrollRoot, rootMargin: "-12% 0px -70% 0px", threshold: [0, 0.15, 0.5, 1] },
     );
     for (const n of nodes) io.observe(n);
     return () => io.disconnect();

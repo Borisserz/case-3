@@ -104,13 +104,13 @@ _BRIEF_ONLY = re.compile(
 )
 _SECTION_PATTERNS = (
     re.compile(
-        r"(?:раздел\w*|абзац\w*|глав\w*)\s+[«\"]?([A-Za-zА-Яа-яЁё0-9][^:.\n,!?]{1,48})",
+        r"(?:раздел\w*|абзац\w*|глав\w*)\s+[«\"]?([A-Za-zА-Яа-яЁё0-9][^:.\n,!?—–]{1,48})",
         re.IGNORECASE,
     ),
     re.compile(
         r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|уточни|сократи)\s+"
         r"(?:раздел\w*\s+|абзац\w*\s+|глав\w*\s+)?[«\"]?"
-        r"([A-Za-zА-Яа-яЁё0-9][^:.\n,!?]{1,48})",
+        r"([A-Za-zА-Яа-яЁё0-9][^:.\n,!?—–]{1,48})",
         re.IGNORECASE,
     ),
 )
@@ -796,6 +796,14 @@ def _brief_for(raw: str) -> str:
     return "prettier"
 
 
+_REWRITE_INSTRUCTION_BODY = re.compile(
+    r"(?:^|\b)(?:сделай|добавь|убери|сократи|распиши|укажи|выдели|акцент|подробн\w*|"
+    r"короче|точнее|фокус|включи|отметь|уточни|перепиши|переформулируй|оставь\s+только|"
+    r"больше\s+внимани|меньше\s+вод)\b",
+    re.IGNORECASE,
+)
+
+
 def parse_rewrite(text: str | None) -> tuple[str, str] | None:
     """«Перепиши раздел Введение: новый текст» → (name, body)."""
     raw = _norm(text or "")
@@ -809,6 +817,8 @@ def parse_rewrite(text: str | None) -> tuple[str, str] | None:
     name = " ".join(match.group(1).split())
     body = match.group(2).strip()
     if not name or not body:
+        return None
+    if _REWRITE_INSTRUCTION_BODY.search(body):
         return None
     return name, body
 

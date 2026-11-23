@@ -45,12 +45,15 @@ def _diagram_template() -> str:
 
 def _mermaid_js_path() -> Path:
     root = _repo_root()
+    vendored = root / "assets" / "charts" / "mermaid.min.js"
+    if vendored.is_file():
+        return vendored
     cand = root / "web" / "node_modules" / "mermaid" / "dist" / "mermaid.min.js"
     if cand.is_file():
         return cand
     raise FileNotFoundError(
         "mermaid.min.js missing — run npm install in web/ "
-        f"(expected {cand})"
+        f"(expected {vendored} or {cand})"
     )
 
 
@@ -304,7 +307,10 @@ def render_mermaid_png(
             os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
             try:
                 context = browser.new_context(
                     viewport={"width": 2400, "height": 1400},

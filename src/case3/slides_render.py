@@ -74,7 +74,10 @@ def capture_slide_png(html_dir: Path, dest_png: Path) -> None:
             os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
             try:
                 context = browser.new_context(
                     viewport={"width": vw, "height": vh},
@@ -137,7 +140,10 @@ def _capture_deck_slides_batch(tasks: list[tuple[Path, Path]]) -> None:
             os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
             try:
                 for work, dest_png in tasks:
                     index = (work / "index.html").resolve()

@@ -32,6 +32,10 @@ def parse_formats_form(raw: str | None) -> set[str]:
         return {fmt_raw}
     if fmt_raw in {"none", "diagram", "schemas"}:
         return set()
+    if "," in fmt_raw:
+        parts = {p.strip() for p in fmt_raw.split(",") if p.strip()}
+        if parts and parts <= {"pdf", "docx"}:
+            return parts
     raise ValueError("formats must be pdf|docx|both|none")
 
 

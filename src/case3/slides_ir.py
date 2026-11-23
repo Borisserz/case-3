@@ -333,7 +333,8 @@ def _text_ok_after_scrub(
 
 
 def _derived_table_numbers(source: str) -> frozenset[str]:
-    """Column sums and overall Fact/Plan execution derived from markdown tables in Source."""
+    """Column sums, means, shares, group rollups, and Fact/Plan deltas derived from tables in Source."""
+    from case3.chat_turn import _derived_table_math_norms
     from case3.dashboard_source import (
         _CODE_HEADER,
         _YEAR_HEADER,
@@ -343,8 +344,37 @@ def _derived_table_numbers(source: str) -> frozenset[str]:
         _label_column,
         _markdown_tables,
     )
+    from case3.fact_ground import table_grid
 
     extra: set[str] = set()
+
+    def _add_val(v: Decimal) -> None:
+        for d in (v, abs(v)):
+            if d == d.to_integral_value():
+                s_int = str(int(d))
+                extra.add(s_int)
+                extra.add(f"{s_int}.0")
+                extra.add(f"{s_int},0")
+            else:
+                for fmt in (f"{d:.1f}", f"{d:.2f}", f"{d:.0f}"):
+                    clean = fmt.rstrip("0").rstrip(".") if "." in fmt else fmt
+                    extra.add(fmt)
+                    extra.add(fmt.replace(".", ","))
+                    extra.add(clean)
+                    extra.add(clean.replace(".", ","))
+
+    grid = table_grid(source or "")
+    for n in (grid.all_row_norms | grid.aggregates | _derived_table_math_norms(source or "")):
+        if not n:
+            continue
+        bare = n[1:] if n.startswith("-") else n
+        for tok in (n, bare):
+            extra.add(tok)
+            extra.add(tok.replace(".", ","))
+            if "." not in tok and tok.isdigit():
+                extra.add(f"{tok}.0")
+                extra.add(f"{tok},0")
+
     for _title, rows in _markdown_tables(source or ""):
         if len(rows) < 2:
             continue
@@ -367,10 +397,9 @@ def _derived_table_numbers(source: str) -> frozenset[str]:
                     vals.append(v)
             if len(vals) >= 2:
                 total = sum(vals, Decimal(0))
-                abs_tot = abs(total)
-                s = str(int(abs_tot)) if abs_tot == abs_tot.to_integral_value() else f"{abs_tot:.1f}"
-                extra.add(s)
-                extra.add(s.replace(".", ","))
+                mean = total / Decimal(len(vals))
+                _add_val(total)
+                _add_val(mean)
         pair = _find_fact_plan_pair(header)
         if pair is not None:
             fcol, pcol = pair
@@ -382,12 +411,18 @@ def _derived_table_numbers(source: str) -> frozenset[str]:
                 if fv is not None and pv is not None:
                     fv_sum += fv
                     pv_sum += pv
+                    _add_val(fv - pv)
+                    if pv > 0:
+                        _add_val(fv * Decimal(100) / pv)
             if pv_sum > 0:
-                pct = fv_sum * Decimal(100) / pv_sum
-                for fmt in (f"{pct:.1f}", f"{pct:.0f}"):
-                    extra.add(fmt)
-                    extra.add(fmt.replace(".", ","))
+                _add_val(fv_sum * Decimal(100) / pv_sum)
+                _add_val(fv_sum - pv_sum)
     return frozenset(extra)
+
+
+_SPACED_OR_PLAIN_NUMBER = re.compile(
+    r"\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?"
+)
 
 
 def scrub_invented_numbers(
@@ -398,24 +433,23 @@ def scrub_invented_numbers(
 ) -> dict[str, Any]:
     """Drop digit runs not present in Source/charts (LLM heal after IR reject)."""
     source_norm = _norm_ws(source)
-    allowed = frozenset(allowed_number_strings or ()) | _derived_table_numbers(source) | _derived_table_numbers(source)
+    allowed = frozenset(allowed_number_strings or ()) | _derived_table_numbers(source)
 
     def _scrub_text(text: str, *, chrome: bool = False) -> str:
         def repl(m: re.Match[str]) -> str:
-            num = m.group(0)
+            raw_num = m.group(0)
+            compact_num = _compact_spaced_thousands(raw_num)
             if _number_is_allowed(
-                num,
+                compact_num,
                 source_norm=source_norm,
                 allowed=allowed,
                 blob=text or "",
                 chrome=chrome,
             ):
-                return num
+                return raw_num
             return ""
 
-        # Compact spaced thousands first so ``9 330`` gates as ``9330``.
-        compacted = _compact_spaced_thousands(text or "")
-        out = _NUMBER_RUN.sub(repl, compacted)
+        out = _SPACED_OR_PLAIN_NUMBER.sub(repl, text or "")
         out = re.sub(r"\s{2,}", " ", out)
         out = re.sub(r"\s+([,.;:!?])", r"\1", out)
         return clean_source_placeholders(_strip_orphan_units(out.strip()))

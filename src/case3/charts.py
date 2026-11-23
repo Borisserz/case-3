@@ -348,7 +348,10 @@ def render_chart_png(
     def _render() -> None:
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
             try:
                 _render_chart_in_browser(
                     browser,
@@ -468,7 +471,10 @@ def render_charts_batch(
     def _batch_worker() -> None:
         _prefer_stable_playwright_browsers()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"],
+            )
             try:
                 for cid, chart, dest, cdir in items:
                     if cancel_check:
@@ -499,7 +505,10 @@ def render_charts_batch(
                                 browser.close()
                             except Exception:  # noqa: BLE001
                                 pass
-                            browser = p.chromium.launch(headless=True)
+                            browser = p.chromium.launch(
+                                headless=True,
+                                args=["--disable-dev-shm-usage", "--no-sandbox"],
+                            )
                             _render_chart_in_browser(
                                 browser,
                                 html,

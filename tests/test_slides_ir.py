@@ -1061,3 +1061,45 @@ def test_parse_deck_ir_accepts_negative_delta_magnitude_and_verifiable_math() ->
     assert ir["slides"][1]["kpis"][1]["value"] == "18044"
 
 
+def test_scrub_invented_numbers_preserves_spaced_thousands_with_decimals_and_allows_derived_means() -> None:
+    source = (
+        "| Округ | Инспекция | План | Факт | Вып., % |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| Центральный | Минская | 180 000,0 | 192 100,0 | 106,7% |\n"
+        "| Восточный | Могилёвская | 120 000,0 | 117 600,0 | 98,0% |\n"
+        "| Южный | Гомельская | 200 000,0 | 218 400,0 | 109,2% |\n"
+    )
+    raw = {
+        "version": 1,
+        "palette": "atelier",
+        "slides": [
+            {"id": "s01", "layout": "title", "title": "Итоги февраля"},
+            {
+                "id": "s02",
+                "layout": "table_hero",
+                "title": "Инспекции",
+                "rows": [
+                    ["Инспекция", "План", "Факт", "Откл."],
+                    ["Минская", "180 000,0", "192 100,0", "+12 100,0"],
+                    ["Могилёвская", "120 000,0", "117 600,0", "-2 400,0"],
+                ],
+            },
+            {
+                "id": "s03",
+                "layout": "bullets",
+                "title": "Сводка",
+                "bullets": [
+                    "Среднее выполнение по инспекциям составило 104,6% (около 105%)",
+                    "Выдуманный показатель 999999 удаляется",
+                ],
+            },
+            {"id": "s04", "layout": "closing", "title": "Решения", "bullets": ["Контроль Могилёвской 117 600,0"]},
+        ],
+    }
+    healed = scrub_invented_numbers(raw, source=source)
+    ir = parse_deck_ir(healed, source=source)
+    assert ir["slides"][1]["rows"][1] == ["Минская", "180 000,0", "192 100,0", "+12 100,0"]
+    assert "999999" not in str(ir)
+
+
+

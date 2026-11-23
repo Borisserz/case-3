@@ -27,7 +27,7 @@ export function DeckEditToolbar({
       aria-label="Поле текста"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <span className="deck-edit-toolbar-chip">Text</span>
+      <span className="deck-edit-toolbar-chip">Текст</span>
       <span className="deck-edit-toolbar-label">{label}</span>
       {saving ? (
         <>

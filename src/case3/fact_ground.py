@@ -127,17 +127,37 @@ def _name_stems(label: str) -> set[str]:
     from case3.chat_memory import _stem
 
     found: set[str] = set()
-    for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]{4,}", label or ""):
+    for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]{3,}", label or ""):
+        if len(word) < 4 and not word.isupper():
+            continue
         stem = _stem(word)
-        if len(stem) < 4 or stem in _GENERIC_ROW:
+        if (len(stem) < 4 and not word.isupper()) or stem in _GENERIC_ROW:
             continue
         found.add(stem)
     return found
 
 
 def table_grid(source: str) -> TableGrid:
-    """One cell stays on its row and its column. Shared group words stay excluded."""
-    from case3.dashboard_source import _label_column, _markdown_tables
+    """One cell stays on its row and its column. Group rollups and all rows' derivatives are included."""
+    from decimal import Decimal
+
+    from case3.dashboard_source import (
+        _CODE_HEADER,
+        _NON_ADDITIVE_HEADER,
+        _YEAR_HEADER,
+        _cell_decimal,
+        _ffill_groups,
+        _find_fact_plan_pair,
+        _fmt_num_ru,
+        _fmt_share,
+        _group_columns,
+        _is_total_row,
+        _label_column,
+        _markdown_tables,
+        _measure_column,
+        _ranks,
+        _share_tenths,
+    )
 
     grid = TableGrid()
     row_entries: list[tuple[str, str, set[str], dict[str, set[str]]]] = []
@@ -158,23 +178,29 @@ def table_grid(source: str) -> TableGrid:
                 col_stems[col] = max(stems, key=len)
         for row in body:
             label = row[label_at].strip() if label_at is not None and label_at < len(row) else ""
+            text_parts: list[str] = []
             cells: dict[str, set[str]] = {}
             for col in range(width):
-                if label_at is not None and col == label_at:
-                    continue
                 cell = row[col].strip() if col < len(row) else ""
+                if col == label_at:
+                    if cell:
+                        text_parts.append(cell)
+                    continue
                 norms = number_norms(cell)
                 if not norms:
+                    if cell and _cell_decimal(cell) is None:
+                        text_parts.append(cell)
                     continue
                 # «Май» is three letters, so it never becomes a column stem.
                 # The number still belongs to the row.
                 cells.setdefault(col_stems.get(col, ""), set()).update(norms)
-            stems = _name_stems(label)
-            lkey = _label_key(label)
+            full_label = " ".join(text_parts) or label
+            stems = _name_stems(full_label)
+            lkey = _label_key(label or full_label)
             if lkey:
                 for stem in stems:
                     stem_labels.setdefault(stem, set()).add(lkey)
-            row_entries.append((label, lkey, stems, cells))
+            row_entries.append((label or full_label, lkey, stems, cells))
 
     phrase_map: dict[str, tuple[str, set[str]]] = {}
     for raw_label, lkey, stems, cells in row_entries:
@@ -200,6 +226,171 @@ def table_grid(source: str) -> TableGrid:
                 re.IGNORECASE,
             )
             grid.phrase_norms.append((pat, pnorms))
+
+    has_explicit_derivatives = "## Производные" in (source or "") or bool(
+        re.search(r"(?:^|\n)[-*]\s+.+?[—-]\s+доля\s+\d", source or "")
+    )
+
+    # Deterministically populate all rows' shares, ranks, group rollups, and Fact-Plan deltas
+    # directly from the parsed tables so compact mode (>16 rows) never drops rows 17..500.
+    for _title, rows in _markdown_tables(source or ""):
+        if len(rows) < 2:
+            continue
+        header, body = rows[0], rows[1:]
+        data = [row for row in body if not _is_total_row(row)]
+        if len(data) < 2:
+            continue
+        label_at = _label_column(data)
+        if label_at is None:
+            continue
+        width = max(len(row) for row in rows)
+        group_cols = _group_columns(data, label_at)
+        data = _ffill_groups(data, group_cols)
+        for col in range(width):
+            if col == label_at:
+                continue
+            name = header[col].strip() if col < len(header) else ""
+            if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
+                continue
+            parsed = _measure_column(data, col, label_at)
+            if parsed is None:
+                continue
+            labels, values, is_pct, has_neg, row_indices = parsed
+            ranks = _ranks(values)
+            named_col = _name_stems(name)
+            cstem = max(named_col, key=len) if named_col else ""
+            non_additive = is_pct or bool(_NON_ADDITIVE_HEADER.search(name))
+            shares = _share_tenths(values) if (not non_additive and not has_neg) else []
+            if has_explicit_derivatives:
+                for idx_r, lbl in enumerate(labels):
+                    lkey_r = _label_key(lbl)
+                    stems_r = _name_stems(lbl)
+                    unique_r = {s for s in stems_r if len(stem_labels.get(s, set())) == 1}
+                    keys_r = unique_r or stems_r
+                    for rstem in keys_r:
+                        if rstem not in grid.rows:
+                            continue
+                        grid.add(grid.ranks, rstem, cstem, {str(ranks[idx_r])})
+                        if shares:
+                            grid.add(grid.shares, rstem, cstem, number_norms(_fmt_share(shares[idx_r])))
+                    if not unique_r and lkey_r in phrase_map and shares:
+                        pr, pn = phrase_map[lkey_r]
+                        phrase_map[lkey_r] = (pr, pn | number_norms(_fmt_share(shares[idx_r])))
+            total = sum(values, Decimal(0))
+            mean = total / Decimal(len(values))
+            if has_explicit_derivatives:
+                grid.aggregates.update(number_norms(_fmt_num_ru(total)))
+                grid.aggregates.update(number_norms(_fmt_num_ru(mean)))
+            if not non_additive and group_cols:
+                for gcol in group_cols[:2]:
+                    by_group: dict[str, Decimal] = {}
+                    for r_idx, val in zip(row_indices, values):
+                        gval = data[r_idx][gcol].strip() if gcol < len(data[r_idx]) else ""
+                        if gval:
+                            by_group[gval] = by_group.get(gval, Decimal(0)) + val
+                    if len(by_group) >= 2:
+                        g_items = sorted(by_group.items(), key=lambda kv: -kv[1])
+                        g_shares = _share_tenths([v for _, v in g_items]) if not has_neg and total > 0 else []
+                        for idx_g, (gk, gv) in enumerate(g_items):
+                            gv_norms = number_norms(_fmt_num_ru(gv))
+                            grid.aggregates.update(gv_norms)
+                            for gstem in _name_stems(gk):
+                                grid.add(grid.values, gstem, cstem, gv_norms)
+                                if g_shares:
+                                    gs_norms = number_norms(_fmt_share(g_shares[idx_g]))
+                                    grid.add(grid.shares, gstem, cstem, gs_norms)
+                                    grid.aggregates.update(gs_norms)
+        pair = _find_fact_plan_pair(header)
+        if pair is not None:
+            fcol, pcol = pair
+            gcol_fp = group_cols[0] if group_cols else None
+            g_fp: dict[str, tuple[Decimal, Decimal]] = {}
+            for idx_r, row in enumerate(data):
+                fv = _cell_decimal(row[fcol].strip()) if fcol < len(row) else None
+                pv = _cell_decimal(row[pcol].strip()) if pcol < len(row) else None
+                if fv is None or pv is None:
+                    continue
+                lbl = (row[label_at].strip() if label_at < len(row) else "") or ""
+                diff = fv - pv
+                rpct = (fv * Decimal(100) / pv) if pv > 0 else None
+                diff_norms = number_norms(_fmt_num_ru(diff, signed=True)) if has_explicit_derivatives else set()
+                pct_norms = number_norms(_fmt_num_ru(rpct)) if rpct is not None else set()
+                lkey_r = _label_key(lbl)
+                stems_r = _name_stems(lbl)
+                unique_r = {s for s in stems_r if len(stem_labels.get(s, set())) == 1}
+                keys_r = unique_r or stems_r
+                for rstem in keys_r:
+                    if rstem in grid.rows:
+                        if diff_norms:
+                            grid.add(grid.values, rstem, "", diff_norms)
+                        if pct_norms:
+                            grid.add(grid.shares, rstem, "", pct_norms)
+                if not unique_r and lkey_r in phrase_map:
+                    pr, pn = phrase_map[lkey_r]
+                    phrase_map[lkey_r] = (pr, pn | diff_norms | pct_norms)
+                if gcol_fp is not None and gcol_fp < len(row):
+                    gk = row[gcol_fp].strip()
+                    if gk:
+                        pf, pp = g_fp.get(gk, (Decimal(0), Decimal(0)))
+                        g_fp[gk] = (pf + fv, pp + pv)
+            for gk, (gf, gp) in g_fp.items():
+                gdiff = gf - gp
+                gpct = (gf * Decimal(100) / gp) if gp > 0 else None
+                gd_norms = number_norms(_fmt_num_ru(gdiff, signed=True))
+                gp_norms = number_norms(_fmt_num_ru(gpct)) if gpct is not None else set()
+                grid.aggregates.update(gd_norms | gp_norms)
+                for gstem in _name_stems(gk):
+                    grid.add(grid.values, gstem, "", gd_norms | gp_norms)
+                    if gp_norms:
+                        grid.add(grid.shares, gstem, "", gp_norms)
+
+    # Rebuild phrase_norms after adding row shares and Fact-Plan deltas
+    grid.phrase_norms.clear()
+    for lkey, (_raw_label, pnorms) in phrase_map.items():
+        tokens = lkey.split()
+        if len(tokens) >= 2:
+            pat = re.compile(
+                r"\b" + r"\s+".join(re.escape(t) for t in tokens) + r"\w*",
+                re.IGNORECASE,
+            )
+            grid.phrase_norms.append((pat, pnorms))
+
+    # Also compute cross-table differences for the same entity (e.g., Feb cumulative minus Jan cumulative)
+    tables_count = len(_markdown_tables(source or ""))
+    if tables_count >= 2:
+        for rstem, rnorms in list(grid.rows.items()):
+            decs: list[Decimal] = []
+            for n in rnorms:
+                try:
+                    decs.append(Decimal(n))
+                except Exception:
+                    continue
+            if 2 <= len(decs) <= 24:
+                cross_norms: set[str] = set()
+                for i in range(len(decs)):
+                    for j in range(i + 1, len(decs)):
+                        a, b = decs[i], decs[j]
+                        for diff_val in (a - b, b - a):
+                            cross_norms.update(number_norms(_fmt_num_ru(diff_val, signed=True)))
+                if cross_norms:
+                    grid.add(grid.values, rstem, "", cross_norms)
+        for idx_p, (pat, pnorms) in enumerate(list(grid.phrase_norms)):
+            decs_p: list[Decimal] = []
+            for n in pnorms:
+                try:
+                    decs_p.append(Decimal(n))
+                except Exception:
+                    continue
+            if 2 <= len(decs_p) <= 24:
+                cross_p: set[str] = set()
+                for i in range(len(decs_p)):
+                    for j in range(i + 1, len(decs_p)):
+                        a, b = decs_p[i], decs_p[j]
+                        for diff_val in (a - b, b - a):
+                            cross_p.update(number_norms(_fmt_num_ru(diff_val, signed=True)))
+                if cross_p:
+                    grid.phrase_norms[idx_p] = (pat, pnorms | cross_p)
+
     _add_derivatives(grid, source or "")
     return grid
 
@@ -244,12 +435,13 @@ def _add_derivatives(grid: TableGrid, source: str) -> None:
                 "Отклонение и выполнение",
                 "- По «",
                 "Выше плана",
+                "Концентрация:",
             )
         ):
             agg_part = stripped.split("; макс:", 1)[0].split("; мин:", 1)[0]
             grid.aggregates.update(number_norms(agg_part))
             continue
-        if stripped.startswith(("Топ-5", "Отстающие")):
+        if stripped.startswith(("Топ-5", "Топ-10", "Отстающие")):
             continue
         column = stripped
 
@@ -268,9 +460,12 @@ def _row_mentions(clause: str, grid: TableGrid) -> list[tuple[int, int, str]]:
     from case3.chat_memory import _stem
 
     found: list[tuple[int, int, str]] = []
-    for match in re.finditer(r"[0-9A-Za-zА-Яа-яЁё]{4,}", clause or ""):
-        stem = _stem(match.group(0))
-        if len(stem) < 4 or stem not in grid.rows:
+    for match in re.finditer(r"[0-9A-Za-zА-Яа-яЁё]{3,}", clause or ""):
+        word = match.group(0)
+        if len(word) < 4 and not word.isupper():
+            continue
+        stem = _stem(word)
+        if (len(stem) < 4 and not word.isupper()) or stem not in grid.rows:
             continue
         found.append((match.start(), match.end(), stem))
     return found
@@ -441,7 +636,10 @@ def _rewrite_chart_body(kind: str, body: str, reject, slot_reject=None) -> str:
 
 
 _SMALL_COUNT_CLAUSE = re.compile(
-    r"(?:\bтоп[-\s]?(\d{1,2})\b|\b(\d{1,2})\s+(?:регион\w*|област\w*|район\w*|инспекц\w*|позиц\w*|строк\w*|категор\w*|город\w*|лидер\w*|аутсайдер\w*))",
+    r"(?:\bтоп[-\s]?(\d{1,2})\b"
+    r"|\b(\d{1,2})\s+(?:регион\w*|област\w*|район\w*|инспекц\w*|округ\w*|позиц\w*|строк\w*|категор\w*|город\w*|лидер\w*|аутсайдер\w*|квартал\w*|месяц\w*|полугоди\w*|этап\w*|уров\w*|групп\w*)"
+    r"|\bна\s+(1)\s+(?:январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)\w*"
+    r"|(?:100)(?:\s*(?:%|\\\%))?)",
     re.IGNORECASE,
 )
 
@@ -453,13 +651,15 @@ def _has_norm(pool: set[str], norm: str) -> bool:
 
 
 def _is_small_cardinal_in_clause(clause: str, norm: str) -> bool:
+    if norm == "100" and ("100%" in (clause or "") or "100\\%" in (clause or "")):
+        return True
     if not norm.isdigit():
         return False
     val = int(norm)
     if not (1 <= val <= 50):
         return False
     for m in _SMALL_COUNT_CLAUSE.finditer(clause or ""):
-        hit = m.group(1) or m.group(2)
+        hit = m.group(1) or m.group(2) or m.group(3)
         if hit and int(hit) == val:
             return True
     return False
@@ -712,17 +912,20 @@ def _scrub_bound(
         # One illegal number ruins the clause. Cutting it out leaves «в раза».
         return "", set()
 
+    from case3.chat_turn import _ABBR_DOT
+
     kept_lines: list[str] = []
     for line in core.split("\n"):
         if not line.strip():
             if kept_lines and kept_lines[-1] != "":
                 kept_lines.append("")
             continue
-        bits = re.split(r"([.!?]+(?:\s+|$))", line)
+        protected_line = _ABBR_DOT.sub("\\1\x00", line)
+        bits = re.split(r"([.!?]+(?:\s+|$))", protected_line)
         kept: list[str] = []
         index = 0
         while index < len(bits):
-            chunk = bits[index]
+            chunk = bits[index].replace("\x00", ".")
             delim = bits[index + 1] if index + 1 < len(bits) else ""
             index += 2 if delim else 1
             parts = []
@@ -818,13 +1021,16 @@ def _scrub_region(text: str, stray: set[str]) -> str:
     """Drop the clause that carried a foreign number. Leave the next sentence."""
     if not text or not stray:
         return text or ""
+    from case3.chat_turn import _ABBR_DOT
+
     kept_lines: list[str] = []
     for line in text.split("\n"):
-        bits = re.split(r"([.!?]+(?:\s+|$))", line)
+        protected_line = _ABBR_DOT.sub("\\1\x00", line)
+        bits = re.split(r"([.!?]+(?:\s+|$))", protected_line)
         kept: list[str] = []
         index = 0
         while index < len(bits):
-            chunk = bits[index]
+            chunk = bits[index].replace("\x00", ".")
             delim = bits[index + 1] if index + 1 < len(bits) else ""
             index += 2 if delim else 1
             cleaned = _scrub_clauses(chunk, stray)

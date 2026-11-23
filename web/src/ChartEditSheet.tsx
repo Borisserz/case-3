@@ -238,7 +238,7 @@ export function ChartEditSheet({
                 ? " · черновик на рисунке выше"
                 : ""}
           </p>
-          <h3 className="chart-edit-title">{caption?.trim() || figureId}</h3>
+          <h3 className="chart-edit-title">{caption?.trim() || "График"}</h3>
         </div>
         <button
           type="button"
@@ -337,8 +337,8 @@ export function ChartEditSheet({
 
       <footer className="chart-edit-foot">
         <p className="chart-edit-foot-hint">
-          Рисунок выше — черновик. Apply обновит Preview; PDF и DOCX — на
-          «Готово».
+          Рисунок выше — черновик. Нажмите «В превью», чтобы обновить черновик;
+          PDF и DOCX обновятся по кнопке «Готово».
         </p>
         <div className="chart-edit-actions">
           {onDelete && (
@@ -350,7 +350,7 @@ export function ChartEditSheet({
                 const ok = await confirm({
                   title: "Удалить график?",
                   eyebrow: "отчёт · график",
-                  message: `Удалить график «${(caption || "").trim() || figureId}»? Он будет удалён из текста отчёта и figures.json.`,
+                  message: `Удалить график «${(caption || "").trim() || "График"}»? Он будет удалён из документа.`,
                   confirmLabel: "Удалить график",
                   danger: true,
                 });

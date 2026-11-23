@@ -735,7 +735,7 @@ def _run_is_live(run_id: str) -> bool:
     if _is_pipeline_thread_alive(run_id):
         return True
     with _PIPELINE_ACTIVE_GUARD:
-        return bool(_SLOT_HANDOFF and _PIPELINE_ACTIVE_ID == run_id)
+        return bool(_SLOT_HANDOFF and run_id in _PIPELINE_ACTIVE)
 
 
 def _slides_thread_alive(run_id: str) -> bool:
@@ -1550,6 +1550,17 @@ async def api_run(
             source_body = data.decode("utf-8", errors="replace")
         elif source_text and source_text.strip():
             source_body = source_text.strip()
+            src_path.write_text(source_body, encoding="utf-8")
+        elif (prior_run_id or "").strip():
+            from case3.chat_memory import dashboard_screens, earlier_source
+
+            pid = (prior_run_id or "").strip()
+            source_body = (
+                dashboard_screens(run_store.ROOT, pid)
+                or earlier_source(run_store.ROOT, pid)
+            ).strip()
+            if not source_body:
+                raise HTTPException(400, detail="provide source file or source_text")
             src_path.write_text(source_body, encoding="utf-8")
         else:
             raise HTTPException(400, detail="provide source file or source_text")

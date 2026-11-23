@@ -22,10 +22,10 @@ export function DeckStylePreview({ style }: Props) {
     >
       <div className="deck-style-preview-slide">
         <div className="deck-style-preview-bar" />
-        <p className="deck-style-preview-kicker">Liber · preview</p>
-        <h3 className="deck-style-preview-title">Quarterly results</h3>
+        <p className="deck-style-preview-kicker">Liber · превью</p>
+        <h3 className="deck-style-preview-title">Итоги квартала</h3>
         <p className="deck-style-preview-sub">
-          A consistent look for your next presentation.
+          Единое оформление для вашей следующей презентации.
         </p>
         <div className="deck-style-preview-chart">
           <span style={{ height: "42%" }} />
@@ -35,15 +35,15 @@ export function DeckStylePreview({ style }: Props) {
         </div>
         <div className="deck-style-preview-table">
           <div className="deck-style-preview-thead">
-            <span>Metric</span>
-            <span>Change</span>
+            <span>Показатель</span>
+            <span>Динамика</span>
           </div>
           <div>
-            <span>Revenue</span>
+            <span>Выручка</span>
             <span>+18%</span>
           </div>
           <div>
-            <span>Customers</span>
+            <span>Клиенты</span>
             <span>+12%</span>
           </div>
         </div>
