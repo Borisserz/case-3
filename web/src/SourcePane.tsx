@@ -172,8 +172,8 @@ export function SourcePane({
           <div className="artifact-source-doc-card">
             <p className="artifact-source-doc-name">{fileName || title}</p>
             <p className="muted">
-              {fmtLabel || "Документ"} прикреплён. Содержимое для сборки извлечено
-              скрыто; откройте файл скачиванием — LibreOffice не дал PDF-превью.
+              {fmtLabel || "Документ"} прикреплён. Текст и таблицы извлечены для работы;
+              для просмотра исходного оформления скачайте оригинал файла.
             </p>
             {originalUrl ? (
               <a className="btn btn-ghost" href={originalUrl} download={fileName || true}>

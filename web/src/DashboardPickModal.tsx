@@ -274,8 +274,8 @@ export function DashboardPickModal({
             {error
               ? "Не удалось загрузить список дашбордов."
               : list === null
-                ? "Смотрю файлы в папке."
-                : "Выбери отчёт. Потом откроется его экран."}
+                ? "Загружаю список доступных отчётов…"
+                : "Выберите дашборд, чтобы открыть его экран и фильтры."}
           </p>
           {error ? (
             <div className="dash-viewer-error">
@@ -338,7 +338,7 @@ export function DashboardPickModal({
               </button>
             ))}
             {list && !list.length && !error ? (
-              <p className="dash-viewer-note">В папке нет файлов .mrt.</p>
+              <p className="dash-viewer-note">Доступных дашбордов пока нет.</p>
             ) : null}
           </div>
         </div>
@@ -390,10 +390,10 @@ export function DashboardPickModal({
               disabled={busy}
             >
               {phase === "shot"
-                ? "Снимаю скрин"
+                ? "Снимаю срез…"
                 : phase === "attach"
-                  ? "Прикрепляю"
-                  : "Снять экран в чат"}
+                  ? "Прикрепляю…"
+                  : "В данные"}
             </button>
             {shotCount > 0 || shots.length > 0 ? (
               <button
@@ -402,7 +402,7 @@ export function DashboardPickModal({
                 disabled={busy}
                 onClick={onClose}
               >
-                Готово, в чат ({shots.length || shotCount})
+                Прикрепить ({shots.length || shotCount})
               </button>
             ) : null}
             <button
@@ -417,12 +417,12 @@ export function DashboardPickModal({
         </header>
         <p className="dash-viewer-note">
           {phase === "shot"
-            ? "Снимаю скрин текущего экрана. Окно не закроется."
+            ? "Снимаю текущий экран и таблицу дашборда. Окно не закроется."
             : phase === "attach"
-              ? "Прикрепляю данные в чат. Окно не закроется."
+              ? "Сохраняю срез данных. Окно не закроется."
             : shotCount
-              ? `В буфере уже ${shotCount}. Можно снять ещё фильтр или нажать «Готово, в чат».`
-              : "Выбери нужные фильтры и нажми «Снять экран в чат»."}
+              ? `Срезов в буфере: ${shotCount}. Можно выбрать другой фильтр и нажать «В данные» ещё раз, либо нажать «Прикрепить (${shots.length || shotCount})».`
+              : "Выберите нужные фильтры на дашборде и нажмите «В данные»."}
         </p>
         {shots.length > 0 ? (
           <div className="dash-viewer-shots" aria-label="Снятые экраны">

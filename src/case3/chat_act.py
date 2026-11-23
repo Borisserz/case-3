@@ -19,12 +19,13 @@ _RECOLOR = re.compile(
 )
 _CHARTS = re.compile(r"график", re.IGNORECASE)
 _REWRITE = re.compile(
-    r"перепиши|переписать|переформулируй|сократи раздел|сократи абзац",
+    r"перепиши|переписать|переформулируй|сократи раздел|сократи абзац|"
+    r"распиши|разверни|расширь|дополни",
     re.IGNORECASE,
 )
 _PROSE = re.compile(
     r"переделай|переделать|точнее|не нравится|улучши|улучшить|поправь|"
-    r"слабо|размыт|перефразир|короче|сократи",
+    r"слабо|размыт|перефразир|короче|сократи|подробнее|детальнее|шире",
     re.IGNORECASE,
 )
 _VISUAL = re.compile(r"красивее|покрасивее", re.IGNORECASE)
@@ -108,7 +109,7 @@ _SECTION_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|уточни|сократи)\s+"
+        r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|уточни|сократи|распиши|разверни|расширь|дополни)\s+"
         r"(?:раздел\w*\s+|абзац\w*\s+|глав\w*\s+)?[«\"]?"
         r"([A-Za-zА-Яа-яЁё0-9][^:.\n,!?—–]{1,48})",
         re.IGNORECASE,
@@ -418,7 +419,9 @@ def _slot_index(raw: str, noun: str) -> int:
 
 
 def _swap(raw: str) -> tuple[str, str] | None:
-    match = re.search(r"замени\s+(.+?)\s+на\s+(.+)$", raw, re.IGNORECASE)
+    match = re.search(
+        r"(?:замени|смени|поменяй|исправь)\s+(.+?)\s+на\s+(.+)$", raw, re.IGNORECASE
+    )
     if not match:
         return None
     old = match.group(1).strip(" «».")
@@ -767,23 +770,35 @@ def parse_title(text: str | None) -> str:
     """«Поменяй заголовок на Гомель» → Гомель. Empty when no new title."""
     raw = _norm(text or "")
     match = re.search(
-        r"(?:поменяй|смени|измени|переименуй)\s+заголовок(?:\s+(?:на|в))?\s*[:—–-]?\s*(.+)",
+        r"(?:поменяй|смени|измени|переименуй)\s+заголовок"
+        r"(?:\s+(?:презентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?|\d{1,2}\s+слайд\w*|"
+        r"(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)\w*\s+слайд\w*))?"
+        r"(?:\s+(?:на|в))?\s*[:—–-]?\s*(.+)",
         raw,
         re.IGNORECASE,
     )
     if not match:
         return ""
     title = match.group(1).strip()
-    title = re.sub(
-        r"^(?:презентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?)\s+(?:на|в)\s+",
-        "",
-        title,
-        flags=re.IGNORECASE,
-    )
     title = title.strip(" «».")
     if len(title) < 2:
         return ""
     return title[:120]
+
+
+def _slide_number_named(text: str | None) -> int:
+    """1-based slide index when a message names a specific slide (e.g. 'слайда 3', 'второго слайда')."""
+    raw = _norm(text or "")
+    if not re.search(r"слайд", raw, re.IGNORECASE):
+        return 0
+    m = re.search(r"слайд\w*\s+(\d{1,2})|(\d{1,2})\s*слайд", raw, re.IGNORECASE)
+    if m:
+        val = int(m.group(1) or m.group(2))
+        return val if 1 <= val <= 24 else 0
+    for index, stem in _SLIDE_N:
+        if re.search(rf"{stem}\w*\s+слайд|слайд\w*\s+{stem}", raw, re.IGNORECASE):
+            return index
+    return 0
 
 
 def title_target(text: str | None) -> str:
@@ -1424,12 +1439,14 @@ def resolve_act(
             )
         if not target:
             target = "deck" if has_deck and not has_report else "report"
-        place = "слайда" if target == "deck" else "отчёта"
+        slide_num = _slide_number_named(raw) if target == "deck" else 0
+        place = (f"слайда {slide_num}" if slide_num > 1 else "слайда") if target == "deck" else "отчёта"
         return ChatAct(
             kind="revise",
             op="retitle",
             title=title,
             title_on=target,
+            slide=slide_num,
             say=f"Меняю заголовок {place} на «{title}».",
         )
 

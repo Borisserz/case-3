@@ -526,30 +526,52 @@ def _inside_parens(text: str, pos: int) -> bool:
     return before.rfind("(") > before.rfind(")")
 
 
+def _owner_rows(
+    mentions: list[tuple[int, int, str]],
+    start: int,
+    clause: str = "",
+    end: int | None = None,
+) -> list[str]:
+    """Candidate region names closest to this number (left and right if close)."""
+    from case3.chat_turn import _ABBR_DOT
+
+    num_end = end if end is not None else start
+    owners: list[str] = []
+    before = [item for item in mentions if item[1] <= start]
+    if before:
+        best = max(before, key=lambda item: item[1])
+        if clause and _inside_parens(clause, best[0]):
+            for item in reversed(before[:-1]):
+                if _inside_parens(clause, item[0]):
+                    continue
+                gap = _ABBR_DOT.sub(r"\1", clause[item[1] : best[0]])
+                if not re.search(r"[\d,;.]|\b(?:и|или|против|чем)\b", gap, re.IGNORECASE):
+                    owners.append(item[2])
+                    break
+        if best[2] not in owners:
+            owners.append(best[2])
+    after = [item for item in mentions if item[0] >= num_end]
+    if after:
+        nearest_after = min(after, key=lambda item: item[0])
+        if not owners:
+            owners.append(nearest_after[2])
+        elif clause:
+            gap_right = clause[num_end : nearest_after[0]]
+            # E.g. «при 10 790,0 у Пинского района» — number precedes its entity with no digit/semicolon in between
+            if len(gap_right) <= 32 and not re.search(r"[\d;]", gap_right):
+                if nearest_after[2] not in owners:
+                    owners.append(nearest_after[2])
+    return owners
+
+
 def _owner_row(
     mentions: list[tuple[int, int, str]],
     start: int,
     clause: str = "",
 ) -> str | None:
     """The region name closest to this number. Parenthetical qualifiers defer to the entity outside."""
-    from case3.chat_turn import _ABBR_DOT
-
-    before = [item for item in mentions if item[1] <= start]
-    if before:
-        best = max(before, key=lambda item: item[1])
-        if clause and _inside_parens(clause, best[0]):
-            # If an earlier mention in the same contiguous entity phrase is outside (...), prefer it.
-            for item in reversed(before[:-1]):
-                if _inside_parens(clause, item[0]):
-                    continue
-                gap = _ABBR_DOT.sub(r"\1", clause[item[1] : best[0]])
-                if not re.search(r"[\d,;.]|\b(?:и|или|против|чем)\b", gap, re.IGNORECASE):
-                    return item[2]
-        return best[2]
-    after = [item for item in mentions if item[0] >= start]
-    if after:
-        return min(after, key=lambda item: item[0])[2]
-    return None
+    owners = _owner_rows(mentions, start, clause)
+    return owners[0] if owners else None
 
 
 def _matched_full_phrase(
@@ -618,24 +640,40 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
         if stem not in rows:
             rows.append(stem)
     spans = [
-        match.start()
+        (match.start(), match.end())
         for match in _NUM.finditer(clause)
         if _norm_num(match.group(0)) == norm
     ]
     share = _mentions_share(clause)
     if len(rows) > 1 and spans:
-        for start in spans:
+        for start, end in spans:
             full_norms = _matched_full_phrase(clause, start, grid, share)
             if full_norms is not None:
                 if not _has_norm(full_norms, norm):
                     return False
                 continue
-            owner = _owner_row(mentions, start, clause)
-            if owner is None or norm not in _norms_on_row(grid, owner, clause, columns):
+            owners = _owner_rows(mentions, start, clause, end=end)
+            if not owners or not any(
+                _has_norm(_norms_on_row(grid, owner, clause, columns), norm)
+                for owner in owners
+            ):
+                # Also allow pairwise arithmetic (sum/diff/growth %) between the mentioned rows in this clause
+                row_pool: set[str] = set()
+                for rstem in rows:
+                    row_pool |= grid.rows.get(rstem, set())
+                if row_pool and _verifies_math(clause, norm, row_pool, row_pool):
+                    continue
                 return False
         return True
     if len(rows) > 1:
-        return all(norm in _norms_on_row(grid, row, clause, columns) for row in rows)
+        if any(_has_norm(_norms_on_row(grid, row, clause, columns), norm) for row in rows):
+            return True
+        row_pool = set()
+        for rstem in rows:
+            row_pool |= grid.rows.get(rstem, set())
+        if row_pool and _verifies_math(clause, norm, row_pool, row_pool):
+            return True
+        return False
     if len(rows) == 1 and grid.phrase_norms:
         folded_clause = (clause or "").casefold().replace("ё", "е")
         for pat, pnorms in grid.phrase_norms:
@@ -664,12 +702,18 @@ def wrong_row_tokens(
         return []
     message_ok = number_norms(message)
     source_ok = number_norms(source)
+    msg_row_pool: set[str] = set()
+    for _s, _e, rstem in _row_mentions(message or "", grid):
+        msg_row_pool |= grid.rows.get(rstem, set())
     found: list[str] = []
     seen: set[str] = set()
     for line in (text or "").split("\n"):
         protected = _ABBR_DOT.sub("\\1\x00", line)
         for chunk in re.split(r"[.!?]+", protected):
             chunk = chunk.replace("\x00", ".")
+            chunk_row_pool = set(msg_row_pool)
+            for _s, _e, rstem in _row_mentions(chunk, grid):
+                chunk_row_pool |= grid.rows.get(rstem, set())
             for part in re.split(r",(?!\d)\s*", chunk):
                 for match in _NUM.finditer(part):
                     if _is_list_marker(part, match.start(), match.end()):
@@ -678,6 +722,10 @@ def wrong_row_tokens(
                     if not norm or norm in message_ok or norm in seen or norm not in source_ok:
                         continue
                     if _row_allows(part, norm, grid) is False:
+                        if chunk_row_pool and _verifies_math(
+                            chunk, norm, source_ok | message_ok | chunk_row_pool, chunk_row_pool
+                        ):
+                            continue
                         seen.add(norm)
                         found.append(match.group(0))
     return found
@@ -833,14 +881,14 @@ def _verifies_math(
                 if abs(val * factor - target) <= tol:
                     return True
 
-    # 2. Multi-addend sum from grounded operands present in the sentence/clause
+    # 2. Multi-addend sum from grounded operands present in the sentence/clause or row_pool
     if len(clause_operands) >= 2:
         total = sum(clause_operands, Decimal(0))
         if abs(total - target) <= tol:
             return True
 
     if extra_operands and len(pool_operands) >= 2:
-        # Pairwise combinations among grounded operands in sentence + extra (row / message)
+        # Pairwise and 3-addend combinations among grounded operands in sentence + extra (row / message)
         for i in range(len(pool_operands)):
             a = pool_operands[i]
             for j in range(i + 1, len(pool_operands)):
@@ -853,6 +901,14 @@ def _verifies_math(
                 for calc in cands:
                     if abs(calc - target) <= tol:
                         return True
+        if 3 <= len(pool_operands) <= 24:
+            for i in range(len(pool_operands)):
+                a = pool_operands[i]
+                for j in range(i + 1, len(pool_operands)):
+                    ab = a + pool_operands[j]
+                    for k in range(j + 1, len(pool_operands)):
+                        if abs(ab + pool_operands[k] - target) <= tol:
+                            return True
     elif len(clause_operands) >= 2:
         for i in range(len(clause_operands)):
             a = clause_operands[i]

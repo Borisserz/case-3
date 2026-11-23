@@ -23,5 +23,8 @@
 | [0017](0017-plaque-wins-over-bare-analyze.md) | A plaque wins over a bare analyze line | Accepted |
 | [0018](0018-p0-analytics-grounding-and-chat-charts.md) | P0 analytics grounding, derivatives, and inline chat charts | Accepted |
 | [0019](0019-dashboard-filter-closes-previous-month.md) | A February filter is the January receipts | Accepted |
+| [0020](0020-dashboard-landing-is-a-short-note.md) | Closing a dashboard writes a short note, not an essay | Accepted |
+| [0021](0021-chat-screens-are-the-later-source.md) | Later turns and files use the chat's screens | Accepted |
+| [0022](0022-concurrent-multiuser-runs.md) | Multi-user concurrent execution & per-browser workspace isolation | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

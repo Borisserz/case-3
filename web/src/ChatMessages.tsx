@@ -504,7 +504,13 @@ export function ChatMessages({
                                       type="button"
                                       className="msg-inline-chart-open"
                                       onClick={() =>
-                                        setOpenChart({ url: p.url, title: p.id })
+                                        setOpenChart({
+                                          url: p.url,
+                                          title:
+                                            p.kind === "diagram" || p.id.startsWith("dia_")
+                                              ? "Схема"
+                                              : "График",
+                                        })
                                       }
                                     >
                                       <img src={p.url} alt="" />
@@ -519,7 +525,14 @@ export function ChatMessages({
                                           Уточнить
                                         </button>
                                       ) : null}
-                                      <a href={p.url} download={`${p.id}.png`}>
+                                      <a
+                                        href={p.url}
+                                        download={
+                                          p.kind === "diagram" || p.id.startsWith("dia_")
+                                            ? "diagram.png"
+                                            : "chart.png"
+                                        }
+                                      >
                                         Скачать PNG
                                       </a>
                                     </figcaption>

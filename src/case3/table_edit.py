@@ -147,6 +147,8 @@ def serialize_tabular_body(
     lines: list[str] = []
     if use_xltabular:
         lines.append(rf"\begin{{xltabular}}{{{width_arg}}}{{{colspec}}}")
+        if caption:
+            lines.append(rf"\caption{{{escape_tex_text(caption)}}} \\")
     elif use_longtable:
         lines.append(rf"\begin{{longtable}}{{{colspec}}}")
         if caption:

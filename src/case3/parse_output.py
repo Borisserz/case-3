@@ -330,14 +330,30 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
 
 def _parse_figures_list(raw_figs: Any, *, max_images: int) -> list[dict[str, Any]]:
     figures: list[dict[str, Any]] = []
-    if not isinstance(raw_figs, list) or max_images <= 0:
+    if not isinstance(raw_figs, list):
         return figures
+    gen_count = 0
     for item in raw_figs:
         if not isinstance(item, dict):
             continue
         fid = str(item.get("id", "")).strip()
+        if not _ID_OK.match(fid):
+            continue
+        if fid.startswith("usr_"):
+            caption = str(item.get("caption", "")).strip()
+            if caption and caption != fid:
+                figures.append(
+                    {
+                        "id": fid,
+                        "caption": caption,
+                        "width": sanitize_width(str(item.get("width", "")) or None),
+                    }
+                )
+            continue
+        if max_images <= 0 or gen_count >= max_images:
+            continue
         prompt_raw = str(item.get("prompt", "")).strip()
-        if not _ID_OK.match(fid) or not prompt_raw:
+        if not prompt_raw:
             continue
         try:
             prompt = sanitize_image_prompt(prompt_raw)
@@ -347,13 +363,12 @@ def _parse_figures_list(raw_figs: Any, *, max_images: int) -> list[dict[str, Any
         figures.append(
             {
                 "id": fid,
-                "caption": str(item.get("caption", "")).strip() or fid,
+                "caption": str(item.get("caption", "")).strip() or "Иллюстрация",
                 "prompt": prompt,
                 "width": sanitize_width(str(item.get("width", "")) or None),
             }
         )
-        if len(figures) >= max_images:
-            break
+        gen_count += 1
     return figures
 
 
@@ -636,9 +651,11 @@ def parse_model_output(
     diag_slots = _ids(_DIAG_SLOT, tex)
 
     if max_images > 0 and figures:
+        user_figs_only = [f for f in figures if str(f.get("id") or "").startswith("usr_")]
+        gen_figs = [f for f in figures if not str(f.get("id") or "").startswith("usr_")]
         missing_slots = [
             f["id"]
-            for f in figures[:max_images]
+            for f in gen_figs[:max_images]
             if isinstance(f, dict)
             and f.get("id")
             and f["id"] not in fig_slots
@@ -656,7 +673,7 @@ def parse_model_output(
             )
             tex = deduplicate_slots_in_tex(tex)
             fig_slots = _ids(_FIG_SLOT, tex)
-        by_fig = {f["id"]: f for f in figures}
+        by_fig = {f["id"]: f for f in gen_figs}
         aligned_figs = [by_fig[s] for s in fig_slots if s in by_fig][:max_images]
         missing_figs = [
             s for s in fig_slots if s not in by_fig and not s.startswith("usr_")
@@ -670,7 +687,7 @@ def parse_model_output(
                 "",
                 tex,
             )
-        figures = aligned_figs
+        figures = aligned_figs + user_figs_only
     else:
         if _ids(_FIG_SLOT, tex):
             tex = re.sub(
@@ -678,7 +695,7 @@ def parse_model_output(
                 "",
                 tex,
             )
-        figures = []
+        figures = [f for f in figures if str(f.get("id") or "").startswith("usr_")]
 
     # Charts: soft-fail — drop invalid slots from TeX instead of aborting the run.
     # Critical: if JSON has charts missing slots in LaTeX, APPEND slots (do not wipe charts).

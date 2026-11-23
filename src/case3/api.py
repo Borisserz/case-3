@@ -160,14 +160,21 @@ async def _enforce_run_workspace_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+_cors_env = (os.environ.get("CASE3_CORS_ORIGINS") or "").strip()
+_cors_origins = (
+    [o.strip() for o in _cors_env.split(",") if o.strip()]
+    if _cors_env
+    else [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:4173",
         "http://127.0.0.1:4173",
-    ],
+    ]
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=None if _cors_env else r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1133,7 +1140,7 @@ async def api_dashboard_phrase(payload: dict = Body(...)) -> JSONResponse:
     except LLMConfigError as exc:
         raise HTTPException(503, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+        raise HTTPException(502, detail="сервис дашборда недоступен") from exc
     return JSONResponse(plan)
 
 
@@ -1150,7 +1157,7 @@ def api_dashboard_dashboards() -> JSONResponse:
     except DashboardRemoteError as exc:
         raise HTTPException(502, detail=exc.message) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+        raise HTTPException(502, detail="сервис дашборда недоступен") from exc
     return JSONResponse({"dashboards": rows})
 
 
@@ -1171,7 +1178,7 @@ def api_dashboard_preview(mrt: str) -> Response:
         status = 404 if exc.code == "preview" and exc.message == "нет снимка" else 502
         raise HTTPException(status, detail=exc.message) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+        raise HTTPException(502, detail="сервис дашборда недоступен") from exc
     return Response(content=content, media_type=media, headers={"Cache-Control": "no-store"})
 
 
@@ -1191,7 +1198,7 @@ def api_dashboard_open(payload: dict = Body(...)) -> JSONResponse:
     except DashboardRemoteError as exc:
         raise HTTPException(502, detail=exc.message) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+        raise HTTPException(502, detail="сервис дашборда недоступен") from exc
     return JSONResponse(plan)
 
 
@@ -1222,7 +1229,7 @@ def api_dashboard_service_capture(payload: dict | None = Body(default=None)) -> 
     except httpx.HTTPError as exc:
         raise HTTPException(
             502,
-            detail=f"сервис дашборда недоступен ({base})",
+            detail="сервис дашборда недоступен",
         ) from exc
     return JSONResponse({"documents": documents})
 
@@ -1431,22 +1438,27 @@ async def api_run(
     # Chat and scheme skip print. Presentation keeps charts and dia_* for the deck.
     has_prior_chart = False
     if out_mode == "chat" and (prior_run_id or "").strip():
-        _prev_out = run_store.ROOT / "runs" / "out" / (prior_run_id or "").strip()
-        _prev_fj = _prev_out / "figures.json"
-        if (
-            _prev_fj.is_file()
-            and not (_prev_out / "report.pdf").is_file()
-            and not (_prev_out / "report.docx").is_file()
+        from case3.chat_memory import load_chain_dirs
+
+        for _rid, _prev_out, _m in reversed(
+            load_chain_dirs(run_store.ROOT, (prior_run_id or "").strip())
         ):
+            if any(_prev_out.glob("*.pdf")) or any(_prev_out.glob("*.docx")):
+                continue
+            _prev_fj = _prev_out / "figures.json"
+            if not _prev_fj.is_file():
+                continue
             try:
                 _fj_data = json.loads(_prev_fj.read_text(encoding="utf-8"))
-                has_prior_chart = bool(
+                if (
                     isinstance(_fj_data, dict)
                     and isinstance(_fj_data.get("charts"), list)
                     and _fj_data["charts"]
-                )
+                ):
+                    has_prior_chart = True
+                    break
             except (OSError, json.JSONDecodeError):
-                has_prior_chart = False
+                continue
 
     max_charts, max_images, max_diagrams, formats, no_charts, no_images = apply_mode_caps(
         out_mode,

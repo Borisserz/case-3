@@ -598,9 +598,9 @@ export function LiveChart({
       <style id={`liber-live-css-${styleId}`}>{LIVE_CSS}</style>
       {showBadge ? (
         <div className="live-chart-badge" aria-hidden>
-          <span>live Chart.js</span>
+          <span>Интерактивный график</span>
           <span className="live-chart-badge-sep">·</span>
-          <span>PDF — истина печати</span>
+          <span>точная печатная копия — в PDF</span>
         </div>
       ) : null}
       <div ref={mountRef} className="live-chart-mount" />

@@ -43,6 +43,6 @@
 
 ## Не путать
 
-- **PDF** = истина печати; chat preview ≈ TeX blocks.
-- **Схемы Mermaid** — в Liber UI; в PDF/DOCX их нет.
+- **PDF** = истина печати; chat preview ≈ TeX blocks (`\section`, `\subsection`, `\subsubsection`, таблицы, списки, фигуры).
+- **Схемы Mermaid** — в Liber UI, в PDF/DOCX как PNG (`%CASE3_DIAG:dia_NN%`, ADR-0009) и в PPTX как нативные фигуры PowerPoint (`slides_pptx_diagrams.py`).
 - **Палитры** — editorial / ocean / sunset / mono / atelier (без фиолетового нейрослопа).

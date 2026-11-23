@@ -241,7 +241,7 @@ def _diagram_chat_blurb(diagrams: list[dict[str, Any]] | None) -> str:
     ]
     titles = [t for t in titles if t]
     if len(titles) == 1:
-        return f"Готово: схема «{titles[0]}». Ниже — превью Mermaid."
+        return f"Готово: схема «{titles[0]}»."
     shown = ", ".join(f"«{t}»" for t in titles[:3])
     more = f" и ещё {len(titles) - 3}" if len(titles) > 3 else ""
     return f"Готово: {len(titles)} схем — {shown}{more}."
@@ -1261,21 +1261,33 @@ def run_pipeline(
         def _prior_chat_visuals(prev_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
             if not prev_id:
                 return None, None
-            prev_out = root / "runs" / "out" / prev_id
-            if (prev_out / "report.pdf").is_file() or (prev_out / "report.docx").is_file():
-                return None, None
-            fj_file = prev_out / "figures.json"
-            if not fj_file.is_file():
-                return None, None
-            try:
-                prev_fj = json.loads(fj_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return None, None
-            if not isinstance(prev_fj, dict):
-                return None, None
-            p_charts = [c for c in (prev_fj.get("charts") or []) if isinstance(c, dict)]
-            p_diags = [d for d in (prev_fj.get("diagrams") or []) if isinstance(d, dict)]
-            return (p_charts[0] if p_charts else None), (p_diags[0] if p_diags else None)
+            from case3.chat_memory import load_chain_dirs
+
+            found_chart: dict[str, Any] | None = None
+            found_diag: dict[str, Any] | None = None
+            for _rid, prev_out, _meta in reversed(load_chain_dirs(root, prev_id)):
+                if any(prev_out.glob("*.pdf")) or any(prev_out.glob("*.docx")):
+                    continue
+                fj_file = prev_out / "figures.json"
+                if not fj_file.is_file():
+                    continue
+                try:
+                    prev_fj = json.loads(fj_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(prev_fj, dict):
+                    continue
+                if found_chart is None:
+                    p_charts = [c for c in (prev_fj.get("charts") or []) if isinstance(c, dict)]
+                    if p_charts:
+                        found_chart = p_charts[0]
+                if found_diag is None:
+                    p_diags = [d for d in (prev_fj.get("diagrams") or []) if isinstance(d, dict)]
+                    if p_diags:
+                        found_diag = p_diags[0]
+                if found_chart is not None and found_diag is not None:
+                    break
+            return found_chart, found_diag
 
         prior = str(meta.get("prior_run_id") or "")
         prev_chart, prev_diagram = _prior_chat_visuals(prior)

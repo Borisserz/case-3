@@ -369,13 +369,41 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
             current_subgraph = None
             continue
 
-        # Split chained edges or find matches
-        # A simple scanner for X --> Y
-        edge_matches = list(_RE_EDGE.finditer(line))
-        for em in edge_matches:
-            src = em.group(1)
-            edge_lbl = _clean_mermaid_label(em.group(3) or "")
-            dst = em.group(4)
+        # Split chained edges (A --> B --> C) and ampersand fan-out (A & B --> C & D)
+        arrow_re = re.compile(r"\s*(?:-->|-.->|==>|--\s*>)\s*(?:\|(.*?)\|)?\s*")
+        node_tok_re = re.compile(
+            r"^\s*([A-Za-z0-9_]+)"
+            r"(?:\s*(?:\[\(.*?\)\]|\(\[.*?\]\)|\{.*?\}|\[.*?\]|\(.*?\)|\(\(\(.*?\)|\(\(.*?\)|\>.*?\]))?"
+            r"(?:\s*:::\s*([A-Za-z0-9_]+))?\s*$"
+        )
+        edge_matches: list[tuple[str, str, str]] = []
+        if arrow_re.search(line):
+            parts: list[str] = []
+            edge_labels: list[str] = []
+            last_idx = 0
+            for am in arrow_re.finditer(line):
+                parts.append(line[last_idx : am.start()])
+                edge_labels.append(_clean_mermaid_label(am.group(1) or ""))
+                last_idx = am.end()
+            parts.append(line[last_idx:])
+            chain_groups: list[list[str]] = []
+            for p in parts:
+                group_ids: list[str] = []
+                for sub in p.split("&"):
+                    tm = node_tok_re.match(sub)
+                    if tm:
+                        group_ids.append(tm.group(1))
+                    else:
+                        idm = re.search(r"\b([A-Za-z0-9_]+)\b", sub)
+                        if idm:
+                            group_ids.append(idm.group(1))
+                chain_groups.append(group_ids)
+            for idx_g in range(len(chain_groups) - 1):
+                elbl = edge_labels[idx_g] if idx_g < len(edge_labels) else ""
+                for s_id in chain_groups[idx_g]:
+                    for d_id in chain_groups[idx_g + 1]:
+                        edge_matches.append((s_id, d_id, elbl))
+        for src, dst, edge_lbl in edge_matches:
             edges.append(DiagramEdge(src=src, dst=dst, label=edge_lbl))
             if src not in nodes:
                 nodes[src] = DiagramNode(id=src, label=src, shape="rect", role=node_roles.get(src, "process"))
@@ -388,8 +416,8 @@ def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
                 nid = nm.group(1)
                 if nid not in current_subgraph.node_ids:
                     current_subgraph.node_ids.append(nid)
-            for em in edge_matches:
-                for nid in (em.group(1), em.group(4)):
+            for src, dst, _elbl in edge_matches:
+                for nid in (src, dst):
                     if nid not in current_subgraph.node_ids:
                         current_subgraph.node_ids.append(nid)
             m_simple = re.match(r"^([A-Za-z0-9_]+)$", line)

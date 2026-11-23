@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Chat blurb must not stall print UX for a full VISION_TIMEOUT_S (often 300s).
 _SUMMARY_TIMEOUT_S = 90.0
-_SUMMARY_RETRIES = 0
+_SUMMARY_RETRIES = 1
 
 SUMMARY_SYSTEM = load_prompt("summary_system").strip()
 _MAX_PARAS = 6

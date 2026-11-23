@@ -955,7 +955,6 @@ def _layout_media(
         mid = str(s.get("media_id") or s.get("chart_id") or "")
         is_dia = mid.startswith("dia_")
         is_cht = mid.startswith("cht_")
-        _rect(slide, Inches(0), Inches(0), _SLIDE_W, _SLIDE_H, colors["paper"])
         # Same split as the HTML twin: copy on the left, photo on the right.
         y = 1.35
         if kicker:

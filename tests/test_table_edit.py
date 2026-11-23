@@ -182,3 +182,68 @@ def test_patch_oob_raises() -> None:
             headers=["A"],
             rows=[["1"]],
         )
+
+
+def test_patch_xltabular_preserves_caption_and_chart_caption_edit() -> None:
+    from case3.figure_edit import patch_figure_caption_in_tex
+    from case3.parse_output import parse_model_output
+
+    xlt_tex = r"""
+\documentclass{article}
+\begin{document}
+\begin{landscape}
+{\small
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\linewidth}{rYrr}
+\caption{Поступления по инспекциям, январь 2025} \\
+\toprule
+Код & Инспекция & План & Факт \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+101 & Центральный р-н & 62 000,0 & 65 420,5 \\
+\end{xltabular}
+}
+\end{landscape}
+\begin{figure}[H]
+ \centering
+ \includegraphics[width=0.82\textwidth]{figures/cht_01.png}
+ \caption{Старая подпись графика}
+ \label{chart:cht_01}
+\end{figure}
+\end{document}
+"""
+    patched = patch_table_in_tex(
+        xlt_tex,
+        1,
+        caption="Поступления по инспекциям (обновлено)",
+        headers=["Код", "Инспекция", "План", "Факт"],
+        rows=[["101", "г. Минск", "62 000,0", "65 420,5"]],
+    )
+    assert r"\caption{Поступления по инспекциям (обновлено)} \\" in patched
+    blocks = tex_to_preview_blocks(patched)["blocks"]
+    tables = [b for b in blocks if b["type"] == "table"]
+    assert tables[0]["caption"] == "Поступления по инспекциям (обновлено)"
+
+    # Also verify chart caption edit with \label{chart:cht_01}
+    cap_patched = patch_figure_caption_in_tex(patched, "cht_01", "Новая подпись графика")
+    assert r"\caption{Новая подпись графика}" in cap_patched
+
+    # And verify user photo (usr_01) vision caption is preserved when max_images=0
+    raw_model = (
+        "```json\n"
+        '{"figures":[{"id":"usr_01","caption":"Скриншот дашборда поступлений ИМНС"}],'
+        '"charts":[],"diagrams":[]}\n'
+        "```\n"
+        "```latex\n"
+        "\\documentclass{article}\n\\begin{document}\nТекст.\n%CASE3_FIG:usr_01%\n\\end{document}\n"
+        "```\n"
+    )
+    _tex, figs, _charts, _diags, _drops = parse_model_output(
+        raw_model, max_images=0, max_charts=0, max_diagrams=0
+    )
+    assert len(figs) == 1
+    assert figs[0]["id"] == "usr_01"
+    assert figs[0]["caption"] == "Скриншот дашборда поступлений ИМНС"
+

@@ -393,7 +393,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     if (!res.ok) {
       const fallback =
         res.status === 500 || res.status === 502 || res.status === 503
-          ? "API недоступен — проверь :8000 (прокси Vite)"
+          ? "Сервер временно недоступен. Попробуйте повторить запрос."
           : res.statusText;
       throw new Error(formatApiDetailError(data, fallback));
     }
@@ -686,7 +686,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
           }
           if (Date.now() - pollStarted > pollDeadlineMs) {
             throw new Error(
-              `таймаут ожидания run ${runId} (20 мин) — смотри runs/logs/${runId}`,
+              "Превышено время ожидания сборки (20 мин). Попробуйте повторить запрос.",
             );
           }
           await new Promise((r) => setTimeout(r, 400));

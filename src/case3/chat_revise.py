@@ -1247,13 +1247,31 @@ def _edit_stem(word: str) -> str:
 
 
 def _word_hit(text: str, old: str) -> bool:
-    """True when the cell says the same word, including «кассу» for «касса»."""
+    """True when the cell says the same word or multi-word phrase, including «кассу» for «касса»."""
     import re
 
+    exact = re.compile(
+        r"(?<![0-9A-Za-zА-Яа-яЁё])" + re.escape(old) + r"(?![0-9A-Za-zА-Яа-яЁё])",
+        re.IGNORECASE,
+    )
+    if exact.search(text):
+        return True
     tokens = re.findall(r"[0-9A-Za-zА-Яа-яЁё-]+", text)
     folded = old.casefold()
     if any(token.casefold() == folded for token in tokens):
         return True
+    old_tokens = re.findall(r"[0-9A-Za-zА-Яа-яЁё-]+", old)
+    if len(old_tokens) > 1:
+        token_stems = [_edit_stem(w) for w in tokens]
+        old_stems = [_edit_stem(w) for w in old_tokens]
+        for idx in range(len(tokens) - len(old_tokens) + 1):
+            if all(
+                (tokens[idx + j].casefold() == old_tokens[j].casefold())
+                or (len(old_stems[j]) >= 3 and token_stems[idx + j] == old_stems[j])
+                for j in range(len(old_tokens))
+            ):
+                return True
+        return False
     want = _edit_stem(old)
     if len(want) < 3:
         return False
@@ -1637,7 +1655,7 @@ def _caption(out_dir: Path, figure_id: str, caption: str) -> str:
         return "Не смог прочитать отчёт."
     fid = (figure_id or "").strip()
     if not fid:
-        ids = re.findall(r"\\label\{fig:([^}]+)\}", tex)
+        ids = re.findall(r"\\label\{(?:fig|chart|dia):([^}]+)\}", tex)
         if len(ids) != 1:
             shown = ", ".join(ids[:6]) or "рисунков не вижу"
             return f"Какой рисунок? Сейчас: {shown}."
@@ -1655,7 +1673,7 @@ def _caption(out_dir: Path, figure_id: str, caption: str) -> str:
     except Exception as exc:  # noqa: BLE001
         tex_path.write_text(tex, encoding="utf-8")
         return f"Подпись не сменил: {exc}"
-    return f"Подпись рисунка {fid}: {caption}."
+    return f"Подпись обновлена: {caption}."
 
 
 def _rewrite_all(out_dir: Path, text: str, act: Any) -> str:

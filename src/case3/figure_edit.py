@@ -25,15 +25,15 @@ class FigureEditError(RuntimeError):
 
 
 def patch_figure_caption_in_tex(tex: str, figure_id: str, caption: str) -> str:
-    """Replace \\caption{…} for a figure identified by \\label{fig:ID}."""
+    """Replace \\caption{…} for a figure identified by \\label{fig|chart|dia:ID}."""
     caption = (caption or "").strip()
     if not caption or not figure_id:
         return tex
     esc = escape_tex_text(caption)
     fid = re.escape(figure_id)
-    # caption immediately before \label{fig:id}
+    # caption immediately before \label{fig|chart|dia:id}
     pat = re.compile(
-        rf"(\\caption\{{)([^{{}}]*)(\}}\s*\\label\{{fig:{fid}\}})"
+        rf"(\\caption\{{)([^{{}}]*)(\}}\s*\\label\{{(?:fig|chart|dia):{fid}\}})"
     )
     if pat.search(tex):
         return pat.sub(rf"\g<1>{esc}\g<3>", tex, count=1)

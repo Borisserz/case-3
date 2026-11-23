@@ -61,7 +61,17 @@ def _ensure_documentclass(text: str) -> str:
 def _drop_incomplete_trailing_envs(tex: str) -> str:
     """Cut from the last unclosed table/figure/tabular instead of emitting empty shells."""
     t = tex.rstrip()
-    for env in ("table", "figure", "tabularx", "tabular", "itemize", "enumerate"):
+    for env in (
+        "table",
+        "figure",
+        "tabularx",
+        "xltabular",
+        "longtable",
+        "landscape",
+        "tabular",
+        "itemize",
+        "enumerate",
+    ):
         begins = list(re.finditer(rf"\\begin\{{{env}\}}", t))
         if not begins:
             continue
@@ -88,7 +98,17 @@ def _soft_close_truncated(tex: str) -> str:
         and len(last_line.strip()) < 3
     ):
         t = t.rsplit("\n", 1)[0].rstrip()
-    for env in ("tabularx", "tabular", "table", "figure", "itemize", "enumerate"):
+    for env in (
+        "tabularx",
+        "xltabular",
+        "longtable",
+        "tabular",
+        "table",
+        "landscape",
+        "figure",
+        "itemize",
+        "enumerate",
+    ):
         opens = len(re.findall(rf"\\begin\{{{env}\}}", t))
         closes = len(re.findall(rf"\\end\{{{env}\}}", t))
         for _ in range(max(0, opens - closes)):

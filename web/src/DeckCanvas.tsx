@@ -570,7 +570,7 @@ function SlideBody({
                 value={slide.takeaway}
                 editing={editing}
                 multiline
-                label="Takeaway"
+                label="Вывод"
                 onCommit={(v) => onField({ takeaway: v })}
               />
             ) : null}
@@ -649,7 +649,7 @@ function SlideBody({
                   value={slide.takeaway}
                   editing={editing}
                   multiline
-                  label="Takeaway"
+                  label="Вывод"
                   onCommit={(v) => onField({ takeaway: v })}
                 />
               ) : null;

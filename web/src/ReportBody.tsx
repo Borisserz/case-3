@@ -152,7 +152,7 @@ export function ReportBody({
             <p className="report-p muted" style={{ margin: 0 }}>
               Превью пустое
               {downloads?.pdf
-                ? " — PDF есть. Откройте вкладку PDF (истина печати)."
+                ? " — PDF готов. Откройте вкладку PDF для просмотра печатной версии."
                 : " — тело отчёта не разобралось."}
             </p>
             {downloads?.pdf && onOpenPdf ? (
@@ -802,7 +802,7 @@ export function ReportBody({
                     </button>
                   ) : (
                     <div className="report-fig-missing">
-                      {b.id} — {isDiagram ? "схема" : "изображение"} недоступно
+                      {isDiagram ? "Схема недоступна" : "Изображение недоступно"}
                     </div>
                   )}
                   {intent && (

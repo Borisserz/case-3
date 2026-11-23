@@ -114,7 +114,7 @@ export function DiagramFullscreen({ diagram, onClose }: Props) {
           <div>
             <h2 className="diagram-fullscreen-title">{diagram.title}</h2>
             <p className="diagram-fullscreen-sub">
-              Блок = шт на этапе · стрелка = % или отвал · SVG/PNG Liber
+              Векторная схема · масштаб и экспорт в SVG / PNG
             </p>
           </div>
           <div className="diagram-fullscreen-actions">

@@ -161,3 +161,34 @@ def test_landscape_table_stays_visible_in_the_preview() -> None:
     assert tables
     assert tables[0]["landscape"] is True
     assert "Минская" in tables[0]["rows"][0]
+
+
+def test_preview_preserves_subsubsection_and_text_inside_other_macros() -> None:
+    from case3.tex_preamble import _proportional_colspec
+
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\section{Итоги}
+\subsection{Области}
+\subsubsection{Детализация по Пинскому району}
+Показатель \underline{критического отклонения} составил \textcolor{red}{-1410 тыс. руб.}
+\end{document}
+"""
+    data = tex_to_preview_blocks(tex)
+    headings = [b for b in data["blocks"] if b["type"] == "heading"]
+    assert len(headings) == 3
+    assert headings[2]["level"] == 3
+    assert headings[2]["text"] == "Детализация по Пинскому району"
+    paras = [b for b in data["blocks"] if b["type"] == "paragraph"]
+    assert len(paras) == 1
+    assert "критического отклонения" in paras[0]["text"]
+    assert "-1410 тыс. руб." in paras[0]["text"]
+
+    # 10-column numeric table with long headers must not emit 9 fixed Z (p{2.5cm}) columns that overflow A4 landscape
+    headers = " & ".join(["Инспекция ИМНС"] + [f"Показатель выполнения {i}" for i in range(1, 10)]) + r" \\"
+    row1 = " & ".join(["Минский р-н"] + ["10 500,0" for _ in range(9)]) + r" \\"
+    row2 = " & ".join(["Пинский р-н"] + ["8 200,0" for _ in range(9)]) + r" \\"
+    spec = _proportional_colspec("Y" * 10, f"{headers}\n{row1}\n{row2}")
+    assert spec.count("Z") == 0
+

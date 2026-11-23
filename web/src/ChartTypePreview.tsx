@@ -40,8 +40,8 @@ const META: Record<
     Glyph: GlyphAuto,
   },
   area: {
-    title: "Area",
-    chip: "area",
+    title: "Область",
+    chip: "область",
     blurb: "Тренд с заливкой под линией",
     Glyph: GlyphArea,
   },

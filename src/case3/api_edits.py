@@ -434,7 +434,7 @@ async def edit_run_chart(run_id: str, chart_id: str, body: ChartEditBody) -> dic
 
 class BatchRecolorBody(BaseModel):
     palette: str = Field(default="atelier")
-    formats: str = Field(default="none")
+    formats: str = Field(default="both")
 
 
 @router.post("/api/runs/{run_id}/charts/recolor")

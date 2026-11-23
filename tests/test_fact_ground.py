@@ -1104,3 +1104,105 @@ def test_chart_computed_shares_survive_grounding() -> None:
     assert "null" not in out_html
     assert "60" in out_html
     assert "40" in out_html
+
+
+def test_two_shot_dashboard_region_comparison_and_cross_row_sum_in_chat() -> None:
+    from case3.chat_turn import _allowed_norms, _filter_verifiable_stray, stray_numbers
+    from case3.dashboard_source import derivative_block
+    from case3.fact_ground import wrong_row_tokens
+
+    jan_tbl = (
+        "| Код ИМНС | Область | Инспекция | План, тыс. руб. | Факт, тыс. руб. | Выполнение (%) | Плательщики |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "| 101 | г. Минск | ИМНС по Центральному району | 179 500,0 | 184 520,0 | 102,8% | 34 200 |\n"
+        "| 201 | Минская область | ИМНС по Минскому району | 44 200,0 | 46 850,0 | 106,0% | 14 500 |\n"
+        "| 202 | Минская область | ИМНС по Борисовскому району | 49 300,0 | 47 223,2 | 95,8% | 11 100 |\n"
+        "| 301 | Гомельская область | ИМНС по Центральному району г. Гомеля | 76 000,0 | 76 410,8 | 100,5% | 16 400 |\n"
+        "| 401 | Брестская область | ИМНС по г. Бресту | 47 000,0 | 47 056,4 | 100,1% | 10 000 |\n"
+        "| 403 | Брестская область | ИМНС по Пинскому району | 12 200,0 | 10 790,0 | 88,4% | 2 840 |\n"
+    )
+    feb_tbl = (
+        "| Код ИМНС | Область | Инспекция | План, тыс. руб. | Факт, тыс. руб. | Выполнение (%) | Плательщики |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "| 101 | г. Минск | ИМНС по Центральному району | 185 000,0 | 192 400,0 | 104,0% | 34 350 |\n"
+        "| 201 | Минская область | ИМНС по Минскому району | 45 000,0 | 48 150,0 | 107,0% | 14 620 |\n"
+        "| 202 | Минская область | ИМНС по Борисовскому району | 50 000,0 | 49 500,0 | 99,0% | 11 120 |\n"
+        "| 301 | Гомельская область | ИМНС по Центральному району г. Гомеля | 78 000,0 | 79 560,0 | 102,0% | 16 450 |\n"
+        "| 401 | Брестская область | ИМНС по г. Бресту | 49 000,0 | 49 980,0 | 102,0% | 10 050 |\n"
+        "| 403 | Брестская область | ИМНС по Пинскому району | 13 000,0 | 11 610,0 | 89,3% | 2 850 |\n"
+    )
+    # Note: Just like pipeline.py when 2 shots are attached without pre-rendered ## Производные
+    raw_two_shots = (
+        "===== Поступления за январь 2025 года =====\n\n# Данные дашборда\n\n## Таблица PDF\n\n"
+        + jan_tbl
+        + "\n\n===== Поступления за февраль 2025 года =====\n\n# Данные дашборда\n\n## Таблица PDF\n\n"
+        + feb_tbl
+    )
+    two_shots = raw_two_shots + "\n\n## Производные\n\n" + derivative_block(raw_two_shots)
+    msg_compare = "Сравни фактические поступления за январь и февраль 2025 по областям"
+    reply_compare = (
+        "| Область | Январь, тыс. руб. | Февраль, тыс. руб. | Прирост, тыс. руб. | Темп роста, % |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| г. Минск | 184 520,0 | 192 400,0 | +7 880,0 | +4,3% |\n"
+        "| Минская область | 94 073,2 | 97 650,0 | +3 576,8 | +3,8% |\n"
+        "| Гомельская область | 76 410,8 | 79 560,0 | +3 149,2 | +4,1% |\n"
+        "| Брестская область | 57 846,4 | 61 590,0 | +3 743,6 | +6,5% |\n\n"
+        "По Минской и Брестской областям совокупный факт в январе составил 151 919,6 тыс. руб., "
+        "а в целом по четырём областям факт вырос с 412 850,4 до 431 200,0 тыс. руб.\n"
+        "В Минской области (Минский и Борисовский районы) факт вырос с 94 073,2 до 97 650,0 тыс. руб."
+    )
+    allowed = _allowed_norms(two_shots, msg_compare, set())
+    stray = _filter_verifiable_stray(
+        reply_compare,
+        stray_numbers(reply_compare, allowed),
+        allowed,
+        two_shots,
+        message_ok=set(),
+    )
+    assert stray == []
+    assert wrong_row_tokens(reply_compare, two_shots, msg_compare) == []
+
+    # Separate sentence cross-row sum & difference where region names are NOT repeated in the sum sentence
+    one_shot = jan_tbl + "\n## Производные\n" + derivative_block(jan_tbl)
+    msg_sum = "Посчитай суммарный факт Гомельской и Брестской областей и на сколько Гомельская собрала больше Брестской?"
+    reply_sum = (
+        "- Гомельская область: 76 410,8 тыс. руб.\n"
+        "- Брестская область: 57 846,4 тыс. руб.\n"
+        "Суммарный факт двух областей составляет 134 257,2 тыс. руб.\n"
+        "Разница между ними равна 18 564,4 тыс. руб."
+    )
+    allowed_one = _allowed_norms(one_shot, msg_sum, set())
+    stray_sum = _filter_verifiable_stray(
+        reply_sum,
+        stray_numbers(reply_sum, allowed_one),
+        allowed_one,
+        one_shot,
+        message_ok=set(),
+    )
+    assert stray_sum == []
+    assert wrong_row_tokens(reply_sum, one_shot, msg_sum) == []
+
+    # Real LLM output cases that triggered wrong_row_tokens or _without_stray:
+    # 1) A single sentence without commas mentioning two regions + a cell from one of them
+    # or a cross-row difference/ratio that happens to exist in source_ok (e.g. rank 2 or share):
+    two_regions_clause = (
+        "Минская область (94 073,2) опережает Гомельскую область (76 410,8) на 17 662,4 тыс. руб., "
+        "а в Брестской области наибольший вклад дал г. Брест — 47 056,4 тыс. руб. при 10 790,0 у Пинского района."
+    )
+    assert wrong_row_tokens(two_regions_clause, two_shots, msg_compare) == []
+
+    # 2) Separate bullet/sentence sum of 3 regions without repeating their individual numbers in that sentence:
+    msg_three = "Какой суммарный факт по Минской, Гомельской и Брестской областям?"
+    reply_three = "Суммарный факт по этим областям составил 228 330,4 тыс. руб."
+    allowed_three = _allowed_norms(one_shot, msg_three, set())
+    stray_three = _filter_verifiable_stray(
+        reply_three,
+        stray_numbers(reply_three, allowed_three),
+        allowed_three,
+        one_shot,
+        message_ok=set(),
+        user_question=msg_three,
+    )
+    assert stray_three == []
+    assert wrong_row_tokens(reply_three, one_shot, msg_three) == []
+

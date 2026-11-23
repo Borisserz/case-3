@@ -294,6 +294,8 @@ def _proportional_colspec(spec: str, body: str) -> str:
         if is_num and mlen <= 18:
             if hlen <= 16:
                 new_cols.append("r")
+            elif ncols >= 8:
+                new_cols.append("Y")
             else:
                 new_cols.append("Z")
         elif ci == 0 and mlen <= 10 and hlen <= 12:
@@ -341,11 +343,14 @@ def _landscape_table_upgrade(chunk: str) -> str:
             xm_bare.group(4),
         )
         smart_b = _proportional_colspec(spec_b, tbody_b)
-        if smart_b == spec_b:
-            return chunk
+        ncols_b = len(re.findall(r"[lcrXYZ]", smart_b))
+        size_cmd_b = r"\footnotesize" if ncols_b >= 10 else r"\small"
+        colsep_b = "2.5pt" if ncols_b >= 10 else "4pt"
         inner_b = (
             inner[: xm_bare.start()]
+            + f"{{{size_cmd_b}\n\\setlength{{\\tabcolsep}}{{{colsep_b}}}\n"
             + rf"\begin{{{env_b}}}{{\linewidth}}{{{smart_b}}}{tbody_b}\end{{{env_b}}}"
+            + "\n}"
             + inner[xm_bare.end() :]
         )
         return f"\\begin{{landscape}}\n{inner_b.strip()}\n\\end{{landscape}}"
@@ -396,9 +401,12 @@ def _landscape_table_upgrade(chunk: str) -> str:
     data_part = re.sub(r"^\s*\\end(?:first)?head\s*", "", data_part).strip()
     data_part = re.sub(r"\s*\\(?:bottomrule|end(?:last)?foot)\s*", "\n", data_part).strip()
 
+    ncols_xl = len(re.findall(r"[lcrXYZ]", smart_spec))
+    size_cmd_xl = r"\footnotesize" if ncols_xl >= 10 else r"\small"
+    colsep_xl = "2.5pt" if ncols_xl >= 10 else "4pt"
     xl_lines = [
-        r"{\small",
-        r"\setlength{\tabcolsep}{4pt}",
+        f"{{{size_cmd_xl}",
+        rf"\setlength{{\tabcolsep}}{{{colsep_xl}}}",
         rf"\begin{{xltabular}}{{\linewidth}}{{{smart_spec}}}",
     ]
     if caption_line:

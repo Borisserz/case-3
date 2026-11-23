@@ -392,7 +392,7 @@ def edit_chart_in_run(
     )
     if new_html and not user_style:
         new_html = paint_deck_chart_html(out_dir, new_html, final_type)
-    if style_notes and not type_changed and not accepted:
+    if style_notes and not accepted:
         number_warning = chart_number_change_warning(
             html, new_html, chart_type=current_type
         )

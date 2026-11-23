@@ -92,7 +92,13 @@ def _plain_unescape(text: str) -> str:
     t = t.replace("--", "–")
     t = re.sub(r"\{\s*,\s*\}", ",", t)
     t = re.sub(r"\$([^$]*)\$", r"\1", t)
-    t = re.sub(r"\\(?:textbf|textit|emph|texttt)\{([^{}]*)\}", r"\1", t)
+    for _ in range(2):
+        t = re.sub(
+            r"\\(?:textbf|textit|emph|texttt|underline|textsc|textsf|textrm)\*?\{([^{}]*)\}",
+            r"\1",
+            t,
+        )
+        t = re.sub(r"\\(?:textcolor|href)\*?\{[^{}]*\}\{([^{}]*)\}", r"\1", t)
     t = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?", "", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
@@ -146,6 +152,13 @@ def _inline_to_html(tex_fragment: str) -> str:
         return key
 
     t = _INLINE_EMPH.sub(_stash, t)
+    for _ in range(2):
+        t = re.sub(
+            r"\\(?:underline|textsc|textsf|textrm)\*?\{([^{}]*)\}",
+            r"\1",
+            t,
+        )
+        t = re.sub(r"\\(?:textcolor|href)\*?\{[^{}]*\}\{([^{}]*)\}", r"\1", t)
     t = re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?", "", t)
     t = re.sub(r"\s+", " ", t).strip()
     out = html_lib.escape(t)
@@ -288,6 +301,7 @@ _STRUCT_TOKEN = re.compile(
     r"\\tableofcontents\b|"
     r"\\section\*?\{[^{}]*\}|"
     r"\\subsection\*?\{[^{}]*\}|"
+    r"\\subsubsection\*?\{[^{}]*\}|"
     r"\\begin\{table\*?\}|"
     r"\\begin\{longtable\*?\}|"
     r"\\begin\{xltabular\}|"
@@ -465,10 +479,19 @@ def tex_to_preview_blocks(tex: str) -> dict[str, Any]:
         if tok in (r"\maketitle", r"\tableofcontents"):
             pos = m.end()
             continue
-        if tok.startswith(r"\section") or tok.startswith(r"\subsection"):
+        if (
+            tok.startswith(r"\section")
+            or tok.startswith(r"\subsection")
+            or tok.startswith(r"\subsubsection")
+        ):
             sm = _SECTION.match(tok)
             if sm:
-                level = 2 if "subsection" in tok else 1
+                if "subsubsection" in tok:
+                    level = 3
+                elif "subsection" in tok:
+                    level = 2
+                else:
+                    level = 1
                 blocks.append(
                     {
                         "type": "heading",

@@ -648,3 +648,38 @@ def test_undo_clears_memory_section_for_chat_and_button_undo(tmp_path: Path, mon
     status_resp = client.get(f"/api/runs/{run_id}/status")
     assert status_resp.status_code == 200
     assert status_resp.json()["memory_section"] == ""
+
+
+def test_retitle_slide_n_and_table_replace_verbs_and_expand_section() -> None:
+    act_s3 = resolve_act("поменяй заголовок слайда 3 на Анализ областей", has_deck=True)
+    assert act_s3.op == "retitle"
+    assert act_s3.title_on == "deck"
+    assert act_s3.slide == 3
+    assert act_s3.title == "Анализ областей"
+
+    act_s2_ord = resolve_act("поменяй заголовок второго слайда на Выводы", has_deck=True)
+    assert act_s2_ord.op == "retitle"
+    assert act_s2_ord.title_on == "deck"
+    assert act_s2_ord.slide == 2
+    assert act_s2_ord.title == "Выводы"
+
+    act_tbl = resolve_act("в таблице поменяй Пинский р-н на г. Пинск", has_report=True)
+    assert act_tbl.op == "replace_cell"
+    assert act_tbl.section == "Пинский р-н"
+    assert act_tbl.title == "г. Пинск"
+
+    act_tbl_fix = resolve_act("в таблице исправь 10 на 12", has_report=True)
+    assert act_tbl_fix.op == "replace_cell"
+    assert act_tbl_fix.section == "10"
+    assert act_tbl_fix.title == "12"
+
+    act_expand = resolve_act("распиши раздел Выводы подробнее", has_report=True)
+    assert act_expand.op == "rewrite"
+    assert act_expand.section == "Выводы"
+
+    from case3.chat_revise import _swap_text, _word_hit
+
+    assert _word_hit("Пинский р-н", "Пинский р-н")
+    assert _swap_text("Пинский р-н", "Пинский р-н", "г. Пинск") == "г. Пинск"
+
+

@@ -41,7 +41,7 @@ Post-LLM TeX repair then `latexmk -xelatex` / pandoc in Docker `case-3:tex`.
 - Slot lines with trailing notes (`%CASE3_CHART:cht_01%  (SLA)`) must still count as slots — strict `$` missed them → `_append_missing_slots` dumped duplicates before `\end{document}` (fix 2026-11-02, `tests/test_slot_trailing_junk.py`).
 - Text schemas `\item [узел] $\rightarrow$ …` (Win desk 090626): LaTeX uses `[узел]` as the item label and clips it past the left edge. `tex_prose.brace_schema_item_labels` rewrites to `\item {[узел]}`.
 - Wide tables: cell-per-line `&` → Misplaced `&` without repair
-- Markdown source tables longer than 24 rows (header included) become `xltabular`: every row stays, the header repeats, Y columns wrap. Shorter ones stay `tabularx`. Both are preview tables. Table edit allows 200 rows.
+- Markdown source tables longer than 24 rows (header included) become `xltabular`: every row stays, the header repeats, Y columns wrap. Shorter ones stay `tabularx`. Both are preview tables. Table edit allows 200 rows and preserves `\caption{...} \\` inside `xltabular`. Wide tables with `>= 8` columns avoid fixed `2.5cm` `Z` columns, and `>= 10` columns use `\footnotesize` and `\tabcolsep=2.5pt`.
 - `titlespec` typo stripped; real package is `titlesec`
 - DOCX `reference.docx` = Liberation Serif, margins 2.2cm, footer PAGE (D8); rebuild via `scripts/build_reference_docx.py`
 - After pandoc: `docx_polish.try_polish_docx` (D5: mist header fill, booktabs borders, pad, bold header, numeric right-align; soft-fail)

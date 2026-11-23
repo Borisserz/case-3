@@ -504,6 +504,23 @@ def test_add_native_diagram_mindmap():
     assert len(slide.shapes) >= 5
 
 
+def test_parse_mermaid_chained_and_ampersand_edges():
+    from case3.slides_pptx_diagrams import parse_mermaid_flowchart
+
+    mermaid = """flowchart LR
+    A([Вход]) --> B[Проверка] --> C{Решение}
+    C -->|Ок| D[Отчёт] & E[Архив]
+    """
+    g = parse_mermaid_flowchart(mermaid)
+    assert g is not None
+    pairs = [(e.src, e.dst) for e in g.edges]
+    assert ("A", "B") in pairs
+    assert ("B", "C") in pairs
+    assert ("C", "D") in pairs
+    assert ("C", "E") in pairs
+
+
+
 
 
 

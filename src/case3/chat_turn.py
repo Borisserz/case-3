@@ -1183,6 +1183,7 @@ def _filter_verifiable_stray(
     source: str,
     *,
     message_ok: set[str] | None = None,
+    user_question: str = "",
 ) -> list[str]:
     if not stray:
         return []
@@ -1191,9 +1192,13 @@ def _filter_verifiable_stray(
     derived = _derived_table_math_norms(source)
     grid = table_grid(source) if "|" in (source or "") else None
     full_pool = allowed | derived
+    doc_row_pool: set[str] = set()
+    if grid is not None and grid.rows:
+        for _s, _e, rstem in _row_mentions(f"{user_question}\n{text}", grid):
+            doc_row_pool |= grid.rows.get(rstem, set())
     verified: set[str] = set()
     for line in (text or "").splitlines():
-        row_pool: set[str] = set()
+        row_pool: set[str] = set(doc_row_pool)
         if grid is not None and grid.rows:
             for _s, _e, rstem in _row_mentions(line, grid):
                 row_pool |= grid.rows.get(rstem, set())
@@ -1211,6 +1216,8 @@ def _filter_verifiable_stray(
             elif _is_small_cardinal_in_clause(line, norm):
                 verified.add(norm)
             elif extra and _verifies_math(line, norm, full_pool | row_pool, extra):
+                verified.add(norm)
+            elif extra and _verifies_math(text or "", norm, full_pool | row_pool, extra):
                 verified.add(norm)
     return [tok for tok in stray if _norm_num(tok) not in verified]
 
@@ -1844,7 +1851,12 @@ def try_chat_answer(
     streamed_raw = "".join(streamed_chunks).strip()
     stray = (
         _filter_verifiable_stray(
-            text, stray_numbers(text, allowed), allowed, source, message_ok=msg_ok
+            text,
+            stray_numbers(text, allowed),
+            allowed,
+            source,
+            message_ok=msg_ok,
+            user_question=said,
         )
         if text
         else []
@@ -1874,7 +1886,12 @@ def try_chat_answer(
         if retried:
             text = retried
             stray = _filter_verifiable_stray(
-                text, stray_numbers(text, allowed), allowed, source, message_ok=msg_ok
+                text,
+                stray_numbers(text, allowed),
+                allowed,
+                source,
+                message_ok=msg_ok,
+                user_question=said,
             )
         else:
             text = first_text
