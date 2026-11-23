@@ -10,6 +10,7 @@ from case3.dashboard_remote import (
     DashboardRemoteError,
     capture_documents,
     files_from_shot,
+    fetch_filter_catalog,
     filters_from_model,
     finish_dashboard_phrase,
     might_ask_dashboard,
@@ -210,7 +211,7 @@ def test_plan_opens_when_the_model_maps_the_phrase(monkeypatch: pytest.MonkeyPat
     assert plan["pull"] is True
     assert plan["filters"] == {"Month": 2, "Year": 2025}
     assert plan["reply"] == "Сейчас открою."
-    assert plan["viewer"].endswith("/viewer")
+    assert plan["viewer"].endswith("/open")
 
 
 def test_open_payload_uses_choice_keys() -> None:
@@ -231,14 +232,114 @@ def test_open_payload_uses_choice_keys() -> None:
     assert open_payload(picked) == {"filters": picked}
 
 
-class _Poster:
-    def __init__(self, status: int = 200) -> None:
-        self.status = status
-        self.posts: list[tuple[str, dict]] = []
+_LIVE_CATALOG = {
+    "mrt": "last.mrt",
+    "filters": [
+        {
+            "name": "trendtype",
+            "alias": "Тип тренда",
+            "value": "cumulative",
+            "choices": [
+                {"key": "cumulative", "value": "накопительный"},
+                {"key": "nocumulative", "value": "за период"},
+            ],
+        },
+        {
+            "name": "typenum",
+            "alias": "Единицы",
+            "value": 1,
+            "choices": [
+                {"key": "1", "value": "тыс."},
+                {"key": "1000000", "value": "млн."},
+            ],
+        },
+        {
+            "name": "month",
+            "alias": "Месяц",
+            "value": "2",
+            "choices": [
+                {"key": "2", "value": "Февраль"},
+                {"key": "3", "value": "Март"},
+            ],
+        },
+        {
+            "name": "year",
+            "alias": "Год",
+            "value": "2025",
+            "choices": [{"key": "2025", "value": "2025"}],
+        },
+        {
+            "name": "vtypevd",
+            "alias": "Вид",
+            "value": "0000000",
+            "choices": [{"key": "0000000", "value": "все"}],
+        },
+    ],
+}
 
-    def post(self, url: str, json: dict | None = None):
+
+def test_open_dashboard_posts_catalog_values_without_a_named_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+    called = False
+
+    def complete(**_kwargs: object) -> str:
+        nonlocal called
+        called = True
+        return '{"pull": false, "filters": {}}'
+
+    plan = plan_dashboard_phrase("открой дашборд", _LIVE_CATALOG, complete)
+    assert called is False
+    assert plan["pull"] is True
+    assert plan["filters"] == {
+        "trendtype": "cumulative",
+        "typenum": 1,
+        "month": 2,
+        "year": 2025,
+        "vtypevd": "0000000",
+    }
+    assert plan["viewer"].endswith("/open")
+
+
+def test_named_filter_overrides_only_that_catalog_value() -> None:
+    def complete(**_kwargs: object) -> str:
+        return '{"pull": true, "filters": {"Единицы": "млн.", "Месяц": "Март"}}'
+
+    plan = plan_dashboard_phrase("открой дашборд за март, млн.", _LIVE_CATALOG, complete)
+    assert plan["filters"] == {
+        "trendtype": "cumulative",
+        "typenum": 1000000,
+        "month": 3,
+        "year": 2025,
+        "vtypevd": "0000000",
+    }
+
+
+class _Poster:
+    def __init__(self, status: int = 200, url: str = "") -> None:
+        self.status = status
+        self.url = url
+        self.posts: list[tuple[str, dict]] = []
+        self.gets: list[str] = []
+
+    def post(self, url: str, json: dict | None = None, **_kwargs):
         self.posts.append((url, json or {}))
-        return type("Response", (), {"status_code": self.status})()
+        body = {"ok": True, "url": self.url} if self.url else {}
+        return _Resp(self.status, body)
+
+    def get(self, url: str, **_kwargs):
+        self.gets.append(url)
+        return _Resp(200, {"mrt": "last.mrt", "filters": [{"name": "month", "value": "2"}]})
+
+
+class _Resp:
+    def __init__(self, status: int, body: dict) -> None:
+        self.status_code = status
+        self._body = body
+
+    def json(self) -> dict:
+        return self._body
 
 
 def test_finish_posts_the_open_body_then_points_at_the_viewer(
@@ -258,11 +359,29 @@ def test_finish_posts_the_open_body_then_points_at_the_viewer(
     )
     assert poster.posts == [
         (
-            "http://127.0.0.1:8040/open",
+            "http://127.0.0.1:8040/open?open=0",
             {"filters": {"month": 2, "vtypevd": "0000000"}},
         )
     ]
-    assert plan["viewer"] == "http://127.0.0.1:8040/viewer"
+    assert plan["viewer"] == "http://127.0.0.1:8040/open"
+
+
+def test_finish_uses_the_url_the_service_returns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+    poster = _Poster(url="http://localhost:8040/open")
+    plan = finish_dashboard_phrase(
+        {"pull": True, "filters": {"month": 2}, "reply": "Сейчас открою."},
+        "http://127.0.0.1:8040",
+        poster,
+    )
+    assert plan["viewer"] == "http://localhost:8040/open"
+
+
+def test_fetch_filter_catalog_calls_the_filters_endpoint() -> None:
+    poster = _Poster()
+    catalog = fetch_filter_catalog("http://127.0.0.1:8040", poster)
+    assert poster.gets == ["http://127.0.0.1:8040/filters"]
+    assert catalog["mrt"] == "last.mrt"
 
 
 def test_finish_does_not_post_when_the_phrase_is_not_a_pull() -> None:

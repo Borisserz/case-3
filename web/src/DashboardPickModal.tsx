@@ -17,7 +17,7 @@ type Doc = { name: string; markdown: string; warnings?: string[] };
 type Props = {
   onClose: () => void;
   onReady: (docs: Doc[]) => void;
-  /** /viewer after the API POSTed /open. The button path leaves this empty. */
+  /** /open after the API POSTed the filter body. The button path leaves this empty. */
   viewerUrl?: string | null;
 };
 

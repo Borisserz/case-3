@@ -253,10 +253,29 @@ def _choice_pairs(field: dict) -> list[tuple[str, str]]:
 
 def _open_value(raw: object) -> object:
     """Choice keys go to /open. A plain integer stays a number; 0000000 stays text."""
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float) and raw.is_integer():
+        return int(raw)
+    if isinstance(raw, (list, dict)):
+        return raw
     text = str(raw if raw is not None else "").strip()
     if re.fullmatch(r"-?(?:0|[1-9]\d*)", text):
         return int(text)
     return text
+
+
+def _value_for_open(field: dict, value: object) -> object:
+    """Catalog value or label → the choice key /open expects."""
+    pairs = _choice_pairs(field)
+    wanted = _norm(value)
+    if pairs and wanted:
+        for key, label in pairs:
+            if wanted in {_norm(key), _norm(label)}:
+                return _open_value(key if key != "" else label)
+    return _open_value(value)
 
 
 def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object]:
@@ -306,6 +325,29 @@ def open_payload(filters: dict[str, object]) -> dict[str, object]:
     return {"filters": dict(filters)}
 
 
+def defaults_from_catalog(catalog: dict) -> dict[str, object]:
+    """Each filter's current value, already the key GET /filters published."""
+    picked: dict[str, object] = {}
+    for field in catalog.get("filters") or []:
+        if not isinstance(field, dict):
+            continue
+        name = str(field.get("name") or "").strip()
+        if not name or field.get("value") in (None, ""):
+            continue
+        picked[name] = _value_for_open(field, field.get("value"))
+    return picked
+
+
+def phrase_names_choice(phrase: str, catalog: dict) -> bool:
+    for field in catalog.get("filters") or []:
+        if not isinstance(field, dict):
+            continue
+        for key, label in _choice_pairs(field):
+            if _phrase_has(phrase, label) or _phrase_has(phrase, key):
+                return True
+    return False
+
+
 def catalog_file() -> Path:
     raw = (os.environ.get("DASHBOARD_FILTERS_FILE") or "").strip()
     if raw:
@@ -335,45 +377,84 @@ def read_filter_catalog(path: Path | None = None) -> dict | None:
     return body
 
 
-def post_open_filters(base: str, filters: dict[str, object], client) -> None:
-    response = client.post(f"{base.rstrip('/')}/open", json=open_payload(filters))
+def fetch_filter_catalog(base: str, client) -> dict:
+    """GET /filters. The service runs the dialog SQL unless the caller says otherwise."""
+    response = client.get(f"{base.rstrip('/')}/filters")
+    status = int(getattr(response, "status_code", 500) or 500)
+    try:
+        body = response.json()
+    except Exception as exc:
+        raise DashboardRemoteError("сервис фильтров вернул не JSON", "filters") from exc
+    if (
+        status >= 400
+        or not isinstance(body, dict)
+        or body.get("error")
+        or not isinstance(body.get("filters"), list)
+        or not body.get("filters")
+    ):
+        detail = str(body.get("error") or "") if isinstance(body, dict) else ""
+        raise DashboardRemoteError(detail or "нет списка фильтров", "filters")
+    return body
+
+
+def post_open_filters(base: str, filters: dict[str, object], client) -> str:
+    """POST /open raises the filtered dashboard. open=0 keeps a second OS window shut."""
+    root = base.rstrip("/")
+    response = client.post(
+        f"{root}/open?open=0",
+        json=open_payload(filters),
+        headers={"Accept": "application/json"},
+    )
     status = int(getattr(response, "status_code", 500) or 500)
     if status >= 400:
         raise DashboardRemoteError("сервис не принял фильтры", "open")
+    opened = ""
+    try:
+        body = response.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        opened = str(body.get("url") or "").strip()
+    return opened or f"{root}/open"
 
 
 def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:
-    """POST the choice keys, then the iframe loads /viewer on that same service."""
+    """POST the filter body, then the iframe loads the /open page that POST raised."""
     if not plan.get("pull"):
         return plan
     filters = plan.get("filters")
     if not isinstance(filters, dict) or not filters:
         return plan
-    post_open_filters(base, filters, client)
-    return {**plan, "viewer": viewer_url()}
+    return {**plan, "viewer": post_open_filters(base, filters, client)}
 
 
 OPEN_REPLY = "Сейчас открою."
 
 
 def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
-    """Map a chat sentence onto his /open URL. No match means a normal send."""
+    """Open with GET /filters values. A named choice overrides only that field."""
     if not might_ask_dashboard(text):
         return {"pull": False}
-    from case3.prompts import load as load_prompt
+    base_filters = defaults_from_catalog(catalog)
+    overlay: dict[str, object] = {}
+    if phrase_names_choice(text, catalog):
+        from case3.prompts import load as load_prompt
 
-    raw = complete(
-        system=load_prompt("dashboard_filters"),
-        user_text=(
-            text.strip()
-            + "\n\nКаталог:\n"
-            + json.dumps(catalog, ensure_ascii=False)
-        ),
-    )
-    if not _json_object(str(raw or "")).get("pull"):
-        return {"pull": False}
-    picked = filters_from_model(catalog, text, str(raw or ""))
-    if not picked:
+        raw = complete(
+            system=load_prompt("dashboard_filters"),
+            user_text=(
+                text.strip()
+                + "\n\nКаталог:\n"
+                + json.dumps(catalog, ensure_ascii=False)
+            ),
+        )
+        if not _json_object(str(raw or "")).get("pull"):
+            if not base_filters:
+                return {"pull": False}
+        else:
+            overlay = filters_from_model(catalog, text, str(raw or ""))
+    filters = {**base_filters, **overlay}
+    if not filters:
         return {
             "pull": False,
             "asked": True,
@@ -381,8 +462,8 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
         }
     return {
         "pull": True,
-        "filters": picked,
-        "viewer": viewer_url(),
+        "filters": filters,
+        "viewer": f"{service_base()}/open",
         "reply": OPEN_REPLY,
     }
 
