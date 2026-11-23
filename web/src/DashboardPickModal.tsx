@@ -234,17 +234,33 @@ export function DashboardPickModal({
           </p>
           {error ? <p className="dash-viewer-error">{error}</p> : null}
           <div className="dash-pick-list">
-            {(list || []).map((row) => (
+            {(list || []).map((row, index) => (
               <button
                 key={row.name}
                 type="button"
-                className="dash-pick-item"
+                className={`dash-pick-item is-sketch-${index % 3}`}
                 disabled={busy}
                 onClick={() => void choose(row.name)}
               >
-                <span className="dash-pick-title">{row.title || row.name}</span>
-                <span className="dash-pick-file">
-                  {opening === row.name ? "Открываю фильтры" : row.name}
+                <span className="dash-pick-stage" aria-hidden="true">
+                  <span className="dash-pick-kpis">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="dash-pick-bars">
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </span>
+                <span className="dash-pick-copy">
+                  <span className="dash-pick-kicker">Дашборд</span>
+                  <span className="dash-pick-title">{row.title || row.name}</span>
+                  {opening === row.name ? (
+                    <span className="dash-pick-file">Открываю</span>
+                  ) : null}
                 </span>
               </button>
             ))}

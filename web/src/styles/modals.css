@@ -906,8 +906,8 @@
 }
 
 .stimul-sheet.is-pick {
-  width: min(32rem, 100%);
-  max-height: min(36rem, calc(100vh - 2.5rem));
+  width: min(52rem, 100%);
+  max-height: min(40rem, calc(100vh - 2.5rem));
   display: flex;
   flex-direction: column;
 }
@@ -915,36 +915,137 @@
 .dash-pick-list {
   overflow: auto;
   display: grid;
-  gap: 0.45rem;
-  padding: 0.15rem 1rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 0.75rem;
+  padding: 0.2rem 1rem 1.1rem;
 }
 
 .dash-pick-item {
   display: grid;
-  gap: 0.15rem;
+  grid-template-rows: 7.2rem auto;
+  padding: 0;
+  overflow: hidden;
   text-align: left;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 16px;
   background: var(--sheet);
   color: var(--ink);
   font: inherit;
   cursor: pointer;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--ink) 2.5%, transparent),
+    0 12px 28px color-mix(in srgb, var(--ink) 5%, transparent);
+  transition:
+    box-shadow 0.28s var(--ease-out),
+    border-color 0.28s var(--ease-out),
+    transform 0.28s var(--ease-out);
+}
+
+.dash-pick-item:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border) 48%, var(--primary) 22%);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--ink) 2.5%, transparent),
+    0 16px 36px color-mix(in srgb, var(--ink) 8%, transparent);
+  transform: translateY(-2px);
 }
 
 .dash-pick-item:disabled {
   cursor: progress;
-  opacity: 0.7;
+  opacity: 0.72;
+}
+
+.dash-pick-stage {
+  display: grid;
+  align-content: end;
+  gap: 0.45rem;
+  padding: 0.85rem 0.9rem 0.75rem;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--ink) 7%, var(--paper)),
+    var(--sheet) 62%
+  );
+}
+
+.dash-pick-kpis,
+.dash-pick-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.dash-pick-kpis i,
+.dash-pick-bars i {
+  display: block;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 10%, var(--sheet));
+}
+
+.dash-pick-kpis i {
+  height: 1.7rem;
+  flex: 1;
+}
+
+.dash-pick-bars {
+  height: 2.6rem;
+}
+
+.dash-pick-bars i {
+  flex: 1;
+  height: 42%;
+}
+
+.dash-pick-bars i:nth-child(2) {
+  height: 78%;
+}
+
+.dash-pick-bars i:nth-child(3) {
+  height: 58%;
+}
+
+.dash-pick-item.is-sketch-1 .dash-pick-bars i:nth-child(1) {
+  height: 88%;
+}
+
+.dash-pick-item.is-sketch-1 .dash-pick-bars i:nth-child(2) {
+  height: 36%;
+}
+
+.dash-pick-item.is-sketch-2 .dash-pick-bars i:nth-child(4) {
+  height: 92%;
+}
+
+.dash-pick-copy {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 0.9rem 0.85rem;
+}
+
+.dash-pick-kicker {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .dash-pick-title {
-  font-family: var(--serif, Georgia, serif);
-  font-size: 1.02rem;
+  font-family: var(--serif);
+  font-size: 1.12rem;
+  font-weight: 560;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .dash-pick-file {
-  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  color: var(--muted);
   font-size: 0.78rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-pick-item,
+  .dash-pick-item:hover {
+    transition: none;
+    transform: none;
+  }
 }
 
 .stimul-sheet.is-viewer .settings-modal-head {
