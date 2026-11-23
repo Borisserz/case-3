@@ -20,6 +20,7 @@ from fastapi.responses import (
     FileResponse,
     JSONResponse,
     RedirectResponse,
+    Response,
 )
 
 from case3.chart_html import CHART_TYPES
@@ -39,6 +40,7 @@ from case3.dashboard_remote import (
     capture_documents,
     fetch_export,
     fetch_shot_payload,
+    fetch_dashboard_preview,
     fetch_dashboards,
     fetch_filter_catalog,
     open_named_dashboard,
@@ -1075,6 +1077,27 @@ def api_dashboard_dashboards() -> JSONResponse:
     except httpx.HTTPError as exc:
         raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
     return JSONResponse({"dashboards": rows})
+
+
+@app.get("/api/dashboard/preview")
+def api_dashboard_preview(mrt: str) -> Response:
+    """Picture placed next to this .mrt in the viewer local folder."""
+    import httpx
+
+    name = (mrt or "").strip()
+    if not name:
+        raise HTTPException(400, detail="нужно имя дашборда")
+    base = service_base()
+    timeout = httpx.Timeout(15.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            content, media = fetch_dashboard_preview(base, name, client)
+    except DashboardRemoteError as exc:
+        status = 404 if exc.code == "preview" and exc.message == "нет снимка" else 502
+        raise HTTPException(status, detail=exc.message) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, detail=f"сервис дашборда недоступен ({base})") from exc
+    return Response(content=content, media_type=media, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/dashboard/open")

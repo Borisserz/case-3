@@ -397,8 +397,35 @@ def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
         if not name.lower().endswith(".mrt"):
             continue
         title = str(row.get("title") or Path(name).stem).strip() or Path(name).stem
-        out.append({"name": name, "title": title})
+        item = {"name": name, "title": title}
+        preview = Path(str(row.get("preview") or "")).name
+        same = Path(preview).stem == Path(name).stem
+        if same and preview.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            item["preview"] = preview
+        out.append(item)
     return out
+
+
+def fetch_dashboard_preview(base: str, mrt: str, client) -> tuple[bytes, str]:
+    """The picture stored beside this .mrt. Empty when that file has none."""
+    name = Path(mrt or "").name
+    if not name.lower().endswith(".mrt"):
+        raise DashboardRemoteError("не выбрано имя дашборда", "preview")
+    response = client.get(f"{base.rstrip('/')}/dashboards/preview?mrt={quote(name)}")
+    status = int(getattr(response, "status_code", 500) or 500)
+    content = getattr(response, "content", b"") or b""
+    if status == 404 or not content:
+        raise DashboardRemoteError("нет снимка", "preview")
+    if status >= 400:
+        raise DashboardRemoteError("сервис не отдал снимок", "preview")
+    header = ""
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        header = str(headers.get("content-type") or "")
+    media = header.split(";", 1)[0].strip().lower() or "image/png"
+    if media not in {"image/png", "image/jpeg", "image/webp"}:
+        media = "image/png"
+    return content, media
 
 
 def fetch_filter_catalog(base: str, client, mrt: str = "") -> dict:

@@ -10,6 +10,7 @@ from case3.dashboard_remote import (
     DashboardRemoteError,
     capture_documents,
     files_from_shot,
+    fetch_dashboard_preview,
     fetch_dashboards,
     fetch_filter_catalog,
     open_named_dashboard,
@@ -453,11 +454,34 @@ def test_fetch_dashboards_keeps_mrt_names() -> None:
             assert url.endswith("/dashboards")
             return _Resp(
                 200,
-                {"dashboards": [{"name": "plan.mrt", "title": "plan"}, {"name": "note.txt"}]},
+                {
+                    "dashboards": [
+                        {"name": "plan.mrt", "title": "plan", "preview": "plan.png"},
+                        {"name": "bare.mrt", "title": "bare", "preview": "../x.png"},
+                        {"name": "note.txt"},
+                    ]
+                },
             )
 
     rows = fetch_dashboards("http://127.0.0.1:8040", _Client())
-    assert rows == [{"name": "plan.mrt", "title": "plan"}]
+    assert rows == [
+        {"name": "plan.mrt", "title": "plan", "preview": "plan.png"},
+        {"name": "bare.mrt", "title": "bare"},
+    ]
+
+
+def test_fetch_dashboard_preview_reads_the_matching_picture() -> None:
+    class _Client:
+        def get(self, url: str, **_kwargs):
+            assert "mrt=plan.mrt" in url
+            response = _Resp(200, {})
+            response.content = b"\x89PNG"
+            response.headers = {"content-type": "image/png"}
+            return response
+
+    content, media = fetch_dashboard_preview("http://127.0.0.1:8040", "plan.mrt", _Client())
+    assert content.startswith(b"\x89PNG")
+    assert media == "image/png"
 
 
 def test_fetch_filter_catalog_calls_the_filters_endpoint() -> None:

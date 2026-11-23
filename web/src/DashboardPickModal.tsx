@@ -13,7 +13,11 @@ import { useFocusTrap } from "./useFocusTrap";
 
 type Doc = { name: string; markdown: string; warnings?: string[] };
 
-type Dash = { name: string; title: string };
+type Dash = { name: string; title: string; preview?: string };
+
+function previewUrl(name: string): string {
+  return `/api/dashboard/preview?mrt=${encodeURIComponent(name)}`;
+}
 
 type Props = {
   onClose: () => void;
@@ -101,7 +105,11 @@ export function DashboardPickModal({
         setList(
           rows.filter(
             (row) => row && typeof row.name === "string" && row.name.trim(),
-          ),
+          ).map((row) => ({
+            name: row.name.trim(),
+            title: (row.title || row.name).trim(),
+            preview: typeof row.preview === "string" ? row.preview.trim() : "",
+          })),
         );
       })
       .catch(() => {
@@ -242,18 +250,38 @@ export function DashboardPickModal({
                 disabled={busy}
                 onClick={() => void choose(row.name)}
               >
-                <span className="dash-pick-stage" aria-hidden="true">
-                  <span className="dash-pick-kpis">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <span className="dash-pick-bars">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                  </span>
+                <span
+                  className={`dash-pick-stage${row.preview ? " has-photo" : ""}`}
+                  aria-hidden="true"
+                >
+                  {row.preview ? (
+                    <>
+                      <img
+                        className="dash-pick-photo"
+                        src={previewUrl(row.name)}
+                        alt=""
+                      />
+                      <img
+                        className="dash-pick-zoom"
+                        src={previewUrl(row.name)}
+                        alt=""
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span className="dash-pick-kpis">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span className="dash-pick-bars">
+                        <i />
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </>
+                  )}
                 </span>
                 <span className="dash-pick-copy">
                   <span className="dash-pick-kicker">Дашборд</span>
