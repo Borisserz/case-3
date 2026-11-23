@@ -39,8 +39,10 @@ from case3.dashboard_remote import (
     capture_documents,
     fetch_export,
     fetch_shot_payload,
+    finish_dashboard_phrase,
     might_ask_dashboard,
     plan_dashboard_phrase,
+    read_filter_catalog,
     service_base,
     viewer_url,
 )
@@ -1026,7 +1028,7 @@ def _dashboard_http_status(code: str) -> int:
 
 @app.post("/api/dashboard/phrase")
 async def api_dashboard_phrase(payload: dict = Body(...)) -> JSONResponse:
-    """Chat sentence → his /filters, then a /open URL with only those values."""
+    """Chat sentence → filter catalog, POST /open, then the iframe loads /viewer."""
     text = str((payload or {}).get("text") or "")
     if not might_ask_dashboard(text):
         return JSONResponse({"pull": False})
@@ -1037,20 +1039,23 @@ async def api_dashboard_phrase(payload: dict = Body(...)) -> JSONResponse:
     base = service_base()
     timeout = httpx.Timeout(30.0, connect=5.0)
     try:
+        catalog = read_filter_catalog()
         with httpx.Client(timeout=timeout) as client:
-            response = client.get(f"{base}/filters", params={"run_queries": "0"})
-            catalog = response.json()
-        if not isinstance(catalog, dict) or catalog.get("error"):
-            detail = ""
-            if isinstance(catalog, dict):
-                detail = str(catalog.get("error") or "")
-            raise DashboardRemoteError(detail or "нет списка фильтров", "filters")
-        llm = LLMClient(LLMConfig.from_env())
-        plan = plan_dashboard_phrase(
-            text,
-            catalog,
-            lambda **kwargs: llm.complete(**kwargs, reasoning="off"),
-        )
+            if catalog is None:
+                response = client.get(f"{base}/filters", params={"run_queries": "0"})
+                catalog = response.json()
+            if not isinstance(catalog, dict) or catalog.get("error"):
+                detail = ""
+                if isinstance(catalog, dict):
+                    detail = str(catalog.get("error") or "")
+                raise DashboardRemoteError(detail or "нет списка фильтров", "filters")
+            llm = LLMClient(LLMConfig.from_env())
+            plan = plan_dashboard_phrase(
+                text,
+                catalog,
+                lambda **kwargs: llm.complete(**kwargs, reasoning="off"),
+            )
+            plan = finish_dashboard_phrase(plan, base, client)
     except DashboardRemoteError as exc:
         raise HTTPException(502, detail=exc.message) from exc
     except LLMConfigError as exc:

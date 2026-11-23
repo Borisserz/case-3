@@ -17,7 +17,7 @@ type Doc = { name: string; markdown: string; warnings?: string[] };
 type Props = {
   onClose: () => void;
   onReady: (docs: Doc[]) => void;
-  /** His /open URL. The button path leaves this empty and uses /viewer. */
+  /** /viewer after the API POSTed /open. The button path leaves this empty. */
   viewerUrl?: string | null;
 };
 

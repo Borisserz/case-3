@@ -39,6 +39,9 @@ scripts/**
 !scripts/web.cmd
 !scripts/push-debug.cmd
 
+# Stimulsoft filter catalog for this machine (dashboard_filters.json)
+local/
+
 # Scratch notes
 notes.txt
 .cursorignore

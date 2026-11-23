@@ -251,6 +251,14 @@ def _choice_pairs(field: dict) -> list[tuple[str, str]]:
     return pairs
 
 
+def _open_value(raw: object) -> object:
+    """Choice keys go to /open. A plain integer stays a number; 0000000 stays text."""
+    text = str(raw if raw is not None else "").strip()
+    if re.fullmatch(r"-?(?:0|[1-9]\d*)", text):
+        return int(text)
+    return text
+
+
 def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object]:
     """Keep only catalog filters the sentence actually names."""
     body = _json_object(raw)
@@ -287,16 +295,62 @@ def filters_from_model(catalog: dict, phrase: str, raw: str) -> dict[str, object
                 continue
             if not (_phrase_has(phrase, match[1]) or _phrase_has(phrase, match[0])):
                 continue
-            picked[name] = match[1] or match[0]
+            picked[name] = _open_value(match[0] if match[0] != "" else match[1])
             continue
         if _phrase_has(phrase, value):
-            picked[name] = value
+            picked[name] = _open_value(value)
     return picked
 
 
-def filtered_open_url(base: str, filters: dict[str, object]) -> str:
-    payload = json.dumps(filters, ensure_ascii=False, separators=(",", ":"))
-    return f"{base.rstrip('/')}/open?filters={quote(payload)}"
+def open_payload(filters: dict[str, object]) -> dict[str, object]:
+    return {"filters": dict(filters)}
+
+
+def catalog_file() -> Path:
+    raw = (os.environ.get("DASHBOARD_FILTERS_FILE") or "").strip()
+    if raw:
+        return Path(raw)
+    return Path(__file__).resolve().parents[2] / "local" / "dashboard_filters.json"
+
+
+def read_filter_catalog(path: Path | None = None) -> dict | None:
+    """Full filter list dropped on the work machine. Missing file means ask /filters."""
+    file = path or catalog_file()
+    if not file.is_file():
+        return None
+    try:
+        body = json.loads(file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DashboardRemoteError(
+            f"не читается {file.name}: нужен JSON каталога фильтров",
+            "filters",
+        ) from exc
+    if isinstance(body, list):
+        body = {"filters": body}
+    if not isinstance(body, dict) or not isinstance(body.get("filters"), list):
+        raise DashboardRemoteError(
+            f"{file.name}: нужен объект с полем filters",
+            "filters",
+        )
+    return body
+
+
+def post_open_filters(base: str, filters: dict[str, object], client) -> None:
+    response = client.post(f"{base.rstrip('/')}/open", json=open_payload(filters))
+    status = int(getattr(response, "status_code", 500) or 500)
+    if status >= 400:
+        raise DashboardRemoteError("сервис не принял фильтры", "open")
+
+
+def finish_dashboard_phrase(plan: dict, base: str, client) -> dict:
+    """POST the choice keys, then the iframe loads /viewer on that same service."""
+    if not plan.get("pull"):
+        return plan
+    filters = plan.get("filters")
+    if not isinstance(filters, dict) or not filters:
+        return plan
+    post_open_filters(base, filters, client)
+    return {**plan, "viewer": viewer_url()}
 
 
 OPEN_REPLY = "Сейчас открою."
@@ -328,7 +382,7 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
     return {
         "pull": True,
         "filters": picked,
-        "viewer": filtered_open_url(service_base(), picked),
+        "viewer": viewer_url(),
         "reply": OPEN_REPLY,
     }
 
