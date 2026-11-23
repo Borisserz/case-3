@@ -277,6 +277,9 @@ def _clip_source(source: str, limit: int = _CHAT_SOURCE_CAP, focus: str = "") ->
     text = (source or "").strip()
     if len(text) <= limit:
         return text
+    shared = _clip_dashboard_shots(text, limit, focus)
+    if shared:
+        return shared
     from case3.chat_memory import _query_stems
 
     stems = set(_query_stems(focus or ""))
@@ -549,6 +552,24 @@ def _table_coverage_line(full: str, shown: str) -> str:
     return f"Вижу {len(visible)} из {len(total)} {noun}."
 
 
+def _clip_dashboard_shots(text: str, limit: int, focus: str) -> str:
+    """Keep every snapshot. A long screen keeps a share of the budget, not only the ends."""
+    from case3.chat_memory import dashboard_parts, format_sources
+
+    parts = dashboard_parts(text)
+    if len(parts) < 2:
+        return ""
+    packed = format_sources(parts)
+    if len(packed) <= limit:
+        return packed
+    budget = max(1500, limit // len(parts))
+    clipped: list[tuple[str, str]] = []
+    for name, body in parts:
+        shown = body if len(body) <= budget else _clip_source(body, budget, focus)
+        clipped.append((name, shown))
+    return format_sources(clipped)
+
+
 def _user_block(source: str, intent: str) -> str:
     """Question, document, then memory.
 
@@ -562,7 +583,8 @@ def _user_block(source: str, intent: str) -> str:
     from case3.dashboard_source import note_closed_month
 
     full = note_closed_month((source or "").strip(), message)
-    src = _clip_source(full, focus=message)
+    limit = 200_000 if "# Данные дашборда" in full else _CHAT_SOURCE_CAP
+    src = _clip_source(full, limit, focus=message)
     coverage = _table_coverage_line(full, src)
     if src and len(src) < len(full):
         outline = _source_outline(source)
@@ -1136,14 +1158,32 @@ def generate_chat_diagram(
     return kept, status
 
 
-def _ask_model(client: LLMClient, system: str, user_text: str) -> str:
+def dashboard_landing(user_text: str) -> bool:
+    """The automatic line sent when a dashboard screen is closed."""
+    return "Длинный разбор в чат не пиши" in (user_text or "")
+
+
+def _first_sentences(text: str, count: int) -> str:
+    parts = [part.strip() for part in re.split(r"(?<=[.!?…])\s+", (text or "").strip()) if part.strip()]
+    if len(parts) <= count:
+        return (text or "").strip()
+    return " ".join(parts[:count]).strip()
+
+
+def _ask_model(
+    client: LLMClient,
+    system: str,
+    user_text: str,
+    *,
+    max_tokens: int = _CHAT_ANSWER_TOKENS,
+) -> str:
     try:
         return _accepted(
             _speak(
                 client,
                 system=system,
                 user_text=user_text,
-                max_tokens=_CHAT_ANSWER_TOKENS,
+                max_tokens=max_tokens,
                 on_delta=None,
             )
         )
@@ -1394,9 +1434,16 @@ def try_chat_answer(
     note_limit = limit_note(intent)
     if note_limit:
         user += "\n\n" + note_limit
-    llm = client or _client(_CHAT_ANSWER_TOKENS, 180.0)
+    landing = dashboard_landing(intent)
+    answer_tokens = 320 if landing else _CHAT_ANSWER_TOKENS
+    if landing:
+        user += (
+            "\n\nВ чат — не больше четырёх предложений: что на экране и какой вопрос уместен. "
+            "Без таблицы и без обзора."
+        )
+    llm = client or _client(answer_tokens, 60.0 if landing else 180.0)
     allowed = _allowed_norms(source, intent, drop)
-    text = _ask_model(llm, system, user)
+    text = _ask_model(llm, system, user, max_tokens=answer_tokens)
     stray = stray_numbers(text, allowed) if text else []
     from case3.fact_ground import wrong_row_tokens
 
@@ -1410,7 +1457,7 @@ def try_chat_answer(
             + ", ".join(stray)
             + ". Если цифры не хватает, так и напиши, без новой цифры."
         )
-        retried = _ask_model(llm, system, retry)
+        retried = _ask_model(llm, system, retry, max_tokens=answer_tokens)
         if retried:
             text = retried
             stray = stray_numbers(text, allowed)
@@ -1432,7 +1479,7 @@ def try_chat_answer(
             + ", ".join(wrong)
             + "."
         )
-        retried = _ask_model(llm, system, retry)
+        retried = _ask_model(llm, system, retry, max_tokens=answer_tokens)
         if retried:
             text = retried
             wrong = wrong_row_tokens(text, source, said)
@@ -1449,6 +1496,8 @@ def try_chat_answer(
     else:
         spoken = text or chat_fallback()
     spoken = _hide_memory_marks(spoken)
+    if landing:
+        spoken = _first_sentences(spoken, 4)
     if on_delta:
         on_delta(spoken)
     return spoken

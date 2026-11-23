@@ -12,7 +12,9 @@ import {
   phraseRoute,
   filesFromCapture,
   markdownDocName,
+  DASHBOARD_ANALYSIS_ASK,
   isDashboardSource,
+  matchDashboardFile,
   shotsSource,
   splitPackedSources,
   viewerFrameUrl,
@@ -198,5 +200,27 @@ describe("dashboard card shots", () => {
       ["next.md"],
     );
     assert.match(shotsSource(freshShots(again)), /# Ещё/);
+  });
+});
+
+describe("dashboard landing ask", () => {
+  it("asks for a short line and not a writeup", () => {
+    assert.match(DASHBOARD_ANALYSIS_ASK, /Длинный разбор в чат не пиши/);
+  });
+});
+
+describe("matchDashboardFile", () => {
+  it("picks the file whose name is the screen title", () => {
+    const name = matchDashboardFile(
+      [{ name: "Задолженность по налогам и сборам" }],
+      [
+        { name: "dashboard.mrt", title: "dashboard" },
+        {
+          name: "Задолженность по налогам и сборам.mrt",
+          title: "Задолженность по налогам и сборам",
+        },
+      ],
+    );
+    assert.equal(name, "Задолженность по налогам и сборам.mrt");
   });
 });

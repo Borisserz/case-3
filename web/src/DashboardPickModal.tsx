@@ -27,7 +27,7 @@ type Props = {
   /** /open after the API POSTed the filter body. The button path leaves this empty. */
   viewerUrl?: string | null;
   /** The chosen /open page, so the card can reopen the same dashboard. */
-  onOpened?: (viewer: string) => void;
+  onOpened?: (viewer: string, mrt: string) => void;
 };
 
 async function parseFiles(files: CaptureFile[]): Promise<Doc[]> {
@@ -141,7 +141,7 @@ export function DashboardPickModal({
       }
       setOpenedUrl(body.viewer);
       setViewerUrl(body.viewer);
-      onOpened?.(body.viewer);
+      onOpened?.(body.viewer, name);
     } catch (exc: unknown) {
       setError(exc instanceof Error ? exc.message : "Сервис дашборда недоступен.");
     } finally {

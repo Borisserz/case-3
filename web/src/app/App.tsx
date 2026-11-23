@@ -21,6 +21,7 @@ import {
   DASHBOARD_SHOT_TOAST,
   freshShots,
   isDashboardSource,
+  matchDashboardFile,
   phraseMiss,
   phrasePlan,
   phraseRoute,
@@ -510,12 +511,57 @@ export default function App() {
   );
 
   const openDashboardCard = useCallback((id: string) => {
-    const card = cardsRef.current.get(id);
+    const found = msgs.find((msg) => msg.id === id && msg.role === "bot");
+    const fromMsg = found?.role === "bot" ? found.dashboard : undefined;
+    const card = cardsRef.current.get(id) || fromMsg;
     if (!card) return;
+    cardsRef.current.set(id, card);
     activeCardId.current = id;
-    setPhraseViewer(card.viewer.includes("/open") ? card.viewer : null);
-    setDashboardOpen(true);
-  }, []);
+    if (card.viewer.includes("/open")) {
+      setPhraseViewer(card.viewer);
+      setDashboardOpen(true);
+      return;
+    }
+    const known = (card.mrt || "").trim();
+    void (async () => {
+      let mrt = known;
+      if (!mrt) {
+        try {
+          const listed = await fetch("/api/dashboard/dashboards");
+          const body = listed.ok ? await listed.json() : null;
+          const rows = Array.isArray(body?.dashboards) ? body.dashboards : [];
+          mrt = matchDashboardFile(card.shots, rows);
+        } catch {
+          mrt = "";
+        }
+      }
+      if (!mrt) {
+        setPhraseViewer(null);
+        setDashboardOpen(true);
+        return;
+      }
+      try {
+        const res = await fetch("/api/dashboard/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mrt }),
+        });
+        const opened = res.ok ? await res.json() : null;
+        const viewer = typeof opened?.viewer === "string" ? opened.viewer : "";
+        if (!viewer.includes("/open")) {
+          setPhraseViewer(null);
+          setDashboardOpen(true);
+          return;
+        }
+        putCard(id, { ...card, mrt, viewer });
+        setPhraseViewer(viewer);
+        setDashboardOpen(true);
+      } catch {
+        setPhraseViewer(null);
+        setDashboardOpen(true);
+      }
+    })();
+  }, [msgs, putCard]);
 
   const sendFromComposer = useCallback(async () => {
     const text = chat.trim();
@@ -928,11 +974,11 @@ export default function App() {
                     onShot={onDashboardShot}
                     shotCount={openDashboardShots}
                     viewerUrl={phraseViewer}
-                    onOpened={(url) => {
+                    onOpened={(url, mrt) => {
                       const id = activeCardId.current;
                       const card = id ? cardsRef.current.get(id) : undefined;
                       if (!id || !card) return;
-                      putCard(id, { ...card, viewer: url });
+                      putCard(id, { ...card, viewer: url, mrt: mrt || card.mrt });
                     }}
                   />
                 ) : null}

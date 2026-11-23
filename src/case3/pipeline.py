@@ -1226,22 +1226,38 @@ def run_pipeline(
         from case3.chat_turn import (
             chat_fallback,
             chat_report_block,
+            dashboard_landing,
             generate_chat_charts,
             generate_chat_diagram,
             try_chat_answer,
-            _markdown_data_rows,
         )
         from case3.dashboard_source import derivative_block
         from case3.turn_route import wants_chat_chart, wants_chat_diagram
 
         enriched_source = source_text or ""
         picture = wants_chat_chart(user_text) or wants_chat_diagram(user_text)
-        if picture and len(_markdown_data_rows(enriched_source)) < 2:
-            from case3.chat_memory import earlier_source
-
-            earlier = earlier_source(root, str(meta.get("prior_run_id") or ""))
-            if len(_markdown_data_rows(earlier)) >= 2:
-                enriched_source = earlier
+        from case3.chat_memory import (
+            dashboard_screens,
+            latest_dashboard_note,
+            source_for_followup,
+        )
+        prior = str(meta.get("prior_run_id") or "")
+        enriched_source = source_for_followup(
+            enriched_source,
+            dashboard_screens(root, prior),
+            user_text,
+            picture=picture,
+        )
+        landing = dashboard_landing(user_text)
+        asked = user_text
+        if not landing:
+            remembered = latest_dashboard_note(root, prior)
+            if remembered:
+                asked = (
+                    user_text
+                    + "\n\nЗаметка по этому экрану (уже сказано, целиком не повторяй):\n"
+                    + remembered
+                )
         if "## Производные" not in enriched_source:
             deriv = derivative_block(enriched_source)
             if deriv:
@@ -1255,13 +1271,12 @@ def run_pipeline(
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
             _emit_chat("answer", answer, "chat")
         else:
-            _publish_stage_lines("chat", user_text or enriched_source[:800])
-            report = chat_report_block(
-                root, str(meta.get("prior_run_id") or ""), user_text
-            )
+            if not landing:
+                _publish_stage_lines("chat", user_text or enriched_source[:800])
+            report = chat_report_block(root, prior, user_text)
             answer = try_chat_answer(
                 enriched_source,
-                user_text,
+                asked,
                 report=report,
                 on_delta=lambda piece: _emit_chat("answer", piece, "chat"),
             )
@@ -1290,6 +1305,12 @@ def run_pipeline(
         meta["output_mode"] = "chat"
         meta["chat_summary"] = answer
         meta["chat_opening"] = answer
+        if landing and not dry_run and answer and answer != chat_fallback():
+            meta["dashboard_note"] = answer
+            (out / "dashboard_note.md").write_text(
+                "# Заметка по экрану\n\n" + answer + "\n",
+                encoding="utf-8",
+            )
         from case3.chat_turn import session_title
 
         meta["title"] = session_title(user_text, enriched_source)
@@ -1366,6 +1387,21 @@ def run_pipeline(
             return _handle_insufficient_data(refusal_msg or "В запросе недостаточно данных.")
         if not user_intent.strip():
             intent = with_default_brief(intent, user_intent)
+
+        from case3.chat_memory import dashboard_screens, source_for_followup
+        from case3.turn_route import wants_chat_chart, wants_chat_diagram
+
+        prior = str(meta.get("prior_run_id") or "")
+        screened = source_for_followup(
+            source_raw,
+            dashboard_screens(root, prior),
+            user_intent,
+            picture=wants_chat_chart(user_intent) or wants_chat_diagram(user_intent),
+        )
+        if screened.strip() and screened != source_raw:
+            source_raw = screened
+            text_path = work / "screen_source.md"
+            text_path.write_text(screened, encoding="utf-8")
 
         if mode == "chat":
             from case3.chat_memory import focus_source

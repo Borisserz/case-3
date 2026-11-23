@@ -150,6 +150,8 @@ export type DashboardShot = {
 
 export type DashboardCard = {
   viewer: string;
+  /** .mrt that this card opened, so a later click raises the same file. */
+  mrt?: string;
   filters: Record<string, string>;
   shots: DashboardShot[];
   /** How many shots were already sent to the model. */
@@ -159,7 +161,7 @@ export type DashboardCard = {
 export const DASHBOARD_SHOT_TOAST = "Данные текущего экрана попали в чат.";
 
 export const DASHBOARD_ANALYSIS_ASK =
-  "Снятые экраны уже в тексте. Начни с одной фразы, что сейчас разберёшь эти данные и ответишь, затем сделай обычный разбор: что на экране и какой вывод.";
+  "Экраны уже в тексте. Коротко скажи, что на них, и что по этим числам можно спросить дальше. Длинный разбор в чат не пиши.";
 
 export function cardCaption(filters: Record<string, string>): string {
   const bits = Object.values(filters)
@@ -266,6 +268,56 @@ const PACKED_DOC = /^===== (.+?) =====$/;
 /** Parsed dashboard markdown, including several shots joined for the chat. */
 export function isDashboardSource(text: string): boolean {
   return /(?:^|\n)# Данные дашборда\s*(?:\n|$)/.test(text || "");
+}
+
+/** A saved chat turn's source, rebuilt as the card that opens the table. */
+export function dashboardCardFromSource(text: string): DashboardCard | null {
+  if (!isDashboardSource(text)) return null;
+  const shots = splitPackedSources(text)
+    .filter((part) => isDashboardSource(part.markdown))
+    .map((part) => ({
+      name: shotTitle(part.name, part.markdown),
+      markdown: part.markdown,
+      warnings: [] as string[],
+    }));
+  if (!shots.length) return null;
+  return { viewer: "", filters: {}, shots, analyzed: shots.length };
+}
+
+function _normDash(value: string): string {
+  return value
+    .toLocaleLowerCase("ru")
+    .replaceAll("ё", "е")
+    .replace(/\.mrt$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The .mrt whose name is the screen title. Empty when none of the files match. */
+export function matchDashboardFile(
+  shots: { name: string }[],
+  rows: { name: string; title?: string }[],
+): string {
+  const wanted = shots
+    .map((shot) => _normDash(shot.name))
+    .filter((name) => name.length >= 4);
+  let best = "";
+  let bestLen = 0;
+  for (const row of rows) {
+    const title = _normDash(row.title || "");
+    const stem = _normDash(row.name || "");
+    const len = Math.max(title.length, stem.length);
+    const hit = wanted.some(
+      (want) =>
+        (title.length >= 4 && (want === title || want.includes(title) || title.includes(want))) ||
+        (stem.length >= 4 && (want === stem || want.includes(stem) || stem.includes(want))),
+    );
+    if (hit && len > bestLen && row.name) {
+      best = row.name;
+      bestLen = len;
+    }
+  }
+  return best;
 }
 
 export function splitPackedSources(

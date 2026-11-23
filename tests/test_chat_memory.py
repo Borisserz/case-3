@@ -430,6 +430,103 @@ def test_memory_view_keeps_paragraphs_and_list_lines(tmp_path: Path):
     assert turn["dialogue"][0]["assistant"] == "Готово.\nСтрока осталась."
 
 
+def test_memory_view_keeps_the_dashboard_screen(tmp_path: Path) -> None:
+    from case3.chat_memory import memory_view
+
+    run_id = "source_20261123T120000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    src = tmp_path / "runs" / "uploads" / "screen.md"
+    src.parent.mkdir(parents=True)
+    src.write_text(
+        "# Данные дашборда\n\n## Заголовок\nПоступления\n\n| А | Б |\n| --- | --- |\n| Минск | 12 |\n",
+        encoding="utf-8",
+    )
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "source": str(src),
+                "chat_prompt": "разбери",
+                "chat_summary": "Выручка 12.",
+                "output_mode": "chat",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    view = memory_view(tmp_path, run_id)
+    assert view is not None
+    assert "Минск" in view["turns"][0]["dashboard_source"]
+
+
+def test_followup_uses_the_dashboard_screen_not_the_later_note(tmp_path: Path) -> None:
+    from case3.chat_memory import dashboard_screen, dashboard_screens, source_for_followup
+
+    screen = tmp_path / "runs" / "uploads" / "screen.md"
+    screen.parent.mkdir(parents=True)
+    screen.write_text(
+        "# Данные дашборда\n\n| Уровень | Факт |\n| --- | --- |\n| Минск | 12 |\n",
+        encoding="utf-8",
+    )
+    note = tmp_path / "runs" / "uploads" / "note.md"
+    note.write_text("сделай мне графики по данным", encoding="utf-8")
+    first = "source_20261123T120000Z"
+    second = "source_20261123T120100Z"
+    for run_id, prior, src in (
+        (first, "", screen),
+        (second, first, note),
+    ):
+        out = tmp_path / "runs" / "out" / run_id
+        out.mkdir(parents=True)
+        (out / "meta.json").write_text(
+            json.dumps({"run_id": run_id, "prior_run_id": prior, "source": str(src)}),
+            encoding="utf-8",
+        )
+    saved = dashboard_screen(tmp_path, second)
+    assert "Минск" in saved
+    assert "Минск" in source_for_followup("сделай мне графики по данным", saved, "сделай мне графики по данным", picture=True)
+    assert "Минск" in source_for_followup("сколько факт", saved, "сколько факт", picture=False)
+    long_other = "Договор\n\n" + ("пункт про срок. " * 80)
+    assert source_for_followup(long_other, saved, "что в договоре", picture=False) == long_other
+    brest = tmp_path / "runs" / "uploads" / "brest.md"
+    brest.write_text(
+        "# Данные дашборда\n\n| Уровень | Факт |\n| --- | --- |\n| Брест | 7 |\n",
+        encoding="utf-8",
+    )
+    older = "source_20261123T115900Z"
+    older_out = tmp_path / "runs" / "out" / older
+    older_out.mkdir(parents=True)
+    (older_out / "meta.json").write_text(
+        json.dumps({"run_id": older, "prior_run_id": "", "source": str(brest)}),
+        encoding="utf-8",
+    )
+    linked = json.loads((tmp_path / "runs" / "out" / first / "meta.json").read_text(encoding="utf-8"))
+    linked["prior_run_id"] = older
+    (tmp_path / "runs" / "out" / first / "meta.json").write_text(json.dumps(linked), encoding="utf-8")
+    both = dashboard_screens(tmp_path, second)
+    assert "Брест" in both and "Минск" in both
+    followed = source_for_followup("сколько по областям", both, "сколько по областям", picture=False)
+    assert "Брест" in followed and "Минск" in followed
+    gomel = "===== Гомель.md =====\n# Данные дашборда\n\n| Уровень | Факт |\n| --- | --- |\n| Гомель | 3 |\n"
+    three = source_for_followup(gomel, both, "ещё снимок", picture=False)
+    assert "Брест" in three and "Минск" in three and "Гомель" in three
+    report = source_for_followup(
+        "сделай отчёт по этим данным",
+        both,
+        "сделай отчёт по этим данным",
+        picture=False,
+    )
+    assert "Брест" in report and "Минск" in report
+    first_meta = tmp_path / "runs" / "out" / first / "meta.json"
+    stored = json.loads(first_meta.read_text(encoding="utf-8"))
+    stored["dashboard_note"] = "На экране поступления за январь."
+    first_meta.write_text(json.dumps(stored), encoding="utf-8")
+    from case3.chat_memory import latest_dashboard_note
+
+    assert "январь" in latest_dashboard_note(tmp_path, second)
+
+
 def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     from case3.chat_memory import memory_view
 

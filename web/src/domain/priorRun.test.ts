@@ -94,6 +94,24 @@ test("messagesFromMemory keeps paragraph breaks for the screen", () => {
   assert.equal(lines[1].lead, "Соберу ответ.\nБез новых чисел.");
 });
 
+test("messagesFromMemory restores the dashboard card from the saved screen", () => {
+  let n = 0;
+  const lines = messagesFromMemory(
+    [
+      {
+        chat_prompt: "разбери",
+        chat_summary: "Выручка 12.",
+        dashboard_source:
+          "# Данные дашборда\n\n## Заголовок\nПоступления за январь\n\n| А | Б |\n| --- | --- |\n| Минск | 12 |\n",
+      },
+    ],
+    () => `id${(n += 1)}`,
+  );
+  assert.equal(lines[1].role, "bot");
+  assert.equal(lines[1].dashboard?.shots[0]?.name, "Поступления за январь");
+  assert.match(lines[1].dashboard?.shots[0]?.markdown || "", /Минск/);
+});
+
 test("messagesFromMemory keeps uploaded photos on the user line", () => {
   let n = 0;
   const lines = messagesFromMemory(

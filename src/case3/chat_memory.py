@@ -110,7 +110,8 @@ def format_thread(turns: list[dict[str, Any]] | None) -> str:
         return ""
     lines = [
         "Разговор этого чата (не Source).",
-        "Числа и факты бери только из документов этого запроса. "
+        "Числа и факты бери из документов этого запроса. "
+        "Число из прошлого ответа повторяй, только если оно есть в этих документах. "
         "Прошлые ответы нужны, чтобы понять, о чём речь.",
     ]
     older = rows[:-_WINDOW] if len(rows) > _WINDOW else []
@@ -754,6 +755,9 @@ def _dialogue(meta: dict[str, Any]) -> list[dict[str, str]]:
     return out[-12:]
 
 
+_ON_THIS_DATA = re.compile(r"по\s+(?:этим\s+)?данным", re.IGNORECASE)
+
+
 def earlier_source(root: Path, prior_run_id: str) -> str:
     """Document of a previous turn. Empty when that turn had no file."""
     rid = (prior_run_id or "").strip()
@@ -764,6 +768,88 @@ def earlier_source(root: Path, prior_run_id: str) -> str:
         if text:
             return text
     return ""
+
+
+def dashboard_screen(root: Path, prior_run_id: str) -> str:
+    """Newest dashboard document in this chat. A later note without the screen is skipped."""
+    rid = (prior_run_id or "").strip()
+    if not rid:
+        return ""
+    for turn in reversed(load_chain(root, rid)):
+        text = _source_file(root, turn).strip()
+        if "# Данные дашборда" in text:
+            return text
+    return ""
+
+
+def dashboard_parts(text: str) -> list[tuple[str, str]]:
+    """Every packed screen. The five-document cap does not apply."""
+    raw = (text or "").strip()
+    if "# Данные дашборда" not in raw:
+        return []
+    marks = list(_PART.finditer(raw))
+    if not marks:
+        return [("Экран", raw)]
+    parts: list[tuple[str, str]] = []
+    for index, mark in enumerate(marks):
+        start = mark.end()
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(raw)
+        body = raw[start:end].strip()
+        if "# Данные дашборда" not in body:
+            continue
+        name = " ".join(mark.group(1).split()) or "Экран"
+        parts.append((name, body))
+    return parts
+
+
+def _merge_screens(chunks: list[str]) -> str:
+    seen: set[str] = set()
+    parts: list[tuple[str, str]] = []
+    for chunk in chunks:
+        for name, body in dashboard_parts(chunk):
+            key = " ".join(body.split())
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            parts.append((name, body))
+    return format_sources(parts)
+
+
+def dashboard_screens(root: Path, prior_run_id: str) -> str:
+    """Every dashboard snapshot in this chat, oldest first. A repeated screen is kept once."""
+    rid = (prior_run_id or "").strip()
+    if not rid:
+        return ""
+    return _merge_screens(
+        [_source_file(root, turn) for turn in load_chain(root, rid)]
+    )
+
+
+def latest_dashboard_note(root: Path, prior_run_id: str) -> str:
+    """Short note written when the screen was saved. Empty when this chat has none."""
+    rid = (prior_run_id or "").strip()
+    if not rid:
+        return ""
+    for turn in reversed(load_chain(root, rid)):
+        text = str(turn.get("dashboard_note") or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def source_for_followup(current: str, screen: str, user_text: str, *, picture: bool) -> str:
+    """Keep every saved screen. A different long document stays as it is."""
+    here = current or ""
+    saved = _merge_screens([screen, here])
+    if not saved:
+        return here
+    if dashboard_parts(here):
+        return saved
+    asked = picture or bool(_ON_THIS_DATA.search(user_text or ""))
+    same_as_question = here.strip() == (user_text or "").strip()
+    if asked or same_as_question or len(here) < 600:
+        return saved
+    return here
 
 
 def _source_file(root: Path, meta: dict[str, Any]) -> str:
@@ -856,20 +942,22 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
     for meta in chain:
         edit = meta.get("last_edit")
         turn_id = str(meta.get("run_id") or "")
-        turns.append(
-            {
-                "run_id": turn_id,
-                "chat_prompt": _clip_prose(meta.get("chat_prompt"), 2000),
-                "chat_summary": _clip_prose(
-                    meta.get("chat_summary") or meta.get("chat_opening"), 2000
-                ),
-                "chat_opening": _clip_prose(meta.get("chat_opening"), 600),
-                "output_mode": _clip(meta.get("output_mode"), 20),
-                "dialogue": _dialogue(meta),
-                "last_edit": edit if isinstance(edit, dict) else {},
-                "photos": _photo_thumbs(root, turn_id),
-            }
-        )
+        row: dict[str, Any] = {
+            "run_id": turn_id,
+            "chat_prompt": _clip_prose(meta.get("chat_prompt"), 2000),
+            "chat_summary": _clip_prose(
+                meta.get("chat_summary") or meta.get("chat_opening"), 2000
+            ),
+            "chat_opening": _clip_prose(meta.get("chat_opening"), 600),
+            "output_mode": _clip(meta.get("output_mode"), 20),
+            "dialogue": _dialogue(meta),
+            "last_edit": edit if isinstance(edit, dict) else {},
+            "photos": _photo_thumbs(root, turn_id),
+        }
+        shot = _clip_prose(_source_file(root, meta), 200_000)
+        if "# Данные дашборда" in shot:
+            row["dashboard_source"] = shot
+        turns.append(row)
     source = ""
     for meta in reversed(chain):
         source = _source_file(root, meta)

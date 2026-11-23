@@ -1,10 +1,13 @@
 /** Latest completed bot run in this chat, for the next POST /api/run. */
 
+import { dashboardCardFromSource, type DashboardCard } from "./dashboardCapture";
+
 export type MemoryTurn = {
   run_id?: string;
   chat_prompt?: string;
   chat_summary?: string;
   chat_opening?: string;
+  dashboard_source?: string;
   dialogue?: { user?: string; assistant?: string }[];
   photos?: { url: string; name?: string }[];
 };
@@ -15,6 +18,7 @@ export type ThreadLine = {
   text: string;
   lead?: string;
   photos?: { url: string; name?: string }[];
+  dashboard?: DashboardCard;
 };
 
 export function messagesFromMemory(
@@ -35,13 +39,15 @@ export function messagesFromMemory(
     }
     const summary = (turn.chat_summary || "").trim();
     const opening = (turn.chat_opening || "").trim();
-    if (summary || opening) {
+    const dashboard = dashboardCardFromSource(turn.dashboard_source || "") || undefined;
+    if (summary || opening || dashboard) {
       const lead = opening && opening !== summary ? opening : undefined;
       lines.push({
         id: id(),
         role: "bot",
         text: summary || opening,
         lead,
+        dashboard,
       });
     }
     for (const note of turn.dialogue || []) {

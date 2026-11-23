@@ -229,6 +229,7 @@ export function useReportHistory({
                     role: "bot" as const,
                     text: line.text,
                     lead: line.lead,
+                    dashboard: line.dashboard,
                   },
             )
           : [];

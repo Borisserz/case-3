@@ -600,6 +600,45 @@ def test_chat_answer_does_not_read_the_memory_label_aloud():
     assert "77" in text
 
 
+def test_every_dashboard_shot_survives_a_short_budget():
+    from case3.chat_turn import _clip_source
+
+    shots = []
+    for name, city in (("one", "Минск"), ("two", "Брест"), ("three", "Гомель")):
+        shots.append(
+            f"===== {name}.md =====\n# Данные дашборда\n\n{city}\n\n" + ("строка\n" * 40)
+        )
+    packed = "\n\n".join(shots)
+    shown = _clip_source(packed, 500, focus="сколько")
+    assert "Минск" in shown and "Брест" in shown and "Гомель" in shown
+
+
+def test_dashboard_landing_stops_after_four_sentences():
+    class _Cap:
+        def __init__(self) -> None:
+            self.tokens = 0
+            self.user = ""
+
+        def stream(self, **kwargs):
+            self.tokens = int(kwargs.get("max_tokens") or 0)
+            self.user = kwargs.get("user_text") or ""
+            yield (
+                "На экране поступления. Факт уже в таблице. "
+                "Спросите уровень. Это четвёртое. Это пятое лишнее."
+            )
+
+    client = _Cap()
+    text = try_chat_answer(
+        "# Данные дашборда\n\nФакт 10.",
+        "Экраны уже в тексте. Длинный разбор в чат не пиши.",
+        client=client,
+    )
+    assert client.tokens == 320
+    assert "не больше четырёх" in client.user
+    assert "четвёртое" in text
+    assert "пятое" not in text
+
+
 def test_a_plain_question_has_no_limit_note():
     client = _Seq(["Касса была 20."])
     try_chat_answer("Касса была 20.", "что с кассой", client=client)
