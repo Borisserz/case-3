@@ -82,6 +82,7 @@ export function DashboardPickModal({
   const [openedUrl, setOpenedUrl] = useState(viewerOverride || "");
   const [list, setList] = useState<Dash[] | null>(null);
   const [opening, setOpening] = useState("");
+  const [lit, setLit] = useState("");
   const [phase, setPhase] = useState<"idle" | "shot" | "attach">("idle");
   const [error, setError] = useState("");
   const busy = phase !== "idle" || Boolean(opening);
@@ -209,6 +210,8 @@ export function DashboardPickModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const litRow = (list || []).find((row) => row.name === lit && row.preview);
+
   if (!viewing) {
     return (
       <div
@@ -248,6 +251,10 @@ export function DashboardPickModal({
                 type="button"
                 className={`dash-pick-item is-sketch-${index % 3}`}
                 disabled={busy}
+                onMouseEnter={() => {
+                  if (row.preview) setLit(row.name);
+                }}
+                onMouseLeave={() => setLit("")}
                 onClick={() => void choose(row.name)}
               >
                 <span
@@ -255,18 +262,11 @@ export function DashboardPickModal({
                   aria-hidden="true"
                 >
                   {row.preview ? (
-                    <>
-                      <img
-                        className="dash-pick-photo"
-                        src={previewUrl(row.name)}
-                        alt=""
-                      />
-                      <img
-                        className="dash-pick-zoom"
-                        src={previewUrl(row.name)}
-                        alt=""
-                      />
-                    </>
+                    <img
+                      className="dash-pick-photo"
+                      src={previewUrl(row.name)}
+                      alt=""
+                    />
                   ) : (
                     <>
                       <span className="dash-pick-kpis">
@@ -297,6 +297,14 @@ export function DashboardPickModal({
             ) : null}
           </div>
         </div>
+        {litRow ? (
+          <div className="dash-pick-lightbox" aria-hidden="true">
+            <figure className="dash-pick-lightbox-sheet">
+              <img src={previewUrl(litRow.name)} alt="" />
+              <figcaption>{litRow.title || litRow.name}</figcaption>
+            </figure>
+          </div>
+        ) : null}
       </div>
     );
   }

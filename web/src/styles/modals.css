@@ -906,7 +906,8 @@
 }
 
 .stimul-sheet.is-pick {
-  width: min(52rem, 100%);
+  width: min(72rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   max-height: min(40rem, calc(100vh - 2.5rem));
   display: flex;
   flex-direction: column;
@@ -915,7 +916,7 @@
 .dash-pick-list {
   overflow: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 0.75rem;
   padding: 0.2rem 1rem 1.1rem;
 }
@@ -978,25 +979,44 @@
   object-position: top center;
 }
 
-.dash-pick-zoom {
-  display: none;
+.dash-pick-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 2.2rem 1.4rem 1.6rem;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  pointer-events: none;
 }
 
-.dash-pick-item:hover:not(:disabled) .dash-pick-zoom {
-  display: block;
-  position: fixed;
-  z-index: 1400;
-  left: 50%;
-  top: 46%;
-  width: min(46rem, 78vw);
-  height: min(30rem, 68vh);
-  object-fit: contain;
-  transform: translate(-50%, -50%);
+.dash-pick-lightbox-sheet {
+  margin: 0;
+  width: min(58rem, 88vw);
+  display: grid;
   background: var(--sheet);
-  border-radius: 14px;
+  border-radius: 16px;
+  overflow: hidden;
   box-shadow:
-    0 18px 50px color-mix(in srgb, var(--ink) 22%, transparent);
-  pointer-events: none;
+    0 1px 0 color-mix(in srgb, var(--ink) 4%, transparent),
+    0 24px 60px color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.dash-pick-lightbox-sheet img {
+  display: block;
+  width: 100%;
+  height: min(62vh, 34rem);
+  object-fit: contain;
+  background: var(--paper);
+}
+
+.dash-pick-lightbox-sheet figcaption {
+  padding: 0.8rem 1.05rem 0.95rem;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .dash-pick-kpis,
