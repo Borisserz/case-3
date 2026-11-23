@@ -516,3 +516,55 @@ def test_files_from_shot_refuses_a_bare_remote_path() -> None:
         files_from_shot(payload, fetch_named=lambda _name: None)
     assert "той же машине" in caught.value.message
     assert caught.value.code == "no_bytes"
+
+
+def test_open_named_dashboard_supports_zero_filters_and_lan_path() -> None:
+    class _ZeroFilterClient:
+        def __init__(self) -> None:
+            self.posts: list[tuple[str, dict]] = []
+
+        def get(self, url: str, **_kwargs):
+            assert "mrt=plain.mrt" in url
+            return _Resp(200, {"mrt": "plain.mrt", "filters": [], "count": 0})
+
+        def post(self, url: str, json=None, **_kwargs):
+            self.posts.append((url, dict(json or {})))
+            return _Resp(
+                200,
+                {
+                    "ok": True,
+                    "url": "http://0.0.0.0:8040/open?mrt=plain.mrt&rf=tok1",
+                    "path": "/open?mrt=plain.mrt&rf=tok1",
+                },
+            )
+
+    c = _ZeroFilterClient()
+    opened = open_named_dashboard("http://192.168.1.50:8040", "plain.mrt", c)
+    assert opened["mrt"] == "plain.mrt"
+    assert opened["filters"] == {}
+    assert opened["viewer"] == "http://192.168.1.50:8040/open?mrt=plain.mrt&rf=tok1"
+    assert c.posts == [("http://192.168.1.50:8040/open?open=0", {"filters": {}, "mrt": "plain.mrt"})]
+
+
+def test_phrase_has_respects_numeric_and_word_boundaries() -> None:
+    from case3.dashboard_remote import _phrase_has
+
+    assert _phrase_has("выручка 1000000 рублей", "100") is False
+    assert _phrase_has("данные за 2025 год", "2025") is True
+    assert _phrase_has("февраль 25", "2025") is True
+    assert _phrase_has("код 125", "2025") is False
+
+
+def test_fetch_shot_payload_forwards_mrt_param() -> None:
+    from case3.dashboard_remote import fetch_shot_payload
+
+    seen: list[str] = []
+
+    class _Client:
+        def get(self, url: str, **_kwargs):
+            seen.append(url)
+            return _Resp(200, {"ok": True})
+
+    body = fetch_shot_payload("http://127.0.0.1:8040", _Client(), mrt="a.mrt")
+    assert body == {"ok": True}
+    assert seen == ["http://127.0.0.1:8040/shot?mrt=a.mrt"]

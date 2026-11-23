@@ -84,10 +84,21 @@ _BRIEF_LINE = {
 }
 
 
+def _plain_user_prompt(text: str | None) -> str:
+    """Strip internal memory/UI sections so openings only quote the user's request."""
+    raw = text or ""
+    cut = len(raw)
+    for marker in _MEMORY_AT:
+        idx = raw.find(marker)
+        if 0 <= idx < cut:
+            cut = idx
+    return raw[:cut].strip()
+
+
 def opening_fallback(kind: str, user_text: str) -> str:
     """Local line when the opening model is unavailable. Does not claim the file is done."""
     label = _KIND_LABEL.get(kind, "материал")
-    topic = " ".join((user_text or "").split())
+    topic = " ".join(_plain_user_prompt(user_text).split())
     if len(topic) > 90:
         topic = topic[:89].rstrip() + "…"
     if topic:
@@ -647,7 +658,33 @@ def _speak(
                 reasoning="off",
             )
         )
-    return "".join(parts).strip()
+    out = "".join(parts).strip()
+    if (
+        out
+        and getattr(client, "last_finish_reason", "") == "length"
+        and out.rstrip()[-1] not in ".!?»\")…]"
+        and hasattr(client, "complete")
+    ):
+        try:
+            cont = client.complete(
+                system=system,
+                user_text=(
+                    user_text
+                    + "\n\nНачало ответа уже написано:\n"
+                    + out[-1200:]
+                    + "\n\nЗаверши последнюю мысль и итог кратко (2–4 предложения), без повторения начала."
+                ),
+                reasoning="off",
+            )
+        except (LLMError, LLMConfigError, OSError, ValueError):
+            cont = ""
+        cont_s = (cont or "").strip()
+        if cont_s:
+            sep = "" if out.endswith((" ", "\n", "—", "-")) else " "
+            out = (out + sep + cont_s).strip()
+            if on_delta:
+                on_delta(sep + cont_s)
+    return out
 
 
 def _client(max_tokens: int, timeout_s: float) -> LLMClient:
@@ -683,17 +720,18 @@ def try_opening(
     on_delta: Callable[[str], None] | None = None,
 ) -> str:
     """Short line before the artifact job. Always returns Russian text."""
-    fallback = opening_fallback(kind, user_text)
+    plain = _plain_user_prompt(user_text)
+    fallback = opening_fallback(kind, plain)
     system = load_prompt("chat_opening").strip()
     user = (
         f"Артефакт: {_KIND_LABEL.get(kind, kind)}.\n"
-        f"Запрос:\n{(user_text or '').strip()[:1500] or '(только вложение)'}"
+        f"Запрос:\n{plain[:1500] or '(только вложение)'}"
     )
     text = ""
     try:
-        llm = client or _client(320, 25.0)
+        llm = client or _client(1024, 30.0)
         text = _accepted(
-            _speak(llm, system=system, user_text=user, max_tokens=320, on_delta=None),
+            _speak(llm, system=system, user_text=user, max_tokens=1024, on_delta=None),
             block_done=True,
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
@@ -1018,11 +1056,166 @@ def choice_instruction(intent: str) -> tuple[str, set[str]]:
     return "", set()
 
 
+def _derived_table_math_norms(source: str) -> set[str]:
+    """Column, prefix-group, and positive/negative deviation subtotals from Source tables."""
+    from decimal import Decimal
+
+    from case3.dashboard_source import (
+        _CODE_HEADER,
+        _YEAR_HEADER,
+        _cell_decimal,
+        _find_fact_plan_pair,
+        _is_total_row,
+        _label_column,
+        _markdown_tables,
+    )
+
+    out: set[str] = set()
+
+    def _add_dec(val: Decimal) -> None:
+        for d in (val, abs(val)):
+            if d == d.to_integral_value():
+                out.add(str(int(d)))
+            else:
+                s = f"{d:.2f}".rstrip("0").rstrip(".")
+                out.add(s)
+                out.add(f"{d:.1f}".rstrip("0").rstrip("."))
+
+    for _title, rows in _markdown_tables(source or ""):
+        if len(rows) < 2:
+            continue
+        header, body = rows[0], rows[1:]
+        data = [row for row in body if not _is_total_row(row)]
+        if len(data) < 2:
+            continue
+        label_at = _label_column(data)
+        width = max(len(row) for row in rows)
+        prefixes: list[str] = []
+        for row in data:
+            lbl = row[label_at].strip() if label_at is not None and label_at < len(row) else ""
+            if " — " in lbl:
+                prefixes.append(lbl.split(" — ", 1)[0].strip())
+            elif " - " in lbl:
+                prefixes.append(lbl.split(" - ", 1)[0].strip())
+            else:
+                prefixes.append("")
+        has_prefix_groups = len({p for p in prefixes if p}) >= 2
+        for col in range(width):
+            if label_at is not None and col == label_at:
+                continue
+            name = header[col].strip() if col < len(header) else ""
+            if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
+                continue
+            col_vals: list[Decimal] = []
+            by_pref: dict[str, list[Decimal]] = {}
+            for pref, row in zip(prefixes, data):
+                v = _cell_decimal(row[col].strip()) if col < len(row) else None
+                if v is None:
+                    continue
+                col_vals.append(v)
+                if has_prefix_groups and pref:
+                    by_pref.setdefault(pref, []).append(v)
+            if len(col_vals) >= 2:
+                _add_dec(sum(col_vals, Decimal(0)))
+                pos = [v for v in col_vals if v > 0]
+                neg = [v for v in col_vals if v < 0]
+                if len(pos) >= 2:
+                    _add_dec(sum(pos, Decimal(0)))
+                if len(neg) >= 2:
+                    _add_dec(sum(neg, Decimal(0)))
+                for pvals in by_pref.values():
+                    if len(pvals) >= 2:
+                        _add_dec(sum(pvals, Decimal(0)))
+        pair = _find_fact_plan_pair(header)
+        if pair is not None and has_prefix_groups:
+            fcol, pcol = pair
+            fp_pref: dict[str, tuple[Decimal, Decimal]] = {}
+            for pref, row in zip(prefixes, data):
+                if not pref:
+                    continue
+                fv = _cell_decimal(row[fcol].strip()) if fcol < len(row) else None
+                pv = _cell_decimal(row[pcol].strip()) if pcol < len(row) else None
+                if fv is not None and pv is not None:
+                    sf, sp = fp_pref.get(pref, (Decimal(0), Decimal(0)))
+                    fp_pref[pref] = (sf + fv, sp + pv)
+            for sf, sp in fp_pref.values():
+                if sp > 0:
+                    _add_dec(sf * Decimal(100) / sp)
+                    _add_dec(sf - sp)
+    return out
+
+
+_CHAT_CARDINAL = re.compile(
+    r"(?:\bтоп[-\s]?(\d{1,2})\b|\b(?:все(?:го)?\s+)?(\d{1,2})\s+"
+    r"(?:регион\w*|област\w*|район\w*|инспекц\w*|позиц\w*|строк\w*|категор\w*|город\w*|лидер\w*|аутсайдер\w*|отстающ\w*|плюс\w*|минус\w*))",
+    re.IGNORECASE,
+)
+
+
+def _filter_verifiable_stray(
+    text: str,
+    stray: list[str],
+    allowed: set[str],
+    source: str,
+    *,
+    message_ok: set[str] | None = None,
+) -> list[str]:
+    if not stray:
+        return []
+    from case3.fact_ground import _is_small_cardinal_in_clause, _verifies_math
+
+    derived = _derived_table_math_norms(source)
+    full_pool = allowed | derived
+    verified: set[str] = set()
+    for line in (text or "").splitlines():
+        for m in _CHAT_CARDINAL.finditer(line):
+            hit = m.group(1) or m.group(2)
+            if hit and 1 <= int(hit) <= 50:
+                verified.add(str(int(hit)))
+        for token in stray:
+            norm = _norm_num(token)
+            if not norm or norm in verified:
+                continue
+            if norm in full_pool:
+                verified.add(norm)
+            elif _is_small_cardinal_in_clause(line, norm):
+                verified.add(norm)
+            elif (message_ok or derived) and _verifies_math(
+                line, norm, full_pool, (message_ok or set()) | derived
+            ):
+                verified.add(norm)
+    return [tok for tok in stray if _norm_num(tok) not in verified]
+
+
 def _allowed_norms(source: str, intent: str, drop: set[str]) -> set[str]:
     have = number_norms(source) | number_norms(_request_blob(intent)) | user_stated_norms(intent)
     # Prose often phrases negative deviations as positive magnitudes («отставание на 1 527»).
     have = have | {n[1:] for n in have if n.startswith("-")}
     return have - drop
+
+
+def _visual_memory_context(intent: str, extra_context: str = "") -> str:
+    """Preserve prior chat thread + scenario analysis for inline chart/diagram prompts."""
+    raw = intent or ""
+    earliest = len(raw)
+    for marker in _MEMORY_AT:
+        if marker == "\n\nТребования UI:":
+            continue
+        pos = raw.find(marker)
+        if pos != -1 and pos < earliest:
+            earliest = pos
+    parts: list[str] = []
+    if earliest < len(raw):
+        tail = raw[earliest:].strip()
+        ui_pos = tail.find("\n\nТребования UI:")
+        if ui_pos != -1:
+            tail = tail[:ui_pos].strip()
+        if tail:
+            parts.append(tail[:3500])
+    extra = (extra_context or "").strip()
+    if extra:
+        parts.append("Анализ и расчёты текущего ответа:\n" + extra[:2500])
+    return "\n\n".join(parts)
 
 
 def generate_chat_charts(
@@ -1034,6 +1227,8 @@ def generate_chat_charts(
     figs_dir,
     charts_dir,
     client: LLMClient | None = None,
+    extra_context: str = "",
+    previous_chart: dict | None = None,
 ) -> tuple[list[dict], dict[str, dict]]:
     """Build and render 1..max_charts grounded Chart.js PNGs for an inline chat turn."""
     from pathlib import Path
@@ -1056,16 +1251,32 @@ def generate_chat_charts(
     palette_hint = "\n".join(intent_palette_lines(palette))
     system = (
         "Ты визуализатор аналитики Liber. Построй по запросу 1-"
-        f"{cap} Chart.js график(а) строго по числам из Source.\n"
+        f"{cap} Chart.js график(а) строго по числам из Source и согласованного сценария.\n"
         f"Допустимые type: {types_list}.\n"
         f"{palette_hint}\n"
-        "Пиши компактный <canvas id='c'> + <script>new Chart(...)</script> (до 25 строк, без CSS и комментариев).\n"
+        "Холст 1100×560. Не задавай маленький canvas и не ставь width в style. "
+        "Подписи категорий целиком, шрифт осей не меньше 16. График заполняет холст.\n"
+        "Пиши <canvas id='c' width='1100' height='560'></canvas>"
+        "<script>new Chart(document.getElementById('c'), {type: 'bar', data: {labels: ['А', 'Б'], datasets: [{label: 'Показатель', data: [10, 20]}]}, options: {responsive: false}});</script> "
+        "(подставь реальные подписи, числа и тип из Source; никогда не пиши многоточие `...` в JS, без CSS и комментариев).\n"
         "Верни ТОЛЬКО JSON-объект в блоке ```json вида:\n"
         '{"charts": [{"id": "cht_01", "type": "bar", "caption": "...", "html": "<canvas id=\'c\'></canvas><script>...</script>"}]}'
     )
     message = latest_user_line(intent) or intent or "Построй график по данным."
-    clipped_src = _clip_source(source, focus=message)
-    user_prompt = f"ЗАПРОС:\n{message}\n\nSOURCE:\n{clipped_src}"
+    mem_ctx = _visual_memory_context(intent, extra_context)
+    clipped_src = _clip_source(source, focus=f"{message}\n{mem_ctx}".strip())
+    prompt_parts = [f"ЗАПРОС:\n{message}"]
+    if isinstance(previous_chart, dict) and (previous_chart.get("html") or "").strip():
+        prev_type = str(previous_chart.get("type") or "")
+        prev_cap = str(previous_chart.get("caption") or "")
+        prev_html = str(previous_chart.get("html") or "")[:3000]
+        prompt_parts.append(
+            f"ТЕКУЩИЙ ГРАФИК ДЛЯ ДОРАБОТКИ (type={prev_type}, caption={prev_cap}):\n{prev_html}"
+        )
+    if mem_ctx:
+        prompt_parts.append(mem_ctx)
+    prompt_parts.append(f"SOURCE:\n{clipped_src}")
+    user_prompt = "\n\n".join(prompt_parts)
 
     llm = client or _client(_CHAT_ANSWER_TOKENS, 120.0)
     try:
@@ -1097,6 +1308,13 @@ def generate_chat_charts(
     else:
         grounded = ensure_all_charts_match_types(grounded)
     grounded = polish_charts(grounded, palette_id=palette)
+    from case3.chart_harden import full_chat_canvas
+
+    for item in grounded:
+        item["html"] = full_chat_canvas(
+            str(item.get("html") or ""),
+            chart_type=str(item.get("type") or ""),
+        )
 
     out_figs = Path(figs_dir)
     out_charts = Path(charts_dir)
@@ -1118,6 +1336,8 @@ def generate_chat_diagram(
     palette_id: str = "atelier",
     figs_dir,
     client: LLMClient | None = None,
+    extra_context: str = "",
+    previous_diagram: dict | None = None,
 ) -> tuple[list[dict], dict[str, dict]]:
     """One Mermaid schema from the chat text. No report file."""
     from pathlib import Path
@@ -1127,10 +1347,20 @@ def generate_chat_diagram(
     from case3.slides_media import ensure_diagram_pngs
 
     llm = client or _client(2048, 60.0)
+    message = latest_user_line(intent) or intent
+    mem_ctx = _visual_memory_context(intent, extra_context)
+    diag_parts = [message]
+    if isinstance(previous_diagram, dict):
+        prev_code = str(previous_diagram.get("mermaid") or previous_diagram.get("code") or "").strip()
+        if prev_code:
+            diag_parts.append(f"ТЕКУЩАЯ СХЕМА ДЛЯ ДОРАБОТКИ:\n{prev_code[:3000]}")
+    if mem_ctx:
+        diag_parts.append(mem_ctx)
+    diag_intent = "\n\n".join(diag_parts)
     try:
         diagrams = complete_diagrams(
-            intent=latest_user_line(intent) or intent,
-            source_text=_clip_source(source, focus=latest_user_line(intent)),
+            intent=diag_intent,
+            source_text=_clip_source(source, focus=diag_intent),
             max_diagrams=1,
             client=llm,
             palette=normalize_palette_id(palette_id),
@@ -1176,6 +1406,7 @@ def _ask_model(
     user_text: str,
     *,
     max_tokens: int = _CHAT_ANSWER_TOKENS,
+    on_delta: Callable[[str], None] | None = None,
 ) -> str:
     try:
         return _accepted(
@@ -1184,7 +1415,7 @@ def _ask_model(
                 system=system,
                 user_text=user_text,
                 max_tokens=max_tokens,
-                on_delta=None,
+                on_delta=on_delta,
             )
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
@@ -1401,6 +1632,7 @@ def try_chat_answer(
     *,
     client: LLMClient | None = None,
     on_delta: Callable[[str], None] | None = None,
+    on_replace: Callable[[str], None] | None = None,
     report: str = "",
 ) -> str:
     """Full chat answer. No TeX.
@@ -1443,8 +1675,31 @@ def try_chat_answer(
         )
     llm = client or _client(answer_tokens, 60.0 if landing else 180.0)
     allowed = _allowed_norms(source, intent, drop)
-    text = _ask_model(llm, system, user, max_tokens=answer_tokens)
-    stray = stray_numbers(text, allowed) if text else []
+    msg_ok = number_norms(latest_user_line(intent))
+    streamed_chunks: list[str] = []
+
+    def _emit_chunk(piece: str) -> None:
+        if not piece:
+            return
+        streamed_chunks.append(piece)
+        if on_delta:
+            on_delta(piece)
+
+    text = _ask_model(
+        llm,
+        system,
+        user,
+        max_tokens=answer_tokens,
+        on_delta=_emit_chunk if (on_delta is not None and on_replace is not None) else None,
+    )
+    streamed_raw = "".join(streamed_chunks).strip()
+    stray = (
+        _filter_verifiable_stray(
+            text, stray_numbers(text, allowed), allowed, source, message_ok=msg_ok
+        )
+        if text
+        else []
+    )
     from case3.fact_ground import wrong_row_tokens
 
     said = latest_user_line(intent)
@@ -1460,7 +1715,9 @@ def try_chat_answer(
         retried = _ask_model(llm, system, retry, max_tokens=answer_tokens)
         if retried:
             text = retried
-            stray = stray_numbers(text, allowed)
+            stray = _filter_verifiable_stray(
+                text, stray_numbers(text, allowed), allowed, source, message_ok=msg_ok
+            )
         else:
             text = first_text
             stray = first_stray
@@ -1498,23 +1755,42 @@ def try_chat_answer(
     spoken = _hide_memory_marks(spoken)
     if landing:
         spoken = _first_sentences(spoken, 4)
-    if on_delta:
+    if streamed_chunks:
+        if spoken != streamed_raw and on_replace:
+            on_replace(spoken)
+    elif on_delta:
         on_delta(spoken)
     return spoken
 
 
+_ABBR_DOT = re.compile(
+    r"\b(г|тыс|млн|млрд|руб|коп|обл|р-н|стр|ст|ул|д|кв|им|п|см|др|пр|т)\.",
+    re.IGNORECASE,
+)
+
+
 def _without_stray(text: str, stray: list[str]) -> str:
-    """Drop a sentence whose only numbers are foreign. Keep the grounded sentences."""
+    """Drop sentences or table rows with foreign numbers without leaving blank holes."""
     norms = {_norm_num(token) for token in stray}
     if not text or not norms:
         return text or ""
     kept_lines: list[str] = []
     for line in text.split("\n"):
-        bits = re.split(r"([.!?]+(?:\s+|$))", line)
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            # Never turn table cells into empty holes; drop rows with unverified numbers.
+            if not re.match(r"^\|[\s\-:|]+\|$", stripped):
+                row_nums = {_norm_num(token) for token in _NUM.findall(line)}
+                if row_nums & norms:
+                    continue
+            kept_lines.append(line)
+            continue
+        protected = _ABBR_DOT.sub("\\1\x00", line)
+        bits = re.split(r"([.!?]+(?:\s+|$))", protected)
         kept: list[str] = []
         index = 0
         while index < len(bits):
-            chunk = bits[index]
+            chunk = bits[index].replace("\x00", ".")
             delim = bits[index + 1] if index + 1 < len(bits) else ""
             index += 2 if delim else 1
             nums = {_norm_num(token) for token in _NUM.findall(chunk)}
@@ -1525,8 +1801,13 @@ def _without_stray(text: str, stray: list[str]) -> str:
                     lambda match: "" if _norm_num(match.group(0)) in norms else match.group(0),
                     chunk,
                 )
+                chunk = re.sub(
+                    r"\*{2,}\s*[+\-−]?\s*(?:тыс\.?|млн\.?|млрд\.?)?\s*(?:руб\.?|%)?\s*\*{2,}",
+                    "",
+                    chunk,
+                )
             chunk = re.sub(r"[ \t]{2,}", " ", chunk).strip(" ,;")
-            if not chunk:
+            if not chunk or re.fullmatch(r"[\*+\-−\s]+", chunk):
                 continue
             kept.append(chunk)
             if delim:

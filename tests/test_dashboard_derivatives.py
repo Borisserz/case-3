@@ -172,3 +172,107 @@ def test_negative_thin_nbsp_and_units_still_compute_stats_and_ranks() -> None:
     assert "900" in block  # net sum 1200 + (-300)
     assert "место 1" in block
     assert "место 2" in block
+
+
+def test_codes_and_unp_are_excluded_and_merged_groups_forward_fill() -> None:
+    table = (
+        "| Область | Инспекция | УНП | План | Факт |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| г. Минск | Центральный | 100000017 | 100 | 120 |\n"
+        "|  | Советский | 100000034 | 80 | 90 |\n"
+        "| Гомельская | г. Гомель | 400000051 | 100 | 85 |\n"
+        "|  | Мозырский | 400000068 | 50 | 45 |\n"
+    )
+    block = derivative_block(table)
+    assert "УНП" not in block
+    assert "100000017" not in block
+    # Forward-filled group totals: г. Минск Fact=210, Plan=180; Гомельская Fact=130, Plan=150
+    assert "г. Минск: 210" in block
+    assert "Гомельская: 130" in block
+    assert "По «Область» (г. Минск): факт 210 vs план 180, откл. +30" in block
+
+
+def test_large_table_derivatives_stay_compact_with_top_bottom_and_counts() -> None:
+    rows = ["| Регион | План | Факт | Отклонение |", "| --- | --- | --- | --- |"]
+    for i in range(40):
+        plan = 100 + i * 10
+        fact = plan + (20 if i % 2 == 0 else -15)
+        diff = fact - plan
+        sign = "+" if diff >= 0 else ""
+        rows.append(f"| Район {i+1} | {plan} | {fact} | {sign}{diff} |")
+    block = derivative_block("\n".join(rows))
+    assert len(block) < 4000
+    assert "Топ-5" in block
+    assert "Отстающие" in block or "Худшие" in block or "Антилидеры" in block
+    assert "Выше плана" in block or "выше 100%" in block.casefold()
+    assert "Район 40" in block
+    assert "Район 1" in block
+
+
+def test_spaced_minus_percent_and_pp_units_parse_cleanly() -> None:
+    table = (
+        "| Регион | Изменение | Прирост |\n"
+        "| --- | --- | --- |\n"
+        "| Минск | - 20,7% | +2,5 п.п. |\n"
+        "| Брест | 17,8 % | -1,2 п.п. |\n"
+    )
+    block = derivative_block(table)
+    assert "Минск" in block
+    assert "Брест" in block
+    assert "-20,7" in block or "17,8" in block
+
+
+def test_dashboard_png_prompt_does_not_hardcode_imns() -> None:
+    from case3.prompts import load
+
+    prompt = load("dashboard_png")
+    assert "ИМНС" not in prompt
+    assert "Общие данные" not in prompt
+
+
+def test_source_lines_to_tex_closes_open_tabularx_on_long_tables() -> None:
+    from case3.generate import _source_lines_to_tex
+
+    rows = ["| Регион | План | Факт |", "| --- | --- | --- |"]
+    for i in range(190):
+        rows.append(f"| Район {i+1} | {100 + i} | {110 + i} |")
+    lines = _source_lines_to_tex("\n".join(rows))
+    joined = "\n".join(lines)
+    assert joined.count(r"\begin{xltabular}") == joined.count(r"\end{xltabular}")
+    assert joined.count(r"\begin{xltabular}") >= 1
+
+
+def test_join_page_tables_and_ffill_and_top10_concentration() -> None:
+    from case3.dashboard_source import join_page_tables, table_block
+
+    joined = join_page_tables(
+        [
+            [
+                [
+                    ["Область", "Район", "Факт", "План"],
+                    ["Минская", "Борисов", "10", "8"],
+                    ["", "Слуцк", "20", "12"],
+                ]
+            ],
+            [
+                [
+                    ["Итого", "", "30", "20", ""],
+                ]
+            ],
+        ]
+    )
+    assert len(joined) == 1
+    assert len(joined[0]) == 4
+    assert joined[0][-1][0] == "Итого"
+
+    md, _ = table_block(joined[0])
+    assert "| Минская | Слуцк | 20 | 12 |" in md
+
+    big = ["| Регион | Выручка |", "| --- | --- |"]
+    for i in range(30):
+        big.append(f"| Позиция {i+1} | {(i+1) * 10} |")
+    deriv = derivative_block("\n".join(big))
+    assert "Топ-10:" in deriv
+    assert "Концентрация: Топ-3" in deriv
+    assert "Топ-5" in deriv
+

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar, copy_context
@@ -272,6 +273,9 @@ def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:
         # mark_cancel_requested writes the flag on disk; the next stage
         # dump must not erase it.
         disk = read_meta(out)
+        wid = str(disk.get("workspace_id") or "").strip()
+        if wid and not str(meta.get("workspace_id") or "").strip():
+            meta["workspace_id"] = wid
         if disk.get("cancel_requested"):
             meta["cancel_requested"] = True
             if meta.get("status") == "ok":
@@ -361,6 +365,9 @@ def carry_chat_prompt(meta: dict[str, Any], previous: dict[str, Any] | None) -> 
     prior = str(prev.get("prior_run_id") or "").strip()
     if prior and not str(meta.get("prior_run_id") or "").strip():
         meta["prior_run_id"] = prior
+    wid = str(prev.get("workspace_id") or "").strip()
+    if wid and not str(meta.get("workspace_id") or "").strip():
+        meta["workspace_id"] = wid
     prev_edit = prev.get("last_edit")
     if isinstance(prev_edit, dict) and prev_edit and not meta.get("last_edit"):
         kept = {
@@ -389,6 +396,9 @@ def merge_desk_slides_fields(
     return meta
 
 
+_RUN_DIR_LOCK = threading.Lock()
+
+
 def prepare_run_dirs(
     source: Path,
     *,
@@ -399,18 +409,24 @@ def prepare_run_dirs(
     root = project_root.resolve()
     text_path = resolve_text_file(source)
     stem = text_path.stem
-    if run_id is None:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        run_id = f"{stem}_{stamp}"
-        extra = 2
-        while (root / "runs" / "out" / run_id).exists():
-            run_id = f"{stem}_{stamp}_{extra}"
-            extra += 1
-    work = root / "runs" / "work" / run_id
-    out = root / "runs" / "out" / run_id
-    logs = root / "runs" / "logs" / run_id
-    for d in (work, out, logs):
-        d.mkdir(parents=True, exist_ok=True)
+    with _RUN_DIR_LOCK:
+        if run_id is None:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            run_id = f"{stem}_{stamp}"
+            extra = 2
+            while True:
+                candidate = root / "runs" / "out" / run_id
+                try:
+                    candidate.mkdir(parents=True, exist_ok=False)
+                    break
+                except FileExistsError:
+                    run_id = f"{stem}_{stamp}_{extra}"
+                    extra += 1
+        work = root / "runs" / "work" / run_id
+        out = root / "runs" / "out" / run_id
+        logs = root / "runs" / "logs" / run_id
+        for d in (work, out, logs):
+            d.mkdir(parents=True, exist_ok=True)
     return run_id, text_path, work, out, logs
 
 
@@ -1101,6 +1117,7 @@ def run_pipeline(
     on_stage: Callable[[str, str | None], None] | None = None,
     user_figures: list[dict[str, Any]] | None = None,
     output_mode: str = "auto",
+    prior_run_id: str | None = None,
 ) -> Path:
     formats = resolve_pipeline_formats(formats)
     root = project_root.resolve()
@@ -1120,6 +1137,8 @@ def run_pipeline(
     mode = (output_mode or "auto").strip().lower()
     if mode not in {"report", "diagram", "presentation", "auto", "chat"}:
         mode = "auto"
+    if mode == "presentation":
+        formats = set()
     user_figs = list(user_figures or [])
     # Opt-in for generated fig_*; uploads (usr_*) still merge when attached.
     source_peek = ""
@@ -1167,6 +1186,8 @@ def run_pipeline(
     }
     merge_desk_slides_fields(meta, prev_desk)
     carry_chat_prompt(meta, prev_desk)
+    if prior_run_id and str(prior_run_id).strip():
+        meta["prior_run_id"] = str(prior_run_id).strip()
     EVENTS.ensure(run_id)
     from case3.run_events import note_craft_stage
 
@@ -1235,13 +1256,35 @@ def run_pipeline(
         from case3.turn_route import wants_chat_chart, wants_chat_diagram
 
         enriched_source = source_text or ""
-        picture = wants_chat_chart(user_text) or wants_chat_diagram(user_text)
+        def _prior_chat_visuals(prev_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+            if not prev_id:
+                return None, None
+            prev_out = root / "runs" / "out" / prev_id
+            if (prev_out / "report.pdf").is_file() or (prev_out / "report.docx").is_file():
+                return None, None
+            fj_file = prev_out / "figures.json"
+            if not fj_file.is_file():
+                return None, None
+            try:
+                prev_fj = json.loads(fj_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None, None
+            if not isinstance(prev_fj, dict):
+                return None, None
+            p_charts = [c for c in (prev_fj.get("charts") or []) if isinstance(c, dict)]
+            p_diags = [d for d in (prev_fj.get("diagrams") or []) if isinstance(d, dict)]
+            return (p_charts[0] if p_charts else None), (p_diags[0] if p_diags else None)
+
+        prior = str(meta.get("prior_run_id") or "")
+        prev_chart, prev_diagram = _prior_chat_visuals(prior)
+        picture = wants_chat_chart(user_text, has_prior_chart=prev_chart is not None) or wants_chat_diagram(
+            user_text, has_prior_diagram=prev_diagram is not None
+        )
         from case3.chat_memory import (
             dashboard_screens,
             latest_dashboard_note,
             source_for_followup,
         )
-        prior = str(meta.get("prior_run_id") or "")
         enriched_source = source_for_followup(
             enriched_source,
             dashboard_screens(root, prior),
@@ -1266,42 +1309,54 @@ def run_pipeline(
         if user_figs:
             materialize_user_figures(user_figs, out / "figures")
         charts_list: list[dict[str, Any]] = []
+        diagrams: list[dict[str, Any]] = []
         media_status: dict[str, dict[str, Any]] = {}
         if dry_run:
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
+            BUS.start(run_id)
             _emit_chat("answer", answer, "chat")
         else:
-            if not landing:
-                _publish_stage_lines("chat", user_text or enriched_source[:800])
             report = chat_report_block(root, prior, user_text)
+            BUS.start(run_id)
             answer = try_chat_answer(
                 enriched_source,
                 asked,
                 report=report,
-                on_delta=lambda piece: _emit_chat("answer", piece, "chat"),
+                on_delta=lambda piece: (
+                    BUS.publish(run_id, piece),
+                    _emit_chat("answer", piece, "chat"),
+                ),
+                on_replace=lambda full: BUS.replace(run_id, full),
             )
-            if wants_chat_chart(user_text) and charts_budget > 0:
+            eff_charts_budget = charts_budget or (1 if prev_chart is not None else 0)
+            if wants_chat_chart(user_text, has_prior_chart=prev_chart is not None) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
                     enriched_source,
                     intent or user_text,
-                    max_charts=charts_budget,
+                    max_charts=eff_charts_budget,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
                     figs_dir=out / "figures",
                     charts_dir=work / "charts",
+                    extra_context=answer,
+                    previous_chart=prev_chart,
                 )
-            if wants_chat_diagram(user_text):
+            if wants_chat_diagram(user_text, has_prior_diagram=prev_diagram is not None):
                 bump("charts", "рисую схему…")
                 diagrams, diagram_status = generate_chat_diagram(
                     enriched_source,
                     intent or user_text,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
                     figs_dir=out / "figures",
+                    extra_context=answer,
+                    previous_diagram=prev_diagram,
                 )
                 media_status.update(diagram_status)
                 if diagrams:
                     meta["diagrams_planned"] = [d.get("id") for d in diagrams if d.get("id")]
-                    meta["diagrams_ok"] = len(diagram_status)
+                    meta["diagrams_ok"] = sum(
+                        1 for v in diagram_status.values() if isinstance(v, dict) and v.get("ok")
+                    )
         meta["output_mode"] = "chat"
         meta["chat_summary"] = answer
         meta["chat_opening"] = answer
@@ -1314,11 +1369,25 @@ def run_pipeline(
         from case3.chat_turn import session_title
 
         meta["title"] = session_title(user_text, enriched_source)
+        if charts_list or diagrams:
+            (out / "figures.json").write_text(
+                json.dumps(
+                    {
+                        "figures": [],
+                        "charts": charts_list,
+                        "diagrams": diagrams,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            meta["media_status"] = media_status
         if charts_list:
             meta["charts_planned"] = [c["id"] for c in charts_list if c.get("id")]
-            meta["media_status"] = media_status
             meta["charts_ok"] = sum(
-                1 for v in media_status.values() if isinstance(v, dict) and v.get("ok")
+                1 for k, v in media_status.items() if k.startswith("cht_") and isinstance(v, dict) and v.get("ok")
             )
         if not dry_run and answer == chat_fallback():
             log.error("chat answer fell back to unavailable message run_id=%s", run_id)
@@ -1332,7 +1401,6 @@ def run_pipeline(
         _write_meta(meta, out, logs)
         (out / "chat_summary.txt").write_text(answer, encoding="utf-8")
         (logs / "chat_summary.txt").write_text(answer, encoding="utf-8")
-        BUS.start(run_id)
         BUS.finish(run_id, answer, "ok")
         EVENTS.publish_stage(run_id, "ok", detail="Ответ в чате", scope="pipeline")
         EVENTS.publish_terminal(run_id, "ok")
@@ -1374,9 +1442,39 @@ def run_pipeline(
         _write_meta(meta, out, logs)
 
     try:
-        # Tier 1: Fast input validation (intercept empty / data-free requests early).
+        # Tier 1: Restore prior dashboard/document source before input validation.
         source_raw = text_path.read_text(encoding="utf-8") if text_path.is_file() else ""
         user_intent = user_text_before_ui(intent)
+        from case3.chat_memory import (
+            dashboard_screens,
+            prior_document_source,
+            source_for_followup,
+        )
+        from case3.turn_route import wants_chat_chart, wants_chat_diagram
+
+        prior = str(meta.get("prior_run_id") or "")
+        if prior:
+            screened = source_for_followup(
+                source_raw,
+                dashboard_screens(root, prior),
+                user_intent,
+                picture=wants_chat_chart(user_intent) or wants_chat_diagram(user_intent),
+            )
+            if screened.strip() and screened != source_raw:
+                source_raw = screened
+                text_path = work / "screen_source.md"
+                text_path.write_text(screened, encoding="utf-8")
+            elif (
+                not source_raw.strip()
+                or source_raw.strip() == user_intent.strip()
+                or len(source_raw.strip()) < 240
+            ):
+                fallback_doc = prior_document_source(root, prior)
+                if fallback_doc.strip():
+                    source_raw = fallback_doc
+                    text_path = work / "screen_source.md"
+                    text_path.write_text(fallback_doc, encoding="utf-8")
+
         valid_in, refusal_msg = validate_input_heuristics(
             source_raw,
             user_intent,
@@ -1388,20 +1486,17 @@ def run_pipeline(
         if not user_intent.strip():
             intent = with_default_brief(intent, user_intent)
 
-        from case3.chat_memory import dashboard_screens, source_for_followup
-        from case3.turn_route import wants_chat_chart, wants_chat_diagram
+        from case3.dashboard_source import derivative_block
 
-        prior = str(meta.get("prior_run_id") or "")
-        screened = source_for_followup(
-            source_raw,
-            dashboard_screens(root, prior),
-            user_intent,
-            picture=wants_chat_chart(user_intent) or wants_chat_diagram(user_intent),
-        )
-        if screened.strip() and screened != source_raw:
-            source_raw = screened
-            text_path = work / "screen_source.md"
-            text_path.write_text(screened, encoding="utf-8")
+        if "## Производные" not in source_raw:
+            deriv = derivative_block(source_raw)
+            if deriv:
+                source_raw = (source_raw + "\n\n## Производные\n\n" + deriv).strip()
+        if source_raw != (text_path.read_text(encoding="utf-8") if text_path.is_file() else ""):
+            text_path = out / "source_effective.md"
+            text_path.write_text(source_raw, encoding="utf-8")
+            meta["source"] = str(text_path)
+            _write_meta(meta, out, logs)
 
         if mode == "chat":
             from case3.chat_memory import focus_source
@@ -1422,7 +1517,69 @@ def run_pipeline(
         # Re-enter llm for ETA / craft cursor (stage id unchanged → light bump).
         bump("llm", "жду модель…")
         tex_path = work / f"{stem}.tex"
-        if mode == "diagram":
+        if mode == "presentation":
+            # Presentation builds slides via slides_job; skip heavy LaTeX article prose.
+            from case3.chart_style import palette_from_intent
+            from case3.chat_memory import focus_source
+            from case3.chat_turn import generate_chat_charts
+            from case3.diagram_generate import complete_diagrams
+            from case3.llm_client import LLMClient, LLMConfig
+
+            asked = str(meta.get("chat_prompt") or "")
+            focused = focus_source(source_raw, asked) or source_raw
+            figures = merge_user_figures([], user_figs, max_images=images_budget)
+            charts = []
+            diagrams = []
+            if charts_budget > 0 and not dry_run:
+                charts, _chart_status = generate_chat_charts(
+                    focused,
+                    intent or "",
+                    max_charts=min(charts_budget, 4),
+                    palette_id=str(meta.get("chart_palette") or "atelier"),
+                    figs_dir=work / "figures",
+                    charts_dir=work / "charts",
+                )
+            if diagrams_budget > 0 and not dry_run:
+                try:
+                    diagrams = complete_diagrams(
+                        intent=intent or "",
+                        source_text=focused,
+                        max_diagrams=diagrams_budget,
+                        client=LLMClient(LLMConfig.from_env()),
+                        palette=palette_from_intent(intent or "")
+                        or str(meta.get("chart_palette") or "atelier"),
+                        cancel_check=lambda: raise_if_cancelled(out),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("presentation diagrams failed (soft): %s", exc)
+                    diagrams = []
+            plain_intent = str(meta.get("chat_prompt") or "").strip()
+            if not plain_intent:
+                plain_intent = (intent or "").split("\n\n", 1)[0].strip()
+            title = plain_intent[:60].strip() or "Презентация"
+            stub_lines = [
+                f"\\documentclass{{article}}",
+                f"\\title{{{title}}}",
+                f"\\begin{{document}}",
+                f"\\maketitle",
+                f"Презентация формируется по данным запроса.",
+            ]
+            for ch in charts:
+                if isinstance(ch, dict) and ch.get("id"):
+                    stub_lines.append(f"%CASE3_CHART:{ch['id']}%")
+            for dg in diagrams:
+                if isinstance(dg, dict) and dg.get("id"):
+                    stub_lines.append(f"%CASE3_DIAG:{dg['id']}%")
+            stub_lines.append("\\end{document}\n")
+            stub = "\n".join(stub_lines)
+            tex_path.write_text(stub, encoding="utf-8")
+            fj = {"figures": figures, "charts": charts, "diagrams": diagrams}
+            fj_path = work / "figures.json"
+            fj_path.write_text(
+                json.dumps(fj, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        elif mode == "diagram":
             from case3.chart_style import palette_from_intent
             from case3.diagram_generate import complete_diagrams
             from case3.llm_client import LLMClient, LLMConfig

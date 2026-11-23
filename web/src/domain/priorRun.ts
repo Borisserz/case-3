@@ -1,15 +1,25 @@
 /** Latest completed bot run in this chat, for the next POST /api/run. */
 
 import { dashboardCardFromSource, type DashboardCard } from "./dashboardCapture";
+import type { MediaPreview, RunResult } from "./liberTypes";
+
+export type MemoryPreview = {
+  id?: string;
+  kind?: string;
+  url: string;
+  caption?: string;
+};
 
 export type MemoryTurn = {
   run_id?: string;
+  output_mode?: string;
   chat_prompt?: string;
   chat_summary?: string;
   chat_opening?: string;
   dashboard_source?: string;
   dialogue?: { user?: string; assistant?: string }[];
   photos?: { url: string; name?: string }[];
+  previews?: MemoryPreview[];
 };
 
 export type ThreadLine = {
@@ -17,9 +27,27 @@ export type ThreadLine = {
   role: "user" | "bot";
   text: string;
   lead?: string;
+  runId?: string;
+  outputMode?: string;
   photos?: { url: string; name?: string }[];
+  previews?: MediaPreview[];
   dashboard?: DashboardCard;
 };
+
+function previewIdFromUrl(url: string, idx: number): string {
+  const clean = url.split("?")[0] || "";
+  const file = clean.split("/").pop() || "";
+  const stem = file.replace(/\.[^.]+$/, "").trim();
+  return stem || `media_${idx + 1}`;
+}
+
+function normalizePreviewKind(rawKind: string | undefined, id: string): string {
+  const k = (rawKind || "").trim().toLowerCase();
+  if (k) return k;
+  if (id.startsWith("dia_")) return "diagram";
+  if (id.startsWith("fig_")) return "figure";
+  return "chart";
+}
 
 export function messagesFromMemory(
   turns: MemoryTurn[],
@@ -40,13 +68,28 @@ export function messagesFromMemory(
     const summary = (turn.chat_summary || "").trim();
     const opening = (turn.chat_opening || "").trim();
     const dashboard = dashboardCardFromSource(turn.dashboard_source || "") || undefined;
-    if (summary || opening || dashboard) {
+    const previews: MediaPreview[] = (turn.previews || [])
+      .filter((item) => item && item.url)
+      .map((item, idx) => {
+        const pid = (item.id || "").trim() || previewIdFromUrl(item.url, idx);
+        return {
+          id: pid,
+          kind: normalizePreviewKind(item.kind, pid),
+          url: item.url,
+        };
+      });
+    if (summary || opening || dashboard || previews.length) {
       const lead = opening && opening !== summary ? opening : undefined;
+      const runId = (turn.run_id || "").trim() || undefined;
+      const outputMode = (turn.output_mode || "").trim() || undefined;
       lines.push({
         id: id(),
         role: "bot",
         text: summary || opening,
         lead,
+        runId,
+        outputMode,
+        previews: previews.length ? previews : undefined,
         dashboard,
       });
     }
@@ -58,6 +101,29 @@ export function messagesFromMemory(
     }
   }
   return lines;
+}
+
+export function botHistoryResult(
+  line: Pick<ThreadLine, "runId" | "outputMode" | "previews">,
+  fallbackRunId: string,
+): RunResult | undefined {
+  if (!line.previews?.length) return undefined;
+  const runId = (line.runId || "").trim() || fallbackRunId;
+  const chartsCount = line.previews.filter(
+    (p) => p.kind === "chart" || p.id.startsWith("cht_"),
+  ).length;
+  return {
+    run_id: runId,
+    status: "ok",
+    output_mode: line.outputMode || "chat",
+    downloads: {},
+    previews: line.previews,
+    charts_ok: chartsCount,
+    figures_ok: 0,
+    charts_planned: [],
+    figures_planned: [],
+    warnings: [],
+  };
 }
 
 export function priorRunIdFromMessages(

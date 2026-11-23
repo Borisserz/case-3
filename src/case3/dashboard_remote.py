@@ -172,8 +172,17 @@ def capture_documents(payload: dict, fetch_named, parse) -> list[dict]:
     ]
 
 
-def fetch_shot_payload(base: str, client: httpx.Client) -> dict:
-    response = client.get(f"{base}/shot")
+def fetch_shot_payload(
+    base: str,
+    client: httpx.Client,
+    *,
+    mrt: str = "",
+) -> dict:
+    url = f"{base.rstrip('/')}/shot"
+    name = (mrt or "").strip()
+    if name:
+        url = f"{url}?mrt={quote(name)}"
+    response = client.get(url)
     try:
         body = response.json()
     except ValueError as exc:
@@ -216,10 +225,16 @@ def _phrase_has(phrase: str, needle: object) -> bool:
     right = _norm(needle)
     if not left or not right:
         return False
+    if right.isdigit():
+        if re.search(rf"(?<!\d){re.escape(right)}(?!\d)", left):
+            return True
+        if len(right) >= 4 and re.search(rf"(?<!\d){re.escape(right[-2:])}(?!\d)", left):
+            return True
+        return False
     if right in left:
         return True
     digits = "".join(ch for ch in right if ch.isdigit())
-    if len(digits) >= 4 and digits[-2:] in left:
+    if len(digits) >= 4 and re.search(rf"(?<!\d){re.escape(digits[-2:])}(?!\d)", left):
         return True
     return False
 
@@ -445,7 +460,6 @@ def fetch_filter_catalog(base: str, client, mrt: str = "") -> dict:
         or not isinstance(body, dict)
         or body.get("error")
         or not isinstance(body.get("filters"), list)
-        or not body.get("filters")
     ):
         detail = str(body.get("error") or "") if isinstance(body, dict) else ""
         raise DashboardRemoteError(detail or "нет списка фильтров", "filters")
@@ -478,7 +492,11 @@ def post_open_filters(
     except Exception:
         body = None
     if isinstance(body, dict):
-        opened = str(body.get("url") or "").strip()
+        rel = str(body.get("path") or "").strip()
+        if rel.startswith("/"):
+            opened = f"{root}{rel}"
+        else:
+            opened = str(body.get("url") or "").strip()
     return opened or f"{root}/open"
 
 

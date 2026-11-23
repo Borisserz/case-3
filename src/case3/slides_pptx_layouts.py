@@ -480,7 +480,7 @@ def _layout_table(
         body_ink=colors["ink"],
         body_fill=body_fill,
         grid=grid,
-        font_name=_pptx_draw._PPTX_FONT,
+        font_name=_pptx_draw.active_pptx_font(),
         font_pt=18 if body_rows <= 5 else 14,
     )
     cap = str(s.get("caption") or "").strip()
@@ -898,7 +898,7 @@ def _layout_media(
                 height=pic_h,
                 colors=colors,
                 palette=pack,
-                font_name=_pptx_draw._PPTX_FONT,
+                font_name=_pptx_draw.active_pptx_font(),
             )
         elif is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
             from case3.slides_pptx_charts import add_native_kpi
@@ -991,7 +991,7 @@ def _layout_media(
                 height=Inches(5.8),
                 colors=colors,
                 palette=pack,
-                font_name=_pptx_draw._PPTX_FONT,
+                font_name=_pptx_draw.active_pptx_font(),
             )
         elif is_cht and chart_series and str(chart_series.get("type") or "") == "kpi":
             from case3.slides_pptx_charts import add_native_kpi

@@ -1031,3 +1031,33 @@ def test_parse_deck_ir_strips_source_placeholders_from_slides() -> None:
     assert s3["bullets"] == ["Выручка 120"]
 
 
+def test_parse_deck_ir_accepts_negative_delta_magnitude_and_verifiable_math() -> None:
+    ir = parse_deck_ir(
+        {
+            "version": 1,
+            "palette": "atelier",
+            "slides": [
+                {"id": "s01", "layout": "title", "title": "Исполнение бюджета"},
+                {
+                    "id": "s02",
+                    "layout": "kpi_row",
+                    "title": "Ключевые цифры",
+                    "kpis": [
+                        {"label": "Дефицит", "value": "656", "status": "down"},
+                        {"label": "Итого факт", "value": "18044", "status": "up"},
+                    ],
+                },
+                {"id": "s03", "layout": "closing", "title": "Вывод", "bullets": ["Дефицит 656"]},
+            ],
+        },
+        source=(
+            "| Регион | План | Факт | Откл. |\n"
+            "| --- | --- | --- | --- |\n"
+            "| Гомель | 8200 | 7544 | -656 |\n"
+            "| Минск | 10000 | 10500 | +500 |\n"
+        ),
+    )
+    assert ir["slides"][1]["kpis"][0]["value"] == "656"
+    assert ir["slides"][1]["kpis"][1]["value"] == "18044"
+
+

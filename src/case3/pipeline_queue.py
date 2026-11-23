@@ -34,54 +34,92 @@ def queue_path(root: Path) -> Path:
     return Path(root) / "runs" / QUEUE_FILE
 
 
-def save_waiter(root: Path, payload: dict[str, Any]) -> None:
-    """Atomically replace the waiter file. Caller guarantees a single waiter."""
-    path = queue_path(root)
-    body = {key: payload.get(key) for key in _REQUIRED}
-    text = json.dumps(body, ensure_ascii=False, indent=2) + "\n"
+def _write_raw(path: Path, data: Any) -> None:
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _normalize_entry(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: payload.get(key) for key in _REQUIRED}
+
+
+def save_waiter(root: Path, payload: dict[str, Any]) -> None:
+    """Atomically replace the waiter file. Single-waiter legacy shape."""
+    path = queue_path(root)
     with _LOCK:
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        _write_raw(path, _normalize_entry(payload))
+
+
+def append_waiter(root: Path, payload: dict[str, Any]) -> None:
+    """Append a waiter job atomically to the on-disk FIFO queue."""
+    path = queue_path(root)
+    entry = _normalize_entry(payload)
+    rid = str(entry.get("run_id") or "")
+    with _LOCK:
+        items = _load_waiters_unlocked(root, path)
+        items = [it for it in items if str(it.get("run_id") or "") != rid]
+        items.append(entry)
+        _write_raw(path, items[0] if len(items) == 1 else {"waiters": items})
+
+
+def _load_waiters_unlocked(root: Path, path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        path.unlink(missing_ok=True)
+        return []
+    candidates = (
+        raw.get("waiters")
+        if isinstance(raw, dict) and isinstance(raw.get("waiters"), list)
+        else [raw]
+    )
+    accepted: list[dict[str, Any]] = []
+    for item in candidates:
+        job = _accept(root, item)
+        if job is not None:
+            accepted.append(job)
+    if not accepted:
+        path.unlink(missing_ok=True)
+    elif len(accepted) != len(candidates):
+        _write_raw(path, accepted[0] if len(accepted) == 1 else {"waiters": accepted})
+    return accepted
+
+
+def load_waiters(root: Path) -> list[dict[str, Any]]:
+    """Return all valid queued jobs (FIFO) whose source files sit inside ``root``."""
+    path = queue_path(root)
+    with _LOCK:
+        return _load_waiters_unlocked(root, path)
 
 
 def load_waiter(root: Path) -> dict[str, Any] | None:
-    """Return the waiter when its source file sits inside ``root``.
-
-    A poisoned file (bad JSON, escaped path, unknown run id) is removed.
-    A missing source file is also removed; the run meta stays for the desk.
-    """
-    path = queue_path(root)
-    with _LOCK:
-        if not path.is_file():
-            return None
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            path.unlink(missing_ok=True)
-            return None
-        job = _accept(root, raw)
-        if job is None:
-            path.unlink(missing_ok=True)
-            return None
-        return job
+    """Return the head waiter when its source file sits inside ``root``."""
+    items = load_waiters(root)
+    return items[0] if items else None
 
 
 def clear_waiter(root: Path, *, run_id: str | None = None) -> bool:
-    """Drop the file. With ``run_id``, leave a different waiter in place."""
+    """Drop the queue or only ``run_id`` from the FIFO list."""
     path = queue_path(root)
     with _LOCK:
         if not path.is_file():
             return False
-        if run_id is not None:
-            try:
-                current = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                current = {}
-            if not isinstance(current, dict) or str(current.get("run_id") or "") != run_id:
-                return False
-        path.unlink(missing_ok=True)
+        if run_id is None:
+            path.unlink(missing_ok=True)
+            return True
+        items = _load_waiters_unlocked(root, path)
+        kept = [it for it in items if str(it.get("run_id") or "") != run_id]
+        if len(kept) == len(items):
+            return False
+        if not kept:
+            path.unlink(missing_ok=True)
+        else:
+            _write_raw(path, kept[0] if len(kept) == 1 else {"waiters": kept})
         return True
 
 

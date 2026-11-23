@@ -6,6 +6,7 @@ import concurrent.futures
 import logging
 import os
 import shutil
+import threading
 import urllib.parse
 from contextvars import copy_context
 from pathlib import Path
@@ -36,15 +37,35 @@ def _prefer_stable_playwright_browsers() -> None:
             return
 
 
+_PW_SEM_LOCK = threading.Lock()
+_PW_SEM_LIMIT = 0
+_PW_SEM: threading.BoundedSemaphore | None = None
+
+
+def _playwright_semaphore() -> threading.BoundedSemaphore:
+    global _PW_SEM_LIMIT, _PW_SEM
+    raw = (os.environ.get("CASE3_MAX_PLAYWRIGHT") or "4").strip() or "4"
+    try:
+        limit = max(1, min(int(raw), 8))
+    except ValueError:
+        limit = 4
+    with _PW_SEM_LOCK:
+        if _PW_SEM is None or _PW_SEM_LIMIT != limit:
+            _PW_SEM = threading.BoundedSemaphore(limit)
+            _PW_SEM_LIMIT = limit
+        return _PW_SEM
+
+
 def _run_sync_playwright(fn: Callable[[], _T]) -> _T:
-    """Always run Playwright Sync API in a fresh OS thread.
+    """Always run Playwright Sync API in a fresh OS thread with bounded concurrency.
 
     FastAPI/uvicorn may call us under a running asyncio loop (or from
     ``asyncio.to_thread`` on a worker that still confuses Playwright on
     Windows). A dedicated thread has no running loop → Sync API is safe.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(copy_context().run, fn).result()
+    with _playwright_semaphore():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(copy_context().run, fn).result()
 
 _MAX_PNG = 12 * 1024 * 1024
 # Single env knob for chart budget (used by generate / parse / pipeline / render).

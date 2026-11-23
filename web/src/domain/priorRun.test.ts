@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { messagesFromMemory, priorRunIdFromMessages } from "./priorRun";
+import {
+  botHistoryResult,
+  messagesFromMemory,
+  priorRunIdFromMessages,
+} from "./priorRun";
 
 test("priorRunIdFromMessages uses the latest bot run, skipping an empty pending bubble", () => {
   const id = priorRunIdFromMessages([
@@ -129,4 +133,41 @@ test("messagesFromMemory keeps uploaded photos on the user line", () => {
     { name: "usr_01", url: "/api/runs/a/figures/usr_01.png" },
   ]);
   assert.equal(lines[1].photos, undefined);
+});
+
+test("messagesFromMemory and botHistoryResult restore inline chart/diagram previews", () => {
+  let n = 0;
+  const lines = messagesFromMemory(
+    [
+      {
+        run_id: "run_chart",
+        output_mode: "chat",
+        chat_prompt: "Построй график по лидерам",
+        chat_summary: "Построил график.",
+        previews: [
+          {
+            url: "/api/runs/run_chart/previews/cht_01.png",
+          },
+          {
+            id: "dia_01",
+            kind: "diagram",
+            url: "/api/runs/run_chart/previews/dia_01.png",
+          },
+        ],
+      },
+    ],
+    () => `id${(n += 1)}`,
+  );
+  const botLine = lines[1];
+  assert.equal(botLine?.role, "bot");
+  assert.equal(botLine?.runId, "run_chart");
+  assert.equal(botLine?.outputMode, "chat");
+  assert.equal(botLine?.previews?.[0]?.id, "cht_01");
+  assert.equal(botLine?.previews?.[0]?.kind, "chart");
+
+  const res = botHistoryResult(botLine!, "fallback_run");
+  assert.equal(res?.run_id, "run_chart");
+  assert.equal(res?.output_mode, "chat");
+  assert.equal(res?.previews?.length, 2);
+  assert.equal(res?.charts_ok, 1);
 });

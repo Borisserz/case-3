@@ -263,6 +263,13 @@ export function freshShots(card: DashboardCard): DashboardShot[] {
   return card.shots.slice(Math.max(0, card.analyzed));
 }
 
+export function removeShotAt(card: DashboardCard, index: number): DashboardCard {
+  if (index < 0 || index >= card.shots.length) return card;
+  const shots = card.shots.filter((_, idx) => idx !== index);
+  const analyzed = Math.min(Math.max(0, card.analyzed), shots.length);
+  return { ...card, shots, analyzed };
+}
+
 const PACKED_DOC = /^===== (.+?) =====$/;
 
 /** Parsed dashboard markdown, including several shots joined for the chat. */

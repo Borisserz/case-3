@@ -332,6 +332,64 @@ def _text_ok_after_scrub(
     return True
 
 
+def _derived_table_numbers(source: str) -> frozenset[str]:
+    """Column sums and overall Fact/Plan execution derived from markdown tables in Source."""
+    from case3.dashboard_source import (
+        _CODE_HEADER,
+        _YEAR_HEADER,
+        _cell_decimal,
+        _find_fact_plan_pair,
+        _is_total_row,
+        _label_column,
+        _markdown_tables,
+    )
+
+    extra: set[str] = set()
+    for _title, rows in _markdown_tables(source or ""):
+        if len(rows) < 2:
+            continue
+        header, body = rows[0], rows[1:]
+        data = [row for row in body if not _is_total_row(row)]
+        if len(data) < 2:
+            continue
+        label_at = _label_column(data)
+        width = max(len(row) for row in rows)
+        for col in range(width):
+            if label_at is not None and col == label_at:
+                continue
+            name = header[col].strip() if col < len(header) else ""
+            if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
+                continue
+            vals: list[Decimal] = []
+            for row in data:
+                v = _cell_decimal(row[col].strip()) if col < len(row) else None
+                if v is not None:
+                    vals.append(v)
+            if len(vals) >= 2:
+                total = sum(vals, Decimal(0))
+                abs_tot = abs(total)
+                s = str(int(abs_tot)) if abs_tot == abs_tot.to_integral_value() else f"{abs_tot:.1f}"
+                extra.add(s)
+                extra.add(s.replace(".", ","))
+        pair = _find_fact_plan_pair(header)
+        if pair is not None:
+            fcol, pcol = pair
+            fv_sum = Decimal(0)
+            pv_sum = Decimal(0)
+            for row in data:
+                fv = _cell_decimal(row[fcol].strip()) if fcol < len(row) else None
+                pv = _cell_decimal(row[pcol].strip()) if pcol < len(row) else None
+                if fv is not None and pv is not None:
+                    fv_sum += fv
+                    pv_sum += pv
+            if pv_sum > 0:
+                pct = fv_sum * Decimal(100) / pv_sum
+                for fmt in (f"{pct:.1f}", f"{pct:.0f}"):
+                    extra.add(fmt)
+                    extra.add(fmt.replace(".", ","))
+    return frozenset(extra)
+
+
 def scrub_invented_numbers(
     deck: dict[str, Any],
     *,
@@ -340,7 +398,7 @@ def scrub_invented_numbers(
 ) -> dict[str, Any]:
     """Drop digit runs not present in Source/charts (LLM heal after IR reject)."""
     source_norm = _norm_ws(source)
-    allowed = frozenset(allowed_number_strings or ())
+    allowed = frozenset(allowed_number_strings or ()) | _derived_table_numbers(source) | _derived_table_numbers(source)
 
     def _scrub_text(text: str, *, chrome: bool = False) -> str:
         def repl(m: re.Match[str]) -> str:
@@ -1451,7 +1509,7 @@ def parse_deck_ir(
 
     max_slides = max(1, min(int(max_slides), _MAX_SLIDES))
     source_norm = _norm_ws(source)
-    allowed = frozenset(allowed_number_strings or ())
+    allowed = frozenset(allowed_number_strings or ()) | _derived_table_numbers(source)
     media_allow = (
         frozenset(allowed_media_ids) if allowed_media_ids is not None else None
     )

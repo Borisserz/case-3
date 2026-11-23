@@ -518,6 +518,15 @@ def test_followup_uses_the_dashboard_screen_not_the_later_note(tmp_path: Path) -
         picture=False,
     )
     assert "Брест" in report and "Минск" in report
+
+    long_chat_msg = "Подготовь детальный разбор по областям с учётом сценария. " * 15
+    assert len(long_chat_msg) >= 600
+    assert "Брест" in source_for_followup(
+        long_chat_msg + "\n\nТребования UI:\n- палитра atelier",
+        both,
+        long_chat_msg,
+        picture=False,
+    )
     first_meta = tmp_path / "runs" / "out" / first / "meta.json"
     stored = json.loads(first_meta.read_text(encoding="utf-8"))
     stored["dashboard_note"] = "На экране поступления за январь."
@@ -547,6 +556,9 @@ def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     assert view is not None
     assert view["turns"][0]["photos"] == [
         {"name": "usr_01", "url": f"/api/runs/{run_id}/figures/usr_01.png"}
+    ]
+    assert view["turns"][0]["previews"] == [
+        {"id": "cht_01", "kind": "chart", "url": f"/api/runs/{run_id}/figures/cht_01.png"}
     ]
 
 

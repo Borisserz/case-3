@@ -846,10 +846,29 @@ def source_for_followup(current: str, screen: str, user_text: str, *, picture: b
     if dashboard_parts(here):
         return saved
     asked = picture or bool(_ON_THIS_DATA.search(user_text or ""))
-    same_as_question = here.strip() == (user_text or "").strip()
+    clean_user = (user_text or "").strip()
+    clean_here = here.strip()
+    same_as_question = clean_here == clean_user or (
+        bool(clean_user) and clean_user in clean_here
+    )
     if asked or same_as_question or len(here) < 600:
         return saved
     return here
+
+
+def prior_document_source(root: Path, prior_run_id: str) -> str:
+    """Restore an earlier attached source document when no dashboard screen exists."""
+    rid = (prior_run_id or "").strip()
+    if not rid:
+        return ""
+    for turn in reversed(load_chain(root, rid)):
+        src = _source_file(root, turn)
+        if not src.strip():
+            continue
+        chat_prompt = str(turn.get("chat_prompt") or "").strip()
+        if src.strip() != chat_prompt or len(src.strip()) >= 240:
+            return src
+    return ""
 
 
 def _source_file(root: Path, meta: dict[str, Any]) -> str:
@@ -933,6 +952,45 @@ def _photo_thumbs(root: Path, run_id: str) -> list[dict[str, str]]:
     return thumbs
 
 
+def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[str, str]]:
+    """Inline chat chart/diagram PNG previews (cht_* / dia_*) for a run."""
+    rid = (run_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_]+", rid):
+        return []
+    figs = (Path(root) / "runs" / "out" / rid / "figures").resolve()
+    base = (Path(root) / "runs" / "out").resolve()
+    try:
+        figs.relative_to(base)
+    except ValueError:
+        return []
+    if not figs.is_dir():
+        return []
+    status = meta.get("media_status") if isinstance(meta.get("media_status"), dict) else {}
+    previews: list[dict[str, str]] = []
+    for png in sorted(figs.glob("*.png")):
+        if not png.is_file():
+            continue
+        stem = png.stem
+        if not (stem.startswith("cht_") or stem.startswith("dia_")):
+            continue
+        info = status.get(stem) if isinstance(status, dict) else None
+        if isinstance(info, dict) and info.get("ok") is False:
+            continue
+        kind = (
+            str(info.get("kind") or "")
+            if isinstance(info, dict)
+            else ""
+        ) or ("diagram" if stem.startswith("dia_") else "chart")
+        previews.append(
+            {
+                "id": stem,
+                "kind": kind,
+                "url": f"/api/runs/{rid}/figures/{png.name}",
+            }
+        )
+    return previews
+
+
 def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
     """One chat: turns oldest-first, plus the documents of the latest run."""
     chain = load_chain(root, run_id)
@@ -953,6 +1011,7 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
             "dialogue": _dialogue(meta),
             "last_edit": edit if isinstance(edit, dict) else {},
             "photos": _photo_thumbs(root, turn_id),
+            "previews": _chat_previews(root, turn_id, meta),
         }
         shot = _clip_prose(_source_file(root, meta), 200_000)
         if "# Данные дашборда" in shot:

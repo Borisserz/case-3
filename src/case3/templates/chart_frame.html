@@ -143,14 +143,17 @@
     }
     .donut-layout:has(.valued-legend.is-dense) {
       grid-template-columns: 1fr;
+      gap: 24px;
+      justify-items: center;
       align-items: start;
     }
     .valued-legend.is-dense {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px 20px;
-      max-height: 520px;
-      overflow: auto;
+      gap: 10px 28px;
+      width: 100%;
+      max-height: none;
+      overflow: visible;
     }
     .valued-legend.is-dense .valued-legend__row {
       font-size: 14px;
@@ -253,6 +256,18 @@
       Chart.defaults.scale.border = { display: true, width: 2, color: "rgba(26,74,75,0.18)" };
       Chart.defaults.scale.ticks.padding = 8;
       Chart.defaults.scale.ticks.font = { size: 15, weight: "600" };
+      if (Chart.defaults.scales && Chart.defaults.scales.category && Chart.defaults.scales.category.ticks) {
+        Chart.defaults.scales.category.ticks.callback = function(val) {
+          const raw = this.getLabelForValue ? this.getLabelForValue(val) : String(val ?? "");
+          if (typeof raw !== "string" || raw.length <= 16 || raw.indexOf(" ") < 0) return raw;
+          const mid = Math.floor(raw.length / 2);
+          let best = -1;
+          for (let i = 0; i < raw.length; i++) {
+            if (raw[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+          }
+          return best > 0 ? [raw.slice(0, best), raw.slice(best + 1)] : raw;
+        };
+      }
     }
   </script>
 </head>

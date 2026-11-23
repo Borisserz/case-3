@@ -24,6 +24,9 @@ type Props = {
   onShot: (docs: Doc[]) => void;
   /** How many screens from this opening are already in the chat. */
   shotCount?: number;
+  /** Captured screen titles so user can inspect/remove inside the modal. */
+  shots?: { name: string }[];
+  onRemoveShot?: (index: number) => void;
   /** /open after the API POSTed the filter body. The button path leaves this empty. */
   viewerUrl?: string | null;
   /** The chosen /open page, so the card can reopen the same dashboard. */
@@ -73,6 +76,8 @@ export function DashboardPickModal({
   onClose,
   onShot,
   shotCount = 0,
+  shots = [],
+  onRemoveShot,
   viewerUrl: viewerOverride,
   onOpened,
 }: Props) {
@@ -81,6 +86,7 @@ export function DashboardPickModal({
   const [viewerUrl, setViewerUrl] = useState(viewerOverride || "");
   const [openedUrl, setOpenedUrl] = useState(viewerOverride || "");
   const [list, setList] = useState<Dash[] | null>(null);
+  const [listNonce, setListNonce] = useState(0);
   const [opening, setOpening] = useState("");
   const [lit, setLit] = useState("");
   const [phase, setPhase] = useState<"idle" | "shot" | "attach">("idle");
@@ -96,32 +102,47 @@ export function DashboardPickModal({
   }, [viewerOverride]);
 
   useEffect(() => {
-    if (viewerOverride) return;
+    if (openedUrl) return;
     let cancelled = false;
+    setError("");
     void fetch("/api/dashboard/dashboards")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { dashboards?: Dash[] } | null) => {
+      .then(async (res) => {
+        const body: { dashboards?: Dash[]; detail?: string } | null = await res
+          .json()
+          .catch(() => null);
+        if (!res.ok) {
+          throw new Error(
+            body?.detail || `Сервис дашбордов вернул HTTP ${res.status}`,
+          );
+        }
+        return body;
+      })
+      .then((body) => {
         if (cancelled) return;
         const rows = Array.isArray(body?.dashboards) ? body.dashboards : [];
         setList(
-          rows.filter(
-            (row) => row && typeof row.name === "string" && row.name.trim(),
-          ).map((row) => ({
-            name: row.name.trim(),
-            title: (row.title || row.name).trim(),
-            preview: typeof row.preview === "string" ? row.preview.trim() : "",
-          })),
+          rows
+            .filter(
+              (row) => row && typeof row.name === "string" && row.name.trim(),
+            )
+            .map((row) => ({
+              name: row.name.trim(),
+              title: (row.title || row.name).trim(),
+              preview: typeof row.preview === "string" ? row.preview.trim() : "",
+            })),
         );
       })
-      .catch(() => {
+      .catch((exc: unknown) => {
         if (cancelled) return;
-        setList([]);
-        setError("Сервис дашбордов не ответил.");
+        setList(null);
+        setError(
+          exc instanceof Error ? exc.message : "Сервис дашбордов не ответил.",
+        );
       });
     return () => {
       cancelled = true;
     };
-  }, [viewerOverride]);
+  }, [openedUrl, listNonce]);
 
   async function choose(name: string) {
     setOpening(name);
@@ -153,7 +174,18 @@ export function DashboardPickModal({
     setPhase("shot");
     setError("");
     try {
-      const res = await fetch("/api/dashboard/service-capture", { method: "POST" });
+      let activeMrt = "";
+      try {
+        const parsed = new URL(openedUrl || viewerUrl || "", window.location.origin);
+        activeMrt = parsed.searchParams.get("mrt") || "";
+      } catch {
+        activeMrt = "";
+      }
+      const res = await fetch("/api/dashboard/service-capture", {
+        method: "POST",
+        headers: activeMrt ? { "Content-Type": "application/json" } : undefined,
+        body: activeMrt ? JSON.stringify({ mrt: activeMrt }) : undefined,
+      });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
         const detail =
@@ -239,11 +271,24 @@ export function DashboardPickModal({
             </button>
           </header>
           <p className="dash-viewer-note">
-            {list === null
-              ? "Смотрю файлы в папке."
-              : "Выбери отчёт. Потом откроется его экран."}
+            {error
+              ? "Не удалось загрузить список дашбордов."
+              : list === null
+                ? "Смотрю файлы в папке."
+                : "Выбери отчёт. Потом откроется его экран."}
           </p>
-          {error ? <p className="dash-viewer-error">{error}</p> : null}
+          {error ? (
+            <div className="dash-viewer-error">
+              <span>{error}</span>{" "}
+              <button
+                type="button"
+                className="dash-list-retry"
+                onClick={() => setListNonce((n) => n + 1)}
+              >
+                Повторить
+              </button>
+            </div>
+          ) : null}
           <div className="dash-pick-list">
             {(list || []).map((row, index) => (
               <button
@@ -328,6 +373,18 @@ export function DashboardPickModal({
           <div className="dash-viewer-actions">
             <button
               type="button"
+              className="dash-viewer-back"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                setOpenedUrl("");
+                setViewerUrl("");
+              }}
+            >
+              ← Все дашборды
+            </button>
+            <button
+              type="button"
               className="dash-viewer-take"
               onClick={() => void takeFromService()}
               disabled={busy}
@@ -336,8 +393,18 @@ export function DashboardPickModal({
                 ? "Снимаю скрин"
                 : phase === "attach"
                   ? "Прикрепляю"
-                  : "В данные"}
+                  : "Снять экран в чат"}
             </button>
+            {shotCount > 0 || shots.length > 0 ? (
+              <button
+                type="button"
+                className="dash-viewer-done"
+                disabled={busy}
+                onClick={onClose}
+              >
+                Готово, в чат ({shots.length || shotCount})
+              </button>
+            ) : null}
             <button
               type="button"
               className="settings-modal-x"
@@ -354,9 +421,27 @@ export function DashboardPickModal({
             : phase === "attach"
               ? "Прикрепляю данные в чат. Окно не закроется."
             : shotCount
-              ? `В чате уже ${shotCount}. Можно снять ещё экран.`
-              : "Дойди до нужного экрана и нажми «В данные». Окно останется открытым."}
+              ? `В буфере уже ${shotCount}. Можно снять ещё фильтр или нажать «Готово, в чат».`
+              : "Выбери нужные фильтры и нажми «Снять экран в чат»."}
         </p>
+        {shots.length > 0 ? (
+          <div className="dash-viewer-shots" aria-label="Снятые экраны">
+            {shots.map((shot, idx) => (
+              <span key={`${shot.name}-${idx}`} className="dash-viewer-shot-chip">
+                <span>{shot.name}</span>
+                {onRemoveShot ? (
+                  <button
+                    type="button"
+                    aria-label={`Убрать экран ${shot.name}`}
+                    onClick={() => onRemoveShot(idx)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {error ? <p className="dash-viewer-error">{error}</p> : null}
         <div className="dash-viewer-frame-wrap">
           <iframe

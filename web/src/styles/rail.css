@@ -449,7 +449,7 @@
   /* Width animated only via motion — do not set flex-basis % in CSS (stalls close). */
   flex: 0 0 auto;
   min-width: 0;
-  max-width: min(780px, 72vw);
+  max-width: min(1120px, 76vw);
   display: flex;
   flex-direction: column;
   align-self: stretch;

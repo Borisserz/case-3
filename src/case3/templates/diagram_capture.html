@@ -28,11 +28,17 @@
       /* sized in JS after render — leave room for stroke/text */
       overflow: visible;
     }
-    .edgeLabel, .edgeLabel span, .edgeLabel p, .labelBkg {
-      background: transparent !important;
-      fill: transparent !important;
+    .edgeLabel, .edgeLabel span, .edgeLabel p {
+      background: {{LABEL_BG}} !important;
       color: {{TEXT_COLOR}} !important;
       font-weight: 600 !important;
+      border-radius: 4px !important;
+      padding: 1px 6px !important;
+    }
+    .edgeLabel rect, .labelBkg {
+      fill: {{LABEL_BG}} !important;
+      background: {{LABEL_BG}} !important;
+      opacity: 0.96 !important;
     }
     .cluster rect {
       rx: 16px !important;

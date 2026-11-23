@@ -1120,6 +1120,56 @@
   align-items: center;
   gap: 0.45rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.dash-viewer-back,
+.dash-viewer-done,
+.dash-list-retry {
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  background: var(--sheet);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 0.4rem 0.72rem;
+  font-size: 0.82rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.dash-viewer-done {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--sheet));
+  color: var(--primary);
+}
+
+.dash-viewer-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.1rem 0.85rem 0.45rem;
+}
+
+.dash-viewer-shot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--sheet));
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.dash-viewer-shot-chip button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  cursor: pointer;
 }
 
 .dash-viewer-take {

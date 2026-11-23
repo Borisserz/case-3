@@ -95,6 +95,7 @@ def test_resume_claim_failure_keeps_error_meta(tmp_path: Path, monkeypatch) -> N
 def test_resume_409_when_pipeline_slot_busy(tmp_path: Path, monkeypatch) -> None:
     from case3.api import _claim_pipeline_slot, _release_pipeline_slot
 
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     run_id = _failed_run(tmp_path, failed_stage="latex")
     kicked = MagicMock()
@@ -157,9 +158,11 @@ def test_datetime_stamp_unique_within_same_second() -> None:
 def test_create_run_queues_one_waiter_and_third_writes_nothing(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """One run executes, one waits, the third is 409 and must not touch disk."""
+    """Under 1+1 limit, one run executes, one waits, the third is 409 and must not touch disk."""
     from case3.api import _PIPELINE_SLOT, _claim_pipeline_slot, _release_pipeline_slot
 
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("CASE3_MAX_QUEUED_RUNS", "1")
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     monkeypatch.setattr("case3.api._bg_run_pipeline", lambda **_k: None)
     assert _claim_pipeline_slot("busy_run_123") is None

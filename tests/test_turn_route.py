@@ -33,9 +33,17 @@ def test_explicit_deck_wins_over_plaque_and_over_analyze():
 def test_a_chart_request_runs_in_chat_unless_report_requested():
     assert resolve_turn("Построй график по областям", None) == "chat"
     assert resolve_turn("Нарисуй диаграмму продаж", None) == "chat"
-    assert resolve_turn("Построй график по областям", "report") == "report"
+    assert resolve_turn("Построй график по областям", "report") == "chat"
     assert resolve_turn("Сделай отчёт с графиками продаж", None) == "report"
     assert resolve_turn("Нарисуй схему онбординга", None) == "diagram"
+
+
+def test_why_without_question_mark_and_chart_request_stay_chat_under_plaque():
+    from case3.turn_route import wants_chat_chart
+
+    assert resolve_turn("почему в Гомеле просадка", "report") == "chat"
+    assert resolve_turn("построй график по регионам", "report") == "chat"
+    assert wants_chat_chart("построй график по регионам") is True
 
 
 def test_explicit_diagram_and_report():

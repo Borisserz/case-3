@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from case3.color_util import hex_to_rgb
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from PIL import Image
 from pptx import Presentation
@@ -157,6 +159,40 @@ def _colors_from_style(
 _PPTX_FONT = "Calibri"
 _PPTX_TITLE_FONT = "Georgia"
 _BRAND_MARK = "LIBER · ATELIER"
+_CTX_PPTX_FONT: ContextVar[str | None] = ContextVar("_CTX_PPTX_FONT", default=None)
+_CTX_PPTX_TITLE_FONT: ContextVar[str | None] = ContextVar("_CTX_PPTX_TITLE_FONT", default=None)
+_CTX_BRAND_MARK: ContextVar[str | None] = ContextVar("_CTX_BRAND_MARK", default=None)
+
+
+def active_pptx_font() -> str:
+    return _CTX_PPTX_FONT.get() or _PPTX_FONT
+
+
+def active_pptx_title_font() -> str:
+    return _CTX_PPTX_TITLE_FONT.get() or _PPTX_TITLE_FONT
+
+
+def active_brand_mark() -> str:
+    return _CTX_BRAND_MARK.get() or _BRAND_MARK
+
+
+@contextmanager
+def use_pptx_theme(
+    *,
+    font: str | None = None,
+    title_font: str | None = None,
+    brand_mark: str | None = None,
+) -> Iterator[None]:
+    """Scope font & brand mark per thread/render without mutating module globals."""
+    t_font = _CTX_PPTX_FONT.set((font or _PPTX_FONT).strip() or "Calibri")
+    t_title = _CTX_PPTX_TITLE_FONT.set((title_font or _PPTX_TITLE_FONT).strip() or "Georgia")
+    t_brand = _CTX_BRAND_MARK.set((brand_mark or _BRAND_MARK).strip() or "LIBER · ATELIER")
+    try:
+        yield
+    finally:
+        _CTX_BRAND_MARK.reset(t_brand)
+        _CTX_PPTX_TITLE_FONT.reset(t_title)
+        _CTX_PPTX_FONT.reset(t_font)
 
 
 def _plain(text: str) -> str:
@@ -178,7 +214,7 @@ def _set_run(
     title: bool = False,
 ) -> None:
     """Set face via python-pptx name (also writes a:latin/@typeface)."""
-    face = _PPTX_TITLE_FONT if title else _PPTX_FONT
+    face = active_pptx_title_font() if title else active_pptx_font()
     run.font.size = Pt(size_pt)
     run.font.bold = bold
     run.font.name = face
@@ -289,7 +325,7 @@ def _brand(slide, colors: dict[str, RGBColor]) -> None:
         Inches(0.22),
         Inches(5.5),
         Inches(0.3),
-        _BRAND_MARK,
+        active_brand_mark(),
         size_pt=9,
         bold=True,
         color=colors["muted"],

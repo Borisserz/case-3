@@ -56,3 +56,90 @@ def test_chat_mode_keeps_uploaded_photos_in_the_run(tmp_path: Path):
     )
 
     assert (out / "figures" / "usr_01.png").read_bytes() == b"png-bytes"
+
+
+def test_chat_mode_skips_narrate_stages_and_persists_diagram_figures_json(
+    tmp_path: Path, monkeypatch
+):
+    from case3 import pipeline
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "prompt" / "gold").mkdir(parents=True)
+    src = tmp_path / "source.txt"
+    src.write_text("Минск 120, Гомель 80.", encoding="utf-8")
+
+    narrated = {"called": 0}
+
+    def _spy_narrate(*args, **kwargs):
+        narrated["called"] += 1
+        return []
+
+    monkeypatch.setattr("case3.stage_narration.narrate_stages", _spy_narrate)
+    monkeypatch.setattr(
+        "case3.chat_turn.try_chat_answer",
+        lambda source, intent, **kwargs: "Минск 120, Гомель 80.",
+    )
+
+    def _fake_diag(source, intent, *, figs_dir, **kwargs):
+        Path(figs_dir).mkdir(parents=True, exist_ok=True)
+        p = Path(figs_dir) / "dia_01.png"
+        p.write_bytes(b"dia-png")
+        return (
+            [{"id": "dia_01", "title": "Схема", "mermaid": "flowchart TD\nA-->B"}],
+            {"dia_01": {"ok": True, "path": str(p), "kind": "diagram"}},
+        )
+
+    monkeypatch.setattr("case3.chat_turn.generate_chat_diagram", _fake_diag)
+
+    out = run_pipeline(
+        src,
+        project_root=root,
+        intent="построй схему по данным",
+        output_mode="chat",
+        formats=set(),
+        dry_run=False,
+    )
+    assert narrated["called"] == 0
+    assert (out / "figures.json").is_file()
+    fj = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert fj["diagrams"][0]["id"] == "dia_01"
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    assert meta["media_status"]["dia_01"]["ok"] is True
+
+
+def test_presentation_mode_skips_heavy_generate_document_and_injects_derivatives(
+    tmp_path: Path, monkeypatch
+):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "prompt" / "gold").mkdir(parents=True)
+    src = tmp_path / "source.md"
+    src.write_text(
+        "# Данные дашборда\n\n| Регион | Факт | План |\n| --- | --- | --- |\n"
+        "| Минск | 120 | 100 |\n| Гомель | 80 | 100 |\n",
+        encoding="utf-8",
+    )
+
+    called_full_tex = {"count": 0}
+
+    def _fail_if_called(*args, **kwargs):
+        called_full_tex["count"] += 1
+        raise AssertionError("generate_document full LaTeX should be skipped in presentation mode")
+
+    monkeypatch.setattr("case3.pipeline.generate_document", _fail_if_called)
+
+    out = run_pipeline(
+        src,
+        project_root=root,
+        intent="сделай презентацию",
+        output_mode="presentation",
+        formats=set(),
+        max_images=0,
+        max_charts=0,
+        dry_run=True,
+    )
+    assert called_full_tex["count"] == 0
+    meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    eff = Path(meta["source"]).read_text(encoding="utf-8")
+    assert "## Производные" in eff

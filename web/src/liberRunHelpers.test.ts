@@ -5,11 +5,13 @@ import { describe, it } from "node:test";
 import { FALLBACK_PALETTES } from "./domain/liberConstants";
 import { LIBER_MODE_PILLS, modeSurfaces } from "./domain/liberModes";
 import {
+  effectiveThinkingMode,
   formatRunStatusError,
   isRunInFlight,
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
+  rollbackOptimisticRun,
   softMediaFailToast,
   slidesTerminalKind,
   pipelineWatchKind,
@@ -189,5 +191,30 @@ describe("liberRunHelpers", () => {
     assert.equal(pipelineWatchKind("ok", "idle", "presentation"), null);
     assert.equal(pipelineWatchKind("ok", "error", "presentation"), "error");
     assert.equal(pipelineWatchKind("ok", "ok", "presentation"), "done");
+  });
+
+  it("effectiveThinkingMode respects workMode and server output_mode", () => {
+    assert.equal(effectiveThinkingMode(null), "chat");
+    assert.equal(effectiveThinkingMode("report"), "report");
+    assert.equal(effectiveThinkingMode("diagram"), "diagram");
+    assert.equal(effectiveThinkingMode("presentation"), "presentation");
+    assert.equal(effectiveThinkingMode(null, "diagram"), "diagram");
+    assert.equal(effectiveThinkingMode("report", "chat"), "chat");
+    assert.match(stageLabel("queued", null, "chat"), /изучаю|чат|запрос/i);
+    assert.match(stageLabel("llm", null, "chat"), /ответ/i);
+  });
+
+  it("rollbackOptimisticRun removes unstarted user and pending bot messages", () => {
+    const msgs = [
+      { id: "u0", role: "user" as const, text: "старое" },
+      { id: "b0", role: "bot" as const, text: "ответ" },
+      { id: "u1", role: "user" as const, text: "не ушло" },
+      { id: "b1", role: "bot" as const, text: "", pending: true },
+    ];
+    const next = rollbackOptimisticRun(msgs, "u1", "b1");
+    assert.deepEqual(
+      next.map((m) => m.id),
+      ["u0", "b0"],
+    );
   });
 });

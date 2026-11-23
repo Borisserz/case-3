@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as _html
 import logging
 import re
 from typing import Any
@@ -25,7 +26,15 @@ def _parse_donut_slices(
     if not labels_m or not data_m:
         return None
     labels = re.findall(r"""['"]([^'"]+)['"]""", labels_m.group(1))
-    values = [float(x) for x in re.findall(r"-?[\d.]+", data_m.group(1))]
+    values: list[float] = []
+    for raw_item in re.findall(r"'[^']*'|\"[^\"]*\"|[^,\s]+", data_m.group(1)):
+        cleaned = re.sub(r"[\s\u00a0\u202f'\"]+", "", raw_item).replace(",", ".")
+        if not cleaned or cleaned.lower() == "null":
+            continue
+        try:
+            values.append(float(cleaned))
+        except ValueError:
+            continue
     colors: list[str] = []
     if colors_m:
         colors = re.findall(
@@ -106,6 +115,20 @@ def _rewrite_chart_labels_array(html: str, labels: list[str]) -> str:
         flags=re.I,
     )
 
+
+def _rewrite_chart_data_array(html: str, values: list[float]) -> str:
+    """Emit plain numeric JS values so Chart.js draws slices from '18 400,5' too."""
+    if not values:
+        return html or ""
+    nums = ",".join(_fmt_slice_num(v) for v in values)
+    return re.sub(
+        r"\bdata\s*:\s*\[[^\]]*\]",
+        f"data:[{nums}]",
+        html or "",
+        count=1,
+        flags=re.I,
+    )
+
 def _fmt_slice_pct(val: float, total: float) -> str:
     """A positive slice never prints as 0%. Tiny shares keep one decimal."""
     raw = 100.0 * val / total if total else 0.0
@@ -136,6 +159,7 @@ def enhance_donut_html(html: str) -> str:
         (_clean_slice_label(lab), val, color) for lab, val, color in slices
     ]
     src = _rewrite_chart_labels_array(src, [lab for lab, _, _ in clean_slices])
+    src = _rewrite_chart_data_array(src, [val for _, val, _ in clean_slices])
 
     total = sum(v for _, v, _ in clean_slices) or 1.0
     focus_i = max(range(len(clean_slices)), key=lambda i: clean_slices[i][1])
@@ -145,20 +169,22 @@ def enhance_donut_html(html: str) -> str:
     rows: list[str] = []
     for label, val, color in clean_slices:
         pct = _fmt_slice_pct(val, total)
+        safe_label = _html.escape(label, quote=True)
         rows.append(
             '<li class="valued-legend__row">'
             f'<span class="valued-legend__swatch" style="background:{color}"></span>'
-            f'<span class="valued-legend__label">{label}</span>'
+            f'<span class="valued-legend__label">{safe_label}</span>'
             f'<span class="valued-legend__pct">{pct}</span>'
             f'<span class="valued-legend__abs">{_fmt_slice_num(val)}</span>'
             "</li>"
         )
     legend_class = "valued-legend is-dense" if len(clean_slices) >= 8 else "valued-legend"
     legend = f'<ul class="{legend_class}">' + "".join(rows) + "</ul>"
+    safe_focus = _html.escape(focus_label, quote=True)
     center = (
         '<div class="donut-center">'
         f'<div class="pct">{focus_pct}%</div>'
-        f'<div class="lbl">{focus_label}</div>'
+        f'<div class="lbl">{safe_focus}</div>'
         "</div>"
     )
 

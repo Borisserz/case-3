@@ -227,6 +227,85 @@ def _repair_sequence_diagram_lines(mermaid: str) -> str:
     return "\n".join(out)
 
 
+_FLOW_HDR = re.compile(r"^\s*(?:flowchart|graph)\b", re.IGNORECASE)
+_META_LINE = re.compile(
+    r"^\s*(?:%%|classDef\b|class\s|style\s|linkStyle\b|subgraph\b|end\b|direction\b|click\b)",
+    re.IGNORECASE,
+)
+_NODE_OPEN = {"[": "]", "{": "}", "(": ")"}
+
+
+def _quote_flowchart_nodes(mermaid: str) -> str:
+    """Auto-quote flowchart node labels containing (), :, \", or %."""
+    lines = (mermaid or "").splitlines()
+    first = ""
+    for ln in lines:
+        s = ln.strip()
+        if s and not s.startswith("%%") and not s.startswith("---"):
+            first = s
+            break
+    if not _FLOW_HDR.match(first):
+        return mermaid
+    out_lines: list[str] = []
+    for line in lines:
+        if _META_LINE.match(line) or _FLOW_HDR.match(line):
+            out_lines.append(line)
+            continue
+        buf: list[str] = []
+        i = 0
+        n = len(line)
+        while i < n:
+            ch = line[i]
+            # Preserve quoted strings & edge labels |...|
+            if ch == '"':
+                end = line.find('"', i + 1)
+                if end < 0:
+                    buf.append(line[i:])
+                    break
+                buf.append(line[i : end + 1])
+                i = end + 1
+                continue
+            if ch == "|":
+                end = line.find("|", i + 1)
+                if end < 0:
+                    buf.append(line[i:])
+                    break
+                buf.append(line[i : end + 1])
+                i = end + 1
+                continue
+            if ch in _NODE_OPEN and i > 0 and (line[i - 1].isalnum() or line[i - 1] in "_-"):
+                close = _NODE_OPEN[ch]
+                # Skip double delimiters [[...]], {{...}}, ((...)), ([...]), [(...)]
+                if i + 1 < n and line[i + 1] in "[]{}()/\\":
+                    buf.append(ch)
+                    i += 1
+                    continue
+                depth = 1
+                j = i + 1
+                while j < n and depth > 0:
+                    if line[j] == ch:
+                        depth += 1
+                    elif line[j] == close:
+                        depth -= 1
+                    j += 1
+                if depth == 0:
+                    inner = line[i + 1 : j - 1]
+                    stripped = inner.strip()
+                    if (
+                        stripped
+                        and not (stripped.startswith('"') and stripped.endswith('"'))
+                        and any(c in inner for c in ('(', ')', ':', '"', '%'))
+                    ):
+                        safe = inner.replace('"', "#quot;")
+                        buf.append(f'{ch}"{safe}"{close}')
+                        i = j
+                        continue
+            buf.append(ch)
+            i += 1
+        out_lines.append("".join(buf))
+    return "\n".join(out_lines)
+
+
 def sanitize_mermaid(text: str) -> str:
     """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart.
 
@@ -236,6 +315,8 @@ def sanitize_mermaid(text: str) -> str:
     raw = (text or "").strip()
     if not raw:
         raise DiagramError("empty mermaid")
+    if "\n" not in raw and ("\\n" in raw or "\\r\\n" in raw):
+        raw = raw.replace("\\r\\n", "\n").replace("\\n", "\n")
     m = _FENCE.match(raw)
     if m:
         raw = m.group(1).strip()
@@ -255,6 +336,7 @@ def sanitize_mermaid(text: str) -> str:
     raw = _repair_class_assign_lines(raw)
     raw = _repair_sequence_diagram_lines(raw)
     raw = _normalize_edge_label_spaces(raw)
+    raw = _quote_flowchart_nodes(raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
     raw = _rewrite_unsafe_colors(raw)
     return raw

@@ -49,6 +49,7 @@ def test_release_starts_the_waiting_run(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     monkeypatch.setattr("case3.api._bg_run_pipeline", _fake_bg)
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
     assert _claim_pipeline_slot("holder_run") is None
     try:
         client = TestClient(app)

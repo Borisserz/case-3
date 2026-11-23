@@ -194,7 +194,7 @@ def test_turn_route_routes_standalone_chart_to_chat_and_report_chart_to_report()
     assert resolve_turn("Построй график по областям", None) == "chat"
     assert resolve_turn("Нарисуй диаграмму продаж", None) == "chat"
     assert resolve_turn("Построй график в чате", "report") == "chat"
-    assert resolve_turn("Построй график по областям", "report") == "report"
+    assert resolve_turn("Построй график по областям", "report") == "chat"
     assert resolve_turn("Сделай отчёт и график по областям", None) == "report"
     assert wants_chat_chart("Построй график по областям") is True
     assert wants_chat_chart("можешь построить график по этим данным") is True

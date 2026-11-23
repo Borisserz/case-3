@@ -20,8 +20,8 @@ def test_local_off_uses_chat_template_kwargs() -> None:
     assert "reasoning" not in body
 
 
-def test_openrouter_off_omits_reasoning_for_nemotron() -> None:
-    """Nemotron free burns max_tokens on hidden reasoning → empty content + length."""
+def test_openrouter_off_disables_reasoning_for_nemotron() -> None:
+    """Nemotron free burns max_tokens on hidden reasoning unless enabled=False."""
     body = build_body(
         system="s",
         user_text="u",
@@ -29,7 +29,7 @@ def test_openrouter_off_omits_reasoning_for_nemotron() -> None:
         reasoning="off",
         base_url="https://openrouter.ai/api",
     )
-    assert "reasoning" not in body
+    assert body["reasoning"] == {"enabled": False}
     assert "chat_template_kwargs" not in body
 
 
@@ -44,7 +44,7 @@ def test_openrouter_off_minimax_keeps_low_exclude() -> None:
     assert body["reasoning"] == {"effort": "low", "exclude": True}
 
 
-def test_openrouter_free_off_omits_reasoning() -> None:
+def test_openrouter_free_off_disables_reasoning() -> None:
     body = build_body(
         system="s",
         user_text="u",
@@ -52,7 +52,7 @@ def test_openrouter_free_off_omits_reasoning() -> None:
         reasoning="off",
         base_url="https://openrouter.ai/api",
     )
-    assert "reasoning" not in body
+    assert body["reasoning"] == {"enabled": False}
 
 
 def test_images_become_qwen_vision_parts() -> None:
@@ -128,4 +128,122 @@ def test_llm_complete_falls_back_to_text_on_400_with_images() -> None:
     assert isinstance(posted_contents[0], list)
     # Fallback call was pure string
     assert posted_contents[1] == "describe"
+
+
+def test_llm_shared_key_cooldown_skips_rate_limited_primary_across_clients() -> None:
+    from case3.llm_client import clear_key_cooldowns
+
+    clear_key_cooldowns()
+    try:
+        cfg = LLMConfig(
+            base_url="http://test.api",
+            api_key="key_primary",
+            api_keys=("key_primary", "key_backup"),
+            max_retries=1,
+        )
+        seen_auth: list[str] = []
+
+        def mock_urlopen(req, timeout=None):
+            auth = req.headers.get("Authorization", "")
+            seen_auth.append(auth)
+            if "key_primary" in auth:
+                raise urllib.error.HTTPError(
+                    url="http://test.api/chat/completions",
+                    code=429,
+                    msg="Rate limit",
+                    hdrs={},
+                    fp=io.BytesIO(b'{"error": "rate limit"}'),
+                )
+            return io.BytesIO(
+                json.dumps(
+                    {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+                ).encode("utf-8")
+            )
+
+        with patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            c1 = LLMClient(cfg, sleep=lambda _s: None)
+            assert c1.complete(system="s", user_text="u") == "ok"
+            # New LLMClient in same process skips cooled-down key_primary immediately!
+            c2 = LLMClient(cfg, sleep=lambda _s: None)
+            assert c2.complete(system="s", user_text="u2") == "ok"
+
+        assert seen_auth == [
+            "Bearer key_primary",
+            "Bearer key_backup",
+            "Bearer key_backup",
+        ]
+    finally:
+        clear_key_cooldowns()
+
+
+def test_content_rejects_english_cot_mentioning_charts_in_reasoning() -> None:
+    from case3.llm_client import LLMError, _content
+
+    payload = {
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {
+                    "content": "",
+                    "reasoning": 'Thinking Process: 1. The user wants "charts" and "figures" analysis.',
+                },
+            }
+        ]
+    }
+    try:
+        _content(payload)
+        raise AssertionError("expected LLMError when content is empty and reasoning is English CoT")
+    except LLMError as exc:
+        assert "empty response" in str(exc)
+
+
+def test_complete_retries_openrouter_length_empty_with_reasoning_disabled_and_400_fallback() -> None:
+    cfg = LLMConfig(
+        base_url="https://openrouter.ai/api",
+        api_key="key1",
+        model="openrouter/free",
+        max_retries=2,
+        max_tokens=1024,
+        reasoning="off",
+    )
+    seen: list[dict[str, object]] = []
+
+    class _Resp:
+        def __init__(self, body: dict[str, object]) -> None:
+            self._raw = json.dumps(body).encode("utf-8")
+
+        def read(self) -> bytes:
+            return self._raw
+
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *args: object) -> bool:
+            return False
+
+    def fake_urlopen(req, _timeout, _cancel):
+        payload = json.loads(req.data.decode("utf-8"))
+        seen.append(payload)
+        if len(seen) == 1:
+            return _Resp({"choices": [{"finish_reason": "length", "message": {"content": ""}}]})
+        if len(seen) == 2:
+            raise urllib.error.HTTPError(
+                req.full_url,
+                400,
+                "Bad Request",
+                {},
+                io.BytesIO(b'{"error":{"message":"Reasoning is mandatory for this endpoint"}}'),
+            )
+        return _Resp({"choices": [{"finish_reason": "stop", "message": {"content": "Готово"}}]})
+
+    client = LLMClient(cfg, sleep=lambda _s: None)
+    with patch("case3.llm_client._urlopen_until_cancel", side_effect=fake_urlopen):
+        out = client.complete(system="s", user_text="u")
+
+    assert out == "Готово"
+    assert seen[0].get("reasoning") == {"enabled": False}
+    assert seen[1].get("reasoning") == {"enabled": False}
+    assert seen[1]["max_tokens"] == 6144
+    assert "reasoning" not in seen[2]
+    assert seen[2]["max_tokens"] == 6144
 

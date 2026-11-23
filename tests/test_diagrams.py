@@ -459,3 +459,39 @@ def test_pptx_parsers_support_leading_comments() -> None:
     assert len(spec.periods) >= 1
 
 
+def test_sanitize_mermaid_quotes_node_labels_with_parens_colons_quotes() -> None:
+    raw = (
+        "flowchart TD\n"
+        '  A[Выручка (2025): 120 "план"] --> B{Итог (100%): да?}\n'
+        '  B -->|Резерв: +450| C(Рост (Гомель))\n'
+    )
+    out = sanitize_mermaid(raw)
+    assert 'A["Выручка (2025): 120' in out
+    assert 'B{"Итог (100%): да?"}' in out
+    assert 'C("Рост (Гомель)")' in out
+
+
+def test_sanitize_mermaid_unescapes_double_escaped_newlines() -> None:
+    raw = r"flowchart TD\n  A[Старт]:::start --> B[Финиш]:::ok\n  classDef start fill:#DCE6F0"
+    out = sanitize_mermaid(raw)
+    lines = out.splitlines()
+    assert lines[0] == "flowchart TD"
+    assert "A[Старт]:::start --> B[Финиш]:::ok" in lines[1]
+    assert "classDef start" in lines[2]
+
+
+def test_render_mermaid_png_rejects_bomb_svg(tmp_path: Path) -> None:
+    import pytest
+    from case3.slides_media import render_mermaid_png
+
+    dest = tmp_path / "dia_bomb.png"
+    with pytest.raises(RuntimeError, match="mermaid syntax error"):
+        render_mermaid_png(
+            mermaid=r"flowchart TD\n  A --> B",
+            dest=dest,
+            palette="editorial",
+        )
+    assert not dest.exists()
+
+
+

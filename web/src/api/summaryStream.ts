@@ -19,6 +19,15 @@ export function openSummaryStream(
       /* ignore */
     }
   };
+  const onReplaceEv = (ev: Event) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as { text?: string };
+      acc = data.text || "";
+      onDelta(acc);
+    } catch {
+      /* ignore */
+    }
+  };
   const onDoneEv = (ev: Event) => {
     try {
       const data = JSON.parse((ev as MessageEvent).data) as {
@@ -33,12 +42,14 @@ export function openSummaryStream(
     es.close();
   };
   es.addEventListener("delta", onDeltaEv);
+  es.addEventListener("replace", onReplaceEv);
   es.addEventListener("done", onDoneEv);
   es.onerror = () => {
     es.close();
   };
   return () => {
     es.removeEventListener("delta", onDeltaEv);
+    es.removeEventListener("replace", onReplaceEv);
     es.removeEventListener("done", onDoneEv);
     es.close();
   };

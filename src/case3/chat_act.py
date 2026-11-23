@@ -68,8 +68,8 @@ _STOP_NAME = frozenset(
     }
 )
 _EDIT = re.compile(
-    r"измени|изменить|исправь|исправить|замени|заменить|удали|удалить|"
-    r"убери|убрать|добавь|добавить|поправь",
+    r"\b(измени|изменить|исправь|исправить|замени|заменить|удали|удалить|"
+    r"убери|убрать|добавь|добавить|поправь)\b",
     re.IGNORECASE,
 )
 def asks_without_order(raw: str) -> bool:
@@ -79,7 +79,7 @@ def asks_without_order(raw: str) -> bool:
     «убери слайд 2» is still an order.
     """
     text = raw or ""
-    if re.search(r"(?:^|\s)(?:почему|зачем)\b", text, re.IGNORECASE):
+    if re.search(r"(?:^|\s)(?:почему|зачем|на\s+сколько\s+измен)\b", text, re.IGNORECASE):
         return True
     if "?" not in text:
         return False
@@ -871,8 +871,8 @@ def edit_clauses(text: str | None) -> list[str]:
 
 
 _NEW_BUILD_ARTIFACT = re.compile(
-    r"\b(?:сделай|собери|подготовь|оформи|сверстай|сгенерируй|напиши|создай)\b"
-    r"[^.!?\n]{0,40}\b(?:новый\s+|новую\s+)?(?:отчет|презентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
+    r"\b(?:сделай|собери|перестрой|пересобери|подготовь|оформи|сверстай|сгенерируй|напиши|создай)\b"
+    r"[^.!?\n]{0,120}\b(?:новый\s+|новую\s+)?(?:отчет\w*|презентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
     re.IGNORECASE,
 )
 
@@ -1306,10 +1306,12 @@ def resolve_act(
 
     if not question and (_REWRITE.search(raw) or _PROSE.search(raw)):
         if not has_report:
-            return ChatAct(
-                kind="talk",
-                say="Отчёта в этом чате ещё нет, переписывать нечего.",
-            )
+            if re.search(r"отч[её]т|раздел|абзац", raw, re.IGNORECASE):
+                return ChatAct(
+                    kind="talk",
+                    say="Отчёта в этом чате ещё нет, переписывать нечего.",
+                )
+            return ChatAct(kind="talk")
         name = section_target(raw)
         if not name:
             return ChatAct(
@@ -1543,7 +1545,12 @@ def resolve_act(
             say=f"Добавляю слайд «{topic}». Новых чисел нет.",
         )
 
-    if not question and not _explicit_new_artifact(raw) and _EDIT.search(raw):
+    if (
+        not question
+        and (has_deck or has_report or has_diagram)
+        and not _explicit_new_artifact(raw)
+        and _EDIT.search(raw)
+    ):
         return ChatAct(
             kind="revise",
             op="ask",

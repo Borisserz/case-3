@@ -10,7 +10,7 @@ from case3.chat_turn import _NUM, _norm_num, latest_user_line, number_norms, str
 
 _PROTECT = re.compile(
     r"\\includegraphics\s*(?:\[[^\]]*\])?\{[^}]*\}"
-    r"|\\begin\{(?:tabularx?\*?|xltabular|tabular\*?)\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?\s*\{(?:[^{}]|\{[^{}]*\})*\}"
+    r"|\\begin\{(?P<tbl>tabularx?\*?|xltabular|tabular\*?)\}[\s\S]*?\\end\{(?P=tbl)\}"
     r"|\\(?:begin|end)\{[^}]*\}(?:\s*\[[^\]]*\])?"
     r"|\\(?:label|ref|pageref|autoref|eqref|cite\w*)\{[^}]*\}"
     r"|(?<!\\)%[^\n]*"
@@ -69,6 +69,8 @@ class TableGrid:
         self.ranks: dict[tuple[str, str], set[str]] = {}
         self.columns: set[str] = set()
         self.aggregates: set[str] = set()
+        self.all_row_norms: set[str] = set()
+        self.phrase_norms: list[tuple[re.Pattern[str], set[str]]] = []
 
     def add(
         self,
@@ -80,13 +82,18 @@ class TableGrid:
         clean = {norm for norm in norms if norm}
         if not clean or not row:
             return
+        expanded = set(clean)
+        for n in clean:
+            if n.startswith("-") and len(n) > 1:
+                expanded.add(n[1:])
+        self.all_row_norms.update(expanded)
         if col:
-            bucket.setdefault((row, col), set()).update(clean)
+            bucket.setdefault((row, col), set()).update(expanded)
             self.columns.add(col)
         else:
-            bucket.setdefault((row, ""), set()).update(clean)
+            bucket.setdefault((row, ""), set()).update(expanded)
         if bucket is self.values:
-            self.rows.setdefault(row, set()).update(clean)
+            self.rows.setdefault(row, set()).update(expanded)
 
 
 _GENERIC_ROW = frozenset(
@@ -105,6 +112,15 @@ _GENERIC_ROW = frozenset(
 _DERIV_LINE = re.compile(
     r"^[-*]\s+(.+?)\s+[—-]\s+доля\s+(\d[\d \u00a0.,]*%?)\s*,\s*место\s+(\d+)\s*$"
 )
+_FP_DERIV_LINE = re.compile(
+    r"^[-*]\s+(.+?):\s+откл\.\s+([+\-−]?[\d \u00a0.,]+)(?:,\s*вып\.\s+([\d \u00a0.,]+%))?\s*$"
+)
+
+
+def _label_key(label: str) -> str:
+    return " ".join(
+        re.findall(r"[0-9a-zа-я]+", (label or "").casefold().replace("ё", "е"))
+    )
 
 
 def _name_stems(label: str) -> set[str]:
@@ -120,14 +136,12 @@ def _name_stems(label: str) -> set[str]:
 
 
 def table_grid(source: str) -> TableGrid:
-    """One cell stays on its row and its column. A shared word is not a row key."""
-    from collections import Counter
-
+    """One cell stays on its row and its column. Shared group words stay excluded."""
     from case3.dashboard_source import _label_column, _markdown_tables
 
     grid = TableGrid()
-    stem_rows: list[set[str]] = []
-    row_cells: list[dict[str, set[str]]] = []
+    row_entries: list[tuple[str, str, set[str], dict[str, set[str]]]] = []
+    stem_labels: dict[str, set[str]] = {}
     for _title, rows in _markdown_tables(source or ""):
         if len(rows) < 2:
             continue
@@ -155,13 +169,37 @@ def table_grid(source: str) -> TableGrid:
                 # «Май» is three letters, so it never becomes a column stem.
                 # The number still belongs to the row.
                 cells.setdefault(col_stems.get(col, ""), set()).update(norms)
-            stem_rows.append(_name_stems(label))
-            row_cells.append(cells)
-    counts = Counter(stem for stems in stem_rows for stem in stems)
-    for stems, cells in zip(stem_rows, row_cells):
-        for key in {stem for stem in stems if counts[stem] == 1}:
+            stems = _name_stems(label)
+            lkey = _label_key(label)
+            if lkey:
+                for stem in stems:
+                    stem_labels.setdefault(stem, set()).add(lkey)
+            row_entries.append((label, lkey, stems, cells))
+
+    phrase_map: dict[str, tuple[str, set[str]]] = {}
+    for raw_label, lkey, stems, cells in row_entries:
+        unique = {stem for stem in stems if len(stem_labels.get(stem, set())) == 1}
+        keys = unique or stems
+        row_all_norms: set[str] = set()
+        for norms in cells.values():
+            row_all_norms.update(norms)
+            for n in list(norms):
+                if n.startswith("-") and len(n) > 1:
+                    row_all_norms.add(n[1:])
+        for key in keys:
             for col, norms in cells.items():
                 grid.add(grid.values, key, col, norms)
+        if lkey and row_all_norms and len(stem_labels) > 0 and not unique and stems:
+            prev_raw, prev_norms = phrase_map.get(lkey, (raw_label, set()))
+            phrase_map[lkey] = (prev_raw, prev_norms | row_all_norms)
+    for lkey, (raw_label, pnorms) in phrase_map.items():
+        tokens = lkey.split()
+        if len(tokens) >= 2:
+            pat = re.compile(
+                r"\b" + r"\s+".join(re.escape(t) for t in tokens) + r"\w*",
+                re.IGNORECASE,
+            )
+            grid.phrase_norms.append((pat, pnorms))
     _add_derivatives(grid, source or "")
     return grid
 
@@ -173,33 +211,47 @@ def _add_derivatives(grid: TableGrid, source: str) -> None:
         if not stripped or stripped.startswith("|") or stripped.startswith("#"):
             continue
         match = _DERIV_LINE.match(stripped)
-        if not match:
-            if "Доли и места" in stripped:
-                continue
-            if stripped.startswith(
-                (
-                    "Сумма по строкам:",
-                    "Среднее:",
-                    "По «",
-                    "Сводно:",
-                    "Отклонение и выполнение",
-                    "- По «",
-                )
-            ):
-                # Strip single-row «; макс: ...; мин: ...» tail so extrema stay tied to their own row.
-                agg_part = stripped.split("; макс:", 1)[0].split("; мин:", 1)[0]
-                grid.aggregates.update(number_norms(agg_part))
-                continue
-            column = stripped
+        if match:
+            label, share, rank = match.group(1), match.group(2), match.group(3)
+            named = _name_stems(column)
+            col = max(named, key=len) if named else ""
+            for stem in _name_stems(label):
+                if stem not in grid.rows:
+                    continue
+                grid.add(grid.shares, stem, col, number_norms(share))
+                grid.add(grid.ranks, stem, col, number_norms(rank))
             continue
-        label, share, rank = match.group(1), match.group(2), match.group(3)
-        named = _name_stems(column)
-        col = max(named, key=len) if named else ""
-        for stem in _name_stems(label):
-            if stem not in grid.rows:
-                continue
-            grid.add(grid.shares, stem, col, number_norms(share))
-            grid.add(grid.ranks, stem, col, number_norms(rank))
+        fp_match = _FP_DERIV_LINE.match(stripped)
+        if fp_match:
+            label, diff = fp_match.group(1), fp_match.group(2)
+            pct = fp_match.group(3) or ""
+            for stem in _name_stems(label):
+                if stem not in grid.rows:
+                    continue
+                grid.add(grid.values, stem, "", number_norms(diff))
+                if pct:
+                    grid.add(grid.values, stem, "", number_norms(pct))
+                    grid.add(grid.shares, stem, "", number_norms(pct))
+            continue
+        if "Доли и места" in stripped:
+            continue
+        if stripped.startswith(
+            (
+                "Сумма по строкам:",
+                "Среднее:",
+                "По «",
+                "Сводно:",
+                "Отклонение и выполнение",
+                "- По «",
+                "Выше плана",
+            )
+        ):
+            agg_part = stripped.split("; макс:", 1)[0].split("; мин:", 1)[0]
+            grid.aggregates.update(number_norms(agg_part))
+            continue
+        if stripped.startswith(("Топ-5", "Отстающие")):
+            continue
+        column = stripped
 
 
 def _mentions_share(clause: str) -> bool:
@@ -292,7 +344,19 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
         return True
     if len(rows) > 1:
         return all(norm in _norms_on_row(grid, row, clause, columns) for row in rows)
-    return norm in _norms_on_row(grid, rows[0], clause, columns)
+    if len(rows) == 1 and grid.phrase_norms:
+        folded_clause = (clause or "").casefold().replace("ё", "е")
+        for pat, pnorms in grid.phrase_norms:
+            if pat.search(folded_clause):
+                row_norms = _norms_on_row(grid, rows[0], clause, columns)
+                # Keep share/rank from _norms_on_row while scoping values to matched phrase.
+                scoped = set(pnorms)
+                for bucket in (grid.shares, grid.ranks):
+                    for (k, _c), ns in bucket.items():
+                        if k == rows[0]:
+                            scoped |= ns
+                return _has_norm(scoped & row_norms or pnorms, norm)
+    return _has_norm(_norms_on_row(grid, rows[0], clause, columns), norm)
 
 
 def wrong_row_tokens(
@@ -376,6 +440,115 @@ def _rewrite_chart_body(kind: str, body: str, reject, slot_reject=None) -> str:
     return f"{kind}: [{''.join(parts)}]"
 
 
+_SMALL_COUNT_CLAUSE = re.compile(
+    r"(?:\bтоп[-\s]?(\d{1,2})\b|\b(\d{1,2})\s+(?:регион\w*|област\w*|район\w*|инспекц\w*|позиц\w*|строк\w*|категор\w*|город\w*|лидер\w*|аутсайдер\w*))",
+    re.IGNORECASE,
+)
+
+
+def _has_norm(pool: set[str], norm: str) -> bool:
+    return bool(norm) and (
+        norm in pool or (not norm.startswith("-") and f"-{norm}" in pool)
+    )
+
+
+def _is_small_cardinal_in_clause(clause: str, norm: str) -> bool:
+    if not norm.isdigit():
+        return False
+    val = int(norm)
+    if not (1 <= val <= 50):
+        return False
+    for m in _SMALL_COUNT_CLAUSE.finditer(clause or ""):
+        hit = m.group(1) or m.group(2)
+        if hit and int(hit) == val:
+            return True
+    return False
+
+
+def _verifies_math(
+    clause: str,
+    norm: str,
+    allowed_pool: set[str],
+    extra_operands: set[str] | None = None,
+) -> bool:
+    """Allow arithmetic outputs derived directly from grounded operands."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        target = Decimal(norm)
+    except InvalidOperation:
+        return False
+    clause_operands: list[Decimal] = []
+    seen_op: set[str] = set()
+    for match in _NUM.finditer(clause or ""):
+        cand = _norm_num(match.group(0))
+        if not cand or cand == norm or cand in seen_op:
+            continue
+        if _has_norm(allowed_pool, cand) or (extra_operands and cand in extra_operands):
+            try:
+                clause_operands.append(Decimal(cand))
+                seen_op.add(cand)
+            except InvalidOperation:
+                continue
+    pool_operands: list[Decimal] = list(clause_operands)
+    for src_set in (extra_operands or set(),):
+        for cand in src_set:
+            if cand == norm or cand in seen_op:
+                continue
+            try:
+                pool_operands.append(Decimal(cand))
+                seen_op.add(cand)
+            except InvalidOperation:
+                continue
+    if not pool_operands:
+        return False
+
+    tol = max(Decimal("0.15"), abs(target) * Decimal("0.005"))
+
+    # 1. Unit scaling (thousands <-> millions)
+    for val in pool_operands:
+        if val == 0:
+            continue
+        for factor in (Decimal("1000"), Decimal("0.001"), Decimal("1000000"), Decimal("0.000001")):
+            if abs(val * factor - target) <= tol:
+                return True
+
+    # 2. Multi-addend sum from grounded operands present in the sentence/clause
+    if len(clause_operands) >= 2:
+        total = sum(clause_operands, Decimal(0))
+        if abs(total - target) <= tol:
+            return True
+
+    if extra_operands and len(pool_operands) >= 2:
+        # Pairwise combinations among grounded operands in sentence + extra (row / message)
+        for i in range(len(pool_operands)):
+            a = pool_operands[i]
+            for j in range(i + 1, len(pool_operands)):
+                b = pool_operands[j]
+                cands = [a + b, a - b, b - a, abs(a - b)]
+                if b != 0:
+                    cands.extend([a * Decimal(100) / b, (a - b) * Decimal(100) / b])
+                if a != 0:
+                    cands.extend([b * Decimal(100) / a, (b - a) * Decimal(100) / a])
+                for calc in cands:
+                    if abs(calc - target) <= tol:
+                        return True
+    elif len(clause_operands) >= 2:
+        for i in range(len(clause_operands)):
+            a = clause_operands[i]
+            for j in range(i + 1, len(clause_operands)):
+                b = clause_operands[j]
+                cands = [a + b, a - b, b - a, abs(a - b)]
+                if b != 0:
+                    cands.extend([a * Decimal(100) / b, (a - b) * Decimal(100) / b])
+                if a != 0:
+                    cands.extend([b * Decimal(100) / a, (b - a) * Decimal(100) / a])
+                for calc in cands:
+                    if abs(calc - target) <= tol:
+                        return True
+    return False
+
+
 def _clause_allows(
     clause: str,
     norm: str,
@@ -383,18 +556,41 @@ def _clause_allows(
     bindings: list[tuple[str, str]],
     grid: TableGrid | None = None,
     message_ok: set[str] | None = None,
+    extra_math_operands: set[str] | None = None,
 ) -> bool:
-    if message_ok and norm in message_ok:
+    if message_ok and _has_norm(message_ok, norm):
+        return True
+    if _is_small_cardinal_in_clause(clause, norm):
+        return True
+    metadata_ok = (
+        (global_ok - grid.all_row_norms) | grid.aggregates
+        if grid is not None and grid.rows
+        else set()
+    )
+    if metadata_ok and _has_norm(metadata_ok, norm):
         return True
     on_row = _row_allows(clause, norm, grid)
     if on_row is not None:
-        return on_row
-    if norm in global_ok:
+        if on_row:
+            return True
+    elif _has_norm(global_ok, norm):
         return True
     from case3.chat_memory import _stem_set
 
     stems = _stem_set(clause)
-    return any(bound == norm and stem and stem in stems for bound, stem in bindings)
+    if any(bound == norm and stem and stem in stems for bound, stem in bindings):
+        return True
+    math_pool = set(global_ok) | (set(message_ok) if message_ok else set())
+    row_pool: set[str] = set(extra_math_operands or set())
+    if grid is not None and grid.rows:
+        mentions = _row_mentions(clause, grid)
+        for _s, _e, rstem in mentions:
+            row_pool |= grid.rows.get(rstem, set())
+    if message_ok:
+        row_pool |= set(message_ok)
+    if _verifies_math(clause, norm, math_pool, row_pool):
+        return True
+    return False
 
 
 def _split_commas(chunk: str) -> list[str]:
@@ -428,6 +624,33 @@ def _split_commas(chunk: str) -> list[str]:
     return parts
 
 
+def _balance_braces(text: str) -> str:
+    """Close any unclosed TeX braces or drop unmatched closing braces."""
+    out: list[str] = []
+    depth = 0
+    i = 0
+    size = len(text)
+    while i < size:
+        ch = text[i]
+        if ch == "\\" and i + 1 < size:
+            out.append(text[i : i + 2])
+            i += 2
+            continue
+        if ch == "{":
+            depth += 1
+            out.append(ch)
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                out.append(ch)
+        else:
+            out.append(ch)
+        i += 1
+    if depth > 0:
+        out.append("}" * depth)
+    return "".join(out)
+
+
 def _scrub_bound(
     text: str,
     global_ok: set[str],
@@ -458,24 +681,36 @@ def _scrub_bound(
                 return digit
         return ""
 
-    def clean_clause(clause: str) -> str:
+    def clean_clause(clause: str, sentence_ok: set[str]) -> tuple[str, set[str]]:
         digits = [_norm_num(match.group(0)) for match in _NUM.finditer(clause)]
         words = [(match.group(0), spoken_norm(match.group(0))) for match in _SPOKEN_RE.finditer(clause)]
         norms = [norm for norm in digits + [digit for _word, digit in words] if norm]
         if not norms:
-            return clause
+            return clause, set()
         judged = f"{context} {clause}".strip() if context else clause
-        bad = {
-            norm
-            for norm in norms
-            if not _clause_allows(
-                judged, norm, global_ok, bindings, grid, message_ok
-            )
-        }
+        extra = set(sentence_ok)
+        if message_ok:
+            extra |= message_ok
+        kept_here: set[str] = set()
+        bad: set[str] = set()
+        for norm in norms:
+            if _clause_allows(
+                judged,
+                norm,
+                global_ok,
+                bindings,
+                grid,
+                message_ok,
+                extra,
+            ):
+                kept_here.add(norm)
+                extra.add(norm)
+            else:
+                bad.add(norm)
         if not bad:
-            return clause
+            return clause, kept_here
         # One illegal number ruins the clause. Cutting it out leaves «в раза».
-        return ""
+        return "", set()
 
     kept_lines: list[str] = []
     for line in core.split("\n"):
@@ -492,13 +727,16 @@ def _scrub_bound(
             index += 2 if delim else 1
             parts = []
             cut = False
+            sentence_ok: set[str] = set()
             for part in _split_commas(chunk):
                 raw = part.strip()
-                cleaned = clean_clause(part).strip()
+                cleaned_raw, part_norms = clean_clause(part, sentence_ok)
+                cleaned = cleaned_raw.strip()
                 if not cleaned or re.fullmatch(r"[\s,.;:–—\-]+", cleaned):
                     if raw and (_NUM.search(raw) or _SPOKEN_RE.search(raw)):
                         cut = True
                     continue
+                sentence_ok.update(part_norms)
                 # «три месяца: март, апрель и май» leaves the lowercase tail.
                 if cut and cleaned[:1].islower() and not _NUM.search(cleaned):
                     continue
@@ -509,7 +747,7 @@ def _scrub_bound(
             if delim:
                 kept.append(delim)
         if kept:
-            kept_lines.append("".join(kept).strip())
+            kept_lines.append(_balance_braces("".join(kept).strip()))
     while kept_lines and kept_lines[-1] == "":
         kept_lines.pop()
     result = "\n".join(kept_lines)
@@ -654,12 +892,12 @@ def _split_document(tex: str) -> tuple[str, str, str]:
 
 
 def _quote_is_fact(inner: str) -> bool:
-    """A caption or tooltip. A color or an rgba() string is not a fact."""
+    """A caption or tooltip. HTML dimensions, hex colors, and CSS '%'-options are not facts."""
     if re.search(r"[А-Яа-яЁё]", inner or ""):
         return True
-    if re.search(r"тыс|млн|млрд|чел|°|%", inner or "", re.IGNORECASE):
+    if re.search(r"тыс|млн|млрд|чел|°", inner or "", re.IGNORECASE):
         return True
-    return bool(re.fullmatch(r"\s*\d+(?:[.,]\d+)?%?\s*", inner or ""))
+    return False
 
 
 def _scrub_html(html: str, stray: set[str]) -> str:
@@ -832,30 +1070,54 @@ def _scrub_html_bound(
     grid: TableGrid | None = None,
     message_ok: set[str] | None = None,
 ) -> str:
-    """Chart data takes only Source and this message. A label keeps its own row.
+    """Chart data takes only Source, this message, and matching user bindings.
 
     A caption may use a bound word. A month label is not a table row, so its
     point stays when the number itself is in Source.
     """
+    from case3.chat_memory import _stem_set
+
     labels = _chart_labels(html)
+    html_stems = _stem_set(html)
+
+    def _bound_allows(norm: str, slot: int | None = None) -> bool:
+        if not bindings:
+            return False
+        slot_stems = _stem_set(labels[slot]) if slot is not None and 0 <= slot < len(labels) else set()
+        for b_norm, stem in bindings:
+            if b_norm != norm:
+                continue
+            if not stem or stem in slot_stems or stem in html_stems:
+                return True
+        return False
+
+    def token_reject(token: str) -> bool:
+        norm = _norm_num(token)
+        if not norm:
+            return False
+        if _has_norm(global_ok, norm) or (message_ok and _has_norm(message_ok, norm)):
+            return False
+        return not _bound_allows(norm)
 
     def slot_reject(token: str, slot: int) -> bool:
         norm = _norm_num(token)
-        if message_ok and norm in message_ok:
+        if message_ok and _has_norm(message_ok, norm):
+            return False
+        if _bound_allows(norm, slot):
             return False
         if slot >= len(labels):
             return False
         allowed = _row_norms_for_label(labels[slot], grid)
         if allowed is None:
             return False
-        return norm not in allowed
+        return not _has_norm(allowed, norm)
 
     def repl(match: re.Match[str]) -> str:
         kind = match.group(1)
         return _rewrite_chart_body(
             kind,
             match.group(2),
-            lambda token: _norm_num(token) not in global_ok,
+            token_reject,
             slot_reject if kind.lower() == "data" else None,
         )
 

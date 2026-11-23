@@ -17,8 +17,16 @@ import {
   IconStop,
 } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
+import { isDashboardSource } from "./domain/dashboardCapture";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
+
+const DASHBOARD_STARTERS = [
+  { label: "Проанализируй цифры", prompt: "Проанализируй данные на экране: лидеры, отстающие, отклонения." },
+  { label: "Построй график", prompt: "Построй наглядный график по этим данным." },
+  { label: "Собери отчёт", prompt: "Сделай подробный отчёт по этому дашборду." },
+  { label: "Презентация", prompt: "Сделай презентацию по этим данным." },
+];
 
 type Props = {
   busy: boolean;
@@ -163,6 +171,20 @@ export function ChatComposer({
             onDismiss={onDismissPlaque}
           />
         ) : null}
+        {showPlaque && isDashboardSource(sourceDraft?.text || "") && !busy ? (
+          <div className="composer-dash-chips" aria-label="Быстрые запросы по дашборду">
+            {DASHBOARD_STARTERS.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                className="composer-dash-chip"
+                onClick={() => onPickStarter?.(chip.prompt)}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {deckApplyHint ? (
           <div className="composer-deck-hint" role="status">
@@ -306,7 +328,21 @@ export function ChatComposer({
           </div>
         </div>
 
-        <div className="chat-bias" role="group" aria-label="Собрать сразу">
+        <div
+          className={`chat-bias${showModes ? "" : " is-compact"}`}
+          role="group"
+          aria-label="Режим ответа"
+        >
+          <button
+            type="button"
+            className={workMode === null ? "is-on" : ""}
+            disabled={busy}
+            title="Свободный диалог по данным и автовыбор графика/отчёта"
+            aria-pressed={workMode === null}
+            onClick={() => onWorkMode(null)}
+          >
+            <span>Авто</span>
+          </button>
           {LIBER_MODE_PILLS.map((p) => {
             const on = workMode === p.id;
             const Icon =

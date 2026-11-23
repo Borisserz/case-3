@@ -75,7 +75,7 @@ def render_mermaid_svg_string(
     work_dir: Path | None = None,
 ) -> str:
     """Render Mermaid → SVG markup via Playwright (same stack as PNG)."""
-    from case3.chart_style import _PALETTES, normalize_palette_id
+    from case3.chart_style import normalize_palette_id
     from case3.charts import (
         _prefer_stable_playwright_browsers,
         _run_sync_playwright,
@@ -83,7 +83,7 @@ def render_mermaid_svg_string(
         file_url_to_path,
         paths_equal,
     )
-    from case3.slides_media import _diagram_template, _mermaid_js_path
+    from case3.slides_media import _mermaid_js_path, render_diagram_html
 
     work = Path(work_dir) if work_dir else Path.cwd() / ".mmd_svg_work"
     work.mkdir(parents=True, exist_ok=True)
@@ -95,25 +95,7 @@ def render_mermaid_svg_string(
     pid = normalize_palette_id(palette)
     if pid == "auto":
         pid = "atelier"
-    pal = _PALETTES.get(pid) or _PALETTES["atelier"]
-    primary = str(pal["primary"])
-    accents = list(pal.get("accents") or [primary])
-    accent = str(accents[0] if accents else primary)
-    from case3.diagram_style import ensure_role_classdefs
-
-    mermaid = ensure_role_classdefs(mermaid, palette)
-    body = (
-        (mermaid or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    html = (
-        _diagram_template()
-        .replace("{{MERMAID}}", body)
-        .replace("{{PRIMARY}}", primary)
-        .replace("{{ACCENT}}", accent)
-    )
+    html = render_diagram_html(mermaid=mermaid, palette=pid)
     index = (work / "index.html").resolve()
     index.write_text(html, encoding="utf-8")
     js_dest = js_dest.resolve()
@@ -176,6 +158,12 @@ def render_mermaid_svg_string(
     raw = str(holder.get("svg") or "").strip()
     if not raw:
         raise DiagramSvgError("svg render empty")
+    if (
+        'aria-roledescription="error"' in raw
+        or "error-icon" in raw
+        or "Syntax error in text" in raw
+    ):
+        raise DiagramSvgError("mermaid syntax error rendered")
     return normalize_svg_document(raw)
 
 

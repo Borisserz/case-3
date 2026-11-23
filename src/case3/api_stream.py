@@ -188,8 +188,8 @@ async def stream_run_summary(run_id: str) -> StreamingResponse:
 
         async for ev in BUS.subscribe_async(run_id, timeout_s=180.0):
             kind = ev.get("event") or "delta"
-            if kind == "delta":
-                yield _sse_pack("delta", {"text": ev.get("text") or ""})
+            if kind in {"delta", "replace"}:
+                yield _sse_pack(kind, {"text": ev.get("text") or ""})
             else:
                 yield _sse_pack(
                     "done",

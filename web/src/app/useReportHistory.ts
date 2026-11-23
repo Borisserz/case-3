@@ -30,7 +30,7 @@ import {
 import { reportReadyText, reportTitle, uid } from "../domain/runHelpers";
 import { draftFromDocuments } from "../domain/sourcePack";
 import { loadOpenChat, rememberOpenChat } from "../domain/openChat";
-import { messagesFromMemory } from "../domain/priorRun";
+import { botHistoryResult, messagesFromMemory } from "../domain/priorRun";
 import { chatToReopen, historyRailRun } from "../domain/reviseRefresh";
 import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
 
@@ -230,6 +230,7 @@ export function useReportHistory({
                     text: line.text,
                     lead: line.lead,
                     dashboard: line.dashboard,
+                    result: botHistoryResult(line, result.run_id),
                   },
             )
           : [];
@@ -259,7 +260,11 @@ export function useReportHistory({
           for (let i = next.length - 1; i >= 0; i -= 1) {
             const line = next[i];
             if (line.role !== "bot") continue;
-            line.result = shown;
+            const prevPreviews = line.result?.previews;
+            line.result =
+              prevPreviews?.length && !(shown.previews || []).length
+                ? { ...shown, previews: prevPreviews }
+                : shown;
             botMsgId = line.id;
             break;
           }

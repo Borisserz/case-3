@@ -113,6 +113,8 @@ def test_clear_waiter_only_matching_run(tmp_path: Path) -> None:
 def test_post_run_persists_waiter(tmp_path: Path, monkeypatch) -> None:
     import threading
 
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("CASE3_MAX_QUEUED_RUNS", "1")
     ran = threading.Event()
 
     def _fake_bg(**kwargs: object) -> None:
@@ -171,6 +173,8 @@ def test_chat_question_starts_beside_a_queued_report(tmp_path: Path, monkeypatch
     """A question must not take the build slot or the single waiter."""
     from case3.api import _pipeline_active_run
 
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("CASE3_MAX_QUEUED_RUNS", "1")
     monkeypatch.setattr("case3.run_store.ROOT", tmp_path)
     monkeypatch.setattr("case3.api._bg_run_pipeline", lambda **kwargs: None)
     assert _claim_pipeline_slot("holder_run") is None

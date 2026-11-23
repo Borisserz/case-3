@@ -35,3 +35,26 @@ def test_enhance_donut_forces_square_canvas() -> None:
     assert int(w.group(1)) >= 400
     assert "donut-layout" in out
     assert "valued-legend" in out
+
+
+def test_enhance_donut_parses_ru_comma_space_numbers_and_escapes_html() -> None:
+    raw = """
+<canvas id="c" width="520" height="520"></canvas>
+<script>
+new Chart(document.getElementById('c'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Минск <центр>', 'Гомель & юг'],
+    datasets: [{ data: ['18 400,5', 6100.5], backgroundColor: ['#3F5210', '#5A6E28'] }]
+  },
+  options: { plugins: { legend: { display: true } } }
+});
+</script>
+"""
+    out = enhance_donut_html(raw)
+    assert "donut-layout" in out
+    assert "&lt;центр&gt;" in out
+    assert "&amp; юг" in out
+    assert "18400.5" in out or "18400,5" in out or "75%" in out
+    html_part = out.split("<script", 1)[0]
+    assert "<центр>" not in html_part

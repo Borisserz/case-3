@@ -102,8 +102,10 @@ def test_run_returns_202_and_status_poll(
     assert payload["run_id"] == run_id
 
 
-def test_run_rejects_second_while_busy(client: TestClient) -> None:
-    """One executing build. The next build waits. A third build gets 409."""
+def test_run_rejects_second_while_busy(client: TestClient, monkeypatch) -> None:
+    """Under CASE3_MAX_CONCURRENT_RUNS=1, second queues and third gets 409."""
+    monkeypatch.setenv("CASE3_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("CASE3_MAX_QUEUED_RUNS", "1")
     assert api_mod._claim_pipeline_slot("holder_test") is None
     started: list[str] = []
 

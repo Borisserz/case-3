@@ -19,6 +19,8 @@ type Props = {
   docTitle?: string | null;
   /** Same Source → DOCX twin; download on the same report card. */
   docxHref?: string | null;
+  /** Companion presentation PDF next to PPTX on the single presentation card. */
+  deckPdfHref?: string | null;
   onPrimary?: () => void;
   primaryLabel?: string;
   /** Extra slide thumbs under the hero (deck). */
@@ -150,6 +152,7 @@ export function DeckFileCard({
   fileLabel,
   docTitle = null,
   docxHref = null,
+  deckPdfHref = null,
   onPrimary,
   primaryLabel,
   filmstrip = [],
@@ -315,6 +318,19 @@ export function DeckFileCard({
             >
               {DECK_DOWNLOAD_BLOCKED_LABEL}
             </button>
+          ) : isPptx ? (
+            <>
+              {href && href !== "#" ? (
+                <a href={href} download className="deck-file-card-action">
+                  {deckPdfHref ? "PPTX" : "Скачать"}
+                </a>
+              ) : null}
+              {deckPdfHref ? (
+                <a href={deckPdfHref} download className="deck-file-card-action">
+                  PDF
+                </a>
+              ) : null}
+            </>
           ) : href && href !== "#" ? (
             <a href={href} download className="deck-file-card-action">
               Скачать

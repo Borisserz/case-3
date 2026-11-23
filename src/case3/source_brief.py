@@ -22,8 +22,10 @@ _METHOD = re.compile(
 )
 
 _BRIEF_AT = 8000
-_BRIEF_MAX = 24000
+_BRIEF_MAX = 32000
 _FACTS_PER_SECTION = 8
+_FACTS_RICH_SECTION = 80
+_RICH_SECTION = re.compile(r"^(?:производные|карточки|таблица(?:\s+pdf)?)$", re.IGNORECASE)
 _CODE_MAX = 4
 _TERM_MAX = 48
 _DEF_MAX = 220
@@ -69,7 +71,8 @@ def slides_source_text(source: str) -> str:
     if highs:
         parts.append(_highlights_block(highs))
     for title, body in _sections(prose):
-        facts = _fact_lines(body, limit=_FACTS_PER_SECTION)
+        sec_limit = _FACTS_RICH_SECTION if _RICH_SECTION.match(title) else _FACTS_PER_SECTION
+        facts = _fact_lines(body, limit=sec_limit)
         if not title and not facts:
             continue
         if title:
@@ -172,19 +175,23 @@ def _fact_lines(body: str, *, limit: int) -> list[str]:
         for line in lines
         if line.startswith("|") and not re.match(r"^\|?[\s\-:|]+\|?$", line)
     ]
+    out: list[str] = []
     if table:
-        out: list[str] = []
+        row_cap = max(limit, 150)
         for line in table:
             flat = " ".join(line.split())
             if len(flat) > 240:
                 flat = flat[:239].rstrip() + "…"
             out.append(flat)
-            if len(out) >= 120:
+            if len(out) >= row_cap:
                 break
-        return out
+        non_table_lines = [line for line in lines if not line.startswith("|")]
+        if not non_table_lines:
+            return out
+    else:
+        non_table_lines = lines
     candidates: list[str] = []
-    for raw_line in (body or "").splitlines():
-        ln = raw_line.strip()
+    for ln in non_table_lines:
         if not ln:
             continue
         if re.match(r"^(?:[-*•]|\d+[.)])\s+", ln):
@@ -193,14 +200,15 @@ def _fact_lines(body: str, *, limit: int) -> list[str]:
             candidates.extend(s.strip() for s in _SENT_SPLIT.split(ln) if s.strip())
     sentences = [s for s in candidates if s]
     numbered = [s for s in sentences if re.search(r"\d", s)]
-    chosen = numbered or sentences[:1]
-    out: list[str] = []
+    chosen = numbered or ([] if table else sentences[:1])
+    prose_added = 0
     for sentence in chosen:
         flat = " ".join(sentence.split())
         if len(flat) > 240:
             flat = flat[:239].rstrip() + "…"
         out.append(flat)
-        if len(out) >= limit:
+        prose_added += 1
+        if prose_added >= limit:
             break
     return out
 

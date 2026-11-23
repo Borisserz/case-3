@@ -829,3 +829,140 @@ def test_bind_deck_numbers_keeps_kicker_chrome_and_strips_ui_block_on_empty_chat
     assert deck["slides"][1]["rows"] == [["Канал", "Факт"], ["B2B", "быстро"]]
     # 1100 from Требования UI must NOT slip into slides
     assert "1100" not in str(deck)
+
+
+def test_scrub_html_bound_preserves_canvas_attrs_js_options_and_arrays():
+    from case3.fact_ground import _scrub_html_bound, table_grid
+
+    source = (
+        "| Регион | Факт |\n"
+        "| --- | --- |\n"
+        "| Минск | 19850 |\n"
+        "| Гомель | 14910 |\n"
+        "| Брест | 11960 |\n"
+        "| Витебск | 10290 |\n"
+    )
+    html = (
+        "<canvas id='c2' width='1100' height='560'></canvas>"
+        "<script>new Chart(document.getElementById('c2'),{"
+        "type:'bar',data:{labels:['Минск','Гомель','Брест','Витебск'],"
+        "datasets:[{data:[19850,14910,11960,10290]}]},"
+        "options:{cutout:'60%',scales:{x:{ticks:{maxRotation:45}}}}});</script>"
+    )
+    cleaned = _scrub_html_bound(
+        html,
+        {"19850", "14910", "11960", "10290"},
+        [],
+        grid=table_grid(source),
+    )
+    assert "width='1100'" in cleaned
+    assert "height='560'" in cleaned
+    assert "cutout:'60%'" in cleaned
+    assert "maxRotation:45" in cleaned
+    assert "data: [19850,14910,11960,10290]" in cleaned or "data:[19850,14910,11960,10290]" in cleaned
+
+
+def test_scrub_html_bound_allows_user_scenario_bindings_in_data():
+    from case3.fact_ground import fact_context, ground_generated
+
+    source = "| Регион | Факт |\n| --- | --- |\n| Гомель | 7544 |\n| Минск | 19850 |\n"
+    intent = "покажи график с новым фактом Гомель 7994 и Минск 19850"
+    html = (
+        "<script>new Chart(c,{data:{labels:['Гомель','Минск'],"
+        "datasets:[{data:[7994,19850]}]}});</script>"
+    )
+    _tex, out_charts, _figs, _diags, _dropped = ground_generated(
+        "",
+        [{"id": "cht_1", "html": html, "caption": "Сценарий Гомель 7994"}],
+        [],
+        [],
+        source=source,
+        intent=intent,
+    )
+    assert "7994" in out_charts[0]["html"]
+    assert "19850" in out_charts[0]["html"]
+    assert "null" not in out_charts[0]["html"]
+
+
+def test_protect_keeps_full_tabular_and_never_unbalances_textbf():
+    from case3.fact_ground import ground_generated
+
+    source = "| Регион | Факт | План |\n| --- | --- | --- |\n| Гомель | 7544 | 8200 |\n"
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "\\textbf{Гомель показал 7544, выдумка 99999}.\n"
+        "\\begin{tabularx}{\\textwidth}{lrr}\n"
+        "Регион & Факт & Вып. \\\\\n"
+        "Гомель & 7544 & 92,0\\% \\\\\n"
+        "\\end{tabularx}\n"
+        "\\begin{xltabular}{\\textwidth}{lr}\n"
+        "Показатель & Откл. \\\\\n"
+        "Гомель & -656 \\\\\n"
+        "\\end{xltabular}\n"
+        "\\end{document}\n"
+    )
+    out, _charts, _figs, _diags, _dropped = ground_generated(
+        tex, [], [], [], source=source, intent="отчёт"
+    )
+    assert "Гомель & 7544 & 92,0\\%" in out
+    assert "Гомель & -656" in out
+    assert "99999" not in out
+    assert out.count("{") == out.count("}")
+
+
+def test_table_grid_keeps_minsk_variants_duplicates_and_fact_plan_derivs():
+    from case3.fact_ground import table_grid
+
+    source = (
+        "| Регион | Факт |\n| --- | --- |\n| г. Минск | 120 |\n| Минская область | 85 |\n\n"
+        "| Регион | План |\n| --- | --- |\n| г. Минск | 100 |\n\n"
+        "## Производные\n\n"
+        "Отклонение и выполнение (Факт − План, база 100%):\n"
+        "- г. Минск: откл. +20, вып. 120%\n"
+        "- Минская область: откл. -15, вып. 85%\n"
+    )
+    grid = table_grid(source)
+    assert "минск" in grid.rows
+    assert "120" in grid.rows["минск"]
+    assert "85" in grid.rows["минск"]
+    assert "100" in grid.rows["минск"]
+    assert "20" in grid.rows["минск"]
+
+
+def test_clause_allows_metadata_unsigned_delta_small_counts_and_verifiable_math():
+    from case3.fact_ground import ground_generated
+
+    source = (
+        "## Заголовок\nОтчёт за 2025 год по состоянию на 1 февраля.\n\n"
+        "| Регион | План | Факт | Отклонение |\n"
+        "| --- | --- | --- | --- |\n"
+        "| Гомельская | 8200 | 7544 | -656 |\n"
+        "| Минская | 10000 | 10500 | +500 |\n\n"
+        "## Производные\n\n"
+        "- Гомельская — доля 41,8%, место 2\n"
+        "- Минская — доля 58,2%, место 1\n"
+    )
+    tex = (
+        "\\documentclass{article}\n\\begin{document}\n"
+        "По Гомельской области в 2025 году дефицит составил 656.\n"
+        "Если добавить резерв 450, факт вырастет (7544 + 450 = 7994), что составляет 97,5\\% от плана 8200.\n"
+        "Выделены 5 регионов и топ-3 лидера.\n"
+        "Суммарный вклад позиций 18,3\\% + 13,8\\% + 11,0\\% составляет 43,1\\%.\n"
+        "\\end{document}\n"
+    )
+    extra_src = source + "\nДоля лидера 18,3%, второго 13,8%, третьего 11,0%."
+    out, _charts, _figures, _diagrams, _dropped = ground_generated(
+        tex,
+        [],
+        [],
+        [],
+        source=extra_src,
+        intent="Допустим, для Гомельской выделили резерв 450",
+    )
+    assert "2025" in out
+    assert "656" in out
+    assert "7994" in out
+    assert "97,5" in out
+    assert "5 регионов" in out
+    assert "топ-3" in out
+    assert "43,1" in out

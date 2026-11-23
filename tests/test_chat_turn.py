@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from case3.chat_turn import opening_fallback, try_chat_answer, try_opening
 
 
@@ -613,6 +615,15 @@ def test_every_dashboard_shot_survives_a_short_budget():
     assert "Минск" in shown and "Брест" in shown and "Гомель" in shown
 
 
+def test_chat_chart_canvas_fills_the_frame():
+    from case3.chart_harden import full_chat_canvas
+
+    html = full_chat_canvas("<canvas id='c' width='320' height='140' style='width:320px'></canvas>")
+    assert 'width="1100"' in html
+    assert 'height="560"' in html
+    assert "320" not in html
+
+
 def test_dashboard_landing_stops_after_four_sentences():
     class _Cap:
         def __init__(self) -> None:
@@ -643,3 +654,138 @@ def test_a_plain_question_has_no_limit_note():
     client = _Seq(["Касса была 20."])
     try_chat_answer("Касса была 20.", "что с кассой", client=client)
     assert "Файл не изменился" not in client.seen[0]
+
+
+def test_generate_chat_charts_and_diagram_receive_chat_memory_and_analysis(tmp_path: Path):
+    from case3.chat_turn import generate_chat_charts, generate_chat_diagram
+
+    seen_prompts: list[str] = []
+
+    class _FakeLLM:
+        def complete(
+            self, *, system: str, user_text: str, reasoning: str = "off", **_kw
+        ) -> str:
+            seen_prompts.append(user_text)
+            if "Mermaid" in system or "схем" in system.lower():
+                return '```json\n{"diagrams": [{"id": "dia_01", "title": "Сценарий", "mermaid": "flowchart TD\\nA[Гомель 7994] --> B[План 8200]"}]}\n```'
+            return (
+                '```json\n{"charts": [{"id": "cht_01", "type": "bar", "caption": "Гомель сценарий", '
+                '"html": "<canvas id=\\\'c\\\'></canvas><script>new Chart(document.getElementById(\\\'c\\\'), '
+                '{type:\\\'bar\\\',data:{labels:[\\\'Гомель\\\'],datasets:[{data:[7994]}]}});</script>"}]}\n```'
+            )
+
+    source = "| Регион | Факт | План |\n| --- | --- | --- |\n| Гомель | 7544 | 8200 |\n"
+    intent = (
+        "построй график по этому сценарию\n\n"
+        "Разговор этого чата (не Source):\n"
+        "Пользователь: Допустим, для Гомеля выделили резерв 450.\n"
+        "Ассистент: С резервом 450 факт Гомеля станет 7994."
+    )
+    fake = _FakeLLM()
+    generate_chat_charts(
+        source,
+        intent,
+        max_charts=1,
+        figs_dir=tmp_path / "figs",
+        charts_dir=tmp_path / "charts",
+        client=fake,
+        extra_context="Новый факт Гомеля 7994 при плане 8200.",
+    )
+    generate_chat_diagram(
+        source,
+        intent,
+        figs_dir=tmp_path / "figs2",
+        client=fake,
+        extra_context="С резервом 450 дефицит сокращается.",
+    )
+    assert len(seen_prompts) == 2
+    assert "7994" in seen_prompts[0]
+    assert "резерв 450" in seen_prompts[0]
+    assert "7994" in seen_prompts[1] or "резерв 450" in seen_prompts[1]
+
+
+def test_try_chat_answer_continues_on_finish_reason_length():
+    class _CutClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.last_finish_reason = "length"
+
+        def complete(self, *, system: str, user_text: str, reasoning: str = "off") -> str:
+            self.calls += 1
+            if self.calls == 1:
+                self.last_finish_reason = "length"
+                return "По Гомельской области факт составляет 7544, что меньше"
+            self.last_finish_reason = "stop"
+            return "плана 8200 на 656."
+
+    client = _CutClient()
+    ans = try_chat_answer(
+        "| Регион | Факт | План | Откл. |\n| --- | --- | --- | --- |\n| Гомель | 7544 | 8200 | -656 |\n",
+        "Что по Гомелю?",
+        client=client,
+    )
+    assert client.calls == 2
+    assert "7544" in ans
+    assert "плана 8200" in ans
+
+
+def test_try_chat_answer_allows_prefix_region_rollups_and_without_stray_never_corrupts_tables():
+    from case3.chat_turn import _without_stray
+
+    source = (
+        "| Регион / Инспекция | План | Факт | Отклонение |\n"
+        "| --- | --- | --- | --- |\n"
+        "| г. Минск — Центральный | 18400 | 19850 | +1450 |\n"
+        "| г. Минск — Советский | 14200 | 14910 | +710 |\n"
+        "| г. Минск — Первомайский | 11500 | 11960 | +460 |\n"
+        "| Гомельская область — г. Гомель | 8200 | 7544 | -656 |\n"
+        "| Витебская область — г. Витебск | 5900 | 5605 | -295 |\n"
+    )
+    reply = (
+        "### Лидеры\n"
+        "- Топ-3 инспекции (все — г. Минск): Центральный (19 850), Советский (14 910), Первомайский (11 960).\n"
+        "| Регион | План | Факт | Откл. |\n"
+        "| --- | --- | --- | --- |\n"
+        "| г. Минск (3 инспекции) | 44 100 | 46 720 | +2 620 |\n"
+        "Все 3 инспекции с плюсом дали +2 620, а 2 отстающие — -951."
+    )
+    client = _Seq([reply])
+    ans = try_chat_answer(source, "Проанализируй по регионам", client=client)
+    assert "44 100" in ans
+    assert "46 720" in ans
+    assert "2 620" in ans
+    assert "-951" in ans
+    assert "| |" not in ans
+
+    # Check _without_stray safety on genuinely unverified rows + г. Минск abbreviation
+    corrupted_check = _without_stray(
+        "Топ-3 (все — г. Минск) выросли.\n| Заглушка | 999999 |\nВыдумка 888888 руб.",
+        ["999999", "888888"],
+    )
+    assert "все — г. Минск" in corrupted_check
+    assert "| Заглушка |" not in corrupted_check
+
+
+def test_opening_fallback_strips_internal_memory_scaffolding() -> None:
+    from case3.chat_turn import opening_fallback, try_opening
+
+    decorated = (
+        "Собери презентацию на 6 слайдов по итогам поступлений.\n\n"
+        "Числа из реплик пользователя (его слова, не ответ модели):\n50 добавить\n\n"
+        "Карточка этого чата (не Source).\nдокументы: Документ."
+    )
+    fb = opening_fallback("presentation", decorated)
+    assert "Собери презентацию на 6 слайдов" in fb
+    assert "Числа из реплик" not in fb
+    assert "Карточка этого чата" not in fb
+
+    seen_prompts: list[str] = []
+
+    class _FakeLLM:
+        def complete(self, *, system: str, user_text: str, reasoning: str = "off", **_kw) -> str:
+            seen_prompts.append(user_text)
+            return "Собираю презентацию по поступлениям."
+
+    spoken = try_opening("presentation", decorated, client=_FakeLLM())
+    assert spoken == "Собираю презентацию по поступлениям."
+    assert seen_prompts and "Числа из реплик" not in seen_prompts[0]

@@ -176,9 +176,6 @@ export function ArtifactCard({
     ? fileNameFromUrl(reportDocxHref, "report.docx")
     : "report.docx";
   const reportCardHref = reportPdfHref || reportDocxHref;
-  const showPdfGallery =
-    surfaces.showPresentation &&
-    (Boolean(downloads?.deck_pdf) || slidePngs.length > 0);
 
   const shellClass = [
     "artifact-card",
@@ -207,59 +204,43 @@ export function ArtifactCard({
     );
   }
 
-  /* 1) Deck ready → large PPTX / deck PDF stack (or twin film if downloads lag) */
+  /* 1) Deck ready → unified presentation card (PPTX + PDF downloads + filmstrip) */
   if (hasDeckPreview) {
-    const pptxHref = downloads?.pptx || downloads?.deck_pdf || "#";
+    const pptxHref = downloads?.pptx || "#";
+    const deckPdfHref = downloads?.deck_pdf || null;
+    const formatBit =
+      downloads?.pptx && deckPdfHref
+        ? " · PPTX · PDF"
+        : downloads?.pptx
+          ? " · PPTX"
+          : deckPdfHref
+            ? " · PDF"
+            : "";
     return (
       <div className={shellClass}>
         <div className="artifact-card-deck-stack" role="group" aria-label="Дека">
           <section className="artifact-card-block">
             <p className="artifact-card-quiet-label">
-              Презентация · PPTX
+              Презентация{formatBit}
               {slidePngs.length > 0
                 ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
                 : ""}
               {updated ? " · обновлено" : ""}
             </p>
-              <DeckFileCard
+            <DeckFileCard
               kind="pptx"
               href={pptxHref}
+              deckPdfHref={deckPdfHref}
               downloadsBlocked={deckDownloadsBlocked}
               previewUrl={hero}
               fileLabel={pptxName}
               filmstrip={slidePngs}
               deck={deck}
               runId={runId}
-              onPrimary={onOpenPresentation}
+              onPrimary={onOpenPresentation || onOpenDeckSlides}
               primaryLabel="Просмотр"
             />
           </section>
-          {showPdfGallery && (downloads?.deck_pdf || hero || deck) ? (
-            <section className="artifact-card-block">
-              <p className="artifact-card-quiet-label">
-                Презентация · PDF
-                {slidePngs.length > 0
-                  ? ` · ${slidePngs.length}\u00a0${slideWord(slidePngs.length)}`
-                  : ""}
-              </p>
-              <DeckFileCard
-                kind="deck_pdf"
-                href={downloads?.deck_pdf || downloads?.pptx || "#"}
-                downloadsBlocked={deckDownloadsBlocked}
-                previewUrl={hero}
-                fileLabel={
-                  downloads?.deck_pdf
-                    ? fileNameFromUrl(downloads.deck_pdf, "deck.pdf")
-                    : "deck.pdf"
-                }
-                filmstrip={slidePngs}
-                deck={deck}
-                runId={runId}
-                onPrimary={onOpenDeckSlides || onOpenPresentation}
-                primaryLabel="Просмотр"
-              />
-            </section>
-          ) : null}
         </div>
         {slidesBusy ? <DeckBuildCard stage={slidesStage} /> : null}
       </div>

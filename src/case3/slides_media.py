@@ -183,27 +183,15 @@ def collect_run_media(
     return chart_ids, figure_ids, diagram_ids, png_by_id, diagram_specs
 
 
-def render_mermaid_png(
+def render_diagram_html(
     *,
     mermaid: str,
-    dest: Path,
     palette: str = "atelier",
-    work_dir: Path | None = None,
     primary: str | None = None,
     accent: str | None = None,
     theme_pack: str | None = None,
-) -> Path:
-    """Rasterize Mermaid to PNG via Playwright + local mermaid.min.js."""
-    dest = Path(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(work_dir) if work_dir else dest.parent / f".mmd_{dest.stem}"
-    work.mkdir(parents=True, exist_ok=True)
-
-    js_src = _mermaid_js_path()
-    js_dest = work / "mermaid.min.js"
-    if not js_dest.is_file() or js_dest.stat().st_size != js_src.stat().st_size:
-        shutil.copy2(js_src, js_dest)
-
+) -> str:
+    """Populate all diagram_capture.html theme placeholders consistently."""
     from case3.diagram_style import ensure_role_classdefs, role_colors_for_palette
 
     style_key = (theme_pack or palette or "atelier").strip().lower()
@@ -235,18 +223,18 @@ def render_mermaid_png(
     cluster_border = "#4A3F37" if style_key == "signal" else (
         "#3A4452" if dark else "#CBD5E1"
     )
+    label_bg = "#241F1C" if style_key == "signal" else ("#1E242B" if dark else "#FFFFFF")
 
-    mermaid = ensure_role_classdefs(
+    styled_mermaid = ensure_role_classdefs(
         mermaid, style_key, overwrite=bool(theme_pack)
     )
-    # Escape for HTML text node (mermaid body)
     body = (
-        (mermaid or "")
+        (styled_mermaid or "")
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
-    html = (
+    return (
         _diagram_template()
         .replace("{{MERMAID}}", body)
         .replace("{{PRIMARY}}", primary)
@@ -256,6 +244,7 @@ def render_mermaid_png(
         .replace("{{LINE_COLOR}}", line_color)
         .replace("{{CLUSTER_FILL}}", cluster_fill)
         .replace("{{CLUSTER_BORDER}}", cluster_border)
+        .replace("{{LABEL_BG}}", label_bg)
         .replace("{{START_FILL}}", start_fill)
         .replace("{{START_STROKE}}", start_stroke)
         .replace("{{DECISION_FILL}}", decision_fill)
@@ -266,6 +255,36 @@ def render_mermaid_png(
         .replace("{{WARN_STROKE}}", warn_stroke)
         .replace("{{DATA_FILL}}", data_fill)
         .replace("{{DATA_STROKE}}", data_stroke)
+    )
+
+
+def render_mermaid_png(
+    *,
+    mermaid: str,
+    dest: Path,
+    palette: str = "atelier",
+    work_dir: Path | None = None,
+    primary: str | None = None,
+    accent: str | None = None,
+    theme_pack: str | None = None,
+) -> Path:
+    """Rasterize Mermaid to PNG via Playwright + local mermaid.min.js."""
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(work_dir) if work_dir else dest.parent / f".mmd_{dest.stem}"
+    work.mkdir(parents=True, exist_ok=True)
+
+    js_src = _mermaid_js_path()
+    js_dest = work / "mermaid.min.js"
+    if not js_dest.is_file() or js_dest.stat().st_size != js_src.stat().st_size:
+        shutil.copy2(js_src, js_dest)
+
+    html = render_diagram_html(
+        mermaid=mermaid,
+        palette=palette,
+        primary=primary,
+        accent=accent,
+        theme_pack=theme_pack,
     )
     index = (work / "index.html").resolve()
     index.write_text(html, encoding="utf-8")
@@ -316,6 +335,18 @@ def render_mermaid_png(
                 page.wait_for_selector(
                     "#diagram svg", state="attached", timeout=timeout_ms
                 )
+                is_err = page.evaluate(
+                    """() => {
+                  const svg = document.querySelector('#diagram svg');
+                  if (!svg) return true;
+                  if (svg.getAttribute('aria-roledescription') === 'error') return true;
+                  if (svg.querySelector('.error-icon, .error-text')) return true;
+                  const txt = svg.textContent || '';
+                  return txt.includes('Syntax error in text');
+                }"""
+                )
+                if is_err:
+                    raise RuntimeError("mermaid syntax error rendered")
                 # Unhide + scale Mermaid; capture SVG tightly (not empty 16:9).
                 page.evaluate(
                     """() => {
@@ -352,10 +383,6 @@ def render_mermaid_png(
                   });
                   document.body.style.width = (w + 64) + 'px';
                   document.body.style.height = (h + 64) + 'px';
-                  svg.querySelectorAll('.edgeLabel rect, .edgeLabel .labelBkg, g.edgeLabel rect').forEach((r) => {
-                    r.setAttribute('fill', 'transparent');
-                    r.style.fill = 'transparent';
-                  });
                   svg.querySelectorAll('rect').forEach((r) => {
                     if (r.closest && r.closest('.cluster')) {
                       r.setAttribute('rx', '16');

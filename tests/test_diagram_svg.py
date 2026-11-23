@@ -46,3 +46,13 @@ def test_load_diagram_missing(tmp_path: Path) -> None:
     )
     with pytest.raises(DiagramSvgError, match="not found"):
         load_diagram_spec(tmp_path, "dia_99")
+
+
+def test_diagram_html_rendering_fills_all_18_placeholders_and_keeps_opaque_edge_label_bg() -> None:
+    from case3.slides_media import render_diagram_html
+
+    rendered = render_diagram_html(mermaid="flowchart TD\nA[Старт] -->|Да| B[Финиш]", palette="atelier")
+    assert "{{" not in rendered
+    assert "}}" not in rendered
+    # Edge label backdrop must not be forced transparent!
+    assert ".edgeLabel rect, .edgeLabel .labelBkg, g.edgeLabel rect" not in rendered or "transparent" not in rendered.split(".edgeLabel")[1].split("}")[0]

@@ -14,3 +14,15 @@ export function hideSourcePlaque<TDraft, TFile>(state: {
     file: state.file,
   };
 }
+
+export function removeAttachedSource(): {
+  plaqueDismissed: false;
+  sourceDraft: null;
+  file: null;
+} {
+  return {
+    plaqueDismissed: false,
+    sourceDraft: null,
+    file: null,
+  };
+}

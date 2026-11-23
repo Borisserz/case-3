@@ -478,3 +478,34 @@ def test_chart_type_is_still_a_retype():
     act = resolve_act("сделай график линейным", has_report=True)
     assert act.op == "retype_charts"
     assert act.chart == "line"
+
+
+def test_dialogue_math_and_concise_chat_without_artifact_stay_talk_for_llm():
+    from case3.chat_act import asks_without_order
+
+    scenario = "Допустим, для Гомеля выделили резерв 450. На сколько изменится отклонение?"
+    assert asks_without_order(scenario) is True
+    act_scenario = resolve_act(scenario, has_report=False, has_deck=False)
+    assert act_scenario.kind == "talk"
+    assert not act_scenario.say
+
+    # Without an open report, "напиши короче" is a chat style request — do not hijack with canned refusal
+    act_short = resolve_act("напиши короче", has_report=False, has_deck=False)
+    assert act_short.kind == "talk"
+    assert not act_short.say
+
+    # Generic edit verb without an artifact must not return op="ask"
+    act_change = resolve_act("измени формат вывода в чате", has_report=False, has_deck=False)
+    assert act_change.kind == "talk"
+    assert not act_change.say
+
+
+def test_new_build_artifact_handles_long_middle_phrase_and_rebuilds():
+    long_order = "сделай по нашему подробному анализу выше по областям отчёт"
+    act = resolve_act(long_order, has_report=True, has_deck=True)
+    assert act.kind == "build"
+    assert act.build == "report"
+
+    rebuild = resolve_act("перестрой презентацию", has_deck=True)
+    assert rebuild.kind == "build"
+    assert rebuild.build == "presentation"

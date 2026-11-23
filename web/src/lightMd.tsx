@@ -51,7 +51,7 @@ function renderTables(src: string): string {
         })
         .join("");
       out.push(
-        `<table class="msg-table"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`,
+        `<div class="msg-table-wrap"><table class="msg-table"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`,
       );
       continue;
     }
@@ -90,12 +90,12 @@ export function renderLightMd(raw: string, query = ""): string {
   s = s
     .split(/\n{2,}/)
     .map((chunk) => {
-      if (/^<(h[2-4]|ul|pre|table)/.test(chunk.trim())) return chunk;
-      if (chunk.includes("<table")) {
+      if (/^<(h[2-4]|ul|pre|table|div\s+class="msg-table-wrap")/.test(chunk.trim())) return chunk;
+      if (chunk.includes("<div class=\"msg-table-wrap\">")) {
         return chunk
-          .split(/(<table[\s\S]*?<\/table>)/)
+          .split(/(<div class="msg-table-wrap"><table[\s\S]*?<\/table><\/div>)/)
           .map((part) => {
-            if (part.startsWith("<table")) return part;
+            if (part.startsWith('<div class="msg-table-wrap">')) return part;
             const trimmed = part.trim();
             if (!trimmed) return "";
             if (/^<(h[2-4]|ul|pre)/.test(trimmed)) return part;
@@ -113,7 +113,11 @@ export function renderLightMd(raw: string, query = ""): string {
       `(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
       "gi",
     );
-    s = s.replace(re, '<mark class="src-hit">$1</mark>');
+    // Highlight text nodes between tags only so attribute/tag names are never mutated.
+    s = s
+      .split(/(<[^>]+>)/g)
+      .map((seg) => (seg.startsWith("<") ? seg : seg.replace(re, '<mark class="src-hit">$1</mark>')))
+      .join("");
   }
   return s;
 }

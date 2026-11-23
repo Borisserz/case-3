@@ -98,3 +98,18 @@ def test_code_callout_is_inserted_once() -> None:
     assert "def defect_rate" in slide["definition"]
     assert deck["slides"][-1]["layout"] == "closing"
     assert ensure_code_callouts(deck, highs) == []
+
+
+def test_slides_source_text_keeps_derivatives_beyond_eight_lines() -> None:
+    filler = "Пояснение без чисел. " * 400
+    deriv_lines = [f"- Регион {i} — доля {i}%, место {i}" for i in range(1, 20)]
+    source = (
+        filler
+        + "\n\n## Производные\n\n"
+        + "\n".join(deriv_lines)
+        + "\nСумма по строкам: 1000\n"
+    )
+    brief = slides_source_text(source)
+    assert "Регион 15" in brief
+    assert "Сумма по строкам: 1000" in brief
+

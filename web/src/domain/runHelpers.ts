@@ -7,7 +7,30 @@ import {
   type ThinkingMode,
 } from "./pipelinePhrases";
 import { STAGE_LABELS } from "./liberConstants";
+import type { LiberWorkMode } from "./liberModes";
 import type { BotMsg, RunResult } from "./liberTypes";
+
+export function effectiveThinkingMode(
+  workMode: LiberWorkMode,
+  outputMode?: string | null,
+): ThinkingMode {
+  const raw = (outputMode || "").trim().toLowerCase();
+  if (raw === "diagram" || raw === "presentation" || raw === "report" || raw === "chat") {
+    return raw;
+  }
+  if (workMode === "diagram" || workMode === "presentation" || workMode === "report") {
+    return workMode;
+  }
+  return "chat";
+}
+
+export function rollbackOptimisticRun<T extends { id: string }>(
+  msgs: T[],
+  userMsgId: string,
+  pendingId: string,
+): T[] {
+  return msgs.filter((msg) => msg.id !== userMsgId && msg.id !== pendingId);
+}
 
 export function appendBotThinking(
   msg: BotMsg,

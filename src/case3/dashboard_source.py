@@ -27,9 +27,9 @@ MAX_TABLE_COLS = 64
 MAX_TABLE_ROWS = 500
 
 _NUM = re.compile(r"\d")
-_UNIT_TAIL = r"(?:\s*(?:тыс\.?|млн\.?|млрд\.?|руб\.?|коп\.?|₽|\$|€|шт\.?|чел\.?))*"
+_UNIT_TAIL = r"(?:\s*(?:тыс\.?|млн\.?|млрд\.?|руб\.?|коп\.?|₽|\$|€|шт\.?|чел\.?|п\.?\s*п\.?|ед\.?))*"
 _COMPLETE_NUM = re.compile(
-    rf"^[+\-−]?(?:\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+|\d+)(?:[.,]\d+)?(?:%|{_UNIT_TAIL})?$",
+    rf"^[+\-−]?\s*(?:\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+|\d+)(?:[.,]\d+)?(?:\s*%|{_UNIT_TAIL})?$",
     re.IGNORECASE,
 )
 _SHORT_NUM = re.compile(r"^[+\-−]?\d{1,3}$")
@@ -212,6 +212,30 @@ def table_block(rows: list[list[object | None]]) -> tuple[str, str | None]:
 
     orig_cols = max(len(row) for row in body)
     orig_rows = len(body)
+    if len(body) >= 3:
+        non_total = [row for row in body[1:] if not _is_total_row(row)]
+        hdr_lbl = _label_column(non_total) if non_total else None
+        if hdr_lbl is not None:
+            gcols = _group_columns(non_total, hdr_lbl)
+            if gcols:
+                filled_data: list[list[str]] = []
+                last_vals = {gc: "" for gc in gcols}
+                for row in body[1:]:
+                    if _is_total_row(row):
+                        last_vals = {gc: "" for gc in gcols}
+                        filled_data.append(list(row))
+                        continue
+                    cur = list(row)
+                    for gc in gcols:
+                        if gc >= len(cur):
+                            continue
+                        val = cur[gc].strip()
+                        if val:
+                            last_vals[gc] = val
+                        elif last_vals[gc]:
+                            cur[gc] = last_vals[gc]
+                    filled_data.append(cur)
+                body = [body[0], *filled_data]
     use_cols = min(orig_cols, MAX_TABLE_COLS)
     use_rows = body[:MAX_TABLE_ROWS]
     note = None
@@ -245,7 +269,11 @@ _TOTAL_LABEL = re.compile(
     re.IGNORECASE,
 )
 _YEAR_HEADER = re.compile(r"^(год|года|year|years)$", re.IGNORECASE)
-_CODE_HEADER = re.compile(r"(код|номер|№|\bid\b)", re.IGNORECASE)
+_CODE_HEADER = re.compile(
+    r"(?:^|\b)(?:код\w*|номер\w*|№|id|инн|унп|кпп|окпо|окато|огрн|бик|имнс|ид|сч[её]т\w*)\b",
+    re.IGNORECASE,
+)
+_COMPACT_DERIV_AT = 16
 _NON_ADDITIVE_HEADER = re.compile(
     r"(?:средн|ср\.|индекс|на\s+душу|рентаб|марж|темп|прирост|динамик|yoy|nps|ранг|место)",
     re.IGNORECASE,
@@ -339,7 +367,7 @@ def _looks_like_table(lines: list[str], index: int) -> bool:
 
 
 def _group_columns(rows: list[list[str]], label_at: int) -> list[int]:
-    """Text columns distinct from label_at that repeat across >=2 groups."""
+    """Text columns distinct from label_at that repeat or have merged blanks."""
     width = max(len(row) for row in rows)
     groups: list[int] = []
     for col in range(width):
@@ -347,15 +375,35 @@ def _group_columns(rows: list[list[str]], label_at: int) -> list[int]:
             continue
         cells = [row[col].strip() if col < len(row) else "" for row in rows]
         filled = [c for c in cells if c]
-        if len(filled) < 2:
+        if not filled:
             continue
         text = sum(1 for c in filled if _cell_decimal(c) is None)
         if text * 2 < len(filled):
             continue
         uniq = len(set(filled))
-        if 2 <= uniq < len(filled):
+        if len(filled) >= 2 and 2 <= uniq and (uniq < len(filled) or len(filled) < len(rows)):
+            groups.append(col)
+        elif col < label_at and uniq == 1 and len(filled) < len(rows):
             groups.append(col)
     return groups
+
+
+def _ffill_groups(rows: list[list[str]], group_cols: list[int]) -> list[list[str]]:
+    """Forward-fill empty cells in merged group columns."""
+    if not group_cols:
+        return rows
+    out = [list(row) for row in rows]
+    for col in group_cols:
+        current = ""
+        for row in out:
+            if col >= len(row):
+                continue
+            val = row[col].strip()
+            if val:
+                current = val
+            elif current:
+                row[col] = current
+    return out
 
 
 def _find_fact_plan_pair(header: list[str]) -> tuple[int, int] | None:
@@ -385,12 +433,14 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
     width = max(len(row) for row in rows)
     lines: list[str] = []
     group_cols = _group_columns(data, label_at)
+    data = _ffill_groups(data, group_cols)
+    compact = len(data) > _COMPACT_DERIV_AT
 
     for col in range(width):
         if col == label_at:
             continue
         name = header[col].strip() if col < len(header) else ""
-        if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.match(name):
+        if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
             continue
         parsed = _measure_column(data, col, label_at)
         if parsed is None:
@@ -400,13 +450,34 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
         heading = "Позиции (%)" if is_pct and "дол" in name.casefold() else name
         lines.append(heading)
         non_additive = is_pct or bool(_NON_ADDITIVE_HEADER.search(name))
-        if not non_additive and not has_neg:
-            shares = _share_tenths(values)
-            for label, tenths, rank in zip(labels, shares, ranks):
-                lines.append(f"- {label} — доля {_fmt_share(tenths)}, место {rank}")
+        shares = _share_tenths(values) if (not non_additive and not has_neg) else []
+        if not compact:
+            if shares:
+                for label, tenths, rank in zip(labels, shares, ranks):
+                    lines.append(f"- {label} — доля {_fmt_share(tenths)}, место {rank}")
+            else:
+                for label, rank in zip(labels, ranks):
+                    lines.append(f"- {label} — место {rank}")
         else:
-            for label, rank in zip(labels, ranks):
-                lines.append(f"- {label} — место {rank}")
+            unit_sfx = "%" if is_pct else ""
+            top_n = 10 if len(values) > 20 else 5
+            top_idx = sorted(range(len(values)), key=lambda i: (-values[i], i))[:top_n]
+            bot_idx = sorted(range(len(values)), key=lambda i: (values[i], i))[:top_n]
+
+            def _fmt_item(idx: int) -> str:
+                v_s = f"{_fmt_num_ru(values[idx])}{unit_sfx}"
+                if shares:
+                    return f"{labels[idx]} — {v_s} (доля {_fmt_share(shares[idx])}, место {ranks[idx]})"
+                return f"{labels[idx]} — {v_s} (место {ranks[idx]})"
+
+            lines.append(f"Топ-{top_n}: " + "; ".join(_fmt_item(i) for i in top_idx))
+            lines.append(f"Отстающие (мин-{top_n}): " + "; ".join(_fmt_item(i) for i in bot_idx))
+            if shares:
+                top3_t = sum(shares[i] for i in top_idx[:3])
+                top5_t = sum(shares[i] for i in top_idx[:5])
+                lines.append(
+                    f"Концентрация: Топ-3 — {_fmt_share(top3_t)}, Топ-5 — {_fmt_share(top5_t)}"
+                )
 
         total = sum(values, Decimal(0))
         mean = total / Decimal(len(values))
@@ -426,23 +497,23 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
             )
 
         if not non_additive and group_cols:
-            gcol = group_cols[0]
-            gname = header[gcol].strip() if gcol < len(header) else "Группа"
-            by_group: dict[str, Decimal] = {}
-            for r_idx, val in zip(row_indices, values):
-                gval = data[r_idx][gcol].strip() if gcol < len(data[r_idx]) else ""
-                if gval:
-                    by_group[gval] = by_group.get(gval, Decimal(0)) + val
-            if len(by_group) >= 2:
-                g_items = sorted(by_group.items(), key=lambda kv: -kv[1])
-                g_shares = _share_tenths([v for _, v in g_items]) if not has_neg and total > 0 else []
-                parts = []
-                for idx_g, (gk, gv) in enumerate(g_items):
-                    if g_shares:
-                        parts.append(f"{gk}: {_fmt_num_ru(gv)} ({_fmt_share(g_shares[idx_g])})")
-                    else:
-                        parts.append(f"{gk}: {_fmt_num_ru(gv)}")
-                lines.append(f"По «{gname}»: " + "; ".join(parts))
+            for gcol in group_cols[:2]:
+                gname = header[gcol].strip() if gcol < len(header) else "Группа"
+                by_group: dict[str, Decimal] = {}
+                for r_idx, val in zip(row_indices, values):
+                    gval = data[r_idx][gcol].strip() if gcol < len(data[r_idx]) else ""
+                    if gval:
+                        by_group[gval] = by_group.get(gval, Decimal(0)) + val
+                if len(by_group) >= 2:
+                    g_items = sorted(by_group.items(), key=lambda kv: -kv[1])
+                    g_shares = _share_tenths([v for _, v in g_items]) if not has_neg and total > 0 else []
+                    parts = []
+                    for idx_g, (gk, gv) in enumerate(g_items):
+                        if g_shares:
+                            parts.append(f"{gk}: {_fmt_num_ru(gv)} ({_fmt_share(g_shares[idx_g])})")
+                        else:
+                            parts.append(f"{gk}: {_fmt_num_ru(gv)}")
+                    lines.append(f"По «{gname}»: " + "; ".join(parts))
         lines.append("")
 
     pair = _find_fact_plan_pair(header)
@@ -486,11 +557,37 @@ def _column_shares(rows: list[list[str]]) -> list[str]:
                             f"- По «{gname_fp}» ({gk}): факт {_fmt_num_ru(gf)} vs план {_fmt_num_ru(gp)}, "
                             f"откл. {_fmt_num_ru(gdiff, signed=True)}{gpct_s}"
                         )
-            for lbl, _gk, fv, pv in paired:
-                diff = fv - pv
-                rpct = (fv * Decimal(100) / pv) if pv > 0 else None
-                rpct_s = f", вып. {_fmt_num_ru(rpct)}%" if rpct is not None else ""
-                lines.append(f"- {lbl}: откл. {_fmt_num_ru(diff, signed=True)}{rpct_s}")
+            if not compact:
+                for lbl, _gk, fv, pv in paired:
+                    diff = fv - pv
+                    rpct = (fv * Decimal(100) / pv) if pv > 0 else None
+                    rpct_s = f", вып. {_fmt_num_ru(rpct)}%" if rpct is not None else ""
+                    lines.append(f"- {lbl}: откл. {_fmt_num_ru(diff, signed=True)}{rpct_s}")
+            else:
+                above = sum(1 for _lbl, _gk, fv, pv in paired if fv >= pv)
+                below = len(paired) - above
+                lines.append(
+                    f"Выше плана (>=100%): {above} из {len(paired)}; ниже плана: {below} из {len(paired)}"
+                )
+                top_surplus = sorted(paired, key=lambda x: (-(x[2] - x[3]), x[0]))[:5]
+                bot_deficit = sorted(
+                    paired,
+                    key=lambda x: (
+                        (x[2] / x[3]) if x[3] > 0 else Decimal(0),
+                        x[2] - x[3],
+                        x[0],
+                    ),
+                )[:5]
+
+                def _fmt_fp(entry: tuple[str, str, Decimal, Decimal]) -> str:
+                    lbl, _gk, fv, pv = entry
+                    diff = fv - pv
+                    rpct = (fv * Decimal(100) / pv) if pv > 0 else None
+                    rpct_s = f", вып. {_fmt_num_ru(rpct)}%" if rpct is not None else ""
+                    return f"{lbl} (откл. {_fmt_num_ru(diff, signed=True)}{rpct_s})"
+
+                lines.append("Топ-5 по отклонению: " + "; ".join(_fmt_fp(e) for e in top_surplus))
+                lines.append("Отстающие по выполнению: " + "; ".join(_fmt_fp(e) for e in bot_deficit))
             lines.append("")
     return lines
 
@@ -550,7 +647,7 @@ def _measure_column(
 
 
 def _cell_decimal(cell: str) -> Decimal | None:
-    text = cell.strip().replace("−", "-")
+    text = re.sub(r"^([+\-])\s+", r"\1", cell.strip().replace("−", "-"))
     if not _COMPLETE_NUM.match(text):
         return None
     # Strip trailing % or unit suffixes matched by _COMPLETE_NUM
@@ -641,22 +738,49 @@ def _row_count(tables: list[list[list[object | None]]]) -> int:
     return sum(len(table) for table in tables)
 
 
+def _row_has_numbers(row: list[str]) -> bool:
+    return any(_cell_decimal(cell) is not None for cell in row)
+
+
+def _trim_trailing_blank_cols(rows: list[list[str]]) -> list[list[str]]:
+    if not rows:
+        return rows
+    last_nonempty = 0
+    for row in rows:
+        for idx, cell in enumerate(row):
+            if cell.strip():
+                last_nonempty = max(last_nonempty, idx + 1)
+    width = max(1, last_nonempty)
+    return [row[:width] + [""] * max(0, width - len(row)) for row in rows]
+
+
 def join_page_tables(
     pages: list[list[list[list[object | None]]]],
 ) -> list[list[list[str]]]:
-    """Append a later page when its header row repeats. A new header stays apart."""
+    """Append a later page when its header repeats or it continues without a header."""
     joined: list[list[list[str]]] = []
     for page in pages:
         for raw in page:
-            rows = _clean_rows(raw)
+            rows = _trim_trailing_blank_cols(_clean_rows(raw))
+            if not rows:
+                continue
             header, data = _header_and_body(rows)
+            if joined:
+                prev_w = len(joined[-1][0])
+                cur_w = len(rows[0])
+                prev_header, _prev_data = _header_and_body(joined[-1])
+                if header and prev_header[:cur_w] == header[:prev_w] and abs(cur_w - prev_w) <= 1 and len(rows) >= 2:
+                    padded = [r[:prev_w] + [""] * max(0, prev_w - len(r)) for r in data]
+                    joined[-1].extend(padded)
+                    continue
+                if cur_w <= prev_w + 1 and (
+                    len(rows) == 1 or _row_has_numbers(rows[0]) or _is_total_row(rows[0])
+                ):
+                    padded = [r[:prev_w] + [""] * max(0, prev_w - len(r)) for r in rows]
+                    joined[-1].extend(padded)
+                    continue
             if not header or len(rows) < 2:
                 continue
-            if joined:
-                prev_header, _prev_data = _header_and_body(joined[-1])
-                if prev_header == header:
-                    joined[-1].extend(data)
-                    continue
             joined.append(rows)
     return joined
 

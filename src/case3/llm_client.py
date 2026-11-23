@@ -23,6 +23,37 @@ _THINK = re.compile(r"<think>.*?</think>", re.S)
 _BAG = threading.local()
 _OPENER_LOCK = threading.Lock()
 _OPENER_READY = False
+_KEY_COOLDOWN_LOCK = threading.Lock()
+_KEY_COOLDOWN_UNTIL: dict[str, float] = {}
+
+
+def clear_key_cooldowns() -> None:
+    """Reset shared process-wide API-key cooldowns (primarily for tests)."""
+    with _KEY_COOLDOWN_LOCK:
+        _KEY_COOLDOWN_UNTIL.clear()
+
+
+def _mark_key_cooldown(key: str | None, seconds: float = 60.0) -> None:
+    k = (key or "").strip()
+    if not k:
+        return
+    until = time.monotonic() + max(1.0, float(seconds))
+    with _KEY_COOLDOWN_LOCK:
+        prev = _KEY_COOLDOWN_UNTIL.get(k, 0.0)
+        if until > prev:
+            _KEY_COOLDOWN_UNTIL[k] = until
+
+
+def _pick_active_key_index(keys: list[str], start: int = 0) -> int:
+    if not keys:
+        return 0
+    now = time.monotonic()
+    with _KEY_COOLDOWN_LOCK:
+        for offset in range(len(keys)):
+            idx = (start + offset) % len(keys)
+            if _KEY_COOLDOWN_UNTIL.get(keys[idx], 0.0) <= now:
+                return idx
+        return min(range(len(keys)), key=lambda i: _KEY_COOLDOWN_UNTIL.get(keys[i], 0.0))
 
 
 def _remember_sock(sock: socket.socket | None) -> None:
@@ -235,8 +266,7 @@ def _has_tex_signal(text: str) -> bool:
         or "```tex" in low
         or r"\begin{document}" in t
         or "```json" in low
-        or '"charts"' in t
-        or '"figures"' in t
+        or bool(re.search(r"\{\s*\"(?:charts|figures|diagrams|slides)\"\s*:", t))
     )
 
 
@@ -386,11 +416,14 @@ def build_body(
     model_l = (model or "").lower()
     if openrouter:
         # MiniMax Flash: thinking object is mandatory — low + exclude when off.
-        # Nemotron / most free models: sending reasoning still burns max_tokens into
-        # hidden thought → finish_reason=length with empty content. Omit when off.
+        # Other OpenRouter models (Nemotron, Ling, openrouter/free): disable reasoning
+        # explicitly via enabled=False; if a routed model rejects it with HTTP 400
+        # ("Reasoning is mandatory"), complete()/stream() strips it cleanly on retry.
         if reasoning == "off":
             if "minimax" in model_l:
                 body["reasoning"] = {"effort": "low", "exclude": True}
+            else:
+                body["reasoning"] = {"enabled": False}
         else:
             effort = reasoning
             if effort not in ("low", "medium", "high", "xhigh", "max", "minimal"):
@@ -413,7 +446,8 @@ class LLMClient:
         self.api_keys: list[str] = list(
             config.api_keys or ([config.api_key] if config.api_key else [])
         )
-        self._key_index: int = 0
+        self._key_index: int = _pick_active_key_index(self.api_keys, 0)
+        self._tried_indices: set[int] = {self._key_index} if self.api_keys else set()
 
     @property
     def current_api_key(self) -> str | None:
@@ -422,20 +456,45 @@ class LLMClient:
                 return self.config.api_key
             return self.api_keys[self._key_index]
 
-    def rotate_key(self) -> str | None:
-        """Switch to next fallback key; returns new key or None if pool exhausted."""
+    def rotate_key(self, cooldown_s: float = 60.0) -> str | None:
+        """Switch to next fallback key; marks failed key cooled down process-wide."""
         with self._lock:
-            if self._key_index + 1 < len(self.api_keys):
-                self._key_index += 1
-                k = self.api_keys[self._key_index]
-                masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
-                log.warning(
-                    "Switched LLM API key to fallback [%d/%d]: %s",
-                    self._key_index + 1,
-                    len(self.api_keys),
-                    masked,
-                )
-                return k
+            if not self.api_keys:
+                return None
+            failed_key = self.api_keys[self._key_index]
+            _mark_key_cooldown(failed_key, cooldown_s)
+            now = time.monotonic()
+            with _KEY_COOLDOWN_LOCK:
+                for offset in range(1, len(self.api_keys)):
+                    idx = (self._key_index + offset) % len(self.api_keys)
+                    if idx in self._tried_indices:
+                        continue
+                    if _KEY_COOLDOWN_UNTIL.get(self.api_keys[idx], 0.0) <= now:
+                        self._key_index = idx
+                        self._tried_indices.add(idx)
+                        k = self.api_keys[idx]
+                        masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
+                        log.warning(
+                            "Switched LLM API key to fallback [%d/%d]: %s",
+                            idx + 1,
+                            len(self.api_keys),
+                            masked,
+                        )
+                        return k
+                for offset in range(1, len(self.api_keys)):
+                    idx = (self._key_index + offset) % len(self.api_keys)
+                    if idx not in self._tried_indices:
+                        self._key_index = idx
+                        self._tried_indices.add(idx)
+                        k = self.api_keys[idx]
+                        masked = f"...{k[-6:]}" if len(k) >= 6 else "***"
+                        log.warning(
+                            "Switched LLM API key to fallback [%d/%d]: %s",
+                            idx + 1,
+                            len(self.api_keys),
+                            masked,
+                        )
+                        return k
         return None
 
     def _headers(self, key: str | None = None) -> dict[str, str]:
@@ -509,8 +568,43 @@ class LLMClient:
                         finish or "-",
                     )
                     return text
+            except LLMError as exc:
+                error = exc
+                msg_low = str(exc).lower()
+                if (
+                    "finish_reason='length'" in msg_low
+                    or "empty response" in msg_low
+                ) and attempt < self.config.max_retries:
+                    nxt_tok = min(16384, max(max_tokens * 2, 6144))
+                    log.warning(
+                        "LLM empty on length — retrying max_tokens %d → %d",
+                        max_tokens,
+                        nxt_tok,
+                    )
+                    max_tokens = nxt_tok
+                    if (
+                        "openrouter.ai" in (self.config.base_url or "").lower()
+                        and r == "off"
+                        and "reasoning" not in body
+                    ):
+                        body["reasoning"] = {"enabled": False}
+                    attempt += 1
+                    continue
+                raise
             except urllib.error.HTTPError as exc:
                 body_txt = _http_body(exc)
+                if (
+                    exc.code == 400
+                    and "reasoning" in body
+                    and "reasoning" in body_txt.lower()
+                ):
+                    log.warning(
+                        "LLM 400 reasoning param rejected — retrying without reasoning: %s",
+                        body_txt[:160],
+                    )
+                    body.pop("reasoning", None)
+                    attempt += 1
+                    continue
                 # Check for rate limit / quota / auth errors that warrant falling back to another key
                 is_quota_or_auth_err = (
                     exc.code in (401, 403)
@@ -520,7 +614,8 @@ class LLMClient:
                     or ("rate-limited upstream" in body_txt.lower())
                 )
                 if is_quota_or_auth_err:
-                    next_key = self.rotate_key()
+                    cd = 300.0 if exc.code in (401, 402, 403) else 60.0
+                    next_key = self.rotate_key(cd)
                     if next_key is not None:
                         headers = self._headers(next_key)
                         log.warning(
@@ -635,12 +730,13 @@ class LLMClient:
             base_url=self.config.base_url,
             stream=True,
         )
-        data = json.dumps(body).encode("utf-8")
         attempt = 0
         yielded = 0
         while attempt <= self.config.max_retries:
             if attempt:
                 self._sleep(float(min(attempt, 3)))
+            self.last_finish_reason = ""
+            data = json.dumps(body).encode("utf-8")
             think_buf = ""
             in_think = False
 
@@ -721,6 +817,24 @@ class LLMClient:
                     yielded += len(think_buf)
                     yield think_buf
                 if yielded == 0:
+                    if attempt < self.config.max_retries:
+                        cur_tok = int(body.get("max_tokens") or tok)
+                        nxt_tok = min(16384, max(cur_tok * 2, 6144))
+                        log.warning(
+                            "Stream empty (finish_reason=%r) — retrying max_tokens %d → %d",
+                            self.last_finish_reason,
+                            cur_tok,
+                            nxt_tok,
+                        )
+                        body["max_tokens"] = nxt_tok
+                        if (
+                            "openrouter.ai" in (self.config.base_url or "").lower()
+                            and r == "off"
+                            and "reasoning" not in body
+                        ):
+                            body["reasoning"] = {"enabled": False}
+                        attempt += 1
+                        continue
                     raise LLMError(
                         "empty stream response from "
                         f"{self.config.endpoint} (finish_reason={self.last_finish_reason!r})"
@@ -728,6 +842,18 @@ class LLMClient:
                 return
             except urllib.error.HTTPError as exc:
                 body_txt = _http_body(exc)
+                if (
+                    exc.code == 400
+                    and "reasoning" in body
+                    and "reasoning" in body_txt.lower()
+                ):
+                    log.warning(
+                        "Stream LLM 400 reasoning rejected — retrying without reasoning: %s",
+                        body_txt[:160],
+                    )
+                    body.pop("reasoning", None)
+                    attempt += 1
+                    continue
                 if exc.code in (401, 403, 429) and self.rotate_key() is not None:
                     log.warning(
                         "Stream HTTP %d from %s (%s) — retrying with fallback API key",

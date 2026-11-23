@@ -425,12 +425,40 @@ def _scatter_radius_for(html: str) -> tuple[int, int]:
 
 def _relax_vertical_bar_labels(html: str) -> str:
     """Turn crowded category labels so a vertical bar chart stays readable."""
-    if _count_labels(html) < 8 or "maxRotation" in (html or ""):
-        return html or ""
-    snippet = "scales:{x:{ticks:{maxRotation:45,minRotation:40,autoSkip:true,font:{size:11}}}},"
-    if re.search(r"options\s*:\s*\{", html or ""):
-        return re.sub(r"(options\s*:\s*\{)", rf"\1{snippet}", html or "", count=1)
-    return html or ""
+    out = html or ""
+    if _count_labels(out) < 8 or "maxRotation" in out:
+        return out
+    tick_cfg = "ticks:{maxRotation:45,minRotation:35,autoSkip:true,font:{size:12}}"
+    if re.search(r"\bscales\s*:\s*\{", out):
+        if re.search(r"\bscales\s*:\s*\{[\s\S]*?\bx\s*:\s*\{", out):
+            out = re.sub(
+                r"(\bscales\s*:\s*\{[\s\S]*?\bx\s*:\s*\{)",
+                rf"\1{tick_cfg},",
+                out,
+                count=1,
+            )
+        else:
+            out = re.sub(
+                r"(\bscales\s*:\s*\{)",
+                rf"\1x:{{{tick_cfg}}},",
+                out,
+                count=1,
+            )
+    elif re.search(r"options\s*:\s*\{", out):
+        out = re.sub(
+            r"(options\s*:\s*\{)",
+            rf"\1scales:{{x:{{{tick_cfg}}}}},",
+            out,
+            count=1,
+        )
+    if re.search(r"options\s*:\s*\{", out) and not re.search(r"\blayout\s*:\s*\{", out):
+        out = re.sub(
+            r"(options\s*:\s*\{)",
+            r"\1layout:{padding:{bottom:20}},",
+            out,
+            count=1,
+        )
+    return out
 
 
 def _ensure_scatter_point_size(html: str) -> str:
@@ -730,6 +758,8 @@ def _ensure_line_point_size(html: str) -> str:
 def _colorize_hbar_categories(html: str, palette_id: str = "atelier") -> str:
     """Single-series hbar: one accent per category bar (not one flat wash)."""
     out = html or ""
+    if _count_datasets(out) > 1:
+        return out
     if re.search(r"backgroundColor\s*:\s*\[", out, flags=re.I):
         return out
     n = _count_labels(out)
@@ -851,6 +881,59 @@ def _hide_legend_if_unnamed_dataset(html: str) -> str:
             count=1,
         )
     return src
+
+def full_chat_canvas(
+    html: str,
+    *,
+    width: int = 1100,
+    height: int = 560,
+    chart_type: str = "",
+) -> str:
+    """Chat charts fill one frame without squashing donuts, hbars, or pure CSS KPIs."""
+    raw = html or ""
+    kind = (chart_type or "").strip().lower()
+    if kind == "kpi" or _is_kpi_html(raw):
+        return raw
+    if not re.search(r"<canvas\b", raw, flags=re.I) and "new Chart" not in raw:
+        return raw
+
+    is_donut = (
+        kind == "donut"
+        or "donut-layout" in raw
+        or bool(re.search(r"""type\s*:\s*['"]doughnut['"]""", raw, flags=re.I))
+    )
+    if is_donut:
+        # Donuts require a 520x520 square canvas alongside their valued HTML legend.
+        from case3.chart_donut import _force_square_canvas
+
+        return _force_square_canvas(raw, size=520)
+
+    is_hbar = (
+        kind == "horizontal_bar"
+        or bool(re.search(r"""indexAxis\s*:\s*['"]y['"]""", raw, flags=re.I))
+    )
+
+    def _repl(match: re.Match[str]) -> str:
+        attrs = match.group(1) or ""
+        target_h = height
+        if is_hbar:
+            hm = re.search(r"""\bheight\s*=\s*["']?(\d+)""", attrs, flags=re.I)
+            if hm:
+                try:
+                    existing_h = int(hm.group(1))
+                    if existing_h >= 300:
+                        target_h = existing_h
+                except ValueError:
+                    pass
+        attrs = re.sub(r"\s*width\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = re.sub(r"\s*height\s*=\s*(\"[^\"]*\"|'[^']*'|\S+)", "", attrs, flags=re.I)
+        attrs = re.sub(r"\s*style\s*=\s*(\"[^\"]*\"|'[^']*')", "", attrs, flags=re.I)
+        return f'<canvas{attrs} width="{width}" height="{target_h}">'
+
+    if re.search(r"<canvas\b", raw, flags=re.I):
+        return re.sub(r"<canvas(\s[^>]*)?>", _repl, raw, count=1, flags=re.I)
+    return f'<canvas id="c" width="{width}" height="{height}"></canvas>\n{raw}'
+
 
 def _landscape_canvas_if_square(html: str, *, width: int = 1100, height: int = 560) -> str:
     """Donut print uses 520×520 — after leaving donut, restore a landscape bitmap."""

@@ -16,6 +16,7 @@ DEFAULT_SUMMARY_BUS_TTL_S = 1800.0
 class _RunState:
     lock: threading.Lock = field(default_factory=threading.Lock)
     deltas: list[str] = field(default_factory=list)
+    ops: list[tuple[str, str]] = field(default_factory=list)
     full: str = ""
     status: str = "pending"  # pending|streaming|ok|error|skipped
     done: bool = False
@@ -62,6 +63,7 @@ class SummaryBus:
             st.status = "streaming"
             st.done = False
             st.deltas.clear()
+            st.ops.clear()
             st.full = ""
             st.started_at = time.time()
             st.finished_at = None
@@ -73,6 +75,18 @@ class SummaryBus:
         st = self._state(run_id)
         with st.cond:
             st.deltas.append(text)
+            st.ops.append(("delta", text))
+            st.status = "streaming"
+            st.cond.notify_all()
+
+    def replace(self, run_id: str, text: str) -> None:
+        """Reset streamed prefix to corrected text (after verification/grounding)."""
+        st = self._state(run_id)
+        with st.cond:
+            st.deltas.clear()
+            if text:
+                st.deltas.append(text)
+            st.ops.append(("replace", text))
             st.status = "streaming"
             st.cond.notify_all()
 
@@ -101,7 +115,7 @@ class SummaryBus:
         deadline = time.monotonic() + max(0.1, timeout_s)
         while True:
             with st.cond:
-                while sent >= len(st.deltas) and not st.done:
+                while sent >= len(st.ops) and not st.done:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         yield {
@@ -112,10 +126,10 @@ class SummaryBus:
                         return
                     st.cond.wait(timeout=min(0.5, remaining))
 
-                while sent < len(st.deltas):
-                    piece = st.deltas[sent]
+                while sent < len(st.ops):
+                    kind, piece = st.ops[sent]
                     sent += 1
-                    yield {"event": "delta", "text": piece}
+                    yield {"event": kind, "text": piece}
 
                 if st.done:
                     yield {
@@ -137,21 +151,21 @@ class SummaryBus:
         sent = 0
         deadline = time.monotonic() + max(0.1, timeout_s)
         while True:
-            pieces: list[str] = []
+            pieces: list[tuple[str, str]] = []
             done_payload: dict[str, Any] | None = None
             with st.cond:
-                while sent < len(st.deltas):
-                    pieces.append(st.deltas[sent])
+                while sent < len(st.ops):
+                    pieces.append(st.ops[sent])
                     sent += 1
-                if st.done and sent >= len(st.deltas):
+                if st.done and sent >= len(st.ops):
                     done_payload = {
                         "event": "done",
                         "text": st.full or "".join(st.deltas),
                         "status": st.status,
                     }
 
-            for piece in pieces:
-                yield {"event": "delta", "text": piece}
+            for kind, piece in pieces:
+                yield {"event": kind, "text": piece}
             if done_payload is not None:
                 yield done_payload
                 return

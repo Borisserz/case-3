@@ -53,14 +53,13 @@ def build_native_pptx(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     colors, title_font, body_font = _colors_from_style(deck)
-    draw._PPTX_TITLE_FONT = title_font or "Georgia"
-    draw._PPTX_FONT = body_font or "Calibri"
     series_rgbs: list[RGBColor] = []
     style = deck.get("style") if isinstance(deck.get("style"), dict) else None
-    if style and isinstance(style.get("brand_mark"), str) and style["brand_mark"].strip():
-        draw._BRAND_MARK = str(style["brand_mark"]).strip()
-    else:
-        draw._BRAND_MARK = "LIBER · ATELIER"
+    brand_mark = (
+        str(style["brand_mark"]).strip()
+        if style and isinstance(style.get("brand_mark"), str) and style["brand_mark"].strip()
+        else "LIBER · ATELIER"
+    )
     if style and isinstance(style.get("chart_series"), list):
         for hx in style["chart_series"]:
             try:
@@ -70,6 +69,36 @@ def build_native_pptx(
     if not series_rgbs:
         series_rgbs = [colors["primary"], colors["accent"]]
 
+    with draw.use_pptx_theme(
+        font=body_font or "Calibri",
+        title_font=title_font or "Georgia",
+        brand_mark=brand_mark,
+    ):
+        return _build_native_pptx_body(
+            deck,
+            dest,
+            colors=colors,
+            style=style,
+            series_rgbs=series_rgbs,
+            media=media,
+            chart_series_by_id=chart_series_by_id,
+            series_hex_by_id=series_hex_by_id,
+            diagrams_by_id=diagrams_by_id,
+        )
+
+
+def _build_native_pptx_body(
+    deck: dict[str, Any],
+    dest: Path,
+    *,
+    colors: dict[str, RGBColor],
+    style: dict[str, Any] | None,
+    series_rgbs: list[RGBColor],
+    media: dict[str, Path],
+    chart_series_by_id: dict[str, dict[str, Any]],
+    series_hex_by_id: dict[str, list[str]] | None,
+    diagrams_by_id: dict[str, dict[str, Any]],
+) -> Path:
     prs = Presentation()
     prs.slide_width = draw._SLIDE_W
     prs.slide_height = draw._SLIDE_H

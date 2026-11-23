@@ -683,7 +683,28 @@ def _source_lines_to_tex(source: str) -> list[str]:
         lines_out = [escape_tex_text(text[:2000] or "(исходный текст пуст)")]
     if title:
         lines_out.insert(0, f"%CASE3_TITLE:{title}")
-    return lines_out[:160]
+    return _cap_source_tex_lines(lines_out, limit=260)
+
+
+def _cap_source_tex_lines(lines: list[str], *, limit: int = 260) -> list[str]:
+    """Truncate generated fallback TeX safely without leaving open environments."""
+    if len(lines) <= limit:
+        return lines
+    out: list[str] = []
+    stack: list[str] = []
+    begin_re = re.compile(r"\\begin\{(xltabular|tabularx|itemize|quote)\}")
+    end_re = re.compile(r"\\end\{(xltabular|tabularx|itemize|quote)\}")
+    for line in lines[:limit]:
+        out.append(line)
+        for m in begin_re.finditer(line):
+            stack.append(m.group(1))
+        for m in end_re.finditer(line):
+            if stack and stack[-1] == m.group(1):
+                stack.pop()
+    while stack:
+        env = stack.pop()
+        out.append(rf"\end{{{env}}}")
+    return out
 
 
 def fill_sparse_tex_with_source(

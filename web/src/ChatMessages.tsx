@@ -1,5 +1,6 @@
 /** Liber chat transcript — Julius column DNA (user panel + document bot). */
 
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArtifactCard } from "./ArtifactCard";
 import { DashboardChatCard } from "./DashboardChatCard";
@@ -77,6 +78,9 @@ type Props = {
   onOpenDashboardCard?: (msgId: string) => void;
   /** Full-screen table of the shots already on the card. */
   onReadDashboard?: (card: import("./domain/dashboardCapture").DashboardCard) => void;
+  onOpenDashboard?: () => void;
+  onPickFile?: () => void;
+  onRefineVisual?: (preview: { id: string; kind: string; url: string }) => void;
 };
 
 export function ChatMessages({
@@ -103,9 +107,22 @@ export function ChatMessages({
   onMakePresentation,
   onOpenDashboardCard,
   onReadDashboard,
+  onOpenDashboard,
+  onPickFile,
+  onRefineVisual,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
+  const [openChart, setOpenChart] = useState<{ url: string; title: string } | null>(null);
+  useEffect(() => {
+    if (!openChart) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenChart(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openChart]);
   return (
+    <>
     <div className="messages" ref={messagesRef}>
       {showSessionHead ? (
         <header className="chat-session-head">
@@ -121,6 +138,8 @@ export function ChatMessages({
               hasStoredReport={hasStoredReport}
               onRestore={onRestore}
               workMode={workMode}
+              onOpenDashboard={onOpenDashboard}
+              onPickFile={onPickFile}
             />
           )}
         {msgs.map((m, mi) => {
@@ -470,14 +489,7 @@ export function ChatMessages({
                               p.id.startsWith("cht_") ||
                               p.id.startsWith("dia_"),
                           ) && (
-                            <div
-                              className="msg-inline-charts"
-                              style={{
-                                display: "grid",
-                                gap: "10px",
-                                marginTop: "10px",
-                              }}
-                            >
+                            <div className="msg-inline-charts">
                               {(m.result.previews || [])
                                 .filter(
                                   (p) =>
@@ -487,42 +499,31 @@ export function ChatMessages({
                                     p.id.startsWith("dia_"),
                                 )
                                 .map((p) => (
-                                  <div
-                                    key={p.id}
-                                    className="msg-inline-chart-card"
-                                    style={{
-                                      borderRadius: "10px",
-                                      border: "1px solid rgba(0,0,0,0.08)",
-                                      overflow: "hidden",
-                                      background: "#fff",
-                                    }}
-                                  >
-                                    <img
-                                      src={p.url}
-                                      alt={p.id}
-                                      style={{
-                                        width: "100%",
-                                        maxWidth: "620px",
-                                        display: "block",
-                                      }}
-                                    />
-                                    <div
-                                      style={{
-                                        padding: "6px 10px",
-                                        display: "flex",
-                                        justifyContent: "flex-end",
-                                        fontSize: "12px",
-                                      }}
+                                  <figure key={p.id} className="msg-inline-chart-card">
+                                    <button
+                                      type="button"
+                                      className="msg-inline-chart-open"
+                                      onClick={() =>
+                                        setOpenChart({ url: p.url, title: p.id })
+                                      }
                                     >
-                                      <a
-                                        href={p.url}
-                                        download={`${p.id}.png`}
-                                        style={{ color: "inherit" }}
-                                      >
+                                      <img src={p.url} alt="" />
+                                    </button>
+                                    <figcaption>
+                                      {onRefineVisual ? (
+                                        <button
+                                          type="button"
+                                          className="msg-inline-chart-refine"
+                                          onClick={() => onRefineVisual(p)}
+                                        >
+                                          Уточнить
+                                        </button>
+                                      ) : null}
+                                      <a href={p.url} download={`${p.id}.png`}>
                                         Скачать PNG
                                       </a>
-                                    </div>
-                                  </div>
+                                    </figcaption>
+                                  </figure>
                                 ))}
                             </div>
                           )}
@@ -574,5 +575,27 @@ export function ChatMessages({
       </AnimatePresence>
       <div ref={bottomRef} />
     </div>
+    {openChart ? (
+      <div className="chat-chart-lightbox" role="dialog" aria-modal="true" aria-label="График">
+        <button
+          type="button"
+          className="chat-chart-lightbox-back"
+          aria-label="Закрыть"
+          onClick={() => setOpenChart(null)}
+        />
+        <figure className="chat-chart-lightbox-sheet">
+          <img src={openChart.url} alt="" />
+          <figcaption>
+            <a href={openChart.url} download>
+              Скачать PNG
+            </a>
+            <button type="button" onClick={() => setOpenChart(null)}>
+              Закрыть
+            </button>
+          </figcaption>
+        </figure>
+      </div>
+    ) : null}
+    </>
   );
 }

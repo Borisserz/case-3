@@ -6,7 +6,7 @@ import type {
   RefObject,
   SetStateAction,
 } from "react";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { openRunEvents } from "../api/runEvents";
 import { openSummaryStream } from "../api/summaryStream";
 import {
@@ -25,12 +25,14 @@ import { asksForPhoto, photoLimitChip } from "../domain/photoChip";
 import {
   appendBotThinking,
   asString,
+  effectiveThinkingMode,
   formatApiDetailError,
   formatRunStatusError,
   isRunInFlight,
   provisionalSessionTitle,
   reportReadyText,
   reportTitle,
+  rollbackOptimisticRun,
   RunFailedError,
   slidesJobInFlight,
   slidesJobTerminal,
@@ -167,8 +169,11 @@ export function useLiberRun(deps: LiberSendDeps) {
     },
   } = deps;
 
+  const inFlightRef = useRef(false);
+
   return useCallback(
 async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; title?: string }) => {
+  if (inFlightRef.current) return;
   const hidden = (quiet?.sourceText || "").trim();
   const chatTrim = (override ?? chat).trim();
   if (!hidden && !override && !canSend) return;
@@ -267,12 +272,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     dryRun ? "dry-run" : null,
   ].filter((x): x is string => Boolean(x));
 
-  const thinkingMode =
-    outMode === "diagram"
-      ? ("diagram" as const)
-      : outMode === "presentation"
-        ? ("presentation" as const)
-        : ("report" as const);
+  const thinkingMode = effectiveThinkingMode(workMode, quiet?.outputMode);
   const pendingId = uid();
   const userMsgId = uid();
   const photoViews = hidden
@@ -281,6 +281,12 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         name: file.name,
         url: URL.createObjectURL(file),
       }));
+  inFlightRef.current = true;
+  let startedOnServer = false;
+  const finishIdle = () => {
+    inFlightRef.current = false;
+    setBusy(false);
+  };
   cancelRequestedRef.current = false;
   pendingBotIdRef.current = pendingId;
   activeRunIdRef.current = null;
@@ -391,6 +397,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
           : res.statusText;
       throw new Error(formatApiDetailError(data, fallback));
     }
+    startedOnServer = true;
     if (!hidden) {
       setChat("");
       if (chatRef.current) chatRef.current.style.height = "44px";
@@ -415,7 +422,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       );
       setToast("Фото изменено");
       window.setTimeout(() => setToast(null), 2800);
-      setBusy(false);
+      finishIdle();
       return;
     }
 
@@ -456,7 +463,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         }),
       );
       if (!runId || !steps.length) {
-        setBusy(false);
+        finishIdle();
         return;
       }
       void (async () => {
@@ -474,7 +481,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             { remember: !isolated, isolated },
           );
         }
-      })().finally(() => setBusy(false));
+      })().finally(() => finishIdle());
       return;
     }
 
@@ -485,6 +492,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       if (typeof data.output_mode === "string" && data.output_mode) {
         liveMode = data.output_mode;
       }
+      const nextThinkingMode = effectiveThinkingMode(workMode, liveMode);
       const runId = asString(data.run_id);
       if (!runId) throw new Error("server did not return run_id");
       activeRunIdRef.current = runId;
@@ -499,7 +507,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
           },
         )
       ) {
-        setBusy(false);
+        finishIdle();
         return;
       }
       saveUserTurn(runId, { text: userBody });
@@ -507,13 +515,13 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         m.map((msg) => {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;
           const stage = asString(data.stage, "queued");
-          const mode = msg.thinkingMode || "report";
           const chatAnswer =
             quiet?.outputMode === "chat" || data.output_mode === "chat";
           return appendBotThinking(
             {
               ...msg,
-              text: chatAnswer ? msg.text : stageLabel(stage, null, mode),
+              thinkingMode: nextThinkingMode,
+              text: chatAnswer ? msg.text : stageLabel(stage, null, nextThinkingMode),
               pending: true,
               pendingStage: stage,
               pendingDetail: null,
@@ -558,7 +566,8 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         const shouldStream =
           !summaryStreamStarted &&
           outMode !== "diagram" &&
-          (stage === "latex" ||
+          (stage === "chat" ||
+            stage === "latex" ||
             stage === "docx" ||
             stage === "summary");
         if (shouldStream) {
@@ -997,7 +1006,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         runCloser.summary?.();
       }
       if (cancelled || cancelRequestedRef.current) {
-        setBusy(false);
+        finishIdle();
         return;
       }
     }
@@ -1125,20 +1134,21 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       }),
     );
     if (cancelRequestedRef.current) {
-      setBusy(false);
+      finishIdle();
       return;
     }
     if (result.insufficient_data) {
       activeRunIdRef.current = null;
-      setBusy(false);
+      finishIdle();
       return;
     }
     if (slidesStillBuilding) {
       // Attach or kick once — never second POST when SSE already got 202.
+      inFlightRef.current = false;
       void makePresentation(pendingId, result);
     } else {
       activeRunIdRef.current = null;
-      setBusy(false);
+      finishIdle();
       if (isPresentationOnly && slidesAlreadyDone) {
         openReportArtifact(pendingId, result, "presentation");
       } else if (result.output_mode === "diagram" && result.diagrams?.[0]) {
@@ -1154,6 +1164,18 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       }
     }
   } catch (err) {
+    if (!startedOnServer && !cancelRequestedRef.current) {
+      const message = err instanceof Error ? err.message : String(err);
+      setMsgs((m) => rollbackOptimisticRun(m, userMsgId, pendingId));
+      if (!hidden && chatTrim) {
+        setChat((cur) => (cur.trim() ? cur : chatTrim));
+      }
+      setToast(message);
+      window.setTimeout(() => setToast(null), 5200);
+      activeRunIdRef.current = null;
+      finishIdle();
+      return;
+    }
     if (!cancelRequestedRef.current) {
       const message = err instanceof Error ? err.message : String(err);
       const failed =
@@ -1177,7 +1199,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       );
     }
     activeRunIdRef.current = null;
-    setBusy(false);
+    finishIdle();
   }
 }
   ,

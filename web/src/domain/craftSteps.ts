@@ -61,6 +61,11 @@ const PRESENTATION: CraftStep[] = [
   { id: "slides_pack", label: "Пакую PPTX" },
 ];
 
+const CHAT: CraftStep[] = [
+  { id: "source", label: "Изучаю материал" },
+  { id: "layout", label: "Готовлю ответ" },
+];
+
 const PARENT_TO_CRAFT: Record<string, CraftStepId> = {
   charts: "charts",
   photos: "photos",
@@ -148,6 +153,10 @@ export function craftStepForStage(
     return "pdf";
   }
 
+  if (mode === "chat") {
+    return raw === "queued" ? "source" : "layout";
+  }
+
   if (raw === "queued") return "source";
   if (raw === "llm") return "layout";
   if (raw === "charts") return "charts";
@@ -163,6 +172,7 @@ export function craftStepForStage(
 export function craftTemplate(mode: ThinkingMode = "report"): CraftStep[] {
   if (mode === "diagram") return DIAGRAM;
   if (mode === "presentation") return PRESENTATION;
+  if (mode === "chat") return CHAT;
   return REPORT;
 }
 

@@ -8,7 +8,7 @@ export type ThinkingLine = {
 };
 
 /** Liber composer / run output mode for phrase pools. */
-export type ThinkingMode = "report" | "diagram" | "presentation";
+export type ThinkingMode = "report" | "diagram" | "presentation" | "chat";
 
 const QUEUED_REPORT = [
   "Ок, беру задачу…",
@@ -288,9 +288,30 @@ const BEATS_DECK: BeatMap = {
   slides_ir: SLIDES_LLM,
 };
 
+const BEATS_CHAT: BeatMap = {
+  queued: [
+    "Изучаю запрос…",
+    "Смотрю данные и контекст…",
+  ],
+  llm: [
+    "Анализирую цифры и факты…",
+    "Готовлю ответ…",
+  ],
+  charts: [
+    "Строю график…",
+    "Рисую наглядный график…",
+  ],
+  images: ["Готовлю визуал…"],
+  inject: ["Собираю ответ…"],
+  summary: ["Завершаю ответ…"],
+  latex: ["Завершаю ответ…"],
+  docx: ["Завершаю ответ…"],
+};
+
 function beatsFor(mode: ThinkingMode): BeatMap {
   if (mode === "diagram") return BEATS_DIAGRAM;
   if (mode === "presentation") return BEATS_DECK;
+  if (mode === "chat") return BEATS_CHAT;
   return BEATS_REPORT;
 }
 
@@ -385,6 +406,7 @@ function nextFromPool(
 function fallbackLine(mode: ThinkingMode): string {
   if (mode === "diagram") return "Работаю над схемой…";
   if (mode === "presentation") return "Собираю презентацию…";
+  if (mode === "chat") return "Готовлю ответ…";
   return "Работаю над отчётом…";
 }
 
@@ -494,6 +516,16 @@ export function stageLabelForMode(
       slides_patch: "Сохраняю правки…",
       slides_plan: "План слайдов…",
       slides_ir: "Структура слайдов…",
+    },
+    chat: {
+      queued: "Изучаю запрос…",
+      llm: "Готовлю ответ…",
+      charts: "Рисую график…",
+      images: "Готовлю визуал…",
+      inject: "Собираю ответ…",
+      summary: "Готовлю ответ…",
+      latex: "Готовлю ответ…",
+      docx: "Готовлю ответ…",
     },
   };
   return labels[mode][bucket] || fallbackLine(mode);

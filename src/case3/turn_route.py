@@ -13,7 +13,8 @@ TurnKind = str  # chat | report | diagram | presentation
 
 _MAKE = re.compile(
     r"\b("
-    r"сделай|сделать|собери|собрать|подготовь|подготовить|"
+    r"сделай|сделать|собери|собрать|перестрой|перестроить|пересобери|пересобрать|"
+    r"подготовь|подготовить|"
     r"оформи|оформить|сверстай|нарисуй|построй|построить|"
     r"сгенерируй|сгенерировать|напиши|написать|выгрузи|экспортируй"
     r")\b",
@@ -46,6 +47,16 @@ _CHART_REQ = re.compile(
     r"график|диаграмм|чарт|\bchart\b|гистограмм|кругов\w*|линейн\w*",
     re.IGNORECASE,
 )
+_CHART_FOLLOWUP = re.compile(
+    r"горизонтальн|вертикальн|столбчат|бублик|пончик|пирог|\bbar\b|\bdonut\b|\bline\b|"
+    r"палитр|перекрас|легенд|ось|осям|подпис\w*|убери\s+итог|без\s+итог",
+    re.IGNORECASE,
+)
+_DIAGRAM_FOLLOWUP = re.compile(
+    r"добав\w*\s+узел|убер\w*\s+узел|перерисуй|направлени\w*\s+(?:слева|сверху)|"
+    r"\blr\b|\btd\b|стрелк\w*|ветк\w*",
+    re.IGNORECASE,
+)
 _IN_CHAT = re.compile(
     r"(?:^|\s)(?:в\s+чат[е]?|без\s+отч[её]т[ао]?)\b",
     re.IGNORECASE,
@@ -57,6 +68,7 @@ _ON_THIS_DATA = re.compile(
 _QUESTION = re.compile(
     r"\?\s*$|"
     r"(?:^|[\s,])(?:"
+    r"почему|зачем|насколько|на\s+сколько|"
     r"что|как|где|какой|какая|какие|какое|каких|какую|"
     r"сколько|когда|кто|чем|чему"
     r")\b",
@@ -115,14 +127,22 @@ def _asked(pattern: re.Pattern[str], text: str | None) -> bool:
     return False
 
 
-def wants_chat_chart(text: str | None) -> bool:
-    """True when the user asks to draw a chart/graph without negating it."""
-    return _asked(_CHART_REQ, text)
+def wants_chat_chart(text: str | None, *, has_prior_chart: bool = False) -> bool:
+    """True when the user asks to draw a chart/graph or refines an inline chart."""
+    if _asked(_CHART_REQ, text):
+        return True
+    if has_prior_chart and _asked(_CHART_FOLLOWUP, text):
+        return True
+    return False
 
 
-def wants_chat_diagram(text: str | None) -> bool:
-    """True when the user asks for a schema in the chat, not a file."""
-    return _asked(_DIAGRAM, text)
+def wants_chat_diagram(text: str | None, *, has_prior_diagram: bool = False) -> bool:
+    """True when the user asks for a schema in the chat, or refines a prior inline diagram."""
+    if _asked(_DIAGRAM, text):
+        return True
+    if has_prior_diagram and _asked(_DIAGRAM_FOLLOWUP, text):
+        return True
+    return False
 
 
 def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
@@ -141,6 +161,9 @@ def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
         return "chat"
     # A question reads the file. It does not start a new one.
     if _QUESTION.search(raw) and not make:
+        return "chat"
+    # Inline chart request («построй график по регионам») stays in chat unless an artifact is explicitly named.
+    if wants_chat_chart(raw) and not kinds:
         return "chat"
 
     if (

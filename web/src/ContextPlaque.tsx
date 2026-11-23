@@ -92,7 +92,8 @@ export function ContextPlaque({
         <button
           type="button"
           className="context-plaque-x"
-          aria-label="Скрыть"
+          aria-label="Убрать источник"
+          title="Убрать источник"
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();

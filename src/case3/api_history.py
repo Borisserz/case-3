@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 
 from case3 import run_store
@@ -22,17 +23,28 @@ router = APIRouter(tags=["history"])
 _HISTORY_FILE = "user_history.json"
 _INDEX_FILE = "history_index.json"
 UNPINNED_HISTORY_CAP = 24
+_WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,48}$")
 
 
-def _history_path() -> Path:
-    return run_store.ROOT / "runs" / _HISTORY_FILE
+def sanitize_workspace_id(raw: str | None) -> str:
+    val = (raw or "").strip()
+    if val and _WORKSPACE_ID_RE.match(val):
+        return val
+    return "default"
 
 
-_history_lock = threading.Lock()
+def _history_path(workspace_id: str = "default") -> Path:
+    wid = sanitize_workspace_id(workspace_id)
+    if wid == "default":
+        return run_store.ROOT / "runs" / _HISTORY_FILE
+    return run_store.ROOT / "runs" / "workspaces" / wid / _HISTORY_FILE
 
 
-def _load_user_history() -> dict[str, Any]:
-    hp = _history_path()
+_history_lock = threading.RLock()
+
+
+def _load_user_history(workspace_id: str = "default") -> dict[str, Any]:
+    hp = _history_path(workspace_id)
     if not hp.is_file():
         return {"pinned": [], "folders": [], "item_folders": {}}
     with _history_lock:
@@ -46,8 +58,8 @@ def _load_user_history() -> dict[str, Any]:
     return {"pinned": [], "folders": [], "item_folders": {}}
 
 
-def _save_user_history(data: dict[str, Any]) -> None:
-    hp = _history_path()
+def _save_user_history(data: dict[str, Any], workspace_id: str = "default") -> None:
+    hp = _history_path(workspace_id)
     hp.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     with _history_lock:
@@ -114,46 +126,53 @@ def _save_history_index(entries: dict[str, Any]) -> None:
 
 def _sync_history_index(out_dir: Path) -> dict[str, Any]:
     """Refresh run rows from meta mtime. Unchanged meta.json files are not re-read."""
-    entries = _load_history_index()
-    seen: set[str] = set()
-    changed = False
-    if out_dir.is_dir():
-        for run_dir in out_dir.iterdir():
-            if not run_dir.is_dir() or not RUN_ID_OK.match(run_dir.name):
-                continue
-            meta_path = run_dir / "meta.json"
-            if not meta_path.is_file():
-                continue
-            seen.add(run_dir.name)
-            try:
-                mtime_ns = meta_path.stat().st_mtime_ns
-                mtime = meta_path.stat().st_mtime
-            except OSError:
-                continue
-            prev = entries.get(run_dir.name)
-            if isinstance(prev, dict) and str(prev.get("meta_mtime_ns")) == str(mtime_ns) and "prior_run_id" in prev:
-                continue
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if not isinstance(meta, dict):
-                continue
-            entries[run_dir.name] = {
-                "title": _title_from_meta(meta, run_dir.name),
-                "savedAt": _parse_timestamp(meta.get("started_at"), fallback=mtime),
-                "status": meta.get("status", "ok"),
-                "prior_run_id": str(meta.get("prior_run_id") or ""),
-                "meta_mtime_ns": str(mtime_ns),
-            }
-            changed = True
-    for stale in list(entries):
-        if stale not in seen:
-            entries.pop(stale, None)
-            changed = True
-    if changed:
-        _save_history_index(entries)
-    return entries
+    with _history_lock:
+        entries = _load_history_index()
+        seen: set[str] = set()
+        changed = False
+        if out_dir.is_dir():
+            for run_dir in out_dir.iterdir():
+                if not run_dir.is_dir() or not RUN_ID_OK.match(run_dir.name):
+                    continue
+                meta_path = run_dir / "meta.json"
+                if not meta_path.is_file():
+                    continue
+                seen.add(run_dir.name)
+                try:
+                    mtime_ns = meta_path.stat().st_mtime_ns
+                    mtime = meta_path.stat().st_mtime
+                except OSError:
+                    continue
+                prev = entries.get(run_dir.name)
+                if (
+                    isinstance(prev, dict)
+                    and str(prev.get("meta_mtime_ns")) == str(mtime_ns)
+                    and "prior_run_id" in prev
+                    and "workspace_id" in prev
+                ):
+                    continue
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(meta, dict):
+                    continue
+                entries[run_dir.name] = {
+                    "title": _title_from_meta(meta, run_dir.name),
+                    "savedAt": _parse_timestamp(meta.get("started_at"), fallback=mtime),
+                    "status": meta.get("status", "ok"),
+                    "prior_run_id": str(meta.get("prior_run_id") or ""),
+                    "workspace_id": sanitize_workspace_id(meta.get("workspace_id")),
+                    "meta_mtime_ns": str(mtime_ns),
+                }
+                changed = True
+        for stale in list(entries):
+            if stale not in seen:
+                entries.pop(stale, None)
+                changed = True
+        if changed:
+            _save_history_index(entries)
+        return dict(entries)
 
 
 def collapse_chat_heads(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -236,10 +255,13 @@ class HistorySyncBody(BaseModel):
 
 
 @router.get("/api/history")
-def get_history() -> dict[str, Any]:
+def get_history(
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
+) -> dict[str, Any]:
     """Scan disk for runs and merge with user pins and folders."""
+    wid = sanitize_workspace_id(x_workspace_id)
     out_dir = run_store.ROOT / "runs" / "out"
-    user_data = _load_user_history()
+    user_data = _load_user_history(wid)
     pinned_set = set(user_data.get("pinned", []))
     item_folders = user_data.get("item_folders", {})
     folders = user_data.get("folders", [])
@@ -248,6 +270,8 @@ def get_history() -> dict[str, Any]:
     entries = _sync_history_index(out_dir)
     for run_id, ent in entries.items():
         if not isinstance(ent, dict):
+            continue
+        if wid != "default" and sanitize_workspace_id(ent.get("workspace_id")) != wid:
             continue
         is_pinned = run_id in pinned_set
         items.append(
@@ -270,36 +294,41 @@ def get_history() -> dict[str, Any]:
 
 
 @router.post("/api/history/sync")
-def sync_history(body: HistorySyncBody) -> dict[str, Any]:
+def sync_history(
+    body: HistorySyncBody,
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
+) -> dict[str, Any]:
     """Persist user organization (pinned status, folders) across sessions."""
-    current = _load_user_history()
-    pinned_set = set(current.get("pinned", []))
-    item_folders = dict(current.get("item_folders", {}))
+    wid = sanitize_workspace_id(x_workspace_id)
+    with _history_lock:
+        current = _load_user_history(wid)
+        pinned_set = set(current.get("pinned", []))
+        item_folders = dict(current.get("item_folders", {}))
 
-    for it in body.items:
-        if it.pinned is True:
-            pinned_set.add(it.runId)
-        elif it.pinned is False:
-            pinned_set.discard(it.runId)
+        for it in body.items:
+            if it.pinned is True:
+                pinned_set.add(it.runId)
+            elif it.pinned is False:
+                pinned_set.discard(it.runId)
 
-        if it.folderId is not None:
-            if it.folderId:
-                item_folders[it.runId] = it.folderId
-            else:
-                item_folders.pop(it.runId, None)
+            if it.folderId is not None:
+                if it.folderId:
+                    item_folders[it.runId] = it.folderId
+                else:
+                    item_folders.pop(it.runId, None)
 
-    if body.folders is not None:
-        folders_list = [f.model_dump() for f in body.folders]
-        valid_folder_ids = {f["id"] for f in folders_list}
-        item_folders = {k: v for k, v in item_folders.items() if v in valid_folder_ids}
-    else:
-        folders_list = current.get("folders", [])
+        if body.folders is not None:
+            folders_list = [f.model_dump() for f in body.folders]
+            valid_folder_ids = {f["id"] for f in folders_list}
+            item_folders = {k: v for k, v in item_folders.items() if v in valid_folder_ids}
+        else:
+            folders_list = current.get("folders", [])
 
-    new_data = {
-        "pinned": sorted(pinned_set),
-        "folders": folders_list,
-        "item_folders": item_folders,
-    }
-    _save_user_history(new_data)
+        new_data = {
+            "pinned": sorted(pinned_set),
+            "folders": folders_list,
+            "item_folders": item_folders,
+        }
+        _save_user_history(new_data, wid)
 
     return {"ok": True}

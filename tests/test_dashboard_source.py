@@ -194,6 +194,22 @@ def test_continuation_page_appends_under_the_same_header() -> None:
     assert joined[1][0] == ["Регион", "Доля"]
 
 
+def test_continuation_page_without_repeated_header_and_single_row_total() -> None:
+    header = ["Регион", "План", "Факт"]
+    page1 = [header, ["Минск", "100", "110"], ["Брест", "80", "85"]]
+    page2 = [["Гомель", "90", "80"]]
+    page3 = [["Итого", "270", "275"]]
+    joined = join_page_tables([[page1], [page2], [page3]])
+    assert len(joined) == 1
+    assert joined[0] == [
+        header,
+        ["Минск", "100", "110"],
+        ["Брест", "80", "85"],
+        ["Гомель", "90", "80"],
+        ["Итого", "270", "275"],
+    ]
+
+
 def test_pdf_keeps_every_column_and_the_line_above_the_grid(tmp_path: Path) -> None:
     header = [f"c{i}" for i in range(14)]
     row = ["1 234,56" if i == 0 else ("77" if i in (1, 2) else str(i)) for i in range(14)]
@@ -277,9 +293,8 @@ def test_dashboard_prompt_tells_qwen_not_to_invent() -> None:
     assert "не разобрать" in text
     assert "markdown" in text.lower()
     assert "Не округляй" in text
-    assert "Общие данные" in text and "Динамика" in text
-    assert "Без выполнения плана" in text
-    assert "Код и название ИМНС" in text
+    assert "нет видимых фильтров" in text
+    assert "ИМНС" not in text
     assert "Таблицу на экране" not in text
     assert "не читаешь" in text
 

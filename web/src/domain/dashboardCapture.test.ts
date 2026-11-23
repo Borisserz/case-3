@@ -15,6 +15,7 @@ import {
   DASHBOARD_ANALYSIS_ASK,
   isDashboardSource,
   matchDashboardFile,
+  removeShotAt,
   shotsSource,
   splitPackedSources,
   viewerFrameUrl,
@@ -222,5 +223,25 @@ describe("matchDashboardFile", () => {
       ],
     );
     assert.equal(name, "Задолженность по налогам и сборам.mrt");
+  });
+});
+
+describe("removeShotAt", () => {
+  it("removes a captured shot by index and clamps analyzed count", () => {
+    const base: DashboardCard = {
+      viewer: "/open",
+      filters: {},
+      shots: [
+        { name: "Январь", markdown: "# Данные дашборда\n1", warnings: [] },
+        { name: "Февраль", markdown: "# Данные дашборда\n2", warnings: [] },
+      ],
+      analyzed: 2,
+    };
+    const next = removeShotAt(base, 0);
+    assert.deepEqual(
+      next.shots.map((s) => s.name),
+      ["Февраль"],
+    );
+    assert.equal(next.analyzed, 1);
   });
 });

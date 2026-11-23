@@ -17,21 +17,20 @@ import { DashboardPickModal } from "../DashboardPickModal";
 import { DashboardReadModal } from "../DashboardReadModal";
 import {
   captureWarning,
-  DASHBOARD_ANALYSIS_ASK,
   DASHBOARD_SHOT_TOAST,
-  freshShots,
   isDashboardSource,
   matchDashboardFile,
   phraseMiss,
   phrasePlan,
   phraseRoute,
+  removeShotAt,
   shotsSource,
   shotsTitle,
   withShots,
   type DashboardCard,
 } from "../domain/dashboardCapture";
 import { screenReadNote } from "../domain/sourceCopy";
-import { hideSourcePlaque } from "../domain/sourcePlaque";
+import { removeAttachedSource } from "../domain/sourcePlaque";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
@@ -460,16 +459,26 @@ export default function App() {
       );
       return;
     }
-    if (!freshShots(card).length) return;
     const source = shotsSource(card.shots);
     if (!source.trim()) return;
-    putCard(id, { ...card, analyzed: card.shots.length });
-    void send(DASHBOARD_ANALYSIS_ASK, {
-      sourceText: source,
-      outputMode: "chat",
-      title: shotsTitle(card.shots),
+    const title = shotsTitle(card.shots);
+    setSourceDraft({
+      title,
+      text: source,
+      fileName: `${title}.md`,
+      viewMode: "text",
     });
-  }, [putCard, send, setMsgs]);
+    setFile(null);
+    setPlaqueDismissed(false);
+    // Remove un-analyzed empty card shell from transcript; user triggers query via composer.
+    cardsRef.current.delete(id);
+    setMsgs((list) =>
+      list.filter(
+        (msg) => !(msg.id === id && msg.role === "bot" && !msg.text.trim()),
+      ),
+    );
+    showToast(`Данные прикреплены (${card.shots.length} экр.) — напишите вопрос или выберите действие`, 3200);
+  }, [setFile, setMsgs, setSourceDraft, showToast]);
 
   const onDashboardShot = useCallback(
     (docs: { name: string; markdown: string; warnings?: string[] }[]) => {
@@ -563,9 +572,29 @@ export default function App() {
     })();
   }, [msgs, putCard]);
 
+  const openFreshDashboard = useCallback(() => {
+    const id = uid();
+    const card: DashboardCard = {
+      viewer: "",
+      filters: {},
+      shots: [],
+      analyzed: 0,
+    };
+    cardsRef.current.set(id, card);
+    activeCardId.current = id;
+    setPhraseViewer(null);
+    setDashboardOpen(true);
+  }, []);
+
   const sendFromComposer = useCallback(async () => {
     const text = chat.trim();
-    const hasAttachedSource = Boolean(file || sourceDraft?.text);
+    const hasAttachedSource = Boolean(
+      file ||
+        sourceDraft?.text ||
+        msgs.some(
+          (msg) => msg.role === "bot" && Boolean(msg.result?.run_id || msg.dashboard),
+        ),
+    );
     const explicitlyWantsDashboard = /дашборд|стимул|фильтр/i.test(text);
     if (!text || dashboardOpen || (hasAttachedSource && !explicitlyWantsDashboard)) {
       void send();
@@ -637,7 +666,7 @@ export default function App() {
           : msg,
       ),
     );
-  }, [chat, dashboardOpen, file, send, setChat, setMsgs, sourceDraft?.text]);
+  }, [chat, dashboardOpen, file, msgs, send, setChat, setMsgs, sourceDraft?.text]);
 
   const { capturePastedSource, ingestFiles, onDrop } = useSourceIngest({
     setFile,
@@ -856,6 +885,18 @@ export default function App() {
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
                   onOpenDashboardCard={openDashboardCard}
+                  onOpenDashboard={openFreshDashboard}
+                  onPickFile={() => fileRef.current?.click()}
+                  onRefineVisual={(preview) => {
+                    const isDia =
+                      preview.kind === "diagram" || preview.id.startsWith("dia_");
+                    const prefix = isDia
+                      ? "Доработай схему: "
+                      : "Доработай график: ";
+                    setWorkMode(null);
+                    setChat((cur) => (cur.trim() ? cur : prefix));
+                    window.requestAnimationFrame(() => chatRef.current?.focus());
+                  }}
                   onNewChat={(kind) => {
                     startNewReport({
                       keepSource: kind === "documents",
@@ -945,34 +986,34 @@ export default function App() {
                     if (sourceDraft) openAttached(sourceDraft);
                   }}
                   onDismissPlaque={() => {
-                    const next = hideSourcePlaque({ sourceDraft, file });
+                    const next = removeAttachedSource();
                     setPlaqueDismissed(next.plaqueDismissed);
                     setSourceDraft(next.sourceDraft);
                     setFile(next.file);
+                    showToast("Источник убран", 2000);
                   }}
                   onPickStarter={(prompt) => {
                     setChat(prompt);
                     chatRef.current?.focus();
                   }}
-                  onOpenDashboard={() => {
-                    const id = uid();
-                    const card: DashboardCard = {
-                      viewer: "",
-                      filters: {},
-                      shots: [],
-                      analyzed: 0,
-                    };
-                    cardsRef.current.set(id, card);
-                    activeCardId.current = id;
-                    setPhraseViewer(null);
-                    setDashboardOpen(true);
-                  }}
+                  onOpenDashboard={openFreshDashboard}
                 />
                 {dashboardOpen ? (
                   <DashboardPickModal
                     onClose={closeDashboard}
                     onShot={onDashboardShot}
                     shotCount={openDashboardShots}
+                    shots={
+                      activeCardId.current
+                        ? cardsRef.current.get(activeCardId.current)?.shots || []
+                        : []
+                    }
+                    onRemoveShot={(index) => {
+                      const id = activeCardId.current;
+                      const card = id ? cardsRef.current.get(id) : undefined;
+                      if (!id || !card) return;
+                      putCard(id, removeShotAt(card, index));
+                    }}
                     viewerUrl={phraseViewer}
                     onOpened={(url, mrt) => {
                       const id = activeCardId.current;
