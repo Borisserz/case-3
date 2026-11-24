@@ -491,36 +491,31 @@ def fetch_filter_catalog(
     *,
     question: str = "",
 ) -> dict:
-    """POST /filters (or GET /filters fallback) to read filters or pick .mrt + fill result."""
+    """POST /filters (with GET fallback for mocks) to read filters or pick .mrt + fill result."""
     root = base.rstrip("/")
     name = (mrt or "").strip()
     q = (question or "").strip()
     response = None
-    if q and hasattr(client, "post"):
-        payload: dict[str, object] = {"question": q}
+    if hasattr(client, "post"):
+        payload: dict[str, object] = {}
+        if q:
+            payload["question"] = q
         if name:
             payload["mrt"] = name
         response = client.post(
-            f"{root}/filters?open=0",
+            f"{root}/filters",
             json=payload,
             headers={"Accept": "application/json"},
         )
-        if int(getattr(response, "status_code", 500) or 500) in {404, 405}:
+        if int(getattr(response, "status_code", 500) or 500) in {404, 405} or not isinstance(
+            getattr(response, "json", lambda: None)(), dict
+        ) or "filters" not in (response.json() or {}):
             response = None
-    if response is None:
+    if response is None and hasattr(client, "get"):
         url = f"{root}/filters"
         if name:
             url = f"{url}?mrt={quote(name)}"
         response = client.get(url)
-        if int(getattr(response, "status_code", 500) or 500) == 405 and hasattr(client, "post"):
-            payload_fb: dict[str, object] = {}
-            if name:
-                payload_fb["mrt"] = name
-            response = client.post(
-                f"{root}/filters",
-                json=payload_fb,
-                headers={"Accept": "application/json"},
-            )
     status = int(getattr(response, "status_code", 500) or 500)
     try:
         body = response.json()

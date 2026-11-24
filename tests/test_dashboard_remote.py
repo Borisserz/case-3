@@ -446,13 +446,21 @@ def test_open_named_dashboard_reads_filters_then_posts_that_mrt() -> None:
 
         def post(self, url: str, json: dict | None = None, **_kwargs):
             self.posts.append((url, json or {}))
+            if url.endswith("/filters"):
+                return _Resp(
+                    200,
+                    {
+                        "mrt": "plan.mrt",
+                        "filters": [{"name": "month", "value": "2"}],
+                    },
+                )
             return _Resp(200, {"ok": True, "url": "http://127.0.0.1:8040/open"})
 
     client = _Client()
     plan = open_named_dashboard("http://127.0.0.1:8040", "plan.mrt", client)
-    assert client.gets == ["http://127.0.0.1:8040/filters?mrt=plan.mrt"]
-    assert client.posts[0][1]["mrt"] == "plan.mrt"
-    assert "month" in client.posts[0][1]["filters"]
+    assert client.posts[0] == ("http://127.0.0.1:8040/filters", {"mrt": "plan.mrt"})
+    assert client.posts[1][1]["mrt"] == "plan.mrt"
+    assert "month" in client.posts[1][1]["filters"]
     assert plan["viewer"] == "http://127.0.0.1:8040/open"
     assert plan["mrt"] == "plan.mrt"
 
@@ -538,6 +546,8 @@ def test_open_named_dashboard_supports_zero_filters_and_lan_path() -> None:
 
         def post(self, url: str, json=None, **_kwargs):
             self.posts.append((url, dict(json or {})))
+            if url.endswith("/filters"):
+                return _Resp(200, {"mrt": "plain.mrt", "filters": [], "count": 0})
             return _Resp(
                 200,
                 {
@@ -552,7 +562,10 @@ def test_open_named_dashboard_supports_zero_filters_and_lan_path() -> None:
     assert opened["mrt"] == "plain.mrt"
     assert opened["filters"] == {}
     assert opened["viewer"] == "http://192.168.1.50:8040/open?mrt=plain.mrt&rf=tok1"
-    assert c.posts == [("http://192.168.1.50:8040/open?open=0", {"filters": {}, "mrt": "plain.mrt"})]
+    assert c.posts == [
+        ("http://192.168.1.50:8040/filters", {"mrt": "plain.mrt"}),
+        ("http://192.168.1.50:8040/open?open=0", {"filters": {}, "mrt": "plain.mrt"}),
+    ]
 
 
 def test_phrase_has_respects_numeric_and_word_boundaries() -> None:
@@ -595,7 +608,7 @@ def test_fetch_filter_catalog_with_question_uses_post_and_propagates_picked_mrt(
 
         def post(self, url: str, json=None, **_kwargs):
             self.posts.append((url, dict(json or {})))
-            if url.endswith("/filters?open=0"):
+            if url.endswith("/filters"):
                 return _Resp(
                     200,
                     {
@@ -630,7 +643,7 @@ def test_fetch_filter_catalog_with_question_uses_post_and_propagates_picked_mrt(
 
     c = _Client()
     cat = fetch_filter_catalog("http://127.0.0.1:8040", c, question="открой выручку за февраль")
-    assert c.posts[0][0] == "http://127.0.0.1:8040/filters?open=0"
+    assert c.posts[0][0] == "http://127.0.0.1:8040/filters"
     assert cat["mrt"] == "revenue.mrt"
 
     plan = plan_dashboard_phrase(
