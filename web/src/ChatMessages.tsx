@@ -382,11 +382,11 @@ export function ChatMessages({
                     {(m.lead || "").trim() ? (
                       <MsgMarkdown
                         text={m.lead || ""}
-                        streaming={m.streamingSummary}
+                        streaming={!m.text.trim() && m.streamingSummary}
                       />
-                    ) : (
+                    ) : !m.text.trim() ? (
                       <p className="agent-wait">{m.waitLabel || "Отвечаю…"}</p>
-                    )}
+                    ) : null}
                     <ThinkingFold
                       lines={m.thinking || []}
                       live
@@ -612,7 +612,7 @@ export function ChatMessages({
           );
         })}
       </AnimatePresence>
-      <div ref={bottomRef} />
+      <div className="messages-end-anchor" ref={bottomRef} />
     </div>
     {openChart ? (
       <div className="chat-chart-lightbox" role="dialog" aria-modal="true" aria-label="График">

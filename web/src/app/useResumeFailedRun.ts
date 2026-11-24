@@ -4,6 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 import { openRunEvents } from "../api/runEvents";
 import { openSummaryStream } from "../api/summaryStream";
+import { createStreamPacer } from "../domain/streamPacer";
 import {
   attachSlidesPayload,
   needsSlidesHydrate,
@@ -92,22 +93,37 @@ async (botMsgId: string, runId: string) => {
       );
     }
     let streamedSummary = "";
-    const stopSummaryStream = openSummaryStream(
-      runId,
-      (full) => {
-        streamedSummary = full;
+    const instantStream = Boolean(
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+    );
+    const answerPacer = createStreamPacer({
+      baseCps: 68,
+      instant: instantStream,
+      onUpdate: (visible) => {
         setMsgs((m) =>
           m.map((msg) =>
             msg.id === botMsgId && msg.role === "bot"
-              ? { ...msg, text: full, pending: true, streamingSummary: true }
+              ? { ...msg, text: visible, pending: true, streamingSummary: true }
               : msg,
           ),
         );
+      },
+    });
+    const stopSummaryStream = openSummaryStream(
+      runId,
+      (full, meta) => {
+        streamedSummary = full;
+        if (meta?.replaced) {
+          answerPacer.replaceTarget(full);
+        } else {
+          answerPacer.pushTarget(full);
+        }
       },
       (full) => {
         if (full && full.trim()) {
           streamedSummary = full;
         }
+        void answerPacer.markDone(streamedSummary || undefined);
       },
     );
     const stopRunEvents = openRunEvents(runId, {
@@ -120,7 +136,9 @@ async (botMsgId: string, runId: string) => {
             return appendBotThinking(
               {
                 ...msg,
-                text: stageLabel(stg, det, msg.thinkingMode || "report"),
+                text: msg.streamingSummary
+                  ? msg.text
+                  : stageLabel(stg, det, msg.thinkingMode || "report"),
                 pending: true,
                 pendingStage: stg,
                 pendingDetail: det,
@@ -242,6 +260,10 @@ async (botMsgId: string, runId: string) => {
     } finally {
       stopRunEvents();
       stopSummaryStream();
+      if (result) {
+        await answerPacer.markDone(streamedSummary || result.chat_summary || undefined);
+      }
+      answerPacer.stop();
     }
     if (!result) {
       setBusy(false);

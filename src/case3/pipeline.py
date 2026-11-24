@@ -1328,7 +1328,7 @@ def run_pipeline(
         if dry_run:
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
             BUS.start(run_id)
-            _emit_chat("answer", answer, "chat")
+            BUS.publish(run_id, answer)
         else:
             report = chat_report_block(root, prior, turn_text)
             BUS.start(run_id)
@@ -1336,10 +1336,7 @@ def run_pipeline(
                 enriched_source,
                 asked,
                 report=report,
-                on_delta=lambda piece: (
-                    BUS.publish(run_id, piece),
-                    _emit_chat("answer", piece, "chat"),
-                ),
+                on_delta=lambda piece: BUS.publish(run_id, piece),
                 on_replace=lambda full: BUS.replace(run_id, full),
             )
             eff_charts_budget = charts_budget or (1 if prev_chart is not None else 0)

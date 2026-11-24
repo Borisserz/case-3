@@ -1,5 +1,7 @@
 /** Safe-ish markdown → HTML (escape first). Shared by Source + chat summary. */
 
+import { memo } from "react";
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -72,10 +74,75 @@ export function spaceAnswer(raw: string): string {
   return text;
 }
 
-export function renderLightMd(raw: string, query = ""): string {
+/** Stabilize incomplete trailing markdown constructs during live streaming. */
+export function stabilizeStreamingMd(raw: string): string {
+  let text = (raw || "").replace(/\r\n/g, "\n");
+  // Avoid flashing bare heading hashes ("## ") before heading text arrives.
+  text = text.replace(/(?:^|\n)#{1,3}[ \t]*$/, "");
+  // Avoid flashing partial table separator ("| ---" without closing "|") under a header row.
+  const lines = text.split("\n");
+  if (
+    lines.length >= 2 &&
+    isTableRow(lines[lines.length - 2]) &&
+    /^\s*\|[\s:|-]*$/.test(lines[lines.length - 1])
+  ) {
+    lines.pop();
+    text = lines.join("\n");
+  }
+  const fenceCount = (text.match(/```/g) || []).length;
+  if (fenceCount % 2 === 1) {
+    return `${text}\n\`\`\``;
+  }
+  // Close dangling bold/inline-code in the active trailing paragraph so lines don't snap later.
+  const lastBreak = text.lastIndexOf("\n\n");
+  const head = lastBreak >= 0 ? text.slice(0, lastBreak + 2) : "";
+  let tail = lastBreak >= 0 ? text.slice(lastBreak + 2) : text;
+  if (tail.endsWith("**")) {
+    // Wait for content after opening "**"
+    const boldMarkers = (tail.match(/\*\*/g) || []).length;
+    if (boldMarkers % 2 === 1) {
+      tail = tail.slice(0, -2);
+    }
+  } else {
+    if (tail.endsWith("*") && !tail.endsWith("**")) {
+      const prevBold = (tail.slice(0, -1).match(/\*\*/g) || []).length;
+      if (prevBold % 2 === 0) {
+        tail = tail.slice(0, -1);
+      } else {
+        tail = `${tail}*`;
+      }
+    }
+    const boldMarkers = (tail.match(/\*\*/g) || []).length;
+    if (boldMarkers % 2 === 1) {
+      tail = `${tail}**`;
+    }
+  }
+  return `${head}${tail}`.trimEnd();
+}
+
+function highlightQueryHtml(html: string, query: string): string {
+  if (!query.trim()) return html;
+  const q = escapeHtml(query.trim());
+  const re = new RegExp(
+    `(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "gi",
+  );
+  // Highlight text nodes between tags only so attribute/tag names are never mutated.
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((seg) =>
+      seg.startsWith("<") ? seg : seg.replace(re, '<mark class="src-hit">$1</mark>'),
+    )
+    .join("");
+}
+
+export function renderLightMdBlocks(raw: string, query = ""): string[] {
   let s = escapeHtml(spaceAnswer(raw));
+  const codePlaceholders: string[] = [];
   s = s.replace(/```([\s\S]*?)```/g, (_m, code: string) => {
-    return `<pre class="src-code"><code>${code.trim()}</code></pre>`;
+    const idx = codePlaceholders.length;
+    codePlaceholders.push(`<pre class="src-code"><code>${code.trim()}</code></pre>`);
+    return `\n\n@@CODEBLOCK${idx}@@\n\n`;
   });
   s = s.replace(/^### (.+)$/gm, '<h4 class="src-h">$1</h4>');
   s = s.replace(/^## (.+)$/gm, '<h3 class="src-h">$1</h3>');
@@ -87,40 +154,51 @@ export function renderLightMd(raw: string, query = ""): string {
   s = s.replace(/(?:<li class="src-li">.*<\/li>\n?)+/g, (block) => {
     return `<ul class="src-ul">${block}</ul>`;
   });
-  s = s
+
+  const blocks = s
     .split(/\n{2,}/)
     .map((chunk) => {
-      if (/^<(h[2-4]|ul|pre|table|div\s+class="msg-table-wrap")/.test(chunk.trim())) return chunk;
-      if (chunk.includes("<div class=\"msg-table-wrap\">")) {
+      const trimmed = chunk.trim();
+      if (!trimmed) return "";
+      const codeMatch = trimmed.match(/^@@CODEBLOCK(\d+)@@$/);
+      if (codeMatch) {
+        return codePlaceholders[Number(codeMatch[1])] || "";
+      }
+      if (/^<(h[2-4]|ul|pre|table|div\s+class="msg-table-wrap")/.test(trimmed)) {
+        return chunk;
+      }
+      if (chunk.includes('<div class="msg-table-wrap">')) {
         return chunk
           .split(/(<div class="msg-table-wrap"><table[\s\S]*?<\/table><\/div>)/)
           .map((part) => {
             if (part.startsWith('<div class="msg-table-wrap">')) return part;
-            const trimmed = part.trim();
-            if (!trimmed) return "";
-            if (/^<(h[2-4]|ul|pre)/.test(trimmed)) return part;
+            const partTrimmed = part.trim();
+            if (!partTrimmed) return "";
+            if (/^<(h[2-4]|ul|pre)/.test(partTrimmed)) return part;
             return `<p class="src-p">${part.replace(/\n/g, "<br/>")}</p>`;
           })
           .join("");
       }
       return `<p class="src-p">${chunk.replace(/\n/g, "<br/>")}</p>`;
     })
-    .join("");
+    .filter(Boolean);
 
-  if (query.trim()) {
-    const q = escapeHtml(query.trim());
-    const re = new RegExp(
-      `(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
-      "gi",
-    );
-    // Highlight text nodes between tags only so attribute/tag names are never mutated.
-    s = s
-      .split(/(<[^>]+>)/g)
-      .map((seg) => (seg.startsWith("<") ? seg : seg.replace(re, '<mark class="src-hit">$1</mark>')))
-      .join("");
-  }
-  return s;
+  if (!query.trim()) return blocks;
+  return blocks.map((b) => highlightQueryHtml(b, query));
 }
+
+export function renderLightMd(raw: string, query = ""): string {
+  return renderLightMdBlocks(raw, query).join("");
+}
+
+const MdBlock = memo(function MdBlock({ html }: { html: string }) {
+  return (
+    <div
+      className="msg-md-block"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
 
 export function MsgMarkdown({
   text,
@@ -131,11 +209,15 @@ export function MsgMarkdown({
   streaming?: boolean;
   className?: string;
 }) {
-  const html = renderLightMd(text || "");
+  const source = streaming ? stabilizeStreamingMd(text || "") : text || "";
+  const blocks = renderLightMdBlocks(source);
   return (
     <div
       className={`msg-body msg-md${streaming ? " is-streaming" : ""}${className ? ` ${className}` : ""}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      {blocks.map((html, idx) => (
+        <MdBlock key={idx} html={html} />
+      ))}
+    </div>
   );
 }

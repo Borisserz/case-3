@@ -272,7 +272,7 @@ export default function App() {
     setDeckPacks,
   });
 
-  useChatChrome({
+  const { showScrollBottom, scrollToBottom } = useChatChrome({
     chatTitle,
     msgs,
     chat,
@@ -945,6 +945,20 @@ export default function App() {
                       : null
                   }
                 />
+
+                {showScrollBottom ? (
+                  <div className="scroll-bottom-slot">
+                    <button
+                      type="button"
+                      className="scroll-bottom-btn"
+                      onClick={scrollToBottom}
+                      aria-label="Прокрутить вниз"
+                      title="Прокрутить вниз"
+                    >
+                      ↓ Вниз
+                    </button>
+                  </div>
+                ) : null}
 
                 <ChatComposer
                   busy={busy}

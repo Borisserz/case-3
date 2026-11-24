@@ -1,9 +1,13 @@
 /** SSE client for Liber chat-summary stream (no React). */
 
+export type SummaryDeltaMeta = {
+  replaced?: boolean;
+};
+
 /** Open SSE summary stream; returns closer. */
 export function openSummaryStream(
   runId: string,
-  onDelta: (full: string) => void,
+  onDelta: (full: string, meta?: SummaryDeltaMeta) => void,
   onDone: (full: string, status: string) => void,
 ): () => void {
   const es = new EventSource(
@@ -14,7 +18,7 @@ export function openSummaryStream(
     try {
       const data = JSON.parse((ev as MessageEvent).data) as { text?: string };
       acc += data.text || "";
-      onDelta(acc);
+      onDelta(acc, { replaced: false });
     } catch {
       /* ignore */
     }
@@ -23,7 +27,7 @@ export function openSummaryStream(
     try {
       const data = JSON.parse((ev as MessageEvent).data) as { text?: string };
       acc = data.text || "";
-      onDelta(acc);
+      onDelta(acc, { replaced: true });
     } catch {
       /* ignore */
     }

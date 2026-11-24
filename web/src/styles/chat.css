@@ -1,6 +1,8 @@
 .messages {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -8,6 +10,52 @@
   /* Extra bottom pad so card CTAs clear sticky-feel composer + source plaque */
   padding: 1.35rem 1rem 9.5rem;
   scroll-padding-bottom: 10.5rem;
+}
+
+.messages-end-anchor {
+  height: 1px;
+  width: 100%;
+  flex-shrink: 0;
+  overflow-anchor: none;
+}
+
+.scroll-bottom-slot {
+  position: relative;
+  width: 100%;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 0.65rem;
+  pointer-events: auto;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--border));
+  background: color-mix(in srgb, var(--sheet) 92%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-out), background 0.16s ease, border-color 0.16s ease;
+}
+
+.scroll-bottom-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--ink) 28%, var(--border));
+  background: var(--sheet);
 }
 
 /* Session title — top of transcript, scrolls with chat (not pinned over cards) */
@@ -503,8 +551,7 @@
 }
 
 .msg-body {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .msg-body.msg-pre {
@@ -703,7 +750,8 @@
   font-weight: 600;
   letter-spacing: 0;
 }
-.msg-md .src-h:first-child {
+.msg-md .src-h:first-child,
+.msg-md .msg-md-block:first-child > .src-h {
   margin-top: 0.15em;
 }
 .msg-md .src-p {
@@ -711,6 +759,9 @@
 }
 .msg-md .src-p:last-child {
   margin-bottom: 0;
+}
+.msg-md .msg-md-block:not(:last-child) > .src-p:last-child {
+  margin-bottom: 0.95em;
 }
 .msg-md .src-ul {
   margin: 0.2em 0 0.95em;
@@ -722,27 +773,55 @@
   padding-left: 0.1em;
 }
 .msg-md .src-ul + .src-p,
-.msg-md .src-h + .src-p {
+.msg-md .src-h + .src-p,
+.msg-md .msg-md-block + .msg-md-block > .src-p:first-child {
   margin-top: 0.15em;
 }
 .msg-md strong {
   font-weight: 600;
   color: color-mix(in srgb, var(--ink) 94%, var(--primary));
 }
-.msg-md.is-streaming .src-p:last-child::after {
+.msg-md.is-streaming .msg-md-block {
+  animation: md-block-soft 0.22s var(--ease-out) both;
+}
+.msg-md.is-streaming .msg-md-block:last-child .src-p:last-child::after,
+.msg-md.is-streaming .msg-md-block:last-child .src-li:last-child::after,
+.msg-md.is-streaming .msg-md-block:last-child .src-h:last-child::after {
   content: "";
   display: inline-block;
-  width: 0.45em;
+  width: 2px;
   height: 1.05em;
-  margin-left: 0.12em;
-  vertical-align: -0.15em;
-  background: color-mix(in srgb, var(--primary) 75%, var(--ink));
-  border-radius: 1px;
-  animation: msg-caret 1s steps(1) infinite;
+  margin-left: 0.16em;
+  vertical-align: -0.16em;
+  background: color-mix(in srgb, var(--primary) 78%, var(--ink));
+  border-radius: 999px;
+  animation: msg-caret-breathe 1.05s ease-in-out infinite;
 }
-@keyframes msg-caret {
+@keyframes md-block-soft {
+  from {
+    opacity: 0.62;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes msg-caret-breathe {
+  0%,
+  100% {
+    opacity: 0.88;
+  }
   50% {
-    opacity: 0;
+    opacity: 0.16;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-md.is-streaming .msg-md-block {
+    animation: none;
+  }
+  .msg-md.is-streaming .msg-md-block:last-child .src-p:last-child::after,
+  .msg-md.is-streaming .msg-md-block:last-child .src-li:last-child::after,
+  .msg-md.is-streaming .msg-md-block:last-child .src-h:last-child::after {
+    animation: none;
   }
 }
 .msg-stream-wrap {

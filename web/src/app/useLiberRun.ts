@@ -9,6 +9,7 @@ import type {
 import { useCallback, useRef } from "react";
 import { openRunEvents } from "../api/runEvents";
 import { openSummaryStream } from "../api/summaryStream";
+import { createStreamPacer } from "../domain/streamPacer";
 import {
   craftParentId,
   formatCraftRecap,
@@ -551,15 +552,75 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         events: null as null | (() => void),
       };
       let streamedSummary = "";
+      let leadAcc = "";
       let summaryStreamStarted = false;
       let cancelled = false;
       let slidesKicked = false;
+      let latestStage = "";
+      let latestDetail: string | null = null;
+      const instantStream = Boolean(
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+      );
+      const answerPacer = createStreamPacer({
+        baseCps: 68,
+        instant: instantStream,
+        onUpdate: (visible) => {
+          setMsgs((m) =>
+            m.map((msg) => {
+              if (msg.id !== pendingId || msg.role !== "bot") return msg;
+              return {
+                ...msg,
+                text: visible,
+                pending: true,
+                streamingSummary: true,
+                pendingStage: latestStage || msg.pendingStage,
+                pendingDetail: latestDetail,
+              };
+            }),
+          );
+        },
+      });
+      const leadPacer = createStreamPacer({
+        baseCps: 76,
+        instant: instantStream,
+        onUpdate: (visible) => {
+          setMsgs((m) =>
+            m.map((msg) =>
+              msg.id === pendingId && msg.role === "bot"
+                ? { ...msg, lead: visible }
+                : msg,
+            ),
+          );
+        },
+      });
+
+      const ensureSummaryStream = () => {
+        if (summaryStreamStarted) return;
+        summaryStreamStarted = true;
+        runCloser.summary = openSummaryStream(
+          runId,
+          (full, meta) => {
+            streamedSummary = full;
+            if (meta?.replaced) {
+              answerPacer.replaceTarget(full);
+            } else {
+              answerPacer.pushTarget(full);
+            }
+          },
+          (full) => {
+            streamedSummary = full || streamedSummary;
+            void answerPacer.markDone(streamedSummary || undefined);
+          },
+        );
+      };
 
       const applyStage = (
         stage: string | undefined,
         detail: string | null,
         etaSec?: number | null,
       ) => {
+        latestStage = stage || latestStage;
+        latestDetail = detail;
         setMsgs((m) =>
           m.map((msg) => {
             if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -585,29 +646,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             stage === "docx" ||
             stage === "summary");
         if (shouldStream) {
-          summaryStreamStarted = true;
-          runCloser.summary = openSummaryStream(
-            runId,
-            (full) => {
-              streamedSummary = full;
-              setMsgs((m) =>
-                m.map((msg) => {
-                  if (msg.id !== pendingId || msg.role !== "bot") return msg;
-                  return {
-                    ...msg,
-                    text: full,
-                    pending: true,
-                    streamingSummary: true,
-                    pendingStage: stage || msg.pendingStage,
-                    pendingDetail: detail,
-                  };
-                }),
-              );
-            },
-            (full) => {
-              streamedSummary = full || streamedSummary;
-            },
-          );
+          ensureSummaryStream();
         }
       };
 
@@ -865,15 +904,19 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             },
             onChat: (phase, text, mode) => {
               if (mode) liveMode = mode;
+              if (phase === "answer") {
+                if (outMode !== "diagram") {
+                  ensureSummaryStream();
+                }
+                return;
+              }
+              leadAcc = `${leadAcc}${text}`;
+              leadPacer.pushTarget(leadAcc);
               setMsgs((m) =>
                 m.map((msg) => {
                   if (msg.id !== pendingId || msg.role !== "bot") return msg;
-                  const lead = `${msg.lead || ""}${text}`;
                   return {
                     ...msg,
-                    lead,
-                    text: phase === "answer" ? lead : msg.text,
-                    streamingSummary: phase === "answer" || msg.streamingSummary,
                     thinkingMode:
                       mode === "diagram" ||
                       mode === "presentation" ||
@@ -1015,11 +1058,40 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         } else {
           result = await fetchFinalStatus();
         }
+      } catch (innerErr) {
+        answerPacer.stop();
+        leadPacer.stop();
+        throw innerErr;
       } finally {
         runCloser.events?.();
         runCloser.summary?.();
       }
       if (cancelled || cancelRequestedRef.current) {
+        answerPacer.stop();
+        leadPacer.stop();
+        finishIdle();
+        return;
+      }
+      const drainCancelWatch = window.setInterval(() => {
+        if (cancelRequestedRef.current) {
+          answerPacer.stop();
+          leadPacer.stop();
+        }
+      }, 100);
+      try {
+        const finalStreamText =
+          streamedSummary ||
+          (result.output_mode === "chat" ? result.chat_summary || "" : "");
+        await Promise.all([
+          leadPacer.markDone(leadAcc || undefined),
+          answerPacer.markDone(finalStreamText || undefined),
+        ]);
+      } finally {
+        window.clearInterval(drainCancelWatch);
+        answerPacer.stop();
+        leadPacer.stop();
+      }
+      if (cancelRequestedRef.current) {
         finishIdle();
         return;
       }
