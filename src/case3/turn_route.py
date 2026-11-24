@@ -230,7 +230,10 @@ def wants_chat_diagram(text: str | None, *, has_prior_diagram: bool = False) -> 
 
 
 def resolve_turn(text: str | None, bias: str | None) -> TurnKind:
-    """Return chat, report, diagram, or presentation."""
+    """Return a legacy executable kind; ambiguous chart requests map to chat.
+
+    Call ``plan_turn`` when the caller needs the typed ``clarify`` result.
+    """
     raw = _norm(text or "")
     plaque = (bias or "").strip().lower()
     if plaque not in {"report", "diagram", "presentation"}:

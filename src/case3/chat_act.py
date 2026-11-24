@@ -957,10 +957,23 @@ _NEW_BUILD_ARTIFACT = re.compile(
     r"[^.!?\n]{0,120}\b(?:новый\s+|новую\s+)?(?:отчет\w*|презентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
     re.IGNORECASE,
 )
+_NEW_CHART_ARTIFACT = re.compile(
+    r"\b(?:сделай|собери|построй|нарисуй|сгенерируй|создай)\b"
+    r"[^.!?\n]{0,80}\bнов(?:ый|ую|ое|ые)\b"
+    r"[^.!?\n]{0,80}\b(?:график\w*|диаграмм\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def explicit_new_artifact(raw: str) -> bool:
+    """True when the user explicitly asks to build a separate artifact."""
+    text = raw or ""
+    return bool(_NEW_BUILD_ARTIFACT.search(text) or _NEW_CHART_ARTIFACT.search(text))
 
 
 def _explicit_new_artifact(raw: str) -> bool:
-    return bool(_NEW_BUILD_ARTIFACT.search(raw or ""))
+    """Backward-compatible private alias."""
+    return explicit_new_artifact(raw)
 
 
 def resolve_act(

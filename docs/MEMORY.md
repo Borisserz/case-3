@@ -129,6 +129,7 @@ Desk: SSE v1 + **2A** + **2B** + **finish** (mode scripts · `meta.steps[]`) don
 | Память чата / правка из реплики | [KI-chat-memory](../.agents/knowledge/KI-chat-memory.md) · [ADR-0013](adr/0013-chat-memory-chain.md) |
 | Дашборд PNG+PDF → markdown | [KI-dashboard-source](../.agents/knowledge/KI-dashboard-source.md) · [ADR-0014](adr/0014-dashboard-source-markdown.md) |
 | Промпт LLM (правка / новый) | [`prompt/MANIFEST.md`](../prompt/MANIFEST.md) → `case3.prompts` · spec `2026-10-30-prompt-catalog` |
+| Роутинг хода / плашка·график·revise | [KI-pipeline](../.agents/knowledge/KI-pipeline.md) (`plan_turn`) · [ADR-0023](adr/0023-typed-turn-graph.md) · [ADR-0017](adr/0017-plaque-wins-over-bare-analyze.md) |
 | Баг пайплайна / PDF | KI-pipeline → KI-tex-render → ADR-0001 |
 | График / палитра / edit | KI-charts → ADR-0002 |
 | Таблица / абзац в Preview (edit) | KI-liber-ui · `table_edit.py` / `paragraph_edit.py` · specs table-edit + `2026-10-25-liber-report-depth-c1-c2-c4` |

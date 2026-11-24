@@ -1,3 +1,4 @@
+from case3.turn_plan import plan_turn
 from case3.turn_route import resolve_turn
 
 
@@ -30,10 +31,10 @@ def test_explicit_deck_wins_over_plaque_and_over_analyze():
     assert resolve_turn("Проанализируй и собери презентацию", "report") == "presentation"
 
 
-def test_a_chart_request_runs_in_chat_unless_report_requested():
+def test_a_chart_request_runs_in_chat_unless_report_destination_is_ambiguous():
     assert resolve_turn("Построй график по областям", None) == "chat"
     assert resolve_turn("Нарисуй диаграмму продаж", None) == "chat"
-    assert resolve_turn("Построй график по областям", "report") == "chat"
+    assert plan_turn("Построй график по областям", bias="report").kind == "clarify"
     assert resolve_turn("Сделай отчёт с графиками продаж", None) == "report"
     assert resolve_turn("Нарисуй схему онбординга", None) == "diagram"
 
@@ -42,7 +43,7 @@ def test_why_without_question_mark_and_chart_request_stay_chat_under_plaque():
     from case3.turn_route import wants_chat_chart
 
     assert resolve_turn("почему в Гомеле просадка", "report") == "chat"
-    assert resolve_turn("построй график по регионам", "report") == "chat"
+    assert plan_turn("построй график по регионам", bias="report").kind == "clarify"
     assert wants_chat_chart("построй график по регионам") is True
 
 

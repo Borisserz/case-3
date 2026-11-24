@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from case3.api import apply_mode_caps, build_intent_from_ui, parse_formats_form
+from case3.api import (
+    apply_mode_caps,
+    apply_turn_caps,
+    build_intent_from_ui,
+    parse_formats_form,
+)
 from case3.pipeline import (
     _presentation_chat_blurb,
     resolve_pipeline_formats,
 )
+from case3.turn_plan import plan_turn
 
 
 def test_presentation_keeps_diagrams_for_the_deck_and_skips_pdf() -> None:
@@ -26,7 +32,7 @@ def test_presentation_keeps_diagrams_for_the_deck_and_skips_pdf() -> None:
     assert no_charts is False
     assert no_images is False
 
-    _, _, forced, formats0, _, _ = apply_mode_caps(
+    _, _, diagrams0, formats0, _, _ = apply_mode_caps(
         "presentation",
         max_charts=3,
         max_images=0,
@@ -36,7 +42,66 @@ def test_presentation_keeps_diagrams_for_the_deck_and_skips_pdf() -> None:
         no_images=True,
     )
     assert formats0 == "none"
-    assert forced == 1
+    assert diagrams0 == 0
+
+
+def test_turn_caps_do_not_force_unrequested_presentation_diagram() -> None:
+    plan = plan_turn("Собери презентацию", mode_hint="presentation")
+    charts, images, diagrams, formats, no_charts, no_images = apply_turn_caps(
+        plan,
+        max_charts=3,
+        max_images=2,
+        max_diagrams=0,
+        formats="both",
+        no_charts=False,
+        no_images=False,
+    )
+    assert (charts, images, diagrams) == (3, 2, 0)
+    assert formats == "none"
+    assert no_charts is False
+    assert no_images is False
+
+
+def test_turn_caps_force_requested_presentation_diagram() -> None:
+    plan = plan_turn("Собери презентацию", mode_hint="presentation")
+    plan.build_media["diagram"] = True
+    caps = apply_turn_caps(
+        plan,
+        max_charts=0,
+        max_images=0,
+        max_diagrams=0,
+        formats="both",
+        no_charts=True,
+        no_images=True,
+    )
+    assert caps[2] == 1
+
+
+def test_turn_caps_allow_chat_charts_only_when_plan_requests_one() -> None:
+    plain = plan_turn("Расскажи о данных", mode_hint="chat")
+    visual = plan_turn("Построй график в чате", mode_hint="chat")
+
+    plain_caps = apply_turn_caps(
+        plain,
+        max_charts=3,
+        max_images=2,
+        max_diagrams=2,
+        formats="both",
+        no_charts=False,
+        no_images=False,
+    )
+    visual_caps = apply_turn_caps(
+        visual,
+        max_charts=3,
+        max_images=2,
+        max_diagrams=2,
+        formats="both",
+        no_charts=False,
+        no_images=False,
+    )
+
+    assert plain_caps[:4] == (1, 0, 0, "none")
+    assert visual_caps[:4] == (2, 0, 0, "none")
 
 
 def test_parse_formats_none_empty_set() -> None:

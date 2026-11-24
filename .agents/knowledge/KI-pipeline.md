@@ -15,6 +15,7 @@ Mermaid `diagrams[]` пишутся в `figures.json` и **растеризую�
 ## Entry
 - CLI: `case3` / `scripts/run.cmd`
 - API: `POST /api/run` → background → `GET /api/runs/{id}/status`
+- **TTG (роутинг хода):** `turn_plan.plan_turn` → `TurnPlan` (`route_version=ttg-v1`) — SSOT до revise/build и слотов API (ADR-0023). `turn_route.resolve_turn` — только совместимость. Многошаговые `steps[]` (цепочка build), plaque+голый график → `clarify`, проекция «Маршрут» в Intent — `format_route_projection` / `intent_compose.append_route_projection_to_intent`.
 
 ## Invariants
 - `run_id` = `{stem}_{UTC stamp}`; артефакты в `runs/{work,out,logs}/`

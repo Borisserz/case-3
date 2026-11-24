@@ -10,8 +10,9 @@ import re
 import shutil
 import threading
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
@@ -392,6 +393,12 @@ def _run_result_payload(
     )
     diagrams = _load_diagrams_from_out(out_dir)
     chat_summary = str(meta.get("chat_summary") or "")
+    route = meta.get("route_plan")
+    route_note = (
+        str(route.get("note") or "").strip() if isinstance(route, dict) else ""
+    )
+    if route_note and route_note not in chat_summary:
+        chat_summary = "\n\n".join(part for part in (chat_summary, route_note) if part)
     summary_status = str(meta.get("summary_status") or "")
     if not summary_status and chat_summary:
         summary_status = "ok"
@@ -443,6 +450,7 @@ def _run_result_payload(
         # Twin thumbs for Liber chat/rail — without these, pptx-ready runs look empty.
         "slide_pngs": slide_pngs,
         "output_mode": meta.get("output_mode") or "auto",
+        "route_plan": meta.get("route_plan"),
         "prior_run_id": str(meta.get("prior_run_id") or ""),
         "user_text": user_text,
         "error": meta.get("error"),
@@ -986,7 +994,7 @@ def apply_mode_caps(
     no_images: bool,
     allow_chat_charts: bool = False,
 ) -> tuple[int, int, int, str, bool, bool]:
-    """Chat and scheme drop print media. A deck still gets dia_* for its slides."""
+    """Chat and scheme drop print media. A deck keeps the requested media caps."""
     if out_mode == "chat":
         if no_charts or max_charts <= 0:
             return 0, 0, 0, "none", True, True
@@ -995,8 +1003,443 @@ def apply_mode_caps(
     if out_mode == "diagram":
         return 0, 0, max(1, max_diagrams), "none", True, True
     if out_mode == "presentation":
-        return max_charts, max_images, max(1, max_diagrams), "none", no_charts, no_images
+        return max_charts, max_images, max_diagrams, "none", no_charts, no_images
     return max_charts, max_images, max_diagrams, formats, no_charts, no_images
+
+
+def apply_turn_caps(
+    plan: Any,
+    *,
+    max_charts: int,
+    max_images: int,
+    max_diagrams: int,
+    formats: str,
+    no_charts: bool,
+    no_images: bool,
+) -> tuple[int, int, int, str, bool, bool]:
+    """Apply executor budgets once from the typed turn plan."""
+    kind = str(getattr(plan, "kind", "") or "chat")
+    if kind == "clarify":
+        kind = "chat"
+    if kind == "revise":
+        return 0, 0, 0, "none", True, True
+    caps = apply_mode_caps(
+        kind if kind in {"chat", "report", "diagram", "presentation"} else "chat",
+        max_charts=max_charts,
+        max_images=max_images,
+        max_diagrams=max_diagrams,
+        formats=formats,
+        no_charts=no_charts,
+        no_images=no_images,
+        allow_chat_charts=kind == "chat"
+        and bool(getattr(plan, "want_chat_chart", False)),
+    )
+    if kind == "presentation":
+        media = getattr(plan, "build_media", {})
+        if isinstance(media, dict) and media.get("diagram"):
+            charts, images, diagrams, out_formats, no_c, no_i = caps
+            return charts, images, max(1, diagrams), out_formats, no_c, no_i
+    return caps
+
+
+def _prior_artifact_flags(root: Path, prior_run_id: str | None) -> dict[str, bool]:
+    """Collect artifact presence once from the existing chat chain."""
+    flags = {
+        "has_deck": False,
+        "has_report": False,
+        "has_diagram": False,
+        "has_chart": False,
+    }
+    rid = (prior_run_id or "").strip()
+    if not rid or not _RUN_ID_OK.match(rid):
+        return flags
+
+    from case3.chat_memory import load_chain_dirs
+
+    for _run_id, out_dir, meta in load_chain_dirs(root, rid):
+        mode = str(meta.get("output_mode") or "").strip().lower()
+        slides = str(meta.get("slides_status") or "").strip().lower()
+        flags["has_deck"] = flags["has_deck"] or mode == "presentation" or slides in {
+            "ok",
+            "running",
+            "error",
+        }
+        artifacts = meta.get("artifacts")
+        flags["has_report"] = (
+            flags["has_report"]
+            or mode == "report"
+            or (isinstance(artifacts, dict) and bool(artifacts))
+            or any(out_dir.glob("*.tex"))
+        )
+        diagrams = meta.get("diagrams")
+        flags["has_diagram"] = (
+            flags["has_diagram"]
+            or mode == "diagram"
+            or (isinstance(diagrams, list) and bool(diagrams))
+        )
+        planned = meta.get("charts_planned")
+        flags["has_chart"] = flags["has_chart"] or (
+            isinstance(planned, list) and bool(planned)
+        )
+        figures_path = out_dir / "figures.json"
+        if not figures_path.is_file():
+            continue
+        try:
+            figures = json.loads(figures_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(figures, dict):
+            flags["has_chart"] = flags["has_chart"] or bool(figures.get("charts"))
+            flags["has_diagram"] = flags["has_diagram"] or bool(
+                figures.get("diagrams")
+            )
+    return flags
+
+
+def _route_plan_payload(
+    plan: Any, *, step_index: int = 0, parent_run_id: str = ""
+) -> dict[str, Any]:
+    payload = asdict(plan)
+    steps = payload.get("steps") if isinstance(payload.get("steps"), list) else []
+    payload["step_index"] = step_index
+    payload["pending_steps"] = steps[step_index + 1 :]
+    if parent_run_id:
+        payload["parent_run_id"] = parent_run_id
+    return payload
+
+
+def _append_route_projection(
+    intent: str,
+    plan: Any,
+    *,
+    kind: str | None = None,
+    _step_index: int = 0,
+) -> str:
+    from case3.intent_compose import append_route_projection_to_intent
+    from case3.turn_plan import TurnPlan, format_route_projection
+
+    if isinstance(plan, TurnPlan):
+        projection = format_route_projection(plan, kind=kind)
+    elif isinstance(plan, dict):
+        media = plan.get("build_media")
+        media = media if isinstance(media, dict) else {}
+        view = TurnPlan(
+            route_version=str(plan.get("route_version") or ""),
+            kind=str(plan.get("kind") or kind or "chat"),
+            steps=[],
+            want_chat_chart=bool(plan.get("want_chat_chart")),
+            want_chat_diagram=bool(plan.get("want_chat_diagram")),
+            build_media=media,
+            edit_act=None,
+            mode_hint="auto",
+            reason="",
+            clarify_prompt=None,
+            note=str(plan.get("note") or "") or None,
+        )
+        projection = format_route_projection(view, kind=kind)
+    else:
+        projection = format_route_projection(plan, kind=kind)
+    return append_route_projection_to_intent(intent, projection)
+
+
+def _child_intent_from_seed(
+    route_plan: dict[str, Any],
+    *,
+    kind: str,
+    step_index: int,
+    max_charts: int,
+    max_images: int,
+    max_diagrams: int,
+    no_charts: bool,
+    no_images: bool,
+) -> str | None:
+    """Recompose a chained build for its own mode, never from the parent prompt."""
+    seed = route_plan.get("intent_seed")
+    if not isinstance(seed, dict):
+        return None
+    raw_types = seed.get("chart_types")
+    chart_types = (
+        [str(item) for item in raw_types if isinstance(item, str)]
+        if isinstance(raw_types, list)
+        else []
+    )
+    generated_images = max(0, int(seed.get("max_generated_images") or 0))
+    rebuilt = build_intent_from_ui(
+        chat=str(seed.get("chat") or ""),
+        chart_types=chart_types,
+        max_charts=max_charts,
+        max_images=min(max_images, generated_images),
+        max_diagrams=max_diagrams,
+        forbid_charts=no_charts,
+        forbid_images=no_images,
+        chart_hints=str(seed.get("chart_hints") or ""),
+        chart_auto=bool(seed.get("chart_auto")),
+        chart_palette=str(seed.get("chart_palette") or "atelier"),
+        chart_style=str(seed.get("chart_style") or ""),
+        doc_title=str(seed.get("doc_title") or ""),
+        output_mode=kind,
+        deck_pack=str(seed.get("deck_pack") or ""),
+    )
+    rebuilt = _append_route_projection(rebuilt, route_plan, kind=kind)
+    prior_block = str(seed.get("prior_block") or "")
+    if prior_block:
+        from case3.prior_turn import insert_prior_turn
+
+        rebuilt = insert_prior_turn(rebuilt, prior_block)
+    return rebuilt
+
+
+def _record_route_chain_error(run_id: str, message: str) -> None:
+    from case3.run_meta import update_meta
+
+    def _mark(parent: dict[str, Any]) -> None:
+        parent_route = parent.get("route_plan")
+        if isinstance(parent_route, dict):
+            parent_route["chain_error"] = message
+
+    update_meta(
+        run_store.ROOT / "runs" / "out" / run_id,
+        _mark,
+        logs_dir=run_store.ROOT / "runs" / "logs" / run_id,
+    )
+
+
+def _route_has_pending_steps(meta: dict[str, Any]) -> bool:
+    route = meta.get("route_plan")
+    return bool(
+        isinstance(route, dict)
+        and isinstance(route.get("pending_steps"), list)
+        and route["pending_steps"]
+    )
+
+
+def _wait_for_presentation_slides(run_id: str) -> None:
+    """Keep a TTG presentation step active until its slides reach a terminal state."""
+    pause = threading.Event()
+    while True:
+        meta = _read_run_meta(run_id)
+        if not _route_has_pending_steps(meta):
+            return
+        status = str(meta.get("slides_status") or "").strip().lower()
+        if status in {"ok", "error", "cancelled"}:
+            return
+        if status not in {"running", "queued"}:
+            _record_route_chain_error(
+                run_id,
+                "Не удалось запустить сборку презентации; следующий шаг не начат.",
+            )
+            return
+        pause.wait(0.05)
+
+
+def _kick_next_turn_step(
+    src_path: Path,
+    *,
+    run_id: str,
+    dry_run: bool,
+    user_figures: list[dict[str, Any]] | None,
+) -> str | None:
+    """Create the next TTG build as a normal chained pipeline run."""
+    meta = _read_run_meta(run_id)
+    if (
+        meta.get("status") != "ok"
+        or meta.get("insufficient_data")
+        or meta.get("cancel_requested")
+    ):
+        return None
+    if str(meta.get("output_mode") or "").strip().lower() == "presentation":
+        slides_status = str(meta.get("slides_status") or "").strip().lower()
+        if slides_status not in {"ok", "error", "cancelled"}:
+            return None
+    route = meta.get("route_plan")
+    if not isinstance(route, dict):
+        return None
+    pending = route.get("pending_steps")
+    if not isinstance(pending, list) or not pending:
+        return None
+    next_step = pending[0]
+    if not isinstance(next_step, dict):
+        return None
+    kind = str(next_step.get("kind") or "").strip().lower()
+    if kind not in {"report", "diagram", "presentation"}:
+        return None
+
+    requested = meta.get("turn_caps_requested")
+    if not isinstance(requested, dict):
+        return None
+    plan_view = SimpleNamespace(
+        kind=kind,
+        want_chat_chart=False,
+        build_media=route.get("build_media")
+        if isinstance(route.get("build_media"), dict)
+        else {},
+    )
+    charts, images, diagrams, formats, _no_charts, _no_images = apply_turn_caps(
+        plan_view,
+        max_charts=int(requested.get("max_charts") or 0),
+        max_images=int(requested.get("max_images") or 0),
+        max_diagrams=int(requested.get("max_diagrams") or 0),
+        formats=str(requested.get("formats") or "both"),
+        no_charts=bool(requested.get("no_charts")),
+        no_images=bool(requested.get("no_images")),
+    )
+    try:
+        format_set = parse_formats_form(formats)
+    except ValueError:
+        format_set = set()
+
+    turn, waiting_for = _reserve_run_turn()
+    if turn == "busy":
+        log.error("could not queue TTG child parent=%s kind=%s", run_id, kind)
+        _record_route_chain_error(
+            run_id,
+            "Не удалось поставить следующий шаг в очередь: очередь заполнена. "
+            "Повторите запуск артефакта.",
+        )
+        return None
+
+    child_route = json.loads(json.dumps(route, ensure_ascii=False))
+    step_index = int(route.get("step_index") or 0) + 1
+    child_route["step_index"] = step_index
+    child_route["pending_steps"] = pending[1:]
+    child_route["parent_run_id"] = run_id
+    child_route.pop("chain_error", None)
+    child_intent = _child_intent_from_seed(
+        child_route,
+        kind=kind,
+        step_index=step_index,
+        max_charts=charts,
+        max_images=images,
+        max_diagrams=diagrams,
+        no_charts=_no_charts,
+        no_images=_no_images,
+    )
+    if child_intent is None:
+        if turn == "queue":
+            _cancel_queue_reservation()
+        elif turn == "run":
+            _release_pipeline_slot(waiting_for or "pending")
+        _record_route_chain_error(
+            run_id,
+            "Не удалось собрать следующий шаг: отсутствуют исходные настройки запроса. "
+            "Повторите запуск артефакта.",
+        )
+        return None
+    child_run_id = ""
+    slot_gen: int | None = None
+    try:
+        child_run_id, _, _, out_dir, logs_dir = prepare_run_dirs(
+            src_path, project_root=run_store.ROOT
+        )
+        if turn == "run":
+            slot_gen = _bind_pipeline_slot(child_run_id, pending_key=waiting_for)
+        child_meta: dict[str, Any] = {
+            "run_id": child_run_id,
+            "workspace_id": str(meta.get("workspace_id") or ""),
+            "source": str(resolve_text_file(src_path)),
+            "chat_prompt": str(meta.get("chat_prompt") or ""),
+            "prior_run_id": run_id,
+            "carried_run_id": str(meta.get("carried_run_id") or ""),
+            "intent": child_intent,
+            "formats": sorted(format_set),
+            "output_mode": kind,
+            "route_plan": child_route,
+            "turn_caps_requested": requested,
+            "dry_run": dry_run,
+            "max_images": images,
+            "max_charts": charts,
+            "max_diagrams": diagrams,
+            "user_figures": [f.get("id") for f in (user_figures or [])],
+            "chart_palette": str(meta.get("chart_palette") or "atelier"),
+            "status": "running",
+            "stage": "llm",
+            "stage_detail": "жду модель…",
+        }
+        for key in (
+            "attachments",
+            "deck_pack",
+            "slides_theme_pack",
+            "slides_structure_id",
+            "slides_style",
+            "slides_target",
+        ):
+            if meta.get(key) is not None:
+                child_meta[key] = meta[key]
+        job = _PipelineJob(
+            src_path=src_path,
+            run_id=child_run_id,
+            formats=format_set,
+            dry_run=dry_run,
+            intent=child_intent,
+            max_images=images,
+            max_charts=charts,
+            max_diagrams=diagrams,
+            user_figures=list(user_figures or []),
+            output_mode=kind,
+        )
+        if turn == "queue":
+            waiting_detail = (
+                f"Жду прогон {waiting_for}" if waiting_for else "Жду текущий прогон"
+            )
+            child_meta.update(
+                {
+                    "status": "queued",
+                    "stage": "queued",
+                    "stage_detail": waiting_detail,
+                    "waiting_for": waiting_for,
+                }
+            )
+        from case3.run_events import write_meta_atomic
+
+        payload = json.dumps(child_meta, ensure_ascii=False, indent=2)
+        write_meta_atomic(
+            out_dir / "meta.json", payload, logs_meta=logs_dir / "meta.json"
+        )
+        EVENTS.start(child_run_id)
+        EVENTS.bind_out(child_run_id, out_dir)
+        if turn == "queue" and _commit_waiter(job) == "queued":
+            EVENTS.publish_stage(
+                child_run_id,
+                "queued",
+                detail=str(child_meta["stage_detail"]),
+                scope="pipeline",
+            )
+        else:
+            if turn == "queue":
+                child_meta.update(
+                    {"status": "running", "stage": "llm", "stage_detail": "жду модель…"}
+                )
+                child_meta.pop("waiting_for", None)
+                payload = json.dumps(child_meta, ensure_ascii=False, indent=2)
+                write_meta_atomic(
+                    out_dir / "meta.json",
+                    payload,
+                    logs_meta=logs_dir / "meta.json",
+                )
+            EVENTS.publish_stage(
+                child_run_id, "llm", detail="жду модель…", scope="pipeline"
+            )
+            _spawn_pipeline_thread(job, slot_gen=slot_gen)
+    except BaseException:
+        if turn == "queue":
+            _cancel_queue_reservation()
+        elif turn == "run":
+            _release_pipeline_slot(child_run_id or waiting_for or "pending")
+        raise
+
+    from case3.run_meta import update_meta
+
+    def _remember_child(parent: dict[str, Any]) -> None:
+        parent_route = parent.get("route_plan")
+        if isinstance(parent_route, dict):
+            parent_route["next_run_id"] = child_run_id
+
+    update_meta(
+        run_store.ROOT / "runs" / "out" / run_id,
+        _remember_child,
+        logs_dir=run_store.ROOT / "runs" / "logs" / run_id,
+    )
+    return child_run_id
 
 
 def _bg_run_pipeline(
@@ -1042,6 +1485,7 @@ def _bg_run_pipeline(
                 and not out_meta.get("cancel_requested")
             ):
                 _auto_kick_presentation_slides(run_id)
+                _wait_for_presentation_slides(run_id)
     except PipelineError:
         # meta already written with status=error
         log.exception("background pipeline failed run_id=%s", run_id)
@@ -1064,6 +1508,15 @@ def _bg_run_pipeline(
         except Exception:  # noqa: BLE001
             log.exception("could not publish crash terminal run_id=%s", run_id)
     finally:
+        try:
+            _kick_next_turn_step(
+                src_path,
+                run_id=run_id,
+                dry_run=dry_run,
+                user_figures=user_figures,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("TTG chained step failed parent_run_id=%s", run_id)
         _release_pipeline_slot(run_id, generation=slot_gen)
 
 
@@ -1408,22 +1861,74 @@ async def api_run(
     if source_text and len(source_text.encode("utf-8")) > _SOURCE_MAX_BYTES:
         raise HTTPException(400, detail="source text too large (>2 MiB)")
 
-    out_mode = (output_mode or "auto").strip().lower()
+    submitted_output_mode = (output_mode or "auto").strip().lower()
     bias = (artifact_bias or "").strip().lower()
     if bias not in {"", "report", "diagram", "presentation"}:
         raise HTTPException(
             400, detail="artifact_bias must be report|diagram|presentation"
         )
-    if out_mode == "auto":
-        from case3.input_validation import current_turn_user_text
-        from case3.turn_route import resolve_turn
-
-        out_mode = resolve_turn(current_turn_user_text(intent), bias or None)
-    if out_mode not in {"report", "diagram", "presentation", "chat"}:
+    if submitted_output_mode not in {
+        "auto",
+        "report",
+        "diagram",
+        "presentation",
+        "chat",
+    }:
         raise HTTPException(
             400, detail="output_mode must be report|diagram|presentation|chat|auto"
         )
 
+    from case3.input_validation import current_turn_user_text as _user_line
+    from case3.chat_memory import newest_edit
+    from case3.turn_plan import plan_turn
+
+    user_line = _user_line(intent)
+    artifact_flags = _prior_artifact_flags(run_store.ROOT, prior_run_id)
+    effective_hint = submitted_output_mode if submitted_output_mode != "auto" else (bias or "auto")
+    effective_bias = effective_hint if effective_hint in {"report", "diagram", "presentation"} else None
+    last_edit = (
+        newest_edit(run_store.ROOT, (prior_run_id or "").strip())
+        if (prior_run_id or "").strip()
+        else {}
+    )
+    plan = plan_turn(
+        user_line,
+        mode_hint=effective_hint,
+        bias=effective_bias,
+        last_section=str(last_edit.get("section") or ""),
+        last_op=str(last_edit.get("op") or ""),
+        **artifact_flags,
+    )
+    route_plan = _route_plan_payload(plan)
+    if plan.kind == "clarify":
+        clarify_text = plan.clarify_prompt or "Уточните, какой результат нужен."
+        return JSONResponse(
+            {
+                "ok": True,
+                "mode": "chat",
+                "status": "ok",
+                "output_mode": "chat",
+                "chat": clarify_text,
+                "chat_summary": clarify_text,
+                "route_plan": route_plan,
+            }
+        )
+    if plan.kind == "revise":
+        from case3.chat_revise import continue_or_limit
+
+        revised = await asyncio.to_thread(
+            continue_or_limit,
+            user_line,
+            prior_run_id,
+            root=run_store.ROOT,
+            bias=effective_bias,
+            carried_run_id=carried_run_id,
+        )
+        if revised is not None:
+            revised["route_plan"] = route_plan
+            return JSONResponse(revised)
+
+    out_mode = plan.steps[0].kind if plan.steps else plan.kind
     if max_charts is None:
         max_charts = max_charts_from_env()
     if max_images is None:
@@ -1438,44 +1943,22 @@ async def api_run(
     max_images = max(0, min(int(max_images), 8))
     # Ceiling from CASE3_MAX_DIAGRAMS via DIAGRAMS_HARD_MAX (default 5).
     max_diagrams = max(0, min(int(max_diagrams), DIAGRAMS_HARD_MAX))
-    from case3.input_validation import current_turn_user_text
-    from case3.turn_route import wants_chat_chart
-
-    # Chat and scheme skip print. Presentation keeps charts and dia_* for the deck.
-    has_prior_chart = False
-    if out_mode == "chat" and (prior_run_id or "").strip():
-        from case3.chat_memory import load_chain_dirs
-
-        for _rid, _prev_out, _m in reversed(
-            load_chain_dirs(run_store.ROOT, (prior_run_id or "").strip())
-        ):
-            if any(_prev_out.glob("*.pdf")) or any(_prev_out.glob("*.docx")):
-                continue
-            _prev_fj = _prev_out / "figures.json"
-            if not _prev_fj.is_file():
-                continue
-            try:
-                _fj_data = json.loads(_prev_fj.read_text(encoding="utf-8"))
-                if (
-                    isinstance(_fj_data, dict)
-                    and isinstance(_fj_data.get("charts"), list)
-                    and _fj_data["charts"]
-                ):
-                    has_prior_chart = True
-                    break
-            except (OSError, json.JSONDecodeError):
-                continue
-
-    max_charts, max_images, max_diagrams, formats, no_charts, no_images = apply_mode_caps(
-        out_mode,
+    requested_turn_caps = {
+        "max_charts": max_charts,
+        "max_images": max_images,
+        "max_diagrams": max_diagrams,
+        "formats": formats,
+        "no_charts": no_charts,
+        "no_images": no_images,
+    }
+    max_charts, max_images, max_diagrams, formats, no_charts, no_images = apply_turn_caps(
+        plan,
         max_charts=max_charts,
         max_images=max_images,
         max_diagrams=max_diagrams,
         formats=formats,
         no_charts=no_charts,
         no_images=no_images,
-        allow_chat_charts=out_mode == "chat"
-        and wants_chat_chart(current_turn_user_text(intent), has_prior_chart=has_prior_chart),
     )
 
     # FastAPI may pass a single UploadFile when the client sends one file.
@@ -1522,27 +2005,12 @@ async def api_run(
     # Third request must not touch disk. One waiter is reserved before the upload.
     from case3.prior_turn import insert_prior_turn, prior_block_for_form
 
-    from case3.chat_revise import continue_or_limit
-    from case3.input_validation import current_turn_user_text as _user_line
-
-    user_line = _user_line(intent)
     try:
         prior_block = prior_block_for_form(
             prior_run_id, root=run_store.ROOT, user_text=user_line
         )
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc)) from exc
-
-    revised = await asyncio.to_thread(
-        continue_or_limit,
-        user_line,
-        prior_run_id,
-        root=run_store.ROOT,
-        bias=bias or None,
-        carried_run_id=carried_run_id,
-    )
-    if revised is not None:
-        return JSONResponse(revised)
 
     # A chat answer does not take the build slot. A report can keep running,
     # and the one queued report stays queued.
@@ -1608,6 +2076,18 @@ async def api_run(
             max_images = gen_max_images
 
         types = [] if is_auto else _parse_chart_types(chart_types)
+        route_plan["intent_seed"] = {
+            "chat": intent,
+            "chart_types": types,
+            "chart_hints": chart_hints or "",
+            "chart_auto": is_auto,
+            "chart_palette": chart_palette or "atelier",
+            "chart_style": chart_style or "",
+            "doc_title": (doc_title or "").strip()[:200],
+            "deck_pack": (deck_pack or "").strip()[:40],
+            "max_generated_images": gen_max_images,
+            "prior_block": prior_block,
+        }
         full_intent = build_intent_from_ui(
             chat=intent,
             chart_types=types,
@@ -1624,6 +2104,7 @@ async def api_run(
             output_mode=out_mode,
             deck_pack=(deck_pack or "").strip()[:40],
         )
+        full_intent = _append_route_projection(full_intent, plan, kind=out_mode)
         full_intent = insert_prior_turn(full_intent, prior_block)
         if user_figures:
             ids = ", ".join(f["id"] for f in user_figures)
@@ -1688,7 +2169,7 @@ async def api_run(
         except json.JSONDecodeError:
             style_settings0 = None
     from case3.chart_style import normalize_palette_id
-    from case3.chat_memory import chain_notice_for_prior, newest_edit
+    from case3.chat_memory import chain_notice_for_prior
     from case3.slides_beat_planner import clamp_slide_target
 
     chart_palette0 = normalize_palette_id(chart_palette or "atelier")
@@ -1741,6 +2222,8 @@ async def api_run(
         "intent": full_intent,
         "formats": sorted(fmt_set),
         "output_mode": out_mode,
+        "route_plan": route_plan,
+        "turn_caps_requested": requested_turn_caps,
         "dry_run": is_dry,
         "max_images": max_images,
         "max_charts": max_charts,
@@ -1756,8 +2239,15 @@ async def api_run(
         "status": "running",
         "stage": "llm",
         "stage_detail": "жду модель…",
-        "chat_notice": chain_notice_for_prior(
-            run_store.ROOT, (prior_run_id or "").strip()
+        "chat_notice": "\n\n".join(
+            part
+            for part in (
+                chain_notice_for_prior(
+                    run_store.ROOT, (prior_run_id or "").strip()
+                ),
+                plan.note or "",
+            )
+            if part
         ),
     }
     from case3.run_events import write_meta_atomic
@@ -1802,6 +2292,9 @@ async def api_run(
                     "stage_detail": waiting_detail,
                     "waiting_for": waiting_for,
                     "output_mode": out_mode,
+                    "route_plan": route_plan,
+                    "chat_summary": plan.note or "",
+                    "chat_notice": plan.note or "",
                     "max_charts": max_charts,
                     "max_images": max_images,
                     "max_diagrams": max_diagrams,
@@ -1829,6 +2322,9 @@ async def api_run(
             "status": "started",
             "stage": "llm",
             "output_mode": out_mode,
+            "route_plan": route_plan,
+            "chat_summary": plan.note or "",
+            "chat_notice": plan.note or "",
             "max_charts": max_charts,
             "max_images": max_images,
             "max_diagrams": max_diagrams,

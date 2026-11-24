@@ -33,6 +33,11 @@ def _reset_shared_runtime_state() -> Iterator[None]:
 
 
 @pytest.fixture()
+def adr_0017() -> None:
+    """ADR-0017: bare analyze uses artifact plaque when no artifact noun is named."""
+
+
+@pytest.fixture()
 def repo_root(tmp_path: Path) -> Path:
     """Isolated fake repo root with runs/{out,work,logs,uploads}."""
     for sub in ("out", "work", "logs", "uploads"):

@@ -27,3 +27,4 @@ Accepted
 ## Consequences
 - Positive: report, diagram, and presentation plaques build a file from «проанализируй», «сравни», «посчитай» when the sentence names no artifact.
 - Negative / follow-ups: «какая доля?» is still chat. The chat answer still does not invent percentages.
+- **TTG (ADR-0023):** plaque + bare chart request without a named container → `clarify` (chat vs document), not an implicit build. Bare analyze + plaque → build unchanged (this ADR).

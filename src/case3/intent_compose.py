@@ -157,3 +157,14 @@ def build_intent_from_ui(
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()
+
+
+def append_route_projection_to_intent(intent: str, projection: str) -> str:
+    """Append TTG «Маршрут» lines under the «Требования UI» block."""
+    projection = (projection or "").strip()
+    if not projection:
+        return (intent or "").strip()
+    body = (intent or "").rstrip()
+    if "Требования UI:" not in body:
+        return f"{body}\n\n{projection}".strip() if body else projection
+    return f"{body}\n{projection}".strip()

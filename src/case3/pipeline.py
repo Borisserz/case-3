@@ -384,6 +384,14 @@ def carry_chat_prompt(meta: dict[str, Any], previous: dict[str, Any] | None) -> 
     carried = str(prev.get("carried_run_id") or "").strip()
     if carried and not str(meta.get("carried_run_id") or "").strip():
         meta["carried_run_id"] = carried
+    route_plan = prev.get("route_plan")
+    if isinstance(route_plan, dict) and not isinstance(meta.get("route_plan"), dict):
+        meta["route_plan"] = dict(route_plan)
+    requested_caps = prev.get("turn_caps_requested")
+    if isinstance(requested_caps, dict) and not isinstance(
+        meta.get("turn_caps_requested"), dict
+    ):
+        meta["turn_caps_requested"] = dict(requested_caps)
 
 
 def merge_desk_slides_fields(
@@ -1352,9 +1360,24 @@ def run_pipeline(
 
         prior = str(meta.get("prior_run_id") or "")
         prev_chart, prev_diagram = _prior_chat_visuals(prior)
-        picture = wants_chat_chart(turn_text, has_prior_chart=prev_chart is not None) or wants_chat_diagram(
-            turn_text, has_prior_diagram=prev_diagram is not None
+        route_plan = meta.get("route_plan")
+        has_typed_route = isinstance(route_plan, dict) and bool(
+            route_plan.get("route_version")
         )
+        route_chart = (
+            bool(route_plan.get("want_chat_chart")) if has_typed_route else False
+        )
+        route_diagram = (
+            bool(route_plan.get("want_chat_diagram")) if has_typed_route else False
+        )
+        if has_typed_route:
+            picture = route_chart or route_diagram
+        else:
+            picture = wants_chat_chart(
+                turn_text, has_prior_chart=prev_chart is not None
+            ) or wants_chat_diagram(
+                turn_text, has_prior_diagram=prev_diagram is not None
+            )
         from case3.chat_memory import (
             dashboard_screens,
             latest_dashboard_note,
@@ -1400,11 +1423,19 @@ def run_pipeline(
                 on_delta=lambda piece: BUS.publish(run_id, piece),
                 on_replace=lambda full: BUS.replace(run_id, full),
             )
-            explicit_chart = wants_chat_chart(
-                turn_text, has_prior_chart=prev_chart is not None
+            explicit_chart = (
+                route_chart
+                if has_typed_route
+                else wants_chat_chart(
+                    turn_text, has_prior_chart=prev_chart is not None
+                )
             ) and not _is_clarifying_visual_request(turn_text, answer, kind="chart")
-            wants_diag = wants_chat_diagram(
-                turn_text, has_prior_diagram=prev_diagram is not None
+            wants_diag = (
+                route_diagram
+                if has_typed_route
+                else wants_chat_diagram(
+                    turn_text, has_prior_diagram=prev_diagram is not None
+                )
             ) and not _is_clarifying_visual_request(turn_text, answer, kind="diagram")
             clarifying_visual = _is_clarifying_visual_request(
                 turn_text, answer, kind="chart"
@@ -1554,16 +1585,26 @@ def run_pipeline(
         )
 
         prior = str(meta.get("prior_run_id") or "")
+        route_plan_early = meta.get("route_plan")
+        has_typed_route_early = isinstance(route_plan_early, dict) and bool(
+            route_plan_early.get("route_version")
+        )
+        if has_typed_route_early:
+            route_picture = bool(route_plan_early.get("want_chat_chart")) or bool(
+                route_plan_early.get("want_chat_diagram")
+            )
+        else:
+            route_picture = (
+                wants_chat_chart(turn_text)
+                or wants_chat_diagram(turn_text)
+                or should_auto_chat_chart(turn_text, source_raw)
+            )
         if prior:
             screened = source_for_followup(
                 source_raw,
                 dashboard_screens(root, prior),
                 turn_text,
-                picture=(
-                    wants_chat_chart(turn_text)
-                    or wants_chat_diagram(turn_text)
-                    or should_auto_chat_chart(turn_text, source_raw)
-                ),
+                picture=route_picture,
             )
             if screened.strip() and screened != source_raw:
                 source_raw = screened
