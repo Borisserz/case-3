@@ -72,10 +72,14 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
     draftSnap?.text &&
     (Boolean(draftSnap.fileName) || /\.(txt|md)$/i.test(file.name || ""))
   ) {
+    const uploadName = (file.name || draftSnap.fileName || "source.txt").replace(
+      /\.(pdf|docx?|docm|rtf)$/i,
+      ".md",
+    );
     fd.append(
       "source",
-      new File([draftSnap.text], file.name || draftSnap.fileName || "source.txt", {
-        type: file.type || "text/plain",
+      new File([draftSnap.text], uploadName || "source.md", {
+        type: "text/markdown",
       }),
     );
     fd.append("intent", intentText);

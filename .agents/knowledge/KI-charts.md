@@ -34,6 +34,7 @@ LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit resty
 
 ## Gotchas
 - Type/palette-only edit is **local** (`apply_type_to_chart` + palette); modes include `local_type` / `local_palette`. LLM only when «Как изменить» (style notes) non-empty — never for type-only. Live `POST …/preview` is the same local path (`preview_chart_html`); style notes deferred until Apply.
+- A named hue («зелёный», «столбцы зелёные», «сделай в зелёных цветах») is `recolor_hue`: paint the existing chart HTML and re-render PNG. It is not a chart-type question and not a new data brief. Preset names (ocean, закат) stay `recolor_charts`. `paint_hue_on_html` injects `backgroundColor` when Chart.js would otherwise stay default blue. `chat_answer.md` answers such a line in one sentence.
 - Leaving donut: `_unwrap_donut_layout` + landscape canvas + hide unnamed Chart.js legend (else «undefined»)
 - G8: model picks concrete `charts[].type` + matching HTML; coerce only safety net — **do not** paste gold HTML
 - KPI palette via CSS vars (`apply_kpi_palette_vars`) — frame `.kpi` uses `--kpi-value`, not hardcoded orange; palette-only edit on KPI skips Chart.js remap

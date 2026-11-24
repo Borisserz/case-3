@@ -369,6 +369,13 @@ def test_diagram_edit_is_not_a_new_diagram():
     built = resolve_act("сделай схему про кассу", has_diagram=True)
     assert built.kind == "build"
     assert built.build == "diagram"
+    follow = resolve_act(
+        "Доработай схему: сделай стрелки толще",
+        has_diagram=True,
+    )
+    assert follow.kind == "revise"
+    assert follow.op == "refine_diagram"
+    assert "стрелки" in follow.title
 
 
 def test_slide_points_are_not_the_title():
@@ -403,6 +410,28 @@ def test_one_named_chart_does_not_retype_the_rest():
     all_charts = resolve_act("сделай график линейным", has_report=True)
     assert all_charts.op == "retype_charts"
     assert all_charts.chart_at == 0
+
+
+def test_green_edit_of_an_existing_chart_is_not_a_type_question():
+    from case3.chat_act import resolve_act
+
+    for line in (
+        "Доработай график: сделай в зеленых цветах",
+        "Сделай график в зеленом цвете",
+        "зеленый цвет сделай",
+        "столбцы зеленые",
+    ):
+        act = resolve_act(line, has_chart=True)
+        assert act.kind == "revise", line
+        assert act.op == "recolor_hue", line
+        assert act.palette == "green", line
+        assert "вид графика" not in act.say
+
+
+def test_named_chart_type_still_retypes_when_no_color():
+    act = resolve_act("сделай график линейным", has_chart=True)
+    assert act.op == "retype_charts"
+    assert act.chart == "line"
 
 
 def test_chart_word_picks_a_real_type():

@@ -1,8 +1,17 @@
 /** Up to five labeled documents in one chat. */
 
 import type { SourceAttachment, SourceDraft, SourcePart } from "./liberTypes";
+import { SCREEN_READ_NOTE } from "./sourceCopy";
 
 export type { SourcePart };
+
+export type ComposerPlaque = {
+  title: string;
+  subtitle: string;
+  fileName?: string;
+};
+
+const PACKED_DOC = /^===== (.+?) =====$/;
 
 const MAX_DOCS = 5;
 
@@ -48,18 +57,19 @@ export function mergeSourcePack(
   current: SourceDraft | null,
   next: SourceDraft,
 ): SourceDraft {
+  const normalized = current ? ensureSourceParts(current) : null;
   const existing: SourcePart[] =
-    current?.parts?.length
-      ? current.parts
-      : current?.text
+    normalized?.parts?.length
+      ? normalized.parts
+      : normalized?.text
         ? [
             {
-              name: current.fileName || current.title || "Документ",
-              text: current.text,
-              title: current.title,
-              ...docUrls(current),
-              ingestId: current.ingestId,
-              format: current.format,
+              name: normalized.fileName || normalized.title || "Документ",
+              text: normalized.text,
+              title: normalized.title,
+              ...docUrls(normalized),
+              ingestId: normalized.ingestId,
+              format: normalized.format,
             },
           ]
         : [];
@@ -77,55 +87,133 @@ export function mergeSourcePack(
   if (idx >= 0) parts[idx] = part;
   else if (parts.length < MAX_DOCS) parts.push(part);
   else parts = [...parts.slice(1), part];
+  return packParts(parts, next);
+}
+
+function splitPacked(text: string): { name: string; markdown: string }[] {
+  const docs: { name: string; lines: string[] }[] = [];
+  let current: { name: string; lines: string[] } | null = null;
+  for (const line of (text || "").replace(/\r\n/g, "\n").split("\n")) {
+    const mark = PACKED_DOC.exec(line.trim());
+    if (mark) {
+      current = { name: mark[1].trim(), lines: [] };
+      docs.push(current);
+      continue;
+    }
+    if (!current) {
+      current = { name: "", lines: [] };
+      docs.push(current);
+    }
+    current.lines.push(line);
+  }
+  return docs
+    .map((doc) => ({ name: doc.name, markdown: doc.lines.join("\n").trim() }))
+    .filter((doc) => doc.markdown);
+}
+
+export function sourceParts(draft: SourceDraft): SourcePart[] {
+  if (draft.parts?.length) return draft.parts;
+  const split = splitPacked(draft.text);
+  if (split.length > 1) {
+    return split.map((doc) => ({
+      name: doc.name || draft.fileName || draft.title || "Документ",
+      text: doc.markdown,
+      title: doc.name || draft.title,
+      viewMode: "text" as const,
+    }));
+  }
+  return [
+    {
+      name: draft.fileName || draft.title || "Документ",
+      text: draft.text,
+      title: draft.title,
+      viewMode: draft.viewMode,
+      previewUrl: draft.previewUrl,
+      originalUrl: draft.originalUrl,
+      ingestId: draft.ingestId,
+      format: draft.format,
+    },
+  ];
+}
+
+function packParts(parts: SourcePart[], seed: SourceDraft): SourceDraft {
   const text = parts
-    .map((p) => `===== ${p.name} =====\n${p.text.trim()}`)
+    .map((part) => `===== ${part.name} =====\n${part.text.trim()}`)
     .join("\n\n");
-  const title =
-    parts.length > 1 ? docsTitle(parts.length) : next.title || name;
+  const only = parts.length === 1 ? parts[0] : null;
   return {
-    ...next,
-    title,
+    ...seed,
+    title: only ? only.title || only.name : docsTitle(parts.length),
     text,
-    fileName: parts.map((p) => p.name).join(", "),
+    fileName: only ? only.name : parts.map((part) => part.name).join(", "),
     parts,
+    ...(only
+      ? {}
+      : {
+          viewMode: "text" as const,
+          previewUrl: null,
+          originalUrl: null,
+          ingestId: undefined,
+          format: undefined,
+        }),
   };
+}
+
+export function dropSourcePart(
+  draft: SourceDraft,
+  index: number,
+): SourceDraft | null {
+  const parts = sourceParts(draft).filter((_, i) => i !== index);
+  if (!parts.length) return null;
+  return packParts(parts, draft);
+}
+
+export function ensureSourceParts(draft: SourceDraft | null): SourceDraft | null {
+  if (!draft?.text?.trim() && !draft?.parts?.length) return draft;
+  if (!draft) return null;
+  if (draft.parts?.length) return draft;
+  const parts = sourceParts(draft).filter((part) => part.text.trim());
+  if (parts.length <= 1) return draft;
+  return packParts(parts, draft);
+}
+
+export function composerPlaques(draft: SourceDraft | null): ComposerPlaque[] {
+  if (!draft?.text?.trim() && !draft?.parts?.length) return [];
+  if (!draft) return [];
+  const parts = sourceParts(draft).filter((part) => part.text.trim());
+  const singleScreen = Boolean(draft.fromScreen) && parts.length === 1;
+  return parts.map((part) => ({
+    title: part.title || part.name,
+    fileName: part.name,
+    subtitle:
+      part.viewMode === "document"
+        ? "Документ · предпросмотр MD"
+        : singleScreen
+          ? SCREEN_READ_NOTE
+          : `${part.text.length.toLocaleString("ru-RU")} символов`,
+  }));
 }
 
 export function attachmentsFromDraft(
   draft: SourceDraft | null | undefined,
 ): SourceAttachment[] {
-  if (!draft || !draft.text) return [];
-  if (draft.parts?.length) {
-    return draft.parts
-      .filter((p) => (p.text || "").trim())
-      .slice(0, MAX_DOCS)
-      .map((p) => {
-        const urls = docUrls(p);
-        return {
-          title: p.title || p.name,
-          text: p.text,
-          fileName: p.name,
-          viewMode: urls.viewMode,
-          previewUrl: urls.previewUrl,
-          originalUrl: urls.originalUrl,
-          ingestId: p.ingestId,
-          format: p.format,
-        };
-      });
-  }
-  const urls = docUrls(draft);
-  return [
-    {
-      title: draft.title,
-      text: draft.text,
-      fileName: draft.fileName,
-      viewMode: urls.viewMode,
-      previewUrl: urls.previewUrl,
-      originalUrl: urls.originalUrl,
-      ingestId: draft.ingestId,
-      format: draft.format,
-    },
-  ];
+  if (!draft || (!draft.text && !draft.parts?.length)) return [];
+  return sourceParts(draft)
+    .filter((part) => (part.text || "").trim())
+    .slice(0, MAX_DOCS)
+    .map((part) => {
+      const urls = docUrls(part);
+      return {
+        title: part.title || part.name,
+        text: part.text,
+        fileName: part.name,
+        viewMode: urls.viewMode,
+        previewUrl: urls.previewUrl,
+        originalUrl: urls.originalUrl,
+        ingestId: part.ingestId,
+        format: part.format,
+      };
+    });
 }
 
 export function draftFromDocuments(

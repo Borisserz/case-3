@@ -25,14 +25,19 @@ import {
   phraseMiss,
   phrasePlan,
   phraseRoute,
+  attachCaptureMarkdowns,
   removeShotAt,
   shotsSource,
   shotsTitle,
   withShots,
   type DashboardCard,
 } from "../domain/dashboardCapture";
-import { screenReadNote } from "../domain/sourceCopy";
-import { removeAttachedSource } from "../domain/sourcePlaque";
+import {
+  composerPlaques,
+  dropSourcePart,
+  ensureSourceParts,
+  sourceParts,
+} from "../domain/sourcePack";
 import { docsForSourceModal } from "../domain/sourceRead";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
@@ -51,7 +56,6 @@ import {
 import { type LiberWorkMode } from "../domain/liberModes";
 import {
   appendBotThinking,
-  formatBytes,
   imageChipFromHealth,
   paradeHintFromHealth,
   stageLabel,
@@ -470,14 +474,13 @@ export default function App() {
       );
       return;
     }
-    const source = shotsSource(card.shots);
-    if (!source.trim()) return;
-    const title = shotsTitle(card.shots);
-    setSourceDraft({
-      title,
-      text: source,
-      fileName: `${title}.md`,
-      viewMode: "text",
+    if (!card.shots.some((shot) => shot.markdown.trim())) return;
+    setSourceDraft((current) => {
+      const next = attachCaptureMarkdowns(
+        ensureSourceParts(current),
+        card.shots.map((shot) => ({ name: shot.name, markdown: shot.markdown })),
+      );
+      return next;
     });
     setFile(null);
     setPlaqueDismissed(false);
@@ -705,20 +708,8 @@ export default function App() {
     health?.vision_ok && health?.docker_ok && health?.playwright_ok,
   );
 
-  const plaqueDraft = sourceDraft
-    ? {
-        title: sourceDraft.title,
-        subtitle: sourceDraft.fromScreen
-          ? screenReadNote(true)
-          : sourceDraft.viewMode === "document"
-            ? "Документ · предпросмотр MD"
-            : file
-              ? formatBytes(file.size)
-              : `${sourceDraft.text.length.toLocaleString("ru-RU")} символов`,
-        fileName: sourceDraft.fileName,
-      }
-    : null;
-  const showPlaque = Boolean(plaqueDraft && !plaqueDismissed);
+  const plaques =
+    sourceDraft && !plaqueDismissed ? composerPlaques(sourceDraft) : [];
   const openCardMsg = msgs.find(
     (msg) => msg.id === activeCardId.current && msg.role === "bot",
   );
@@ -973,8 +964,7 @@ export default function App() {
                   chat={chat}
                   attachPhotos={attachPhotos}
                   onPreviewPhoto={openUserPhoto}
-                  showPlaque={showPlaque}
-                  plaqueDraft={plaqueDraft}
+                  plaques={plaques}
                   sourceDraft={sourceDraft}
                   activeDashboardSource={activeDashboardSource}
                   file={file}
@@ -1036,15 +1026,27 @@ export default function App() {
                   onRemovePhoto={(i) =>
                     setAttachPhotos((list) => list.filter((_, j) => j !== i))
                   }
-                  onOpenSource={() => {
-                    if (sourceDraft) openAttached(sourceDraft);
+                  onOpenPlaque={(index) => {
+                    if (!sourceDraft) return;
+                    const part = sourceParts(sourceDraft)[index];
+                    if (!part) return;
+                    openAttached({
+                      title: part.title || part.name,
+                      text: part.text,
+                      fileName: part.name,
+                      viewMode: part.viewMode,
+                      previewUrl: part.previewUrl,
+                      originalUrl: part.originalUrl,
+                      ingestId: part.ingestId,
+                      format: part.format,
+                    });
                   }}
-                  onDismissPlaque={() => {
-                    const next = removeAttachedSource();
-                    setPlaqueDismissed(next.plaqueDismissed);
-                    setSourceDraft(next.sourceDraft);
-                    setFile(next.file);
-                    showToast("Источник убран", 2000);
+                  onDismissPlaque={(index) => {
+                    if (!sourceDraft) return;
+                    const next = dropSourcePart(sourceDraft, index);
+                    setSourceDraft(next);
+                    if (!next) setFile(null);
+                    showToast(next ? "Документ убран" : "Источник убран", 2000);
                   }}
                   onPickStarter={(prompt) => {
                     setChat(prompt);

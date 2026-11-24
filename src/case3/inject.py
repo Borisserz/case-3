@@ -138,6 +138,21 @@ def _drop_hollow_figures(tex: str) -> str:
     return _EMPTY_FIGURE_LOOSE.sub(_drop, tex or "")
 
 
+def _graphic_file_ok(path: Path) -> bool:
+    """True when XeLaTeX graphicx can read the file. A ``.png`` that is BMP is not."""
+    try:
+        head = path.read_bytes()[:8]
+    except OSError:
+        return False
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if head.startswith(b"\xff\xd8\xff"):
+        return True
+    if head.startswith(b"%PDF"):
+        return True
+    return False
+
+
 def strip_missing_media_includes(tex: str, work_dir: Path) -> str:
     """Remove \\includegraphics{…png} whose file is absent under ``work_dir``.
 
@@ -155,7 +170,8 @@ def strip_missing_media_includes(tex: str, work_dir: Path) -> str:
         parts = Path(rel).parts
         if ".." in parts:
             return m.group(0)
-        if (root / rel).is_file():
+        path = root / rel
+        if path.is_file() and _graphic_file_ok(path):
             return m.group(0)
         return ""
 

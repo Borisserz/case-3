@@ -79,6 +79,17 @@
   margin: 0 0 0.5rem;
 }
 
+.composer-plaques {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 0.5rem;
+}
+
+.composer-plaques .context-plaque {
+  margin: 0;
+}
+
 .context-plaque {
   display: inline-flex;
   align-items: stretch;

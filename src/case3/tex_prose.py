@@ -408,6 +408,37 @@ def harden_prose_lists(tex: str) -> str:
     return "".join(out)
 
 
+_EMPTY_LIST = re.compile(
+    r"\\begin\{(itemize|enumerate)\}(?:\[[^\]]*\])?"
+    r"((?:(?!\\begin\{(?:itemize|enumerate)\})(?!\\end\{\1\}).)*?)"
+    r"\\end\{\1\}",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def drop_empty_lists(tex: str) -> str:
+    """Drop itemize/enumerate that contain no \\item.
+
+    An empty list is a hard XeLaTeX error (``missing \\item``) and latexmk
+    then throws away a PDF it already wrote.
+    """
+    if not tex or r"\begin{itemize}" not in tex and r"\begin{enumerate}" not in tex:
+        return tex or ""
+
+    def _repl(match: re.Match[str]) -> str:
+        if re.search(r"\\item\b", match.group(2)):
+            return match.group(0)
+        return ""
+
+    out = tex
+    for _ in range(8):
+        nxt = _EMPTY_LIST.sub(_repl, out)
+        if nxt == out:
+            break
+        out = nxt
+    return out
+
+
 _RU_PREP_WORDS = (
     "в", "во", "на", "с", "со", "к", "ко", "о", "об", "обо", "по", "из",
     "изо", "до", "не", "ни", "и", "а", "но", "за", "от", "ото", "у", "под",

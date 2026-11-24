@@ -32,8 +32,7 @@ type Props = {
   chat: string;
   attachPhotos: File[];
   onPreviewPhoto?: (photo: { url: string; name: string }) => void;
-  showPlaque: boolean;
-  plaqueDraft: { title: string; subtitle: string; fileName?: string } | null;
+  plaques: { title: string; subtitle: string; fileName?: string }[];
   sourceDraft: SourceDraft | null;
   /** Latest dashboard markdown in the chat session (even after the first message sent). */
   activeDashboardSource?: string;
@@ -69,8 +68,8 @@ type Props = {
   onSend: () => void;
   onIngestFiles: (list: FileList | File[]) => void;
   onRemovePhoto: (index: number) => void;
-  onOpenSource: () => void;
-  onDismissPlaque: () => void;
+  onOpenPlaque: (index: number) => void;
+  onDismissPlaque: (index: number) => void;
   /** Fill composer from quiet starter card (report/diagram). */
   onPickStarter?: (prompt: string) => void;
   /** Open the Stimulsoft preview and attach its markdown. */
@@ -85,8 +84,7 @@ export function ChatComposer({
   chat,
   attachPhotos,
   onPreviewPhoto,
-  showPlaque,
-  plaqueDraft,
+  plaques,
   sourceDraft,
   activeDashboardSource = "",
   file,
@@ -111,7 +109,7 @@ export function ChatComposer({
   onSend,
   onIngestFiles,
   onRemovePhoto,
-  onOpenSource,
+  onOpenPlaque,
   onDismissPlaque,
   onPickStarter,
   onOpenDashboard,
@@ -158,15 +156,20 @@ export function ChatComposer({
             />
           </div>
         )}
-        {showPlaque && plaqueDraft ? (
-          <ContextPlaque
-            title={plaqueDraft.title}
-            subtitle={plaqueDraft.subtitle}
-            fileName={plaqueDraft.fileName}
-            disabled={busy}
-            onOpen={onOpenSource}
-            onDismiss={onDismissPlaque}
-          />
+        {plaques.length ? (
+          <div className="composer-plaques" aria-label="Прикреплённые документы">
+            {plaques.map((plaque, index) => (
+              <ContextPlaque
+                key={`${plaque.fileName || plaque.title}-${index}`}
+                title={plaque.title}
+                subtitle={plaque.subtitle}
+                fileName={plaque.fileName}
+                disabled={busy}
+                onOpen={() => onOpenPlaque(index)}
+                onDismiss={() => onDismissPlaque(index)}
+              />
+            ))}
+          </div>
         ) : null}
         {(() => {
           const dashText = isDashboardSource(sourceDraft?.text || "")

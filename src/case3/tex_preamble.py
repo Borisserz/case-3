@@ -1145,6 +1145,7 @@ def ensure_document_preamble(tex: str) -> str:
         fix_unclosed_float_envs,
         fix_unclosed_heading_args,
         harden_math_prose,
+        drop_empty_lists,
         harden_prose_lists,
         harden_russian_typography,
         normalize_includegraphics_aspect,
@@ -1160,6 +1161,7 @@ def ensure_document_preamble(tex: str) -> str:
     out = fix_unclosed_caption_args(out)
     out = fix_unclosed_float_envs(out)
     out = harden_prose_lists(out)
+    out = drop_empty_lists(out)
     out = brace_schema_item_labels(out)
     out = normalize_includegraphics_aspect(out)
     out = harden_math_prose(out)

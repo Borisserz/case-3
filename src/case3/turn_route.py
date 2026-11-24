@@ -184,6 +184,19 @@ def _has_chartable_table_or_series(text: str | None) -> bool:
     return num_lines >= 4
 
 
+_DECLINE_CHART = re.compile(
+    r"не\s+получится|не\s+могу\s+(?:сравнить|построить|показать|сопоставить)|"
+    r"это\s+не\s+разные\s+месяц|нет\s+(?:данных|чисел|снимков)\s+для|"
+    r"сравнить .{0,60}не\s+получится",
+    re.IGNORECASE,
+)
+
+
+def answer_declines_chart(answer: str | None) -> bool:
+    """True when the reply already says the picture cannot be built."""
+    return bool(_DECLINE_CHART.search(answer or ""))
+
+
 def should_auto_chat_chart(
     turn_text: str | None,
     source_text: str | None,

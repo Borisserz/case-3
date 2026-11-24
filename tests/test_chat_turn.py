@@ -1046,6 +1046,75 @@ def test_without_stray_never_leaves_header_only_tables() -> None:
     assert "999999" not in cleaned
 
 
+def test_streamed_answer_is_not_rewritten_by_a_second_draft() -> None:
+    """A visible stream stays. A later invented digit is cut in place, not by a new essay."""
+    source = "| Область | Факт |\n| --- | --- |\n| Минск | 10 |\n| Брест | 8 |\n"
+    first = (
+        "Сравнить эти два снимка за один период не получится: это не разные месяцы. "
+        "Брестская область в файле есть, выдуманная доля 77 не нужна."
+    )
+
+    class _StreamOnce:
+        def __init__(self) -> None:
+            self.stream_calls = 0
+            self.complete_calls = 0
+
+        def stream(self, **_kw):
+            self.stream_calls += 1
+            yield first
+
+        def complete(self, **_kw):
+            self.complete_calls += 1
+            return "Совсем другой ответ про кассу 20."
+
+    replaced: list[str] = []
+    client = _StreamOnce()
+    ans = try_chat_answer(
+        source,
+        "сравни снимки в динамике",
+        client=client,  # type: ignore[arg-type]
+        on_delta=lambda _piece: None,
+        on_replace=lambda full: replaced.append(full),
+    )
+    assert client.stream_calls == 1
+    assert client.complete_calls == 0
+    assert "не получится" in ans
+    assert "77" not in ans
+    assert "кассу" not in ans
+    assert replaced
+    assert all(item.startswith("Сравнить эти два снимка") for item in replaced)
+
+
+def test_blank_chart_html_is_dropped(tmp_path: Path, monkeypatch) -> None:
+    from case3.chat_turn import chart_plot_blank, generate_chat_charts
+
+    assert chart_plot_blank(
+        "new Chart(c,{type:'line',data:{labels:['А'],datasets:[{data:[0,null]}]}})"
+    )
+    assert not chart_plot_blank(
+        "new Chart(c,{type:'bar',data:{labels:['А'],datasets:[{data:[10,20]}]}})"
+    )
+
+    class _EmptyChart:
+        def complete(self, **_kw) -> str:
+            return (
+                '```json\n{"charts":[{"id":"cht_01","type":"line","caption":"Пусто",'
+                '"html":"<canvas id=\'c\'></canvas><script>new Chart(c,{type:\'line\','
+                'data:{labels:[\'Акцизы\'],datasets:[{data:[0,0]}]}});</script>"}]}\n```'
+            )
+
+    monkeypatch.setattr("case3.charts.render_charts_batch", lambda items: {"cht_01": {"ok": True}})
+    charts, _status = generate_chat_charts(
+        "| Вид | Факт |\n| --- | --- |\n| Акцизы | 10 |\n",
+        "сравни динамику",
+        max_charts=1,
+        figs_dir=tmp_path / "figs",
+        charts_dir=tmp_path / "charts",
+        client=_EmptyChart(),  # type: ignore[arg-type]
+    )
+    assert charts == []
+
+
 def test_try_chat_answer_grounds_table_shares_ranks_and_header_units_without_retry() -> None:
     source = (
         "| Область | Факт | План |\n"

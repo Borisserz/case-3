@@ -83,6 +83,16 @@ def test_report_with_diagram_stays_report_not_diagram_only():
     assert resolve_turn("Собери презентацию со схемой", None) == "presentation"
 
 
+def test_a_declined_comparison_does_not_ask_for_a_chart():
+    from case3.turn_route import answer_declines_chart
+
+    assert answer_declines_chart(
+        "Сравнить показатели между двумя снимками в динамике не получится: "
+        "это не разные месяцы."
+    )
+    assert answer_declines_chart("Минск лидирует с фактом 120.") is False
+
+
 def test_wants_and_auto_chat_chart_cover_visual_and_numeric_analysis():
     from case3.turn_route import should_auto_chat_chart, wants_chat_chart
 

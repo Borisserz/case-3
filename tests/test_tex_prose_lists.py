@@ -5,6 +5,7 @@ from __future__ import annotations
 from case3.tex_preamble import ensure_document_preamble
 from case3.tex_prose import (
     brace_schema_item_labels,
+    drop_empty_lists,
     harden_prose_lists,
     normalize_includegraphics_aspect,
 )
@@ -105,3 +106,14 @@ def test_ensure_preamble_runs_prose_harden() -> None:
     )
     out = ensure_document_preamble(tex)
     assert r"\item пункт A" in out
+
+
+def test_empty_itemize_is_removed_before_compile() -> None:
+    tex = (
+        "Текст.\n"
+        "\\begin{itemize}\n\\end{itemize}\n"
+        "\\begin{enumerate}\n\\item один\n\\end{enumerate}\n"
+    )
+    out = drop_empty_lists(tex)
+    assert r"\begin{itemize}" not in out
+    assert r"\item один" in out

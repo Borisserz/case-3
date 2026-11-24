@@ -199,6 +199,40 @@ def _named(raw: str, table: tuple[tuple[str, str], ...]) -> str:
     return ""
 
 
+def hue_edit(text: str | None) -> str:
+    """Hue when the line is a color change, not a mention of a green zone."""
+    from case3.chart_style import hue_from_text
+
+    raw = _norm(text or "").strip()
+    hue = hue_from_text(raw)
+    if not hue:
+        return ""
+    if re.search(r"цвет|палитр|перекрас|гамм|доработ", raw, re.IGNORECASE):
+        return hue
+    if len(raw) <= 48 and re.search(
+        r"сделай|столбц|график|покрас|лини|пончик|кругов",
+        raw,
+        re.IGNORECASE,
+    ):
+        return hue
+    if len(raw) <= 24:
+        return hue
+    return ""
+
+
+def _hue_act(raw: str, hue: str) -> ChatAct:
+    from case3.chart_style import HUE_SAY
+
+    label = HUE_SAY.get(hue, hue)
+    return ChatAct(
+        kind="revise",
+        op="recolor_hue",
+        palette=hue,
+        chart=chart_type_named(raw),
+        say=f"Перекрашиваю график в {label}. Числа те же.",
+    )
+
+
 def next_deck_pack(current: str) -> str:
     """Next real deck skin. Empty and unknown start from Atelier."""
     cur = (current or "").strip().lower()
@@ -706,27 +740,40 @@ def parse_diagram_edit(text: str | None) -> str | None:
     """None when this is not an edit of a scheme already on the table.
 
     Empty string means the user named the scheme but not the change.
+    «Доработай схему: сделай стрелки толще» is an edit. The word «сделай»
+    inside the instruction must not start a new scheme.
     """
     raw = _norm(text or "").strip()
     if not re.search(r"схем", raw, re.IGNORECASE):
         return None
-    if re.search(
-        r"сделай|собери|нарисуй|построй|сгенерируй|новую|новый",
-        raw,
-        re.IGNORECASE,
-    ):
-        return None
-    match = re.search(r"на\s+схеме\s+(.+)$", raw, re.IGNORECASE)
-    if match and match.group(1).strip(" ."):
-        return match.group(1).strip(" .")
-    match = re.search(
-        r"(?:поправь|измени|убери|перерисуй|уточни)\s+схем\w*\s*[:—-]?\s*(.*)$",
+    fresh = re.match(
+        r"^(?:пожалуйста[, ]+)?"
+        r"(?:сделай|собери|нарисуй|построй|сгенерируй)\s+"
+        r"(?:новую\s+|новый\s+)?схем",
         raw,
         re.IGNORECASE,
     )
-    if not match:
+    fix = re.search(
+        r"доработай|исправь|поправь|измени|убери|перерисуй|уточни|переделай",
+        raw,
+        re.IGNORECASE,
+    )
+    if fresh and not fix:
         return None
-    return match.group(1).strip(" .")
+    match = re.search(
+        r"(?:доработай|исправь|поправь|измени|перерисуй|уточни|переделай)\s+"
+        r"схем\w*\s*[:—-]?\s*(.*)$",
+        raw,
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip(" .,;:—-")
+    match = re.search(r"на\s+схеме\s+(.+)$", raw, re.IGNORECASE)
+    if match and match.group(1).strip(" ."):
+        return match.group(1).strip(" .")
+    if fix:
+        return ""
+    return None
 
 
 def parse_slide_bullets(text: str | None) -> tuple[int, tuple[str, ...]] | None:
@@ -943,6 +990,9 @@ def resolve_act(
         charts = bool(_CHARTS.search(raw))
         if charts:
             palette = _named(raw, _PALETTES)
+            hue = hue_edit(raw)
+            if not palette and hue and (has_report or has_deck or has_chart):
+                return _hue_act(raw, hue)
             if not palette:
                 names = ", ".join(PALETTE_LABELS)
                 return ChatAct(
@@ -1472,6 +1522,14 @@ def resolve_act(
             slide_to=dest,
             say=f"Переставляю слайд {source} на место {dest}.",
         )
+
+    if not question and not _explicit_new_artifact(raw):
+        hue = hue_edit(raw)
+        if hue and (
+            has_chart
+            or ((has_report or has_deck) and re.search(r"график|столбц|цвет", raw, re.IGNORECASE))
+        ):
+            return _hue_act(raw, hue)
 
     if (
         not question

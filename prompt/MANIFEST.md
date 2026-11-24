@@ -63,6 +63,7 @@ Set **`CASE3_DUMP_PROMPTS=1`** → after generate, writes `out/prompts_used/syst
 | name | where | note |
 |------|-------|------|
 | `chart_edit` | `chart_edit.py` restyle system string | Chart.js fragment restyle |
+| `chat_chart` | `chat_turn.generate_chat_charts` system string | Inline chart; `hue_prompt_line` adds named-color hex |
 | `schema_redraw` | `schema_redraw.py` `_SYSTEM` | photo → Mermaid |
 | `latex_recovery` | `generate._build_latex_recovery_prompt` | JSON ok, missing ```latex |
 | `image_prompt` translate | `image_prompt.py` `_TRANSLATE_SYSTEM` | RU caption → EN photo prompt |

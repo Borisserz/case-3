@@ -374,6 +374,48 @@ def test_chart_recolor_from_chat_rebuilds_pdf_and_docx(tmp_path: Path, monkeypat
     assert seen["formats"] == {"pdf", "docx"}
 
 
+def test_green_phrase_repaints_the_chat_chart(tmp_path: Path, monkeypatch):
+    chat = "source_20261118T150000Z"
+    chat_dir = tmp_path / "runs" / "out" / chat
+    figs = chat_dir / "figures"
+    figs.mkdir(parents=True)
+    html = (
+        "<canvas id='c'></canvas><script>"
+        "new Chart(c,{type:'bar',data:{labels:['Минск','Брест'],datasets:["
+        "{label:'Факт',data:[10,20]}]},options:{responsive:false}});"
+        "</script>"
+    )
+    (chat_dir / "figures.json").write_text(
+        json.dumps(
+            {"figures": [], "charts": [{"id": "cht_01", "type": "bar", "caption": "Факт", "html": html}], "diagrams": []},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (chat_dir / "meta.json").write_text(
+        json.dumps({"run_id": chat, "output_mode": "chat", "charts_planned": ["cht_01"]}),
+        encoding="utf-8",
+    )
+
+    def fake_batch(items):
+        status = {}
+        for cid, _chart, png_path, _cdir in items:
+            png_path.parent.mkdir(parents=True, exist_ok=True)
+            png_path.write_bytes(b"\x89PNG\r\n")
+            status[cid] = {"ok": True}
+        return status
+
+    monkeypatch.setattr("case3.charts.render_charts_batch", fake_batch)
+    result = try_chat_revise("Доработай график: сделай в зеленых цветах", chat, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "recolor_hue"
+    assert "зелён" in result["chat"]
+    assert result["previews"][0]["id"] == "cht_01"
+    saved = json.loads((chat_dir / "figures.json").read_text(encoding="utf-8"))
+    assert "#1F8A45" in saved["charts"][0]["html"].upper()
+    assert "data:[10,20]" in saved["charts"][0]["html"]
+
+
 def test_chart_recolor_without_a_report_does_not_ask_for_print(tmp_path: Path, monkeypatch):
     deck = "source_20261118T140000Z"
     deck_dir = tmp_path / "runs" / "out" / deck

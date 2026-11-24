@@ -1719,6 +1719,13 @@ async def api_run(
         except json.JSONDecodeError:
             attachments_meta = []
 
+    from case3.source_attach import merge_ingested_sources
+
+    merged_source = merge_ingested_sources(source_body, attachments_meta, run_store.ROOT)
+    if merged_source != source_body:
+        source_body = merged_source
+        src_path.write_text(source_body, encoding="utf-8")
+
     wid = sanitize_workspace_id(x_workspace_id)
     meta0 = {
         "run_id": run_id,

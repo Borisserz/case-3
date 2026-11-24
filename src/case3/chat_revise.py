@@ -456,7 +456,7 @@ def try_chat_revise(
             if any((path / "figures").glob("usr_*.png")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op in {"retype_charts", "retype_chart", "recolor_charts"}:
+    elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}:
         for run_id, path, row in reversed(rows):
             if _has_chart(row, path):
                 work_id, work_dir = run_id, path
@@ -502,7 +502,7 @@ def try_chat_revise(
             work_id, work_dir = carried_id, carried_path
         elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
             work_id, work_dir = carried_id, carried_path
-        elif act.op in {"retype_charts", "retype_chart", "recolor_charts"}:
+        elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}:
             has_here = _has_chart(_read(work_dir), work_dir)
             has_carried = _has_chart(carried_meta, carried_path)
             if not has_here and has_carried:
@@ -525,6 +525,8 @@ def try_chat_revise(
         say = _recolor_deck(work_id, work_dir, pack) or say
     elif act.op == "recolor_charts" and act.palette:
         say = _recolor_charts(work_dir, act.palette) or say
+    elif act.op == "recolor_hue" and act.palette:
+        say = _recolor_hue(work_dir, act.palette, act.chart) or say
     elif act.op == "rewrite":
         say = _rewrite(work_dir, text, act) or say
     elif act.op == "delete_slide" and act.slide:
@@ -585,7 +587,7 @@ def try_chat_revise(
     noted_surface = history_surface if act.op in {"undo", "redo"} and history_surface else _surface(act)
     chart_previews: list[dict[str, str]] | None = None
     if (
-        act.op in {"retype_charts", "retype_chart", "recolor_charts"}
+        act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}
         and not any(work_dir.glob("*.tex"))
         and not _flags(work_meta)[0]
     ):
@@ -1968,6 +1970,21 @@ def _slide_bullets(run_id: str, out_dir: Path, index: int, items: tuple[str, ...
     )
     shown = "; ".join(items)
     return f"Ставлю на слайд {index} пункты: {shown}."
+
+
+def _recolor_hue(out_dir: Path, hue: str, chart_type: str = "") -> str:
+    from case3.chart_edit import ChartEditError, paint_hue_charts_in_run
+    from case3.chart_style import HUE_SAY
+
+    label = HUE_SAY.get(hue, hue)
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    try:
+        paint_hue_charts_in_run(out_dir, hue, chart_type=chart_type, formats=formats)
+    except ChartEditError as exc:
+        return _friendly_chart_edit_error(exc)
+    if formats:
+        return f"Перекрасил график в {label}. Числа те же. PDF и DOCX тоже."
+    return f"Перекрасил график в {label}. Числа те же."
 
 
 def _recolor_charts(out_dir: Path, palette: str) -> str:

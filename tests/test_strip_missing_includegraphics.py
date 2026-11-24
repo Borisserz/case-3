@@ -38,3 +38,19 @@ def test_strips_missing_bare_dia_png(tmp_path: Path) -> None:
     out = strip_missing_media_includes(tex, tmp_path)
     assert "dia_0" not in out
     assert r"\includegraphics" not in out
+
+
+def test_strips_png_name_that_is_actually_bmp(tmp_path: Path) -> None:
+    figs = tmp_path / "figures"
+    figs.mkdir()
+    (figs / "cht_04.png").write_bytes(b"BM" + b"\x00" * 20)
+    (figs / "cht_01.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 20)
+    tex = r"""\documentclass{article}
+\begin{document}
+\includegraphics{figures/cht_01.png}
+\includegraphics{figures/cht_04.png}
+\end{document}
+"""
+    out = strip_missing_media_includes(tex, tmp_path)
+    assert "cht_01" in out
+    assert "cht_04" not in out

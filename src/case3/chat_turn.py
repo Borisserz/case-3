@@ -1423,6 +1423,22 @@ def _visual_memory_context(intent: str, extra_context: str = "") -> str:
     return "\n\n".join(parts)
 
 
+def chart_plot_blank(html: str | None) -> bool:
+    """True when Chart.js has no non-zero point. Axes alone are an empty picture."""
+    arrays = re.findall(r"data\s*:\s*\[([^\]]*)\]", html or "", flags=re.I)
+    if not arrays:
+        return True
+    for body in arrays:
+        for token in re.findall(r"-?\d+(?:[.,]\d+)?", body):
+            try:
+                value = abs(float(token.replace(",", ".")))
+            except ValueError:
+                continue
+            if value > 0:
+                return False
+    return True
+
+
 def generate_chat_charts(
     source: str,
     intent: str,
@@ -1444,7 +1460,13 @@ def generate_chat_charts(
         polish_charts,
     )
     from case3.chart_html import CHART_TYPES
-    from case3.chart_style import intent_palette_lines, normalize_palette_id
+    from case3.chart_style import (
+        hue_from_text,
+        hue_prompt_line,
+        intent_palette_lines,
+        normalize_palette_id,
+        paint_hue_on_html,
+    )
     from case3.charts import render_charts_batch
     from case3.fact_ground import ground_generated
     from case3.generate import preferred_types_from_intent
@@ -1468,6 +1490,9 @@ def generate_chat_charts(
         '{"charts": [{"id": "cht_01", "type": "bar", "caption": "...", "html": "<canvas id=\'c\'></canvas><script>...</script>"}]}'
     )
     message = latest_user_line(intent) or intent or "Построй график по данным."
+    color_line = hue_prompt_line(message)
+    if color_line:
+        system += "\n" + color_line
     prior_scenario = _asks_about_prior_scenario(message, intent)
     mem_ctx = _visual_memory_context(intent, extra_context)
     clipped_src = _clip_source(source, focus=f"{message}\n{mem_ctx}".strip())
@@ -1551,11 +1576,18 @@ def generate_chat_charts(
     grounded = polish_charts(grounded, palette_id=palette)
     from case3.chart_harden import full_chat_canvas
 
+    named_hue = hue_from_text(message)
     for item in grounded:
         item["html"] = full_chat_canvas(
             str(item.get("html") or ""),
             chart_type=str(item.get("type") or ""),
         )
+        if named_hue:
+            item["html"] = paint_hue_on_html(str(item.get("html") or ""), named_hue)
+            item["hue"] = named_hue
+    grounded = [item for item in grounded if not chart_plot_blank(str(item.get("html") or ""))]
+    if not grounded:
+        return [], {}
 
     out_figs = Path(figs_dir)
     out_charts = Path(charts_dir)
@@ -1970,6 +2002,14 @@ def try_chat_answer(
     from case3.fact_ground import wrong_row_tokens
 
     wrong = wrong_row_tokens(text, source, said) if text and not stray else []
+    shown = bool(streamed_raw)
+    if stray and shown:
+        kept = _without_stray(text or streamed_raw, stray)
+        if len(re.findall(r"[А-Яа-яЁё]", kept)) >= 40:
+            text = kept
+        else:
+            text = streamed_raw
+        stray = []
     if stray:
         first_text, first_stray = text, stray
         if is_visual_turn and not prior_scenario:
@@ -2010,6 +2050,10 @@ def try_chat_answer(
             spoken = "Построил график по исходным данным документа для запрошенного разреза."
         else:
             spoken = invention_question(stray)
+    elif wrong and shown:
+        text = streamed_raw
+        wrong = []
+        spoken = text
     elif wrong:
         first_text, first_wrong = text, wrong
         retry = (

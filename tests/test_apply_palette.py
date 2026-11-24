@@ -21,6 +21,26 @@ def test_apply_palette_replaces_hex_with_ocean_inks() -> None:
     assert "#E85D04" not in out
 
 
+def test_named_green_paints_bars_that_had_no_color() -> None:
+    from case3.chart_style import hue_from_text, hue_prompt_line, paint_hue_on_html
+
+    html = (
+        "<canvas id='c'></canvas><script>"
+        "new Chart(c,{type:'bar',data:{labels:['Минск','Брест','Гомель'],datasets:["
+        "{label:'Факт',data:[10,20,30]}]},options:{responsive:false}});"
+        "</script>"
+    )
+    assert hue_from_text("столбцы зеленые") == "green"
+    assert hue_from_text("перекрась графики в закат") == ""
+    painted = paint_hue_on_html(html, "green")
+    assert "backgroundColor:[" in painted
+    assert "#1F8A45" in painted.upper()
+    assert "data:[10,20,30]" in painted
+    line = hue_prompt_line("сделай в зеленых цветах")
+    assert "#1F8A45" in line.upper()
+    assert "числа и type не меняй" in line
+
+
 def test_apply_palette_noop_for_auto() -> None:
     html = "backgroundColor:'#E85D04'"
     assert apply_palette_to_html(html, "auto") == html

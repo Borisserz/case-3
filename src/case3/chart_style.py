@@ -373,6 +373,105 @@ _PALETTE_INTENT_RE = re.compile(
 )
 
 
+# Same-family ramps for a named hue. Presets stay multi-hue; a named color does not.
+_HUE_RAMPS: dict[str, tuple[str, ...]] = {
+    "green": ("#146C36", "#1F8A45", "#2EAA58", "#5CC47A", "#0E4F28", "#8ED9A4"),
+    "blue": ("#0B4F8C", "#1D6FBF", "#3D8FD4", "#7EB6E6", "#08386A", "#B7D7F2"),
+    "orange": ("#C45C12", "#E07A2F", "#F0A05A", "#F6C48A", "#8C3E0A", "#F8D7B0"),
+    "red": ("#B42318", "#D6453D", "#E56B63", "#F0A09A", "#7A1610", "#F6C9C6"),
+    "yellow": ("#A67C00", "#C99A12", "#E0B84A", "#F0D48A", "#7A5A00", "#F6E7B8"),
+    "gray": ("#2C3340", "#4B5563", "#6B7280", "#9CA3AF", "#1A1F28", "#D1D5DB"),
+}
+_HUE_WORDS: tuple[tuple[str, str], ...] = (
+    ("green", r"зел[её]н"),
+    ("orange", r"оранж"),
+    ("yellow", r"ж[её]лт"),
+    ("red", r"(?<![а-яё])красн"),
+    ("blue", r"голуб|\bсин(?:ий|яя|ее|ие|им|его|юю|еньк)"),
+    ("gray", r"сер(?:ый|ая|ое|ые|ого|ым)|ч[её]рн(?:ый|ая|ое|ые|ого|ым)"),
+)
+HUE_SAY = {
+    "green": "зелёный",
+    "blue": "синий",
+    "orange": "оранжевый",
+    "red": "красный",
+    "yellow": "жёлтый",
+    "gray": "серый",
+}
+
+
+def hue_from_text(text: str | None) -> str:
+    """Named hue in the user line. Empty when they named a preset, not a color."""
+    raw = (text or "").replace("ё", "е").replace("Ё", "Е")
+    if re.search(r"editorial|ocean|sunset|\bmono\b|atelier|закат|океан|редакц|ателье|монохром", raw, re.I):
+        return ""
+    for key, pattern in _HUE_WORDS:
+        if re.search(pattern, raw, re.I):
+            return key
+    return ""
+
+
+def hue_prompt_line(text: str | None) -> str:
+    """One instruction for the chart model. Empty when the line names no hue."""
+    hue = hue_from_text(text)
+    ramp = _HUE_RAMPS.get(hue or "")
+    if not hue or not ramp:
+        return ""
+    hexes = ", ".join(ramp)
+    return (
+        f"ЦВЕТ: пользователь просит {HUE_SAY[hue]}. "
+        f"В каждом dataset задай backgroundColor массивом этих hex по числу категорий: {hexes}. "
+        "Не используй синий цвет Chart.js по умолчанию. "
+        "Если есть текущий график и просят только цвет — подписи, числа и type не меняй."
+    )
+
+
+def paint_hue_on_html(html: str, hue: str) -> str:
+    """Force a named hue onto Chart.js series. Injects color when the model left the default."""
+    ramp = _HUE_RAMPS.get((hue or "").strip().lower())
+    if not ramp or not (html or "").strip():
+        return html
+    n = _count_chart_labels(html) or 1
+    colors = ",".join(f"'{ramp[i % len(ramp)]}'" for i in range(max(n, 1)))
+    ink = ramp[0]
+    out = html
+    if re.search(r"backgroundColor\s*:\s*\[", out, flags=re.I):
+        out = re.sub(
+            r"backgroundColor\s*:\s*\[[^\]]*\]",
+            f"backgroundColor:[{colors}]",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    elif re.search(r"backgroundColor\s*:", out, flags=re.I):
+        out = re.sub(
+            r"backgroundColor\s*:\s*(?:'[^']*'|\"[^\"]*\"|rgba?\([^)]*\))",
+            f"backgroundColor:[{colors}]",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    else:
+        out = re.sub(
+            r"(datasets\s*:\s*\[\s*\{)",
+            rf"\1backgroundColor:[{colors}],",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    if re.search(r"borderColor\s*:", out, flags=re.I):
+        out = re.sub(
+            r"borderColor\s*:\s*(?:'[^']*'|\"[^\"]*\"|\[[^\]]*\]|rgba?\([^)]*\))",
+            f"borderColor:'{ink}'",
+            out,
+            count=1,
+            flags=re.I,
+        )
+    elif "backgroundColor:[" in out:
+        out = out.replace("backgroundColor:[", f"borderColor:'{ink}',backgroundColor:[", 1)
+    return out
+
+
 def palette_from_intent(intent: str) -> str:
     """Parse UI palette id from Intent block; ``auto`` when missing/AUTO."""
     m = _PALETTE_INTENT_RE.search(intent or "")

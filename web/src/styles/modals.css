@@ -1276,8 +1276,41 @@
   max-height: 92vh;
 }
 
+/* Wide tables must scroll inside the card. A max-content child plus the
+   nav's negative margin makes the body scrollport start at the border,
+   so the left padding vanishes as soon as the preview opens. */
+.stimul-sheet.is-read .settings-modal-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.stimul-sheet.is-read .settings-modal-body > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .dash-read-body {
   gap: 1.4rem;
+}
+
+.stimul-sheet.is-read .dash-read-nav {
+  margin: 0 0 0.15rem;
+  top: 0;
+  padding: 0.1rem 0 0.65rem;
+}
+
+.stimul-sheet.is-read .stimul-readout,
+.stimul-sheet.is-read .source-read-md,
+.stimul-sheet.is-read .stimul-table-card {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.stimul-sheet.is-read .stimul-grid-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .dash-read-nav {

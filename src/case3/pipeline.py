@@ -1292,6 +1292,7 @@ def run_pipeline(
         from case3.dashboard_source import derivative_block
         from case3.input_validation import current_turn_user_text
         from case3.turn_route import (
+            answer_declines_chart,
             should_auto_chat_chart,
             wants_chat_chart,
             wants_chat_diagram,
@@ -1413,6 +1414,7 @@ def run_pipeline(
                 and not wants_diag
                 and not clarifying_visual
                 and not landing
+                and not answer_declines_chart(answer)
                 and should_auto_chat_chart(
                     turn_text,
                     enriched_source,

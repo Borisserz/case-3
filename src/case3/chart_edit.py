@@ -484,6 +484,95 @@ def edit_chart_in_run(
     }
 
 
+def paint_hue_charts_in_run(
+    out_dir: Path,
+    hue: str,
+    *,
+    chart_type: str = "",
+    formats: set[str] | None = None,
+) -> dict[str, Any]:
+    """Recolor existing charts to a named hue. Numbers and labels stay. No model call."""
+    from case3.chart_style import paint_hue_on_html
+    from case3.charts import render_charts_batch
+    from case3.slides_chart_data import attach_series_ir_to_charts
+
+    out_dir = out_dir.resolve()
+    fj_path = out_dir / "figures.json"
+    if not fj_path.is_file():
+        raise ChartEditError("figures.json not found")
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartEditError(f"could not read figures.json: {exc}") from exc
+    charts = [c for c in (fj.get("charts") or []) if isinstance(c, dict)]
+    if not charts:
+        raise ChartEditError("нет графиков для перекрашивания")
+
+    from case3.run_undo import capture_before_edit, undo_meta
+
+    capture_before_edit(out_dir, kind="batch_recolor", target=hue)
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    work_root = out_dir / "chart_recolor_work"
+    want = (chart_type or "").strip()
+    painted = 0
+    painted_paths: dict[str, Path] = {}
+    batch_items: list[tuple[str, dict[str, Any], Path, Path]] = []
+    for index, chart in enumerate(charts):
+        cid = str(chart.get("id") or "").strip()
+        html = str(chart.get("html") or "").strip()
+        if not cid or not html:
+            continue
+        current = str(chart.get("type") or "").strip()
+        if want and want != current:
+            chart = apply_type_to_chart(dict(chart), want)
+            html = str(chart.get("html") or html)
+        new_html = paint_hue_on_html(html, hue)
+        if not new_html:
+            continue
+        chart["html"] = new_html
+        chart["style_user"] = True
+        chart["hue"] = hue
+        charts[index] = chart
+        png_path = figs_dir / f"{cid}.png"
+        batch_items.append((cid, chart, png_path, work_root / cid))
+        painted += 1
+    if not painted:
+        raise ChartEditError("нет графиков для перекрашивания")
+    batch_res = render_charts_batch(batch_items) if batch_items else {}
+    for cid, _chart, png_path, _cdir in batch_items:
+        if batch_res.get(cid, {}).get("ok"):
+            painted_paths[cid] = png_path
+    attach_series_ir_to_charts(charts)
+    fj["charts"] = charts
+    fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _mut(meta: dict[str, Any]) -> None:
+        med = dict(meta.get("media_status") or {})
+        for cid, png_path in painted_paths.items():
+            med[cid] = {"ok": True, "path": str(png_path), "kind": "chart"}
+        meta["media_status"] = med
+
+    meta = update_meta(out_dir, _mut)
+    artifacts = None
+    if formats:
+        try:
+            artifacts = rebuild_run_docs(out_dir, formats=formats)
+        except Exception as exc:
+            log.warning("rebuild_run_docs failed during hue recolor: %s", exc)
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
+    return {
+        "ok": True,
+        "hue": hue,
+        "charts_recolored": len(painted_paths) or painted,
+        "media_status": dict(meta.get("media_status") or {}),
+        "artifacts": {k: str(p) for k, p in (artifacts or {}).items()},
+        "undo": undo_meta(out_dir),
+    }
+
+
 def recolor_all_charts_in_run(
     out_dir: Path,
     palette: str,
