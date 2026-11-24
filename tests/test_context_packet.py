@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from case3.context_packet import (
     ArtifactTarget,
@@ -321,3 +322,113 @@ def test_render_optional_sections_only_when_populated():
         "## Числа из прошлых реплик пользователя"
     )
     assert "2 слайд" in rich_block or "слайд" in rich_block
+
+
+def _write_deck_run(root: Path, run_id: str) -> None:
+    out_dir = root / "runs" / "out" / run_id
+    out_dir.mkdir(parents=True)
+    (out_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "prior_run_id": "",
+                "output_mode": "presentation",
+                "slides_status": "ok",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    slides_dir = out_dir / "slides"
+    slides_dir.mkdir()
+    (slides_dir / "deck.json").write_text(
+        json.dumps(
+            {
+                "slides": [
+                    {"id": "s01", "title": "Обзор"},
+                    {"id": "s02", "title": "Данные"},
+                    {"id": "s03", "title": "Старые итоги"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_revise_packet_resolves_artifact_targets(tmp_path):
+    deck_id = "source_20261124T200000Z"
+    _write_deck_run(tmp_path, deck_id)
+    query = "поменяй заголовок слайда 3 на Новые итоги"
+    plan = plan_turn(query, has_deck=True)
+
+    packet = build_context_packet(
+        plan=plan,
+        user_text=query,
+        source_text="",
+        root=tmp_path,
+        prior_run_id=deck_id,
+    )
+
+    assert packet.route.kind == "revise"
+    assert len(packet.artifact_targets) == 1
+    assert packet.artifact_targets[0].artifact_id == f"artifact:{deck_id}:slide:3"
+    assert packet.artifact_targets[0].number_evidence is False
+
+
+def test_chat_packet_skips_artifact_targets(tmp_path):
+    deck_id = "source_20261124T200001Z"
+    _write_deck_run(tmp_path, deck_id)
+
+    packet = build_context_packet(
+        plan=plan_turn("какая доля минской области"),
+        user_text="какая доля минской области",
+        source_text="| Область | Доля |\n| Минская | 10 |",
+        root=tmp_path,
+        prior_run_id=deck_id,
+    )
+
+    assert packet.route.kind == "chat"
+    assert packet.artifact_targets == []
+
+
+def test_build_packet_accepts_explicit_artifact_targets():
+    override = ArtifactTarget(
+        artifact_id="artifact:run:section:Выводы",
+        label="Раздел «Выводы»",
+        number_evidence=False,
+    )
+    plan = plan_turn("перепиши раздел Выводы", has_report=True)
+    packet = build_context_packet(
+        plan=plan,
+        user_text="перепиши раздел Выводы",
+        source_text="Исходник",
+        artifact_targets=[override],
+    )
+
+    assert packet.artifact_targets == [override]
+
+
+def test_render_revise_user_block_lists_open_artifact(tmp_path):
+    deck_id = "source_20261124T200002Z"
+    _write_deck_run(tmp_path, deck_id)
+    query = "поменяй заголовок слайда 3 на Новые итоги"
+    plan = plan_turn(query, has_deck=True)
+    packet = build_context_packet(
+        plan=plan,
+        user_text=query,
+        source_text="",
+        root=tmp_path,
+        prior_run_id=deck_id,
+    )
+
+    from case3.context_packet import render_revise_user_block
+
+    block = render_revise_user_block(packet)
+
+    assert "## Открытый артефакт — не Source" in block
+    assert "не источник чисел" in block.lower() or "не Source" in block
+    assert "Слайд 3" in block
+    assert block.index("## Открытый артефакт — не Source") < block.rindex(
+        "## Ограничение ответа"
+    )

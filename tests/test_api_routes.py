@@ -271,6 +271,16 @@ def test_run_multi_step_kicks_second_build_with_prior_run(
         meta_path = out / "meta.json"
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         meta.update({"status": "ok", "stage": "ok"})
+        if output_mode == "report":
+            meta["selection_manifest"] = {
+                "evidence_ids": ["doc:current:0"],
+                "dialogue_ids": [],
+                "scores": {},
+                "quotas": {},
+                "hashes": {"doc:current": "hash_parent_01"},
+                "omitted": [],
+            }
+            meta["source_catalog_hashes"] = {"doc:current": "hash_parent_01"}
         payload = json.dumps(meta, ensure_ascii=False, indent=2)
         meta_path.write_text(payload, encoding="utf-8")
         logs.mkdir(parents=True, exist_ok=True)
@@ -317,6 +327,13 @@ def test_run_multi_step_kicks_second_build_with_prior_run(
     assert child_meta["route_plan"]["parent_run_id"] == parent_run_id
     assert child_meta["route_plan"]["step_index"] == 1
     assert child_meta["route_plan"]["pending_steps"] == []
+    assert child_meta["source_catalog_hashes"] == {"doc:current": "hash_parent_01"}
+    parent_meta = json.loads(
+        (repo_root / "runs" / "out" / parent_run_id / "meta.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert parent_meta["selection_manifest"]["hashes"] == child_meta["source_catalog_hashes"]
 
 
 def test_run_presentation_waits_for_slides_before_next_report(

@@ -1,12 +1,13 @@
 # KI: Chat memory
 
 ## What
-One Liber chat is a chain of runs. The chain explains the next line. It is not a source of numbers. Chat answers (Phase A) get one **GCP** per turn after TTG — selected evidence plus dialogue, not a blind paste of Source + full thread.
+One Liber chat is a chain of runs. The chain explains the next line. It is not a source of numbers. After TTG, **GCP** (`gcp-v1`) selects evidence plus dialogue — not a blind paste of Source + full thread. Phase A: chat answers. Phase B: revise + build paths share the same packet model.
 
 ## Entry
 - Chain, thread, screen: `src/case3/chat_memory.py` (`load_chain`, `format_thread`, `memory_view`, `report_tex`)
-- **GCP (chat):** `src/case3/context_packet.py` (`build_context_packet`, `render_chat_user_block`) · `src/case3/context_select.py` (`catalog_sources`, `select_evidence`, `select_dialogue`)
-- Wire: `pipeline._finish_chat_answer` → `build_context_packet` → `meta["selection_manifest"]` → `try_chat_answer(..., context_block=...)`; inline chart/diagram get the same `context_block`
+- **GCP:** `context_packet.py` (`build_context_packet`, `render_chat_user_block`, `render_revise_user_block`, build renderers) · `context_select.py` · **Phase B** `artifact_context.py` (`resolve_artifact_targets`)
+- Chat wire: `pipeline._finish_chat_answer` → packet → `meta["selection_manifest"]` → `try_chat_answer(..., context_block=...)`
+- Revise wire: `plan_turn` + packet `artifact_targets` → `chat_revise.try_chat_revise` (skip ambiguous re-resolve when target present)
 - Legacy prompt (builds / no packet): `src/case3/chat_turn.py` (`_user_block`, `report_context`)
 - Assembly as `/api/run`: `prior_turn.prior_block_for_form` → `insert_prior_turn` → `user_text_before_ui` → chat path uses GCP instead of duplicating `format_thread` in the user block
 - Open report in a chat answer: `pipeline._finish_chat_answer` → `chat_report_block`
@@ -45,4 +46,5 @@ One Liber chat is a chain of runs. The chain explains the next line. It is not a
 - `105 865,2` is one number (`105865.2`). The fragments `105` and `865.2` are not allowed on their own. In a chart array `[100,40]` the comma splits, so both points stay. `[12,5]` is one point `12.5`, and so is `105 865,2`. A label that names one table row keeps only that row's cells: Гомельская cannot show Минская's sum. A month label is not a row. A chart `null` keeps its category. A markdown list marker `1.` is not a number. A four-digit year at the start of a line stays: `2024. Выручка 10` keeps 2024. `1.1` still is a number. Card text on a slide is checked the same way as the title. A horizontal bar grows with the number of regions, up to 900px.
 - A Source longer than the chat cap also sends its markdown headings, capped at 1200. Under the cap the file is pasted whole and the outline is not repeated.
 - A plain message lifts an old turn on one stem when that is the only content stem, and on two stems when the question has two or more.
-- With `context_block` set, `try_chat_answer` does not fall back to `_user_block`; `report_context` still appends when the question names a section. Phase B will extend GCP to revise/build; until then assemblies keep `format_thread` / `focus_source` on non-chat paths.
+- With `context_block` set, `try_chat_answer` does not fall back to `_user_block`; `report_context` still appends when the question names a section.
+- **GCP Phase B:** builds/revise get labeled evidence in the user prompt; artifact excerpts in `## Открытый артефакт` never have `number_evidence`. `fact_ground` on new files still uses full effective Source, not the selected subset. Reopen may still use `format_thread`.

@@ -1697,6 +1697,72 @@ def run_pipeline(
             meta["source"] = str(text_path)
             _write_meta(meta, out, logs)
 
+        build_gcp_block: str | None = None
+        if mode in {"report", "diagram", "presentation"}:
+            from case3.context_packet import (
+                build_context_packet,
+                render_build_user_block,
+            )
+            from case3.turn_plan import TurnPlan, TurnStep, plan_turn
+
+            route_plan_build = meta.get("route_plan")
+            has_typed_build = isinstance(route_plan_build, dict) and bool(
+                route_plan_build.get("route_version")
+            )
+            if has_typed_build:
+                media = route_plan_build.get("build_media")
+                media = media if isinstance(media, dict) else {}
+                raw_steps = (
+                    route_plan_build.get("steps")
+                    if isinstance(route_plan_build.get("steps"), list)
+                    else []
+                )
+                build_plan = TurnPlan(
+                    route_version=str(route_plan_build.get("route_version") or ""),
+                    kind=str(route_plan_build.get("kind") or mode),
+                    steps=[
+                        TurnStep(kind=str(step.get("kind") or mode))
+                        for step in raw_steps
+                        if isinstance(step, dict)
+                    ]
+                    or [TurnStep(kind=mode)],
+                    want_chat_chart=bool(route_plan_build.get("want_chat_chart")),
+                    want_chat_diagram=bool(route_plan_build.get("want_chat_diagram")),
+                    build_media={str(k): bool(v) for k, v in media.items()},
+                    edit_act=None,
+                    mode_hint=str(route_plan_build.get("mode_hint") or mode),
+                    reason=str(route_plan_build.get("reason") or ""),
+                    clarify_prompt=(
+                        str(route_plan_build.get("clarify_prompt"))
+                        if route_plan_build.get("clarify_prompt")
+                        else None
+                    ),
+                    note=str(route_plan_build.get("note"))
+                    if route_plan_build.get("note")
+                    else None,
+                )
+            else:
+                build_plan = plan_turn(turn_text, mode_hint=mode)
+            inherited_hashes = meta.get("source_catalog_hashes")
+            if not isinstance(inherited_hashes, dict):
+                inherited_hashes = None
+            build_packet = build_context_packet(
+                plan=build_plan,
+                user_text=turn_text,
+                source_text=source_raw,
+                root=root,
+                prior_run_id=prior or None,
+                catalog_hashes=inherited_hashes,
+            )
+            build_gcp_block = render_build_user_block(build_packet)
+            meta["selection_manifest"] = asdict(build_packet.selection_manifest)
+            meta["source_catalog_hashes"] = dict(
+                build_packet.selection_manifest.hashes
+            )
+            if mode == "presentation":
+                meta["gcp_build_block"] = build_gcp_block
+            _write_meta(meta, out, logs)
+
         if mode == "chat":
             return _finish_chat_answer(user_intent, source_raw)
         if mode in {"report", "diagram", "presentation"}:
@@ -1807,6 +1873,7 @@ def run_pipeline(
                         client=LLMClient(diag_cfg),
                         palette=pal,
                         cancel_check=lambda: raise_if_cancelled(out),
+                        gcp_block=build_gcp_block,
                     )
                 except InsufficientDataError as exc:
                     return _handle_insufficient_data(exc.message)
@@ -1829,16 +1896,8 @@ def run_pipeline(
             )
         else:
             try:
-                from case3.chat_memory import focus_source
-
-                asked = str(meta.get("chat_prompt") or "")
-                focused = focus_source(source_raw, asked)
-                gen_path = text_path
-                if focused and focused != source_raw:
-                    gen_path = work / "focus_source.txt"
-                    gen_path.write_text(focused, encoding="utf-8")
                 _, figures, charts, diagrams = generate_document(
-                    gen_path,
+                    text_path,
                     out_tex=tex_path,
                     intent=intent,
                     gold_dir=root / "prompt" / "gold",
@@ -1848,6 +1907,8 @@ def run_pipeline(
                     max_diagrams=diagrams_budget,
                     cancel_check=lambda: raise_if_cancelled(out),
                     user_figures=user_figs,
+                    gcp_block=build_gcp_block,
+                    grounding_source=source_raw,
                 )
             except InsufficientDataError as exc:
                 return _handle_insufficient_data(exc.message)
@@ -1882,6 +1943,7 @@ def run_pipeline(
                     client=LLMClient(LLMConfig.from_env()),
                     palette=pal,
                     cancel_check=lambda: raise_if_cancelled(out),
+                    gcp_block=build_gcp_block,
                 )
                 meta["diagrams_recovery"] = "generate" if diagrams else "empty"
                 log.info(

@@ -24,6 +24,7 @@ def diagram_prompts(
     source_text: str,
     max_diagrams: int,
     palette: str,
+    gcp_block: str | None = None,
 ) -> tuple[str, str]:
     """System + user text. Source is clipped to ``DIAGRAM_SOURCE_LIMIT``."""
     from case3.diagram_edit import _load_generate_system
@@ -31,8 +32,11 @@ def diagram_prompts(
     budget = max(1, int(max_diagrams))
     system = _load_generate_system(max_diagrams=budget, palette=palette)
     clipped = (source_text or "")[:DIAGRAM_SOURCE_LIMIT]
-    user = (
-        f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
+    gcp = (gcp_block or "").strip()
+    user = f"## Intent\n{(intent or '').strip() or '(none)'}\n\n"
+    if gcp:
+        user += gcp + "\n\n"
+    user += (
         f"## Source\n{clipped}\n\n"
         "Return ONLY one ```json fence with a diagrams array "
         f"(1–{budget} Mermaid). No prose before the fence."
@@ -48,6 +52,7 @@ def complete_diagrams(
     client: _DiagramClient,
     palette: str,
     cancel_check: Callable[[], None] | None = None,
+    gcp_block: str | None = None,
 ) -> list[dict[str, Any]]:
     """Call ``client`` once and parse a diagrams array. May raise InsufficientDataError."""
     from case3.diagram_repair import parse_repair_response
@@ -57,6 +62,7 @@ def complete_diagrams(
         source_text=source_text,
         max_diagrams=max_diagrams,
         palette=palette,
+        gcp_block=gcp_block,
     )
     raw = client.complete(system=system, user_text=user, cancel_check=cancel_check)
     return parse_repair_response(raw or "", max_diagrams=max(1, int(max_diagrams)))

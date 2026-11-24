@@ -155,6 +155,30 @@ def _route_from_plan(plan: TurnPlan) -> PacketRoute:
     )
 
 
+def _plan_references_artifact(plan: TurnPlan) -> bool:
+    if plan.kind == "revise":
+        return True
+    act = plan.edit_act
+    return act is not None and str(getattr(act, "op", "") or "") not in {"", "ask"}
+
+
+def _resolve_packet_artifacts(
+    *,
+    plan: TurnPlan,
+    root: Path | None,
+    prior_run_id: str | None,
+) -> list[ArtifactTarget]:
+    if root is None or not prior_run_id or not _plan_references_artifact(plan):
+        return []
+    from case3.artifact_context import resolve_artifact_targets
+
+    return resolve_artifact_targets(
+        plan=plan,
+        root=root,
+        prior_run_id=prior_run_id,
+    )
+
+
 def build_context_packet(
     *,
     plan: TurnPlan,
@@ -163,6 +187,8 @@ def build_context_packet(
     root: Path | None = None,
     prior_run_id: str | None = None,
     attachments: list | None = None,
+    artifact_targets: list[ArtifactTarget] | None = None,
+    catalog_hashes: dict[str, str] | None = None,
 ) -> ContextPacket:
     """Build a source-aware GCP with deterministic evidence selection."""
     catalog_items = catalog_sources(source_text, attachments)
@@ -273,18 +299,28 @@ def build_context_packet(
     )
     quota_ids = compared_ids if comparison else selected_ids
     quota = per_source_quota or budgets.evidence
+    computed_hashes = {item.source_id: item.content_hash for item in catalog_items}
+    manifest_hashes = dict(catalog_hashes or {})
+    manifest_hashes.update(computed_hashes)
     manifest = SelectionManifest(
         evidence_ids=[chunk.chunk_id for chunk in selected_chunks],
         dialogue_ids=[item.turn_id for item in dialogue],
         scores={chunk.chunk_id: chunk.score for chunk in selected_chunks},
         quotas={source_id: quota for source_id in quota_ids},
-        hashes={item.source_id: item.content_hash for item in catalog_items},
+        hashes=manifest_hashes,
         omitted=[
             {"source_id": source_id, "reason": "explicit_focus"}
             for source_id in omitted_ids
             if explicit_focus
         ],
     )
+
+    if artifact_targets is None:
+        artifact_targets = _resolve_packet_artifacts(
+            plan=plan,
+            root=root,
+            prior_run_id=prior_run_id,
+        )
 
     return ContextPacket(
         version=GCP_VERSION,
@@ -295,6 +331,7 @@ def build_context_packet(
         source_catalog=catalog,
         evidence=evidence,
         dialogue=dialogue,
+        artifact_targets=list(artifact_targets),
         coverage=coverage,
         selection_manifest=manifest,
     )
@@ -440,3 +477,33 @@ def render_chat_user_block(packet: ContextPacket) -> str:
         _render_limits(),
     ]
     return _join_sections(sections)
+
+
+def render_revise_user_block(packet: ContextPacket) -> str:
+    """Render GCP for revise/build turns (same spec order as chat)."""
+    return render_chat_user_block(packet)
+
+
+def render_build_user_block(packet: ContextPacket) -> str:
+    """Render GCP evidence for report/diagram LLM prompts (parallel to full Source)."""
+    sections = [
+        f"## Текущий запрос\n{(packet.request.text or '').strip()}",
+        _render_route(packet.route),
+        _render_evidence(packet),
+        _render_coverage(packet),
+        _render_dialogue(packet),
+        _render_limits(),
+    ]
+    return _join_sections(sections)
+
+
+def compose_slides_prompt_source(*, gcp_block: str | None, source_text: str) -> str:
+    """Slides LLM source: GCP evidence first, then the slides brief."""
+    from case3.source_brief import slides_source_text
+
+    parts: list[str] = []
+    block = (gcp_block or "").strip()
+    if block:
+        parts.append(block)
+    parts.append(slides_source_text(source_text))
+    return _join_sections(parts)

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from case3.chat_act import edit_clauses, next_deck_pack, resolve_act
+from case3.chat_act import ChatAct, edit_clauses, next_deck_pack, resolve_act
+from case3.context_packet import ArtifactTarget
 from case3.chat_memory import append_dialogue, load_chain_dirs, merge_edit
 from case3.run_meta import update_meta
 from case3.run_store import RUN_ID_OK
@@ -212,6 +215,8 @@ def continue_or_limit(
     root: Path,
     bias: str | None = None,
     carried_run_id: str | None = None,
+    edit_act: ChatAct | None = None,
+    artifact_targets: list[ArtifactTarget] | None = None,
 ) -> dict[str, Any] | None:
     """Edit in place, or stop a new turn when this chat is already full."""
     revised = try_chat_revise(
@@ -220,12 +225,17 @@ def continue_or_limit(
         root=root,
         bias=bias,
         carried_run_id=carried_run_id,
+        edit_act=edit_act,
+        artifact_targets=artifact_targets,
     )
     if revised is not None:
         return revised
     from case3.chat_memory import chain_limit_payload
 
     return chain_limit_payload(root, prior_run_id)
+
+
+_MEDIA_LOCATOR = re.compile(r"\b(?:cht|dia|usr)_[A-Za-z0-9_]+\b", re.IGNORECASE)
 
 
 def _run_dir(root: Path, run_id: str) -> Path | None:
@@ -237,6 +247,86 @@ def _run_dir(root: Path, run_id: str) -> Path | None:
     if not str(path).startswith(str(base)) or not (path / "meta.json").is_file():
         return None
     return path
+
+
+def _chain_run_path(
+    root: Path,
+    run_id: str,
+    rows: list[tuple[str, Path, dict[str, Any]]],
+    *,
+    carried_id: str = "",
+    carried_path: Path | None = None,
+) -> Path | None:
+    for chain_id, path, _row in rows:
+        if chain_id == run_id:
+            return path
+    if carried_id == run_id and carried_path is not None:
+        return carried_path
+    return _run_dir(root, run_id)
+
+
+def _apply_packet_target(
+    root: Path,
+    rows: list[tuple[str, Path, dict[str, Any]]],
+    *,
+    carried_id: str,
+    carried_path: Path | None,
+    target: ArtifactTarget,
+    act: ChatAct,
+    edit_act: ChatAct | None,
+) -> tuple[str, Path, ChatAct] | None:
+    """Prefer one GCP artifact target over a second in-chain resolve."""
+    if edit_act is None or str(edit_act.op or "") != str(act.op or ""):
+        return None
+    from case3.artifact_context import parse_artifact_target_id
+
+    parsed = parse_artifact_target_id(target.artifact_id)
+    if not parsed:
+        return None
+    target_run_id, locator = parsed
+    work_dir = _chain_run_path(
+        root,
+        target_run_id,
+        rows,
+        carried_id=carried_id,
+        carried_path=carried_path,
+    )
+    if work_dir is None or not work_dir.is_dir():
+        return None
+
+    tweaked = act
+    if locator.startswith("slide:"):
+        try:
+            index = int(locator.split(":", 1)[1])
+        except (TypeError, ValueError):
+            index = 0
+        if index < 1:
+            return None
+        tweaks: dict[str, Any] = {"slide": index}
+        if act.op in {
+            "retitle",
+            "slide_text",
+            "slide_bullets",
+            "delete_slide",
+            "reorder_slide",
+        }:
+            tweaks["title_on"] = "deck"
+        tweaked = replace(act, **tweaks)
+    elif locator.startswith("section:"):
+        section = locator.split(":", 1)[1].strip()
+        if not section:
+            return None
+        tweaked = replace(act, section=section)
+    elif _MEDIA_LOCATOR.fullmatch(locator):
+        tweaks = {}
+        if act.op in {"retype_chart", "recolor_hue"}:
+            tweaks["chart_at"] = max(int(getattr(edit_act, "chart_at", 0) or 0), 1)
+        if act.op in {"caption", "edit_photo"} and not str(act.section or "").strip():
+            tweaks["section"] = locator
+        if tweaks:
+            tweaked = replace(act, **tweaks)
+
+    return target_run_id, work_dir, tweaked
 
 
 def _batch_edits(
@@ -252,6 +342,8 @@ def _batch_edits(
     has_chart: bool = False,
     last_section: str,
     last_op: str,
+    edit_act: ChatAct | None = None,
+    artifact_targets: list[ArtifactTarget] | None = None,
 ) -> dict[str, Any] | None:
     """Run two different edits from one sentence, in the order they were written."""
     clauses = edit_clauses(text)
@@ -285,6 +377,8 @@ def _batch_edits(
             root=root,
             bias=bias,
             carried_run_id=carried_run_id,
+            edit_act=edit_act,
+            artifact_targets=artifact_targets,
         )
         if one is not None:
             done.append(one)
@@ -314,6 +408,8 @@ def try_chat_revise(
     root: Path,
     bias: str | None = None,
     carried_run_id: str | None = None,
+    edit_act: ChatAct | None = None,
+    artifact_targets: list[ArtifactTarget] | None = None,
 ) -> dict[str, Any] | None:
     """Return a chat response when the message edits the current artifact.
 
@@ -365,6 +461,8 @@ def try_chat_revise(
         has_chart=has_chart,
         last_section=str(edit.get("section") or ""),
         last_op=str(edit.get("op") or ""),
+        edit_act=edit_act,
+        artifact_targets=artifact_targets,
     )
     if batched is not None:
         return batched
@@ -393,6 +491,19 @@ def try_chat_revise(
         )
 
     work_id, work_dir = head_id, head_dir
+    packet_pick: tuple[str, Path, ChatAct] | None = None
+    if act.kind == "revise" and artifact_targets and len(artifact_targets) == 1:
+        packet_pick = _apply_packet_target(
+            root,
+            rows,
+            carried_id=carried_id,
+            carried_path=carried_path,
+            target=artifact_targets[0],
+            act=act,
+            edit_act=edit_act,
+        )
+    if packet_pick is not None:
+        work_id, work_dir, act = packet_pick
     history_surface = ""
     deck_edit_ops = {
         "recolor_deck",
@@ -403,7 +514,7 @@ def try_chat_revise(
         "slide_bullets",
         "restyle_structure",
     }
-    if act.op in {"undo", "redo"}:
+    if packet_pick is None and act.op in {"undo", "redo"}:
         history_surface = str(edit.get("surface") or "")
         if history_surface not in {"deck", "report"}:
             history_surface = "deck" if str(edit.get("op") or "") in deck_edit_ops else "report"
@@ -420,7 +531,7 @@ def try_chat_revise(
                     break
         if picked:
             work_id, work_dir = picked
-    elif act.op in {
+    elif packet_pick is None and act.op in {
         "rewrite",
         "rename_heading",
         "replace_cell",
@@ -439,29 +550,34 @@ def try_chat_revise(
             if any(path.glob("*.tex")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op in deck_edit_ops:
+    elif packet_pick is None and act.op in deck_edit_ops:
         for run_id, path, row in reversed(rows):
             if _flags(row)[0]:
                 work_id, work_dir = run_id, path
                 break
-    elif act.op == "refine_diagram":
+    elif packet_pick is None and act.op == "refine_diagram":
         from case3.run_store import load_diagrams_from_out
 
         for run_id, path, _row in reversed(rows):
             if load_diagrams_from_out(path):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op == "edit_photo":
+    elif packet_pick is None and act.op == "edit_photo":
         for run_id, path, _row in reversed(rows):
             if any((path / "figures").glob("usr_*.png")):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}:
+    elif packet_pick is None and act.op in {
+        "retype_charts",
+        "retype_chart",
+        "recolor_charts",
+        "recolor_hue",
+    }:
         for run_id, path, row in reversed(rows):
             if _has_chart(row, path):
                 work_id, work_dir = run_id, path
                 break
-    elif act.op == "retitle":
+    elif packet_pick is None and act.op == "retitle":
         if act.title_on == "deck":
             for run_id, path, row in reversed(rows):
                 if _flags(row)[0]:

@@ -16,7 +16,8 @@ After [ADR-0023](0023-typed-turn-graph.md), routing is one `TurnPlan` per messag
 - Persist `meta["selection_manifest"]` on every chat answer path (`pipeline._finish_chat_answer`).
 - Dialogue lane items always have `number_evidence=false`. Historical user stems stay ADR-0015/0016 bindings only. `fact_ground` on new files is unchanged.
 - Compare or «оба документа» sets equal `per_source_quota`; explicit single-doc focus omits others with `explicit_focus`.
-- Phase A scope: chat analysis + dialogue + evidence only. Build/revise packet renderers and `artifact_context` are Phase B (not required for this ADR).
+- **Phase A (shipped 2026-11-24):** chat analysis + dialogue + evidence only; `render_chat_user_block`, `selection_manifest` on chat answers.
+- **Phase B (shipped 2026-11-24):** `artifact_context.resolve_artifact_targets` fills `ContextPacket.artifact_targets` (`number_evidence=false`); `render_revise_user_block` / build prompts inject GCP-selected evidence; `chat_revise` uses precomputed targets when `TurnPlan.edit_act` + packet target; report/diagram/presentation builds persist `selection_manifest` and keep **canonical** full Source for `fact_ground`; TTG child steps inherit parent catalog hashes (`selection_manifest.hashes` or `source_catalog_hashes`).
 
 ## Alternatives Considered
 
@@ -37,5 +38,5 @@ After [ADR-0023](0023-typed-turn-graph.md), routing is one `TurnPlan` per messag
 
 ## Consequences
 - Positive: one inspectable package per chat turn; named doc and compare probes behave; route projection survives in prompt; manifest in `meta.json` for debug.
-- Negative: build paths still use legacy context until Phase B; KI/MEMORY must distinguish chat GCP from old `format_thread` on assemblies.
+- Negative: Phase B build/revise context is evidence-selected, not a full chain paste; reopen and some legacy paths may still use `format_thread`. KI/MEMORY distinguish chat vs build GCP.
 - Related spec: `docs/superpowers/specs/2026-11-24-liber-grounded-context-packet-design.md`. Routing: ADR-0023. Chain and digits: ADR-0013, ADR-0015, ADR-0016, ADR-0018.

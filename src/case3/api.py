@@ -1365,6 +1365,18 @@ def _kick_next_turn_step(
         ):
             if meta.get(key) is not None:
                 child_meta[key] = meta[key]
+        parent_hashes: dict[str, str] | None = None
+        parent_manifest = meta.get("selection_manifest")
+        if isinstance(parent_manifest, dict):
+            raw_hashes = parent_manifest.get("hashes")
+            if isinstance(raw_hashes, dict) and raw_hashes:
+                parent_hashes = dict(raw_hashes)
+        if parent_hashes is None:
+            raw_catalog = meta.get("source_catalog_hashes")
+            if isinstance(raw_catalog, dict) and raw_catalog:
+                parent_hashes = dict(raw_catalog)
+        if parent_hashes:
+            child_meta["source_catalog_hashes"] = parent_hashes
         job = _PipelineJob(
             src_path=src_path,
             run_id=child_run_id,
@@ -1915,6 +1927,15 @@ async def api_run(
         )
     if plan.kind == "revise":
         from case3.chat_revise import continue_or_limit
+        from case3.context_packet import build_context_packet
+
+        packet = build_context_packet(
+            plan=plan,
+            user_text=user_line,
+            source_text="",
+            root=run_store.ROOT,
+            prior_run_id=prior_run_id,
+        )
 
         revised = await asyncio.to_thread(
             continue_or_limit,
@@ -1923,6 +1944,8 @@ async def api_run(
             root=run_store.ROOT,
             bias=effective_bias,
             carried_run_id=carried_run_id,
+            edit_act=plan.edit_act,
+            artifact_targets=packet.artifact_targets,
         )
         if revised is not None:
             revised["route_plan"] = route_plan

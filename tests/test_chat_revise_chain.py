@@ -1,7 +1,11 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
+from case3.artifact_context import resolve_artifact_targets
+from case3.chat_act import resolve_act
 from case3.chat_revise import try_chat_revise
+from case3.turn_plan import plan_turn
 
 
 def test_shorter_edits_the_report_behind_a_chat_turn(tmp_path: Path, monkeypatch):
@@ -55,6 +59,118 @@ def test_shorter_edits_the_report_behind_a_chat_turn(tmp_path: Path, monkeypatch
     assert result["surface"] == "report"
     assert [note.get("user") for note in head.get("dialogue") or []] == ["короче"]
     assert "dialogue" not in report_meta
+
+
+def _report_deck_chat_chain(tmp_path: Path) -> tuple[str, str, str]:
+    report = "source_20261124R00000Z"
+    deck = "source_20261124D00000Z"
+    chat = "source_20261124C00000Z"
+    report_dir = tmp_path / "runs" / "out" / report
+    deck_dir = tmp_path / "runs" / "out" / deck
+    chat_dir = tmp_path / "runs" / "out" / chat
+    report_dir.mkdir(parents=True)
+    deck_dir.mkdir(parents=True)
+    chat_dir.mkdir(parents=True)
+    (report_dir / "note.tex").write_text("\\title{Старый отчёт}\n", encoding="utf-8")
+    (report_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": report, "output_mode": "report", "artifacts": {"pdf": "a.pdf"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    slides_dir = deck_dir / "slides"
+    slides_dir.mkdir(parents=True)
+    (slides_dir / "deck.json").write_text(
+        json.dumps(
+            {
+                "slides": [
+                    {"id": "s01", "title": "Обзор"},
+                    {"id": "s02", "title": "Данные"},
+                    {"id": "s03", "title": "Старые итоги"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (deck_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": deck,
+                "prior_run_id": report,
+                "output_mode": "presentation",
+                "slides_status": "ok",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (chat_dir / "meta.json").write_text(
+        json.dumps(
+            {"run_id": chat, "prior_run_id": deck, "output_mode": "chat"},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return report, deck, chat
+
+
+def test_slide_3_packet_target_prefers_deck_not_report(tmp_path: Path, monkeypatch):
+    report, deck, chat = _report_deck_chat_chain(tmp_path)
+    query = "поменяй заголовок слайда 3 на Новые итоги"
+    plan = plan_turn(query, has_deck=True, has_report=True)
+    targets = resolve_artifact_targets(
+        plan=plan,
+        root=tmp_path,
+        prior_run_id=chat,
+    )
+    assert targets and targets[0].artifact_id.endswith(":slide:3")
+
+    real_resolve = resolve_act
+
+    def wrong_title_surface(text, **kwargs):
+        act = real_resolve(text, **kwargs)
+        if act.op == "retitle":
+            return replace(act, title_on="report")
+        return act
+
+    monkeypatch.setattr("case3.chat_revise.resolve_act", wrong_title_surface)
+    seen: dict[str, object] = {}
+
+    def fake_report_title(_run_id: str, out_dir: Path, _title: str) -> str:
+        seen["surface"] = "report"
+        seen["dir"] = out_dir.name
+        return "Заголовок отчёта теперь «Новые итоги»."
+
+    def fake_slide_title(
+        _run_id: str, out_dir: Path, _title: str, index: int = 1
+    ) -> str:
+        seen["surface"] = "deck"
+        seen["dir"] = out_dir.name
+        seen["index"] = index
+        return f"Заголовок слайда {index} теперь «Новые итоги»."
+
+    monkeypatch.setattr("case3.chat_revise._retitle", fake_report_title)
+    monkeypatch.setattr("case3.chat_revise._retitle_slide", fake_slide_title)
+
+    without_packet = try_chat_revise(query, chat, root=tmp_path)
+    assert without_packet is not None
+    assert seen.get("surface") == "report"
+    assert seen.get("dir") == report
+
+    seen.clear()
+    with_packet = try_chat_revise(
+        query,
+        chat,
+        root=tmp_path,
+        edit_act=plan.edit_act,
+        artifact_targets=targets,
+    )
+    assert with_packet is not None
+    assert with_packet["artifact_run_id"] == deck
+    assert with_packet["surface"] == "deck"
+    assert seen == {"surface": "deck", "dir": deck, "index": 3}
 
 
 def test_named_deck_title_edits_the_slide_not_the_report(tmp_path: Path, monkeypatch):

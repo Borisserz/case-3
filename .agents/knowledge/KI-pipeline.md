@@ -16,6 +16,7 @@ Mermaid `diagrams[]` пишутся в `figures.json` и **растеризую�
 - CLI: `case3` / `scripts/run.cmd`
 - API: `POST /api/run` → background → `GET /api/runs/{id}/status`
 - **TTG (роутинг хода):** `turn_plan.plan_turn` → `TurnPlan` (`route_version=ttg-v1`) — SSOT до revise/build и слотов API (ADR-0023). `turn_route.resolve_turn` — только совместимость. Многошаговые `steps[]` (цепочка build), plaque+голый график → `clarify`, проекция «Маршрут» в Intent — `format_route_projection` / `intent_compose.append_route_projection_to_intent`.
+- **GCP Phase B (сборки):** `build_context_packet` на report/diagram/presentation; `generate.py` / `slides_job.py` — evidence в user prompt; `meta["selection_manifest"]` + `source_catalog_hashes` на build runs. TTG child (`api._kick_next_turn_step`) наследует hashes parent (`selection_manifest.hashes` или fallback `source_catalog_hashes`). `fact_ground` — полный Source, не урезанный selection.
 
 ## Invariants
 - `run_id` = `{stem}_{UTC stamp}`; артефакты в `runs/{work,out,logs}/`

@@ -37,11 +37,7 @@ from case3.slides_chart_data import (
 )
 from case3.slides_lo import write_deck_pdf
 from case3.slides_pptx_native import build_native_pptx
-from case3.source_brief import (
-    code_highlights,
-    ensure_code_callouts,
-    slides_source_text,
-)
+from case3.source_brief import code_highlights, ensure_code_callouts
 from case3.schema_redraw import (
     redraw_attached_schemas,
     schema_source_ids,
@@ -480,13 +476,20 @@ def run_slides_job(
             slide_target = int(raw_target) if raw_target is not None else None
         except (TypeError, ValueError):
             slide_target = None
-        slides_source = slides_source_text(source)
+        from case3.context_packet import compose_slides_prompt_source
+
+        gcp_block = str(meta.get("gcp_build_block") or "").strip() or None
+        slides_source = compose_slides_prompt_source(
+            gcp_block=gcp_block,
+            source_text=source,
+        )
         code_notes = code_highlights(source)
         if slides_source != source:
             log.info(
-                "slides source brief %d chars from %d",
+                "slides prompt source %d chars from %d (gcp=%s)",
                 len(slides_source),
                 len(source),
+                bool(gcp_block),
             )
         beat_plan = plan_beats(
             source=slides_source,

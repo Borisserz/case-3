@@ -187,6 +187,16 @@ def neutralize_source(source: str) -> str:
     return text
 
 
+def _inject_gcp_block(prompt: str, gcp_block: str | None) -> str:
+    block = (gcp_block or "").strip()
+    if not block:
+        return prompt
+    marker = "## Source\n"
+    if marker in prompt:
+        return prompt.replace(marker, block + "\n\n" + marker, 1)
+    return prompt.rstrip() + "\n\n" + block + "\n"
+
+
 def build_user_prompt(
     *,
     intent: str,
@@ -195,6 +205,7 @@ def build_user_prompt(
     max_charts: int,
     max_diagrams: int = 0,
     user_figures: list[dict[str, Any]] | None = None,
+    gcp_block: str | None = None,
 ) -> str:
     from case3.citations import citation_intent_hint
     from case3.prompts import load as load_prompt
@@ -219,7 +230,7 @@ def build_user_prompt(
             + "\n\n### Фотографии пользователя (Vision-анализ обязателен):\n"
             + "\n".join(photo_lines)
         )
-    return load_prompt(
+    prompt = load_prompt(
         "user_tex",
         INTENT_BLOCK=intent_block,
         MAX_IMAGES=max_images,
@@ -228,6 +239,7 @@ def build_user_prompt(
         DIAGRAM_COLOR_TABLE=format_diagram_color_prompt(palette_from_intent(intent)),
         SOURCE=safe,
     ).rstrip() + "\n"
+    return _inject_gcp_block(prompt, gcp_block)
 
 
 def output_looks_truncated(raw: str) -> bool:
@@ -889,6 +901,8 @@ def generate_document(
     user_figures: list[dict[str, Any]] | None = None,
     vision_images: list[tuple[str, str]] | None = None,
     replay_raw: str | None = None,
+    gcp_block: str | None = None,
+    grounding_source: str | None = None,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Returns (tex_path, figures, charts, diagrams).
 
@@ -928,6 +942,9 @@ def generate_document(
         max_diagrams=max_diagrams,
         has_user_photos=bool(user_figures),
     ) + format_gold_appendix(gold_paths)
+    grounding_text = (
+        grounding_source if grounding_source is not None else source_text
+    ).strip()
     user = build_user_prompt(
         intent=intent_text,
         source=source_text,
@@ -935,6 +952,7 @@ def generate_document(
         max_charts=max_charts,
         max_diagrams=max_diagrams,
         user_figures=user_figures,
+        gcp_block=gcp_block,
     )
     log.info(
         "source=%s intent_len=%d gold=%s max_images=%d max_charts=%d max_diagrams=%d",
@@ -1122,16 +1140,16 @@ def generate_document(
     tex = ensure_title_block(tex)
 
     # Truncation often leaves 1 short section + all slots appended (letter count >40).
-    need_fill = bool(source_text.strip()) and tex_body_needs_source_fill(tex)
+    need_fill = bool(grounding_text.strip()) and tex_body_needs_source_fill(tex)
     if need_fill:
         log.warning(
             "TeX body thin/media-dump (hard_trunc=%s) — filling prose from Source (%d chars)",
             hard_trunc,
-            len(source_text),
+            len(grounding_text),
         )
         tex = fill_sparse_tex_with_source(
             tex,
-            source_text,
+            grounding_text,
             chart_ids=[c["id"] for c in charts],
             figure_ids=[f["id"] for f in figures],
             diagram_ids=[d["id"] for d in diagrams],
@@ -1161,7 +1179,7 @@ def generate_document(
         charts,
         figures,
         diagrams,
-        source=source_text,
+        source=grounding_text,
         intent=intent_text,
     )
     if dropped:
