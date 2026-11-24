@@ -429,7 +429,7 @@ def read_filter_catalog(path: Path | None = None) -> dict | None:
 
 
 def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
-    """GET /dashboards. Each row is one .mrt in the service local folder."""
+    """GET /dashboards. Each row is one .mrt in the service local/dashboards folder."""
     response = client.get(f"{base.rstrip('/')}/dashboards")
     status = int(getattr(response, "status_code", 500) or 500)
     try:
@@ -437,13 +437,19 @@ def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
     except Exception as exc:
         raise DashboardRemoteError("сервис не вернул список дашбордов", "dashboards") from exc
     rows = body.get("dashboards") if isinstance(body, dict) else None
+    if not isinstance(rows, list) and isinstance(body, dict) and isinstance(body.get("mrt"), list):
+        rows = [
+            {"name": str(m).strip(), "title": Path(str(m).strip()).stem}
+            for m in body["mrt"]
+            if isinstance(m, str) and m.strip()
+        ]
     if status >= 400 or not isinstance(rows, list):
         raise DashboardRemoteError("нет списка дашбордов", "dashboards")
     out: list[dict[str, str]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        name = str(row.get("name") or "").strip()
+        name = str(row.get("name") or row.get("mrt") or "").strip()
         if not name.lower().endswith(".mrt"):
             continue
         title = str(row.get("title") or Path(name).stem).strip() or Path(name).stem
@@ -485,7 +491,7 @@ def fetch_filter_catalog(
     *,
     question: str = "",
 ) -> dict:
-    """GET /filters (or POST /filters?open=0 with question to pick .mrt type + fill filters)."""
+    """POST /filters (or GET /filters fallback) to read filters or pick .mrt + fill result."""
     root = base.rstrip("/")
     name = (mrt or "").strip()
     q = (question or "").strip()
@@ -506,6 +512,15 @@ def fetch_filter_catalog(
         if name:
             url = f"{url}?mrt={quote(name)}"
         response = client.get(url)
+        if int(getattr(response, "status_code", 500) or 500) == 405 and hasattr(client, "post"):
+            payload_fb: dict[str, object] = {}
+            if name:
+                payload_fb["mrt"] = name
+            response = client.post(
+                f"{root}/filters",
+                json=payload_fb,
+                headers={"Accept": "application/json"},
+            )
     status = int(getattr(response, "status_code", 500) or 500)
     try:
         body = response.json()
