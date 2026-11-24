@@ -81,3 +81,24 @@ def test_report_with_diagram_stays_report_not_diagram_only():
     assert resolve_turn("Сделай отчёт с таблицей и схемой", None) == "report"
     assert resolve_turn("Собери презентацию со схемой", "presentation") == "presentation"
     assert resolve_turn("Собери презентацию со схемой", None) == "presentation"
+
+
+def test_wants_and_auto_chat_chart_cover_visual_and_numeric_analysis():
+    from case3.turn_route import should_auto_chat_chart, wants_chat_chart
+
+    assert wants_chat_chart("визуализируй данные по областям") is True
+    assert wants_chat_chart("покажи наглядно структуру доходов") is True
+    assert wants_chat_chart("без визуализации, просто текст") is False
+
+    rich_table = (
+        "| Область | Факт | План |\n"
+        "| --- | --- | --- |\n"
+        "| Минск | 184 520 | 170 000 |\n"
+        "| Брест | 57 846 | 55 000 |\n"
+        "| Гомель | 61 200 | 60 000 |\n"
+    )
+    assert should_auto_chat_chart("сравни области", rich_table, "Минск лидирует.") is True
+    assert should_auto_chat_chart("какие доли по регионам?", rich_table, "Минск 60%.") is True
+    assert should_auto_chat_chart("без графика сравни области", rich_table, "Минск лидирует.") is False
+    assert should_auto_chat_chart("привет, как дела?", rich_table, "Привет!") is False
+    assert should_auto_chat_chart("сравни области", "короткая заметка без таблицы", "Ок.") is False

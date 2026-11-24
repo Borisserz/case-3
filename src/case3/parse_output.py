@@ -220,6 +220,20 @@ def _pick_fences(raw: str) -> tuple[str | None, str | None]:
     return tex_body, json_body
 
 
+_INVALID_JSON_SINGLE_QUOTE = re.compile(r"(?<!\\)((?:\\\\)*)\\'")
+
+
+def _loads_json_lenient(raw_json: str) -> Any:
+    """Parse JSON and retry once when a model wrote invalid \\' escapes inside HTML/JS strings."""
+    try:
+        return json.loads(raw_json)
+    except json.JSONDecodeError:
+        fixed = _INVALID_JSON_SINGLE_QUOTE.sub(r"\1'", raw_json)
+        if fixed != raw_json:
+            return json.loads(fixed)
+        raise
+
+
 def salvage_json_object(raw: str) -> dict[str, Any] | None:
     """Recover figures/charts/diagrams from truncated or multi-fence JSON.
 
@@ -242,7 +256,7 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
 
     for blob in blobs:
         try:
-            data = json.loads(blob)
+            data = _loads_json_lenient(blob)
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict):
@@ -294,7 +308,7 @@ def salvage_json_object(raw: str) -> dict[str, Any] | None:
             chunk = blob[start:end]
             i = end
             try:
-                obj = json.loads(chunk)
+                obj = _loads_json_lenient(chunk)
             except json.JSONDecodeError:
                 continue
             if not isinstance(obj, dict) or "id" not in obj:
@@ -455,7 +469,7 @@ def _load_media_payload(raw: str, json_body: str | None) -> dict[str, Any]:
     data: dict[str, Any] = {}
     if json_body:
         try:
-            parsed = json.loads(json_body)
+            parsed = _loads_json_lenient(json_body)
             if isinstance(parsed, dict):
                 data = parsed
         except json.JSONDecodeError:

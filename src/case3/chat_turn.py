@@ -1406,27 +1406,43 @@ def generate_chat_charts(
     user_prompt = "\n\n".join(prompt_parts)
 
     llm = client or _client(_CHAT_ANSWER_TOKENS, 120.0)
-    try:
-        raw = llm.complete(system=system, user_text=user_prompt, reasoning="off")
-    except (LLMError, LLMConfigError, OSError, ValueError) as exc:
-        log.warning("chat chart generation failed: %s", exc)
-        return [], {}
-
-    _tex, json_body = _pick_fences(raw or "")
-    data = _load_media_payload(raw or "", json_body)
-    parsed = _parse_charts_list((data or {}).get("charts"), max_charts=cap)
-    if not parsed:
-        return [], {}
-
     ground_intent = intent if (previous_chart or prior_scenario) else message
-    _tex_out, grounded, _figs, _diags, _dropped = ground_generated(
-        "",
-        parsed,
-        [],
-        [],
-        source=source,
-        intent=ground_intent,
-    )
+    grounded: list[dict] = []
+    retry_note = ""
+    for attempt in range(2):
+        prompt = user_prompt if not retry_note else f"{user_prompt}\n\n{retry_note}"
+        try:
+            raw = llm.complete(system=system, user_text=prompt, reasoning="off")
+        except (LLMError, LLMConfigError, OSError, ValueError) as exc:
+            log.warning("chat chart generation failed (attempt %d): %s", attempt + 1, exc)
+            return [], {}
+
+        _tex, json_body = _pick_fences(raw or "")
+        data = _load_media_payload(raw or "", json_body)
+        parsed = _parse_charts_list((data or {}).get("charts"), max_charts=cap)
+        if not parsed:
+            retry_note = (
+                "ПОВТОР: прошлый ответ не содержал корректного JSON вида "
+                '```json {"charts": [{"id": "cht_01", "type": "bar", "caption": "...", '
+                '"html": "<canvas id=\'c\'></canvas><script>new Chart(...)</script>"}]} ```. '
+                "Верни только такой JSON-блок без лишнего текста."
+            )
+            continue
+
+        _tex_out, grounded, _figs, _diags, _dropped = ground_generated(
+            "",
+            parsed,
+            [],
+            [],
+            source=source,
+            intent=ground_intent,
+        )
+        if grounded:
+            break
+        retry_note = (
+            "ПОВТОР: прошлый график был отклонён, потому что содержал числа не из SOURCE. "
+            "Используй ТОЛЬКО точные числа, которые явно записаны в SOURCE."
+        )
     if not grounded:
         return [], {}
 
@@ -1991,11 +2007,16 @@ _CHART_JSON_FENCE = re.compile(
     r"```(?:json|javascript|js|html)?\s*[\{\[][\s\S]*?(?:\"datasets\"|\"labels\"|\"charts\"|\"mermaid\"|new\s+Chart)[\s\S]*?```",
     re.IGNORECASE,
 )
+_BARE_CHART_JSON = re.compile(
+    r'(?:^|\n)\s*\{\s*"(?:charts|diagrams)"\s*:\s*\[[\s\S]*?\]\s*\}\s*(?=\n|$)',
+    re.IGNORECASE,
+)
 
 
 def _hide_memory_marks(text: str) -> str:
     """The model must not read the memory labels aloud or dump raw chart JSON fences."""
     cleaned = _CHART_JSON_FENCE.sub("", text or "")
+    cleaned = _BARE_CHART_JSON.sub("\n", cleaned)
     kept: list[str] = []
     for line in cleaned.split("\n"):
         bare = line.strip().lstrip("#").strip()

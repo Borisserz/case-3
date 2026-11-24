@@ -965,3 +965,61 @@ def test_generate_chat_charts_strips_stale_user_number_on_non_scenario_turn(tmp_
     )
     # 450 from Turn 2 must NOT be grounded on Turn 3 (chart dropped or 450 stripped)
     assert not any("450" in str(c.get("html") or "") for c in charts)
+
+
+def test_try_chat_answer_strips_leaked_chart_json_blocks():
+    source = "| Область | Сумма |\n| --- | --- |\n| Минская | 100 |\n| Гомельская | 40 |\n"
+    leaked = (
+        "Минская собрала 100, Гомельская 40.\n\n"
+        "```json\n"
+        '{"charts": [{"id": "cht_01", "type": "bar", "data": [100, 40]}]}\n'
+        "```\n\n"
+        "| Область | Сумма |\n| --- | --- |\n| Минская | 100 |\n| Гомельская | 40 |\n"
+    )
+    ans = try_chat_answer(source, "построй график по областям", client=_Seq([leaked]))
+    assert "```json" not in ans
+    assert '"charts"' not in ans
+    assert "Минская собрала 100" in ans
+    assert "| Область | Сумма |" in ans
+
+    bare = (
+        '{"charts": [{"id": "cht_01", "type": "bar", "data": [100, 40]}]}\n\n'
+        "Минская собрала 100, Гомельская 40."
+    )
+    ans_bare = try_chat_answer(source, "построй график по областям", client=_Seq([bare]))
+    assert '"charts"' not in ans_bare
+    assert "Минская собрала 100" in ans_bare
+
+
+def test_generate_chat_charts_retries_once_when_first_json_is_invalid(tmp_path: Path, monkeypatch) -> None:
+    from case3.chat_turn import generate_chat_charts
+
+    source = "| Область | Факт |\n| --- | --- |\n| Минск | 184 520 |\n| Брест | 57 846 |\n"
+
+    class _RetryChartLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, *, system: str, user_text: str, reasoning: str = "off", **_kw) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "Невалидный ответ без json"
+            return (
+                '```json\n{"charts": [{"id": "cht_01", "type": "bar", "caption": "Факт", '
+                '"html": "<canvas id=\\\'c\\\'></canvas><script>new Chart(document.getElementById(\\\'c\\\'), '
+                '{type:\\\'bar\\\',data:{labels:[\\\'Минск\\\',\\\'Брест\\\'],datasets:[{label:\\\'Факт\\\',data:[184520,57846]}]}});</script>"}]}\n```'
+            )
+
+    monkeypatch.setattr("case3.charts.render_charts_batch", lambda items: {"cht_01": {"ok": True}})
+    llm = _RetryChartLLM()
+    charts, status = generate_chat_charts(
+        source,
+        "построй график",
+        max_charts=1,
+        figs_dir=tmp_path / "figs",
+        charts_dir=tmp_path / "charts",
+        client=llm,
+    )
+    assert llm.calls == 2
+    assert len(charts) == 1
+    assert status.get("cht_01", {}).get("ok") is True

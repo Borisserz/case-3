@@ -988,9 +988,10 @@ def apply_mode_caps(
 ) -> tuple[int, int, int, str, bool, bool]:
     """Chat and scheme drop print media. A deck still gets dia_* for its slides."""
     if out_mode == "chat":
-        if allow_chat_charts and not no_charts and max_charts > 0:
-            return min(int(max_charts), 2), 0, 0, "none", False, True
-        return 0, 0, 0, "none", True, True
+        if no_charts or max_charts <= 0:
+            return 0, 0, 0, "none", True, True
+        cap = min(int(max_charts), 2) if allow_chat_charts else 1
+        return cap, 0, 0, "none", False, True
     if out_mode == "diagram":
         return 0, 0, max(1, max_diagrams), "none", True, True
     if out_mode == "presentation":

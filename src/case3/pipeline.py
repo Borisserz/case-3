@@ -1254,7 +1254,11 @@ def run_pipeline(
         )
         from case3.dashboard_source import derivative_block
         from case3.input_validation import current_turn_user_text
-        from case3.turn_route import wants_chat_chart, wants_chat_diagram
+        from case3.turn_route import (
+            should_auto_chat_chart,
+            wants_chat_chart,
+            wants_chat_diagram,
+        )
 
         turn_text = current_turn_user_text(user_text)
         enriched_source = source_text or ""
@@ -1339,20 +1343,37 @@ def run_pipeline(
                 on_delta=lambda piece: BUS.publish(run_id, piece),
                 on_replace=lambda full: BUS.replace(run_id, full),
             )
+            explicit_chart = wants_chat_chart(
+                turn_text, has_prior_chart=prev_chart is not None
+            )
+            wants_diag = wants_chat_diagram(
+                turn_text, has_prior_diagram=prev_diagram is not None
+            )
+            auto_chart = (
+                not explicit_chart
+                and not wants_diag
+                and not landing
+                and should_auto_chat_chart(
+                    turn_text,
+                    enriched_source,
+                    answer,
+                    has_prior_diagram=prev_diagram is not None,
+                )
+            )
             eff_charts_budget = charts_budget or (1 if prev_chart is not None else 0)
-            if wants_chat_chart(turn_text, has_prior_chart=prev_chart is not None) and eff_charts_budget > 0:
+            if (explicit_chart or auto_chart) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
                     enriched_source,
                     intent or user_text,
-                    max_charts=eff_charts_budget,
+                    max_charts=eff_charts_budget if explicit_chart else 1,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
                     figs_dir=out / "figures",
                     charts_dir=work / "charts",
                     extra_context=answer,
                     previous_chart=prev_chart,
                 )
-            if wants_chat_diagram(turn_text, has_prior_diagram=prev_diagram is not None):
+            if wants_diag:
                 bump("charts", "рисую схему…")
                 diagrams, diagram_status = generate_chat_diagram(
                     enriched_source,
@@ -1464,7 +1485,11 @@ def run_pipeline(
             prior_document_source,
             source_for_followup,
         )
-        from case3.turn_route import wants_chat_chart, wants_chat_diagram
+        from case3.turn_route import (
+            should_auto_chat_chart,
+            wants_chat_chart,
+            wants_chat_diagram,
+        )
 
         prior = str(meta.get("prior_run_id") or "")
         if prior:
@@ -1472,7 +1497,11 @@ def run_pipeline(
                 source_raw,
                 dashboard_screens(root, prior),
                 turn_text,
-                picture=wants_chat_chart(turn_text) or wants_chat_diagram(turn_text),
+                picture=(
+                    wants_chat_chart(turn_text)
+                    or wants_chat_diagram(turn_text)
+                    or should_auto_chat_chart(turn_text, source_raw)
+                ),
             )
             if screened.strip() and screened != source_raw:
                 source_raw = screened

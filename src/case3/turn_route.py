@@ -44,7 +44,24 @@ _REPORT = re.compile(
     re.IGNORECASE,
 )
 _CHART_REQ = re.compile(
-    r"график|диаграмм|чарт|\bchart\b|гистограмм|кругов\w*|линейн\w*",
+    r"график|диаграмм|чарт|\bchart\b|гистограмм|кругов\w*|линейн\w*|визуализ\w*|наглядн\w*",
+    re.IGNORECASE,
+)
+_NEG_CHART = re.compile(
+    r"(?:без|не\s+(?:надо|нужен|нужно|делай|рисуй|строй))\s+(?:график\w*|диаграмм\w*|визуализац\w*|картин\w*)"
+    r"|только\s+текст\w*",
+    re.IGNORECASE,
+)
+_AUTO_CHART_CUE = re.compile(
+    r"\b("
+    r"сравни\w*|динамик\w*|структур\w*|дол[яией]\w*|топ[-\s]?\d*|лидер\w*|отста\w*|"
+    r"рейтинг\w*|распределен\w*|разрез\w*|отклонен\w*|тренд\w*|итог\w*|показател\w*|"
+    r"област\w*|регион\w*|инспекц\w*|факт\w*|план\w*|выручк\w*|поступлен\w*"
+    r")\b",
+    re.IGNORECASE,
+)
+_CHITCHAT = re.compile(
+    r"^\s*(?:привет|здравствуй|добрый\s+(?:день|вечер|утро)|спасибо|ок|понятно|кто\s+ты|что\s+ты\s+умеешь)\b",
     re.IGNORECASE,
 )
 _CHART_FOLLOWUP = re.compile(
@@ -129,11 +146,63 @@ def _asked(pattern: re.Pattern[str], text: str | None) -> bool:
 
 def wants_chat_chart(text: str | None, *, has_prior_chart: bool = False) -> bool:
     """True when the user asks to draw a chart/graph or refines an inline chart."""
-    if _asked(_CHART_REQ, text):
+    raw = _norm(text or "")
+    if _NEG_CHART.search(raw):
+        return False
+    if _asked(_CHART_REQ, raw):
         return True
-    if has_prior_chart and _asked(_CHART_FOLLOWUP, text):
+    if has_prior_chart and _asked(_CHART_FOLLOWUP, raw):
         return True
     return False
+
+
+def _has_chartable_table_or_series(text: str | None) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    table_numeric_rows = 0
+    for line in raw.splitlines():
+        s = line.strip()
+        if s.startswith("|") and s.endswith("|"):
+            # Skip markdown separator rows like | --- | --- |
+            if re.fullmatch(r"\|[\s:|-]+\|", s):
+                continue
+            if re.search(r"\d", s):
+                table_numeric_rows += 1
+    if table_numeric_rows >= 3:
+        return True
+    # Also accept 4+ distinct bullet/entity lines with numbers (outside headings)
+    num_lines = sum(
+        1
+        for line in raw.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and re.search(r"[А-Яа-яA-Za-z]{2,}.*\d", line)
+    )
+    return num_lines >= 4
+
+
+def should_auto_chat_chart(
+    turn_text: str | None,
+    source_text: str | None,
+    answer_text: str | None = None,
+    *,
+    has_prior_diagram: bool = False,
+) -> bool:
+    """True when an ordinary analytical chat answer benefits from an inline chart."""
+    raw = _norm(turn_text or "").strip()
+    if not raw or _CHITCHAT.search(raw) or _NEG_CHART.search(raw):
+        return False
+    if "длинный разбор в чат не пиши" in raw.lower():
+        return False
+    if wants_chat_diagram(raw, has_prior_diagram=has_prior_diagram):
+        return False
+    has_data = _has_chartable_table_or_series(source_text) or _has_chartable_table_or_series(answer_text)
+    if not has_data:
+        return False
+    if _AUTO_CHART_CUE.search(raw) or _ANALYZE.search(raw):
+        return True
+    return _has_chartable_table_or_series(answer_text)
 
 
 def wants_chat_diagram(text: str | None, *, has_prior_diagram: bool = False) -> bool:
