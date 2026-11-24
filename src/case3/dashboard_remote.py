@@ -429,15 +429,18 @@ def read_filter_catalog(path: Path | None = None) -> dict | None:
 
 
 def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
-    """GET /dashboards. Each row is one .mrt in the service local/dashboards folder."""
-    response = client.get(f"{base.rstrip('/')}/dashboards")
+    """GET /dashboards. Each row is one .mrt in the service dashboards folder."""
+    root = base.rstrip("/")
+    response = client.get(f"{root}/dashboards")
     status = int(getattr(response, "status_code", 500) or 500)
     try:
         body = response.json()
     except Exception as exc:
         raise DashboardRemoteError("сервис не вернул список дашбордов", "dashboards") from exc
     rows = body.get("dashboards") if isinstance(body, dict) else None
+    from_mrt_only = False
     if not isinstance(rows, list) and isinstance(body, dict) and isinstance(body.get("mrt"), list):
+        from_mrt_only = True
         rows = [
             {"name": str(m).strip(), "title": Path(str(m).strip()).stem}
             for m in body["mrt"]
@@ -458,6 +461,13 @@ def fetch_dashboards(base: str, client) -> list[dict[str, str]]:
         same = Path(preview).stem == Path(name).stem
         if same and preview.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
             item["preview"] = preview
+        elif from_mrt_only and hasattr(client, "head"):
+            try:
+                probe = client.head(f"{root}/dashboards/preview?mrt={quote(name)}")
+                if int(getattr(probe, "status_code", 500) or 500) == 200:
+                    item["preview"] = f"{Path(name).stem}.png"
+            except Exception:
+                pass
         out.append(item)
     return out
 

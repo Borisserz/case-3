@@ -726,3 +726,21 @@ def test_fetch_filter_catalog_falls_back_when_question_llm_fails() -> None:
     assert c.posts == [{"question": "покажи за 2025"}, {}]
     assert cat["count"] == 1
     assert cat["filters"][0]["name"] == "Year"
+
+
+def test_fetch_dashboards_probes_preview_when_only_mrt_array_returned() -> None:
+    class _Client:
+        def get(self, url: str, **_kwargs):
+            assert url.endswith("/dashboards")
+            return _Resp(200, {"ok": True, "mrt": ["plan.mrt", "plain.mrt"]})
+
+        def head(self, url: str, **_kwargs):
+            if "mrt=plan.mrt" in url:
+                return _Resp(200, {})
+            return _Resp(404, {})
+
+    rows = fetch_dashboards("http://127.0.0.1:8040", _Client())
+    assert rows == [
+        {"name": "plan.mrt", "title": "plan", "preview": "plan.png"},
+        {"name": "plain.mrt", "title": "plain"},
+    ]
