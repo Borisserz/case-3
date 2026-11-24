@@ -431,7 +431,30 @@ export function ChatMessages({
                     {m.text.trim() &&
                     m.text.trim() !== (m.lead || "").trim() ? (
                       <div className="msg-stream-wrap">
-                        <MsgMarkdown text={m.text} streaming={m.streamingSummary} />
+                        <MsgMarkdown
+                          text={m.text}
+                          streaming={Boolean(
+                            m.streamingSummary && m.streamTyping !== false,
+                          )}
+                        />
+                        {m.streamingSummary && m.streamTyping === false ? (
+                          <div
+                            className="msg-visual-wait"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            <span
+                              className="msg-visual-spinner"
+                              aria-hidden="true"
+                            />
+                            <span>
+                              {m.pendingDetail ||
+                                (m.pendingStage === "charts"
+                                  ? "Строю визуализацию…"
+                                  : "Готовлю ответ…")}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

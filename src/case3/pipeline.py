@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import threading
 import traceback
@@ -1103,6 +1104,42 @@ def resume_pipeline(
     return out
 
 
+_BARE_VISUAL_EDIT_CUE = re.compile(
+    r"(?:измен|поменя|передела|отредактир|обнов|подправ|доработ)\w*",
+    re.IGNORECASE,
+)
+_CONCRETE_VISUAL_SPEC = re.compile(
+    r"(?:столбч|лине[йя]|кругов|кольц|пончик|радар|точеч|площад|горизонт|"
+    r"bar|line|pie|doughnut|radar|scatter|"
+    r"цвет|палитр|оранжев|син|голуб|зел[её]н|красн|сер[ыо]|ч[её]рн|ж[её]лт|т[её]мн|светл|ocean|sunset|mono|editorial|atelier|"
+    r"подпис|заголов|легенд|ось|оси|топ[-\s]?\d|убер|добав|удал|остав|отсортир|по\s+возраст|по\s+убыван|"
+    r"вертикал|горизонтал|слева\s+направо|сверху\s+вниз|по\s+(?:регион|област|месяц|квартал|год)|в\s+(?:процент|дол|тыс|млн)|\d)",
+    re.IGNORECASE,
+)
+_CLARIFY_ANSWER_CUE = re.compile(
+    r"(?:\?\s*$|уточн|как\s+именно|что\s+именно|какие\s+именно|напишите,?\s*(?:что|как)|подскажите,?\s*(?:что|как))",
+    re.IGNORECASE,
+)
+
+
+def _is_clarifying_visual_request(turn_text: str | None, answer: str | None, *, kind: str) -> bool:
+    """True when user wrote a bare 'edit chart/diagram' and the assistant asked how."""
+    turn = (turn_text or "").strip()
+    ans = (answer or "").strip()
+    if not turn or not ans:
+        return False
+    noun_ok = (
+        bool(re.search(r"график|диаграмм|чарт|визуал", turn, re.IGNORECASE))
+        if kind == "chart"
+        else bool(re.search(r"схем|диаграмм|блок", turn, re.IGNORECASE))
+    )
+    if not noun_ok or not _BARE_VISUAL_EDIT_CUE.search(turn):
+        return False
+    if _CONCRETE_VISUAL_SPEC.search(turn):
+        return False
+    return bool(_CLARIFY_ANSWER_CUE.search(ans))
+
+
 def run_pipeline(
     source: Path,
     *,
@@ -1269,7 +1306,7 @@ def run_pipeline(
 
             found_chart: dict[str, Any] | None = None
             found_diag: dict[str, Any] | None = None
-            for _rid, prev_out, _meta in reversed(load_chain_dirs(root, prev_id)):
+            for _rid, prev_out, prev_meta in reversed(load_chain_dirs(root, prev_id)):
                 if any(prev_out.glob("*.pdf")) or any(prev_out.glob("*.docx")):
                     continue
                 fj_file = prev_out / "figures.json"
@@ -1281,14 +1318,33 @@ def run_pipeline(
                     continue
                 if not isinstance(prev_fj, dict):
                     continue
+                m_status = prev_meta.get("media_status") if isinstance(prev_meta, dict) else {}
+                if not isinstance(m_status, dict):
+                    m_status = {}
                 if found_chart is None:
                     p_charts = [c for c in (prev_fj.get("charts") or []) if isinstance(c, dict)]
-                    if p_charts:
-                        found_chart = p_charts[0]
+                    ok_charts = [
+                        c
+                        for c in p_charts
+                        if not isinstance(m_status.get(c.get("id")), dict)
+                        or m_status[c["id"]].get("ok") is not False
+                    ]
+                    if ok_charts:
+                        found_chart = ok_charts[-1]
+                    elif p_charts:
+                        found_chart = p_charts[-1]
                 if found_diag is None:
                     p_diags = [d for d in (prev_fj.get("diagrams") or []) if isinstance(d, dict)]
-                    if p_diags:
-                        found_diag = p_diags[0]
+                    ok_diags = [
+                        d
+                        for d in p_diags
+                        if not isinstance(m_status.get(d.get("id")), dict)
+                        or m_status[d["id"]].get("ok") is not False
+                    ]
+                    if ok_diags:
+                        found_diag = ok_diags[-1]
+                    elif p_diags:
+                        found_diag = p_diags[-1]
                 if found_chart is not None and found_diag is not None:
                     break
             return found_chart, found_diag
@@ -1345,13 +1401,17 @@ def run_pipeline(
             )
             explicit_chart = wants_chat_chart(
                 turn_text, has_prior_chart=prev_chart is not None
-            )
+            ) and not _is_clarifying_visual_request(turn_text, answer, kind="chart")
             wants_diag = wants_chat_diagram(
                 turn_text, has_prior_diagram=prev_diagram is not None
-            )
+            ) and not _is_clarifying_visual_request(turn_text, answer, kind="diagram")
+            clarifying_visual = _is_clarifying_visual_request(
+                turn_text, answer, kind="chart"
+            ) or _is_clarifying_visual_request(turn_text, answer, kind="diagram")
             auto_chart = (
                 not explicit_chart
                 and not wants_diag
+                and not clarifying_visual
                 and not landing
                 and should_auto_chat_chart(
                     turn_text,

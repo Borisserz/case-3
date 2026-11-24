@@ -527,7 +527,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       const answerPacer = createStreamPacer({
         baseCps: 68,
         instant: instantStream,
-        onUpdate: (visible) => {
+        onUpdate: (visible, meta) => {
           setMsgs((m) =>
             m.map((msg) => {
               if (msg.id !== pendingId || msg.role !== "bot") return msg;
@@ -536,6 +536,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
                 text: visible,
                 pending: true,
                 streamingSummary: true,
+                streamTyping: meta?.draining ?? answerPacer.isDraining(),
                 pendingStage: latestStage || msg.pendingStage,
                 pendingDetail: latestDetail,
               };

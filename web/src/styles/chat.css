@@ -843,12 +843,39 @@
   .msg-md.is-streaming .msg-md-block:last-child .src-h:last-child::after {
     animation: none;
   }
+  .msg-visual-spinner {
+    animation: none;
+  }
 }
 .msg-stream-wrap {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
   max-width: 100%;
+}
+.msg-visual-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  align-self: flex-start;
+  margin-top: 0.1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.msg-visual-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  border-top-color: color-mix(in srgb, var(--primary) 82%, var(--ink));
+  animation: msg-wait-spin 0.85s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes msg-wait-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .msg-stream-stage {
   margin: 0;

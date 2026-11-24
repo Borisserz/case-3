@@ -65,8 +65,10 @@ _CHITCHAT = re.compile(
     re.IGNORECASE,
 )
 _CHART_FOLLOWUP = re.compile(
-    r"горизонтальн|вертикальн|столбчат|бублик|пончик|пирог|\bbar\b|\bdonut\b|\bline\b|"
-    r"палитр|перекрас|легенд|ось|осям|подпис\w*|убери\s+итог|без\s+итог",
+    r"горизонтальн|вертикальн|столбчат|кругов\w*|кольц\w*|бублик|пончик|пирог|\bbar\b|\bdonut\b|\bdoughnut\b|\bpie\b|\bline\b|"
+    r"палитр|перекрас|цвет\w*|оранжев\w*|син\w*|голуб\w*|зел[её]н\w*|красн\w*|ж[её]лт\w*|сер[ыоа]\w*|ч[её]рн\w*|"
+    r"тепл\w*|холодн\w*|\b(?:ocean|sunset|mono|atelier|editorial)\b|"
+    r"легенд|ось|осям|подпис\w*|убери\s+итог|без\s+итог",
     re.IGNORECASE,
 )
 _DIAGRAM_FOLLOWUP = re.compile(

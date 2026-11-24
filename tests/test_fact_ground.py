@@ -1206,3 +1206,24 @@ def test_two_shot_dashboard_region_comparison_and_cross_row_sum_in_chat() -> Non
     assert stray_three == []
     assert wrong_row_tokens(reply_three, one_shot, msg_three) == []
 
+
+def test_wrong_row_tokens_allows_share_column_in_table_with_share_header() -> None:
+    from case3.dashboard_source import derivative_block
+    from case3.fact_ground import wrong_row_tokens
+
+    table = (
+        "| Область | Сумма |\n"
+        "| --- | --- |\n"
+        "| Минская | 105 865,2 |\n"
+        "| Гомельская | 94 073,0 |\n"
+    )
+    src = table + "\n## Производные\n" + derivative_block(table)
+    table_reply = (
+        "| Область | Сумма | Доля, % |\n"
+        "| --- | --- | --- |\n"
+        "| Минская | 105 865,2 | 52,9 |\n"
+        "| Гомельская | 94 073,0 | 47,1 |"
+    )
+    assert wrong_row_tokens(table_reply, src, "покажи доли областей") == []
+    assert wrong_row_tokens("Минская собрала 52,9.", src, "сколько собрала Минская") == ["52,9"]
+

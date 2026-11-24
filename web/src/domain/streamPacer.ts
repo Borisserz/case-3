@@ -1,11 +1,15 @@
 /** Adaptive frame-paced text revealer for smooth, flicker-free SSE streaming. */
 
+export type StreamPacerUpdateMeta = {
+  draining: boolean;
+};
+
 export type StreamPacerOptions = {
   /** Base reading speed in UTF-16 chars/sec (default ~68 for calm editorial feel). */
   baseCps?: number;
   /** Skip animation and reveal immediately (e.g. prefers-reduced-motion). */
   instant?: boolean;
-  onUpdate: (visibleText: string) => void;
+  onUpdate: (visibleText: string, meta?: StreamPacerUpdateMeta) => void;
   now?: () => number;
   scheduleFrame?: (cb: (ts: number) => void) => number;
   cancelFrame?: (id: number) => void;
@@ -175,6 +179,7 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
   let target = "";
   let floatRevealed = 0;
   let lastEmit = "";
+  let lastDraining: boolean | null = null;
   let done = false;
   let stopped = false;
   let rafId: number | null = null;
@@ -189,10 +194,11 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
     }
   };
 
-  const emitIfChanged = (next: string) => {
-    if (next === lastEmit) return;
+  const emitIfChanged = (next: string, draining = floatRevealed < target.length) => {
+    if (next === lastEmit && draining === lastDraining) return;
     lastEmit = next;
-    opts.onUpdate(next);
+    lastDraining = draining;
+    opts.onUpdate(next, { draining });
   };
 
   const cancelScheduled = () => {
@@ -250,16 +256,20 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
       rowHoldUntilTs = ts + rowDelayMs;
     } else if (step.tableAction === "hold") {
       floatRevealed = end;
-      emitIfChanged(target.slice(0, end));
+      emitIfChanged(target.slice(0, end), false);
       lastTs = null;
       return;
     } else {
       floatRevealed = end === candidateEnd ? Math.max(nextFloat, end) : end;
       rowHoldUntilTs = 0;
     }
-    emitIfChanged(target.slice(0, end));
+    const stillDraining = end < target.length;
+    if (!stillDraining) {
+      floatRevealed = target.length;
+    }
+    emitIfChanged(target.slice(0, end), stillDraining);
 
-    if (end < target.length) {
+    if (stillDraining) {
       rafId = scheduleFrame(tick);
     } else {
       floatRevealed = target.length;

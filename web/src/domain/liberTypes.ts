@@ -193,6 +193,8 @@ export type BotMsg = {
   pendingDetail?: string | null;
   /** LLM chat summary streaming into the bubble */
   streamingSummary?: boolean;
+  /** True while streamPacer is actively typing characters; false while waiting on post-text visuals */
+  streamTyping?: boolean;
   /** Collapsible pipeline phrases in the bubble */
   thinking?: ThinkingLine[];
   thinkingStartedAt?: number;

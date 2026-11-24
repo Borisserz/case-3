@@ -99,11 +99,17 @@ async (botMsgId: string, runId: string) => {
     const answerPacer = createStreamPacer({
       baseCps: 68,
       instant: instantStream,
-      onUpdate: (visible) => {
+      onUpdate: (visible, meta) => {
         setMsgs((m) =>
           m.map((msg) =>
             msg.id === botMsgId && msg.role === "bot"
-              ? { ...msg, text: visible, pending: true, streamingSummary: true }
+              ? {
+                  ...msg,
+                  text: visible,
+                  pending: true,
+                  streamingSummary: true,
+                  streamTyping: meta?.draining ?? answerPacer.isDraining(),
+                }
               : msg,
           ),
         );

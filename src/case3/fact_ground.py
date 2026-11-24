@@ -595,8 +595,15 @@ def _matched_full_phrase(
     return best_norms
 
 
-def _norms_on_row(grid: TableGrid, row: str, clause: str, columns: list[str]) -> set[str]:
-    share = _mentions_share(clause)
+def _norms_on_row(
+    grid: TableGrid,
+    row: str,
+    clause: str,
+    columns: list[str],
+    *,
+    share_hint: bool = False,
+) -> set[str]:
+    share = share_hint or _mentions_share(clause)
     rank = _mentions_rank(clause)
     buckets = [grid.values]
     if share:
@@ -619,7 +626,13 @@ def _norms_on_row(grid: TableGrid, row: str, clause: str, columns: list[str]) ->
     return allowed
 
 
-def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
+def _row_allows(
+    clause: str,
+    norm: str,
+    grid: TableGrid | None,
+    *,
+    table_share: bool = False,
+) -> bool | None:
     """False when the sentence names a row and the number is not on it.
 
     Two region names in one sentence do not share a sum. A share is not a sum:
@@ -644,7 +657,7 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
         for match in _NUM.finditer(clause)
         if _norm_num(match.group(0)) == norm
     ]
-    share = _mentions_share(clause)
+    share = table_share or _mentions_share(clause)
     if len(rows) > 1 and spans:
         for start, end in spans:
             full_norms = _matched_full_phrase(clause, start, grid, share)
@@ -654,7 +667,7 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
                 continue
             owners = _owner_rows(mentions, start, clause, end=end)
             if not owners or not any(
-                _has_norm(_norms_on_row(grid, owner, clause, columns), norm)
+                _has_norm(_norms_on_row(grid, owner, clause, columns, share_hint=share), norm)
                 for owner in owners
             ):
                 # Also allow pairwise arithmetic (sum/diff/growth %) between the mentioned rows in this clause
@@ -666,7 +679,7 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
                 return False
         return True
     if len(rows) > 1:
-        if any(_has_norm(_norms_on_row(grid, row, clause, columns), norm) for row in rows):
+        if any(_has_norm(_norms_on_row(grid, row, clause, columns, share_hint=share), norm) for row in rows):
             return True
         row_pool = set()
         for rstem in rows:
@@ -678,7 +691,7 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
         folded_clause = (clause or "").casefold().replace("ё", "е")
         for pat, pnorms in grid.phrase_norms:
             if pat.search(folded_clause):
-                row_norms = _norms_on_row(grid, rows[0], clause, columns)
+                row_norms = _norms_on_row(grid, rows[0], clause, columns, share_hint=share)
                 # Keep share/rank from _norms_on_row while scoping values to matched phrase.
                 scoped = set(pnorms)
                 for bucket in (grid.shares, grid.ranks):
@@ -686,7 +699,7 @@ def _row_allows(clause: str, norm: str, grid: TableGrid | None) -> bool | None:
                         if k == rows[0]:
                             scoped |= ns
                 return _has_norm(scoped & row_norms or pnorms, norm)
-    return _has_norm(_norms_on_row(grid, rows[0], clause, columns), norm)
+    return _has_norm(_norms_on_row(grid, rows[0], clause, columns, share_hint=share), norm)
 
 
 def wrong_row_tokens(
@@ -707,7 +720,16 @@ def wrong_row_tokens(
         msg_row_pool |= grid.rows.get(rstem, set())
     found: list[str] = []
     seen: set[str] = set()
-    for line in (text or "").split("\n"):
+    lines = (text or "").split("\n")
+    active_header = ""
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        is_pipe = stripped.startswith("|") and stripped.endswith("|")
+        if is_pipe and idx + 1 < len(lines) and re.match(r"^\s*\|[\s\-:|]+\|\s*$", lines[idx + 1]):
+            active_header = stripped
+        elif not is_pipe:
+            active_header = ""
+        table_share = bool(is_pipe and active_header and _mentions_share(active_header))
         protected = _ABBR_DOT.sub("\\1\x00", line)
         for chunk in re.split(r"[.!?]+", protected):
             chunk = chunk.replace("\x00", ".")
@@ -721,7 +743,7 @@ def wrong_row_tokens(
                     norm = _norm_num(match.group(0))
                     if not norm or norm in message_ok or norm in seen or norm not in source_ok:
                         continue
-                    if _row_allows(part, norm, grid) is False:
+                    if _row_allows(part, norm, grid, table_share=table_share) is False:
                         if chunk_row_pool and _verifies_math(
                             chunk, norm, source_ok | message_ok | chunk_row_pool, chunk_row_pool
                         ):

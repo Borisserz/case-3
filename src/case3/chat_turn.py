@@ -1169,11 +1169,78 @@ def _derived_table_math_norms(source: str) -> set[str]:
     return out
 
 
+def _table_row_share_and_delta_norms(source: str) -> set[str]:
+    """Direct per-row shares of column totals and fact/plan deltas/ratios (membership-only, not math operands)."""
+    from decimal import Decimal
+
+    from case3.dashboard_source import (
+        _CODE_HEADER,
+        _YEAR_HEADER,
+        _cell_decimal,
+        _find_fact_plan_pair,
+        _is_total_row,
+        _label_column,
+        _markdown_tables,
+    )
+
+    out: set[str] = set()
+
+    def _add(val: Decimal) -> None:
+        for d in (val, abs(val)):
+            if d == d.to_integral_value():
+                out.add(str(int(d)))
+            else:
+                out.add(f"{d:.2f}".rstrip("0").rstrip("."))
+                out.add(f"{d:.1f}".rstrip("0").rstrip("."))
+
+    for _title, rows in _markdown_tables(source or ""):
+        if len(rows) < 2:
+            continue
+        header, body = rows[0], rows[1:]
+        data = [row for row in body if not _is_total_row(row)]
+        if len(data) < 2:
+            continue
+        label_at = _label_column(data)
+        width = max(len(row) for row in rows)
+        for col in range(width):
+            if label_at is not None and col == label_at:
+                continue
+            name = header[col].strip() if col < len(header) else ""
+            if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
+                continue
+            col_vals = [
+                v
+                for row in data
+                if (v := (_cell_decimal(row[col].strip()) if col < len(row) else None)) is not None
+            ]
+            if len(col_vals) >= 2:
+                col_sum = sum(col_vals, Decimal(0))
+                abs_sum = sum((abs(v) for v in col_vals), Decimal(0))
+                for v in col_vals:
+                    if col_sum != 0:
+                        _add(abs(v) * Decimal(100) / abs(col_sum))
+                    if abs_sum != 0 and abs_sum != abs(col_sum):
+                        _add(abs(v) * Decimal(100) / abs_sum)
+        pair = _find_fact_plan_pair(header)
+        if pair is not None:
+            fcol, pcol = pair
+            for row in data:
+                fv = _cell_decimal(row[fcol].strip()) if fcol < len(row) else None
+                pv = _cell_decimal(row[pcol].strip()) if pcol < len(row) else None
+                if fv is not None and pv is not None:
+                    _add(fv - pv)
+                    if pv > 0:
+                        _add(fv * Decimal(100) / pv)
+    return out
+
+
 _CHAT_CARDINAL = re.compile(
     r"(?:\bтоп[-\s]?(\d{1,2})\b|\b(?:все(?:го)?\s+)?(\d{1,2})\s+"
     r"(?:регион\w*|област\w*|район\w*|инспекц\w*|позиц\w*|строк\w*|категор\w*|город\w*|лидер\w*|аутсайдер\w*|отстающ\w*|плюс\w*|минус\w*))",
     re.IGNORECASE,
 )
+_TABLE_RANK_CELL = re.compile(r"^\s*\|\s*(\d{1,2})\s*\|")
+_TABLE_SEP_LINE = re.compile(r"^\s*\|[\s\-:|]+\|\s*$")
 
 
 def _filter_verifiable_stray(
@@ -1190,6 +1257,7 @@ def _filter_verifiable_stray(
     from case3.fact_ground import _is_small_cardinal_in_clause, _row_mentions, _verifies_math, table_grid
 
     derived = _derived_table_math_norms(source)
+    row_calc = _table_row_share_and_delta_norms(source)
     grid = table_grid(source) if "|" in (source or "") else None
     full_pool = allowed | derived
     doc_row_pool: set[str] = set()
@@ -1197,12 +1265,26 @@ def _filter_verifiable_stray(
         for _s, _e, rstem in _row_mentions(f"{user_question}\n{text}", grid):
             doc_row_pool |= grid.rows.get(rstem, set())
     verified: set[str] = set()
-    for line in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    active_header = ""
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        is_pipe = stripped.startswith("|") and stripped.endswith("|")
+        if is_pipe and idx + 1 < len(lines) and _TABLE_SEP_LINE.match(lines[idx + 1]):
+            active_header = stripped
+        elif not is_pipe:
+            active_header = ""
+
         row_pool: set[str] = set(doc_row_pool)
         if grid is not None and grid.rows:
             for _s, _e, rstem in _row_mentions(line, grid):
                 row_pool |= grid.rows.get(rstem, set())
         extra = (message_ok or set()) | derived | row_pool
+        clause_ctx = f"{active_header}\n{line}" if (is_pipe and active_header) else line
+        if is_pipe and not _TABLE_SEP_LINE.match(stripped):
+            rank_match = _TABLE_RANK_CELL.match(stripped)
+            if rank_match and 1 <= int(rank_match.group(1)) <= 50:
+                verified.add(str(int(rank_match.group(1))))
         for m in _CHAT_CARDINAL.finditer(line):
             hit = m.group(1) or m.group(2)
             if hit and 1 <= int(hit) <= 50:
@@ -1213,9 +1295,11 @@ def _filter_verifiable_stray(
                 continue
             if norm in full_pool:
                 verified.add(norm)
+            elif (is_pipe or "%" in line or "дол" in line.lower()) and norm in row_calc:
+                verified.add(norm)
             elif _is_small_cardinal_in_clause(line, norm):
                 verified.add(norm)
-            elif extra and _verifies_math(line, norm, full_pool | row_pool, extra):
+            elif extra and _verifies_math(clause_ctx, norm, full_pool | row_pool, extra):
                 verified.add(norm)
             elif extra and _verifies_math(text or "", norm, full_pool | row_pool, extra):
                 verified.add(norm)
@@ -1392,8 +1476,21 @@ def generate_chat_charts(
         prev_type = str(previous_chart.get("type") or "")
         prev_cap = str(previous_chart.get("caption") or "")
         prev_html = str(previous_chart.get("html") or "")[:3000]
+        type_changed = bool(
+            re.search(
+                r"(?:столбч|лине[йя]|кругов|кольц|пончик|радар|точеч|площад|горизонт|"
+                r"\bbar\b|\bline\b|\bpie\b|\bdoughnut\b|\bradar\b|\bscatter\b|\bhorizontal_bar\b)",
+                message or "",
+                re.IGNORECASE,
+            )
+        )
+        preserve_note = (
+            f" СОХРАНИ type={prev_type} (пользователь не просил менять тип диаграммы)."
+            if prev_type and not type_changed
+            else ""
+        )
         prompt_parts.append(
-            f"ТЕКУЩИЙ ГРАФИК ДЛЯ ДОРАБОТКИ (type={prev_type}, caption={prev_cap}):\n{prev_html}"
+            f"ТЕКУЩИЙ ГРАФИК ДЛЯ ДОРАБОТКИ (type={prev_type}, caption={prev_cap}):{preserve_note}\n{prev_html}"
         )
     if mem_ctx:
         prompt_parts.append(mem_ctx)
@@ -1956,15 +2053,44 @@ _ABBR_DOT = re.compile(
 
 
 def _without_stray(text: str, stray: list[str]) -> str:
-    """Drop sentences or table rows with foreign numbers without leaving blank holes."""
+    """Drop sentences or table rows with foreign numbers without leaving orphan header-only tables."""
     norms = {_norm_num(token) for token in stray}
     if not text or not norms:
         return text or ""
+    raw_lines = text.split("\n")
     kept_lines: list[str] = []
-    for line in text.split("\n"):
+    idx = 0
+    while idx < len(raw_lines):
+        line = raw_lines[idx]
         stripped = line.strip()
+        if (
+            stripped.startswith("|")
+            and stripped.endswith("|")
+            and idx + 1 < len(raw_lines)
+            and re.match(r"^\s*\|[\s\-:|]+\|\s*$", raw_lines[idx + 1])
+        ):
+            header_line = line
+            sep_line = raw_lines[idx + 1]
+            idx += 2
+            kept_body: list[str] = []
+            while idx < len(raw_lines):
+                body_line = raw_lines[idx]
+                bs = body_line.strip()
+                if not (bs.startswith("|") and bs.endswith("|")):
+                    break
+                idx += 1
+                row_nums = {_norm_num(token) for token in _NUM.findall(body_line)}
+                if row_nums & norms:
+                    continue
+                kept_body.append(body_line)
+            if kept_body:
+                kept_lines.append(header_line)
+                kept_lines.append(sep_line)
+                kept_lines.extend(kept_body)
+            continue
+        idx += 1
         if stripped.startswith("|") and stripped.endswith("|"):
-            # Never turn table cells into empty holes; drop rows with unverified numbers.
+            # Fallback for headerless pipe lines: drop matching lines.
             if not re.match(r"^\|[\s\-:|]+\|$", stripped):
                 row_nums = {_norm_num(token) for token in _NUM.findall(line)}
                 if row_nums & norms:

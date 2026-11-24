@@ -1023,3 +1023,91 @@ def test_generate_chat_charts_retries_once_when_first_json_is_invalid(tmp_path: 
     assert llm.calls == 2
     assert len(charts) == 1
     assert status.get("cht_01", {}).get("ok") is True
+
+
+def test_without_stray_never_leaves_header_only_tables() -> None:
+    from case3.chat_turn import _without_stray
+
+    md = (
+        "Краткий вывод.\n\n"
+        "| Регион | Выдумка |\n"
+        "| --- | --- |\n"
+        "| Минск | 999999 |\n"
+        "| Брест | 888888 |\n\n"
+        "| Регион | Факт |\n"
+        "| --- | --- |\n"
+        "| Минск | 184 520 |\n"
+        "| Брест | 999999 |"
+    )
+    cleaned = _without_stray(md, ["999999", "888888"])
+    assert "| Регион | Выдумка |" not in cleaned
+    assert "| Минск | 184 520 |" in cleaned
+    assert "| Регион | Факт |" in cleaned
+    assert "999999" not in cleaned
+
+
+def test_try_chat_answer_grounds_table_shares_ranks_and_header_units_without_retry() -> None:
+    source = (
+        "| Область | Факт | План |\n"
+        "| --- | --- | --- |\n"
+        "| Минская | 105 865,2 | 100 000,0 |\n"
+        "| Гомельская | 94 073,0 | 95 000,0 |\n"
+    )
+    reply = (
+        "Анализ таблицы:\n\n"
+        "| № | Область | Факт, млн | Доля, % | Выполнение, % |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 1 | Минская | 105,9 | 52,9 | 105,9 |\n"
+        "| 2 | Гомельская | 94,1 | 47,1 | 99,0 |\n"
+    )
+
+    class _OnceStreamLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def stream(self, **_kw):
+            self.calls += 1
+            if self.calls > 1:
+                raise AssertionError("try_chat_answer triggered an unexpected retry!")
+            yield reply
+
+    replaced: list[str] = []
+    client = _OnceStreamLLM()
+    ans = try_chat_answer(
+        source,
+        "проанализируй таблицу",
+        client=client,  # type: ignore[arg-type]
+        on_delta=lambda _d: None,
+        on_replace=lambda full: replaced.append(full),
+    )
+    assert client.calls == 1
+    assert replaced == []
+    assert "| 1 | Минская | 105,9 | 52,9 | 105,9 |" in ans
+    assert "| 2 | Гомельская | 94,1 | 47,1 | 99,0 |" in ans
+
+
+def test_generate_chat_charts_preserves_prev_type_hint_when_color_only_edit(tmp_path: Path, monkeypatch) -> None:
+    from case3.chat_turn import generate_chat_charts
+
+    seen: list[str] = []
+
+    class _ColorLLM:
+        def complete(self, *, system: str, user_text: str, **_kw) -> str:
+            seen.append(user_text)
+            return (
+                '```json\n{"charts": [{"id": "cht_01", "type": "pie", "caption": "Доли", '
+                '"html": "<canvas id=\'c\'></canvas><script>new Chart(document.getElementById(\'c\'), '
+                '{type:\'pie\',data:{labels:[\'Минск\',\'Брест\'],datasets:[{data:[184520,57846]}]}});</script>"}]}\n```'
+            )
+
+    monkeypatch.setattr("case3.charts.render_charts_batch", lambda items: {"cht_01": {"ok": True}})
+    generate_chat_charts(
+        "| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n| Брест | 57 846 |\n",
+        "сделай оранжевым",
+        max_charts=1,
+        figs_dir=tmp_path / "figs",
+        charts_dir=tmp_path / "charts",
+        client=_ColorLLM(),
+        previous_chart={"id": "cht_02", "type": "pie", "caption": "Доли", "html": "<canvas id='c'></canvas>"},
+    )
+    assert seen and "СОХРАНИ type=pie" in seen[0]

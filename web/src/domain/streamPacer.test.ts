@@ -256,4 +256,28 @@ describe("streamPacer", () => {
     await p;
     assert.equal(pacer.getVisible(), text);
   });
+
+  it("reports draining=true while typing and draining=false when caught up", async () => {
+    const clock = makeManualClock();
+    const states: boolean[] = [];
+    const pacer = createStreamPacer({
+      baseCps: 80,
+      onUpdate: (_v, meta) => {
+        if (meta) states.push(meta.draining);
+      },
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+
+    const text = "Короткий вывод по данным таблицы.";
+    const p = pacer.markDone(text);
+    for (let i = 0; i < 50 && pacer.isDraining(); i += 1) {
+      clock.step(30);
+    }
+    await p;
+    assert.ok(states.length >= 2);
+    assert.equal(states[0], true);
+    assert.equal(states[states.length - 1], false);
+  });
 });
