@@ -1312,6 +1312,67 @@
   border-color: color-mix(in srgb, var(--ink) 35%, var(--rule));
 }
 
+.dash-read-nav button.is-active {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+}
+
+.stimul-copy-btn,
+.stimul-download-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 550;
+  padding: 0.36rem 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.stimul-copy-btn {
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+}
+
+.stimul-copy-btn:hover {
+  border-color: color-mix(in srgb, var(--ink) 32%, var(--rule));
+  background: var(--paper);
+}
+
+.stimul-copy-btn.is-ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--rule));
+  color: var(--ok);
+}
+
+.stimul-download-btn {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.stimul-download-btn:hover {
+  opacity: 0.9;
+}
+
+.source-read-body {
+  padding: 1.25rem 1.75rem 2.25rem;
+  gap: 1.1rem;
+}
+
+.source-read-md {
+  width: 100%;
+  max-width: 100%;
+  font-size: 1rem;
+  line-height: 1.68;
+}
+
 .stimul-sheet.is-result .settings-modal-body {
   flex: none;
   min-height: auto;

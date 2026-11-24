@@ -1357,6 +1357,10 @@ def api_source_original(ingest_id: str) -> FileResponse:
         media = (
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+    elif suf in {".md", ".markdown"}:
+        media = "text/markdown; charset=utf-8"
+    elif suf == ".txt":
+        media = "text/plain; charset=utf-8"
     _ = meta_txt  # extract sibling; keep for debugging
     return FileResponse(path, media_type=media, filename=path.name)
 

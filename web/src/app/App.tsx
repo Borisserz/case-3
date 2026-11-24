@@ -15,6 +15,7 @@ import { ConfirmProvider } from "../ConfirmModal";
 import { ChatComposer } from "../ChatComposer";
 import { DashboardPickModal } from "../DashboardPickModal";
 import { DashboardReadModal } from "../DashboardReadModal";
+import { SourceReadModal } from "../SourceReadModal";
 import {
   captureWarning,
   dashboardCardFromSource,
@@ -32,6 +33,7 @@ import {
 } from "../domain/dashboardCapture";
 import { screenReadNote } from "../domain/sourceCopy";
 import { removeAttachedSource } from "../domain/sourcePlaque";
+import { docsForSourceModal } from "../domain/sourceRead";
 import { uid } from "../domain/runHelpers";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
 import { LiberHelp } from "../LiberHelp";
@@ -166,6 +168,9 @@ export default function App() {
     title: string;
     text: string;
   } | null>(null);
+  const [sourceReadDocs, setSourceReadDocs] = useState<
+    SourceAttachment[] | null
+  >(null);
   const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
   const activeCardId = useRef<string | null>(null);
   const cardsRef = useRef<Map<string, DashboardCard>>(new Map());
@@ -198,7 +203,6 @@ export default function App() {
     openDeckSlidesArtifact,
     openFilmFrame,
     openUserPhoto,
-    openSourceArtifact,
     openIntentArtifact,
     closeArtifact,
     finishArtifactClose,
@@ -521,9 +525,9 @@ export default function App() {
         openDashboardRead(draft.title || draft.fileName || "Данные дашборда", draft.text);
         return;
       }
-      openSourceArtifact(draft);
+      setSourceReadDocs(docsForSourceModal(draft));
     },
-    [openDashboardRead, openSourceArtifact],
+    [openDashboardRead],
   );
 
   const openDashboardCard = useCallback((id: string) => {
@@ -690,7 +694,6 @@ export default function App() {
     setSourceDraft,
     setPlaqueDismissed,
     setDeckApplyHint,
-    setActiveArtifact,
     setAttachPhotos,
     setForbidImages,
     setMaxImages,
@@ -708,9 +711,7 @@ export default function App() {
         subtitle: sourceDraft.fromScreen
           ? screenReadNote(true)
           : sourceDraft.viewMode === "document"
-            ? sourceDraft.previewUrl
-              ? "Документ · просмотр"
-              : "Документ · без PDF-превью"
+            ? "Документ · предпросмотр MD"
             : file
               ? formatBytes(file.size)
               : `${sourceDraft.text.length.toLocaleString("ru-RU")} символов`,
@@ -1421,6 +1422,13 @@ export default function App() {
           title={dashboardRead.title}
           text={dashboardRead.text}
           onClose={() => setDashboardRead(null)}
+        />
+      ) : null}
+
+      {sourceReadDocs?.length ? (
+        <SourceReadModal
+          docs={sourceReadDocs}
+          onClose={() => setSourceReadDocs(null)}
         />
       ) : null}
 

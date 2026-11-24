@@ -311,37 +311,11 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
   setStopping(false);
   setChatTitle(workMode ? provisionalSessionTitle(workMode) : null);
   const photosSnapshot = hidden ? [] : [...attachPhotos];
-  // Dashboard shots stay in the chat card. Their table opens from that card, not this rail.
+  // Do not auto-open the right rail on send for attached documents (they open in MD modal on click).
   if (!hidden && !fileForRun && draftSnap) {
-    const isDoc =
-      draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
-    if (isDoc) {
-      const previewUrl =
-        draftSnap.previewUrl ||
-        (draftSnap.ingestId
-          ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/preview`
-          : null);
-      const originalUrl =
-        draftSnap.originalUrl ||
-        (draftSnap.ingestId
-          ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/original`
-          : null);
-      setActiveArtifact({
-        kind: "source",
-        tab: "source",
-        title: draftSnap.title,
-        text: draftSnap.text,
-        fileName: draftSnap.fileName,
-        viewMode: "document",
-        previewUrl,
-        originalUrl,
-        format: draftSnap.format,
-      });
-    } else {
-      setActiveArtifact((a) =>
-        a?.kind === "source" || a?.kind === "intent" ? null : a,
-      );
-    }
+    setActiveArtifact((a) =>
+      a?.kind === "source" || a?.kind === "intent" ? null : a,
+    );
   }
 
   const fd = buildRunFormData({
