@@ -171,3 +171,38 @@ test("messagesFromMemory and botHistoryResult restore inline chart/diagram previ
   assert.equal(res?.previews?.length, 2);
   assert.equal(res?.charts_ok, 1);
 });
+
+test("messagesFromMemory restores attached documents on user turns", () => {
+  let n = 0;
+  const lines = messagesFromMemory(
+    [
+      {
+        run_id: "run_doc",
+        chat_prompt: "Сравни отчёт и заметку",
+        chat_summary: "Сравнил.",
+        attachments: [
+          {
+            name: "отчёт.pdf",
+            title: "отчёт.pdf",
+            fileName: "отчёт.pdf",
+            text: "Текст PDF",
+            viewMode: "document",
+            previewUrl: "/api/source/files/ing_1/preview",
+            originalUrl: "/api/source/files/ing_1/original",
+            format: "pdf",
+          },
+          {
+            name: "заметка.txt",
+            text: "Текст заметки",
+          },
+        ],
+      },
+    ],
+    () => `id${(n += 1)}`,
+  );
+  assert.equal(lines[0].role, "user");
+  assert.equal(lines[0].attachments?.length, 2);
+  assert.equal(lines[0].attachments?.[0]?.viewMode, "document");
+  assert.equal(lines[0].attachments?.[0]?.previewUrl, "/api/source/files/ing_1/preview");
+  assert.equal(lines[0].attachments?.[1]?.fileName, "заметка.txt");
+});

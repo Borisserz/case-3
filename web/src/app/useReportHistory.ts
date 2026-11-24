@@ -222,6 +222,8 @@ export function useReportHistory({
                     role: "user" as const,
                     text: line.text,
                     photos: line.photos,
+                    attachment: line.attachment,
+                    attachments: line.attachments,
                   }
                 : {
                     id: line.id,

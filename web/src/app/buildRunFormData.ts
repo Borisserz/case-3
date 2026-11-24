@@ -4,6 +4,7 @@ import { deckStyleToApiPayload, type DeckStyle } from "../deckStyle";
 import type { LiberWorkMode } from "../domain/liberModes";
 import type { SourceDraft } from "../domain/liberTypes";
 import { asksForPhoto } from "../domain/photoChip";
+import { attachmentsFromDraft } from "../domain/sourcePack";
 
 /** Fixed run defaults — chart type/style/title come from model + ChartEditSheet. */
 const CHART_AUTO = true;
@@ -131,5 +132,19 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   if (prior) fd.append("prior_run_id", prior);
   const carried = (carriedRunId || "").trim();
   if (carried) fd.append("carried_run_id", carried);
+  if (draftSnap?.text) {
+    const metas = attachmentsFromDraft(draftSnap).map((a) => ({
+      title: a.title,
+      fileName: a.fileName,
+      viewMode: a.viewMode,
+      previewUrl: a.previewUrl,
+      originalUrl: a.originalUrl,
+      ingestId: a.ingestId,
+      format: a.format,
+    }));
+    if (metas.length) {
+      fd.append("attachments_json", JSON.stringify(metas));
+    }
+  }
   return fd;
 }

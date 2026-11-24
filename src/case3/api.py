@@ -1390,6 +1390,7 @@ async def api_run(
     photo_captions: str = Form(""),
     prior_run_id: str = Form(""),
     carried_run_id: str = Form(""),
+    attachments_json: str = Form(""),
     x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
 ) -> JSONResponse:
     no_charts = _as_bool(forbid_charts)
@@ -1695,6 +1696,24 @@ async def api_run(
     }
     from case3.api_history import sanitize_workspace_id
 
+    attachments_meta: list[dict[str, Any]] = []
+    if attachments_json and attachments_json.strip():
+        try:
+            raw_att = json.loads(attachments_json)
+            if isinstance(raw_att, list):
+                for item in raw_att[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    row_att: dict[str, Any] = {}
+                    for k in ("title", "fileName", "viewMode", "previewUrl", "originalUrl", "ingestId", "format"):
+                        v = item.get(k)
+                        if isinstance(v, str) and v.strip():
+                            row_att[k] = v.strip()[:500]
+                    if row_att:
+                        attachments_meta.append(row_att)
+        except json.JSONDecodeError:
+            attachments_meta = []
+
     wid = sanitize_workspace_id(x_workspace_id)
     meta0 = {
         "run_id": run_id,
@@ -1703,6 +1722,7 @@ async def api_run(
         "chat_prompt": (intent or "").strip(),
         "prior_run_id": (prior_run_id or "").strip(),
         "carried_run_id": (carried_run_id or "").strip(),
+        **({"attachments": attachments_meta} if attachments_meta else {}),
         "last_edit": newest_edit(run_store.ROOT, (prior_run_id or "").strip())
         if (prior_run_id or "").strip()
         else {},

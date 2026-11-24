@@ -1,13 +1,25 @@
 /** Latest completed bot run in this chat, for the next POST /api/run. */
 
 import { dashboardCardFromSource, type DashboardCard } from "./dashboardCapture";
-import type { MediaPreview, RunResult } from "./liberTypes";
+import type { MediaPreview, RunResult, SourceAttachment } from "./liberTypes";
 
 export type MemoryPreview = {
   id?: string;
   kind?: string;
   url: string;
   caption?: string;
+};
+
+export type MemoryAttachment = {
+  name?: string;
+  title?: string;
+  fileName?: string;
+  text?: string;
+  viewMode?: "text" | "document";
+  previewUrl?: string | null;
+  originalUrl?: string | null;
+  ingestId?: string;
+  format?: string;
 };
 
 export type MemoryTurn = {
@@ -19,6 +31,7 @@ export type MemoryTurn = {
   dashboard_source?: string;
   dialogue?: { user?: string; assistant?: string }[];
   photos?: { url: string; name?: string }[];
+  attachments?: MemoryAttachment[];
   previews?: MemoryPreview[];
 };
 
@@ -30,6 +43,8 @@ export type ThreadLine = {
   runId?: string;
   outputMode?: string;
   photos?: { url: string; name?: string }[];
+  attachment?: SourceAttachment;
+  attachments?: SourceAttachment[];
   previews?: MediaPreview[];
   dashboard?: DashboardCard;
 };
@@ -57,12 +72,31 @@ export function messagesFromMemory(
   for (const turn of turns) {
     const prompt = (turn.chat_prompt || "").trim();
     const photos = (turn.photos || []).filter((photo) => photo.url);
-    if (prompt || photos.length) {
+    const attachments: SourceAttachment[] = (turn.attachments || [])
+      .map((item): SourceAttachment | null => {
+        const text = (item.text || "").trim();
+        const name = (item.fileName || item.title || item.name || "Документ").trim();
+        if (!text && !item.previewUrl) return null;
+        return {
+          title: (item.title || name).trim() || name,
+          text,
+          fileName: (item.fileName || item.name || name).trim() || name,
+          viewMode: item.viewMode === "document" ? "document" : "text",
+          previewUrl: item.previewUrl ?? null,
+          originalUrl: item.originalUrl ?? null,
+          ingestId: item.ingestId,
+          format: item.format,
+        };
+      })
+      .filter((x): x is SourceAttachment => Boolean(x));
+    if (prompt || photos.length || attachments.length) {
       lines.push({
         id: id(),
         role: "user",
-        text: prompt,
+        text: prompt || (attachments.length ? "Собрать отчёт" : ""),
         photos: photos.length ? photos : undefined,
+        attachment: attachments[0],
+        attachments: attachments.length ? attachments : undefined,
       });
     }
     const summary = (turn.chat_summary || "").trim();

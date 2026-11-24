@@ -87,6 +87,11 @@ export function ContextPlaque({
             <span className="context-plaque-meta">{subtitle}</span>
           ) : null}
         </span>
+        {!onDismiss ? (
+          <span className="context-plaque-open" aria-hidden>
+            ›
+          </span>
+        ) : null}
       </button>
       {onDismiss ? (
         <button

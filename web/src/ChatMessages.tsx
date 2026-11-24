@@ -200,20 +200,31 @@ export function ChatMessages({
                       ))}
                     </div>
                   ) : null}
-                  {m.attachment ? (
-                    <div className="msg-attach-row">
-                      <ContextPlaque
-                        title={m.attachment.title}
-                        subtitle={
-                          m.attachment.viewMode === "document"
-                            ? "Документ · просмотр"
-                            : `${m.attachment.text.length.toLocaleString("ru-RU")} символов`
-                        }
-                        fileName={m.attachment.fileName}
-                        onOpen={() => onOpenSource(m.attachment!)}
-                      />
-                    </div>
-                  ) : null}
+                  {(() => {
+                    const userDocs = m.attachments?.length
+                      ? m.attachments
+                      : m.attachment
+                        ? [m.attachment]
+                        : [];
+                    if (!userDocs.length) return null;
+                    return (
+                      <div className="msg-attach-row" aria-label="Прикреплённые документы">
+                        {userDocs.map((doc, di) => (
+                          <ContextPlaque
+                            key={`${doc.fileName || doc.title}-${di}`}
+                            title={doc.title}
+                            subtitle={
+                              doc.viewMode === "document"
+                                ? "Документ · открыть"
+                                : `${doc.text.length.toLocaleString("ru-RU")} символов`
+                            }
+                            fileName={doc.fileName}
+                            onOpen={() => onOpenSource(doc)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {userLong ? (
                     <button
                       type="button"

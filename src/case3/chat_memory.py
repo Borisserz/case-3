@@ -991,15 +991,74 @@ def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[s
     return previews
 
 
+def _turn_attachments(
+    meta: dict[str, Any],
+    source_text: str,
+    prev_source_text: str,
+) -> list[dict[str, Any]]:
+    """Documents attached directly on this turn (metadata + extracted text)."""
+    raw_meta = meta.get("attachments")
+    raw_src = (source_text or "").strip()
+    if "# Данные дашборда" in raw_src:
+        return []
+    parts = split_sources(raw_src)
+    if isinstance(raw_meta, list) and raw_meta:
+        out: list[dict[str, Any]] = []
+        for idx, item in enumerate(raw_meta[:5]):
+            if not isinstance(item, dict):
+                continue
+            part_name, part_body = (
+                parts[idx]
+                if idx < len(parts)
+                else (
+                    str(item.get("fileName") or item.get("title") or "Документ"),
+                    raw_src,
+                )
+            )
+            entry = {
+                "name": str(item.get("fileName") or item.get("title") or part_name),
+                "title": str(item.get("title") or item.get("fileName") or part_name),
+                "fileName": str(item.get("fileName") or item.get("title") or part_name),
+                "text": _clip_prose(part_body, 100_000),
+            }
+            for key in ("viewMode", "previewUrl", "originalUrl", "ingestId", "format"):
+                val = item.get(key)
+                if isinstance(val, str) and val.strip():
+                    entry[key] = val.strip()
+            out.append(entry)
+        return out
+    # Legacy runs without meta["attachments"]: attach only when this turn introduced
+    # an explicit document/marked source distinct from chat_prompt and prior turn.
+    if not raw_src or raw_src == (prev_source_text or "").strip():
+        return []
+    prompt = str(meta.get("chat_prompt") or "").strip()
+    if not _PART.search(raw_src) and raw_src == prompt:
+        return []
+    if not _PART.search(raw_src) and len(raw_src) < 240:
+        return []
+    return [
+        {
+            "name": name,
+            "title": name,
+            "fileName": name,
+            "text": _clip_prose(body, 100_000),
+            "viewMode": "text",
+        }
+        for name, body in parts
+    ]
+
+
 def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
     """One chat: turns oldest-first, plus the documents of the latest run."""
     chain = load_chain(root, run_id)
     if not chain:
         return None
     turns: list[dict[str, Any]] = []
+    prev_raw_source = ""
     for meta in chain:
         edit = meta.get("last_edit")
         turn_id = str(meta.get("run_id") or "")
+        turn_source = _source_file(root, meta)
         row: dict[str, Any] = {
             "run_id": turn_id,
             "chat_prompt": _clip_prose(meta.get("chat_prompt"), 2000),
@@ -1013,7 +1072,12 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
             "photos": _photo_thumbs(root, turn_id),
             "previews": _chat_previews(root, turn_id, meta),
         }
-        shot = _clip_prose(_source_file(root, meta), 200_000)
+        attachments = _turn_attachments(meta, turn_source, prev_raw_source)
+        if attachments:
+            row["attachments"] = attachments
+        if turn_source.strip():
+            prev_raw_source = turn_source
+        shot = _clip_prose(turn_source, 200_000)
         if "# Данные дашборда" in shot:
             row["dashboard_source"] = shot
         turns.append(row)

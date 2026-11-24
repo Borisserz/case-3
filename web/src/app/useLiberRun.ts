@@ -43,6 +43,7 @@ import {
 } from "../domain/runHelpers";
 import { loadCarriedRun } from "../domain/carriedRun";
 import { detachSourceAfterSend } from "../domain/sourcePlaque";
+import { attachmentsFromDraft } from "../domain/sourcePack";
 import { priorRunIdFromMessages } from "../domain/priorRun";
 import {
   offersNewChat,
@@ -213,36 +214,9 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     window.setTimeout(() => setToast(null), 5200);
   }
 
-  const attachment: SourceAttachment | undefined = hidden || !draftSnap?.text
-    ? undefined
-    : draftSnap?.text
-    ? (() => {
-        const isDoc =
-          draftSnap.viewMode === "document" || Boolean(draftSnap.ingestId);
-        const previewUrl = isDoc
-          ? draftSnap.previewUrl ||
-            (draftSnap.ingestId
-              ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/preview`
-              : null)
-          : draftSnap.previewUrl;
-        const originalUrl = isDoc
-          ? draftSnap.originalUrl ||
-            (draftSnap.ingestId
-              ? `/api/source/files/${encodeURIComponent(draftSnap.ingestId)}/original`
-              : null)
-          : draftSnap.originalUrl;
-        return {
-          title: draftSnap.title,
-          text: draftSnap.text,
-          fileName: draftSnap.fileName,
-          viewMode: (isDoc ? "document" : "text") as "document" | "text",
-          previewUrl,
-          originalUrl,
-          ingestId: draftSnap.ingestId,
-          format: draftSnap.format,
-        };
-      })()
-    : undefined;
+  const attachments: SourceAttachment[] =
+    hidden || !draftSnap?.text ? [] : attachmentsFromDraft(draftSnap);
+  const attachment: SourceAttachment | undefined = attachments[0];
   const userBody = chatTrim
     ? chatTrim
     : attachment
@@ -313,6 +287,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             text: userBody,
             chips: userChips.length ? userChips : undefined,
             attachment,
+            attachments: attachments.length ? attachments : undefined,
             photos: photoViews.length ? photoViews : undefined,
           },
         ]),

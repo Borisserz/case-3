@@ -128,6 +128,17 @@ export type SourceAttachment = {
   format?: string;
 };
 
+export type SourcePart = {
+  name: string;
+  text: string;
+  title?: string;
+  viewMode?: "text" | "document";
+  previewUrl?: string | null;
+  originalUrl?: string | null;
+  ingestId?: string;
+  format?: string;
+};
+
 export type SourceDraft = {
   title: string;
   /** Extract for /api/run. Hidden in UI when viewMode === "document". */
@@ -142,7 +153,7 @@ export type SourceDraft = {
   ingestId?: string;
   format?: string;
   /** Documents kept in this chat. The joined text is what /api/run receives. */
-  parts?: { name: string; text: string }[];
+  parts?: SourcePart[];
   /** Dashboard capture or a screen PNG. The plaque says the model could read it. */
   fromScreen?: boolean;
 };
@@ -157,6 +168,8 @@ export type UserMsg = {
   chips?: string[];
   /** Pasted / attached source shown as doc plaque on the bubble. */
   attachment?: SourceAttachment;
+  /** Individual plaques when 1+ documents were attached to this send. */
+  attachments?: SourceAttachment[];
   /** Photos attached to this send. */
   photos?: UserPhotoThumb[];
 };

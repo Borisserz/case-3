@@ -824,3 +824,75 @@ def test_two_stems_do_not_lift_a_turn_that_shares_one():
     strong = recall_block(turns, "что с выручкой за квартал")
     assert "ОБАСТОВА" in strong
     assert "КВАРТАЛТОЛЬКО" not in strong
+
+
+def test_memory_view_restores_attachments_only_on_turns_that_attached_them(tmp_path: Path):
+    from case3.chat_memory import memory_view
+
+    doc_text = "===== отчёт.pdf =====\nВыручка 120.\n\n===== таблица.md =====\n| А | Б |\n| --- | --- |\n| 1 | 2 |"
+    u1 = tmp_path / "runs" / "uploads" / "u1"
+    u1.mkdir(parents=True)
+    (u1 / "source.txt").write_text(doc_text, encoding="utf-8")
+    r1 = "source_20261124T100001Z"
+    o1 = tmp_path / "runs" / "out" / r1
+    o1.mkdir(parents=True)
+    (o1 / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": r1,
+                "chat_prompt": "Разбери оба файла",
+                "chat_summary": "Разобрал.",
+                "output_mode": "chat",
+                "source": str(u1 / "source.txt"),
+                "attachments": [
+                    {
+                        "title": "отчёт.pdf",
+                        "fileName": "отчёт.pdf",
+                        "viewMode": "document",
+                        "previewUrl": "/api/source/files/ing_1/preview",
+                        "originalUrl": "/api/source/files/ing_1/original",
+                        "format": "pdf",
+                    },
+                    {
+                        "title": "таблица.md",
+                        "fileName": "таблица.md",
+                        "viewMode": "text",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    u2 = tmp_path / "runs" / "uploads" / "u2"
+    u2.mkdir(parents=True)
+    (u2 / "source.txt").write_text(doc_text, encoding="utf-8")
+    r2 = "source_20261124T100002Z"
+    o2 = tmp_path / "runs" / "out" / r2
+    o2.mkdir(parents=True)
+    (o2 / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": r2,
+                "prior_run_id": r1,
+                "chat_prompt": "А по таблице?",
+                "chat_summary": "В таблице 1 и 2.",
+                "output_mode": "chat",
+                "source": str(u2 / "source.txt"),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    view = memory_view(tmp_path, r2)
+    assert view is not None
+    t1, t2 = view["turns"]
+    assert len(t1["attachments"]) == 2
+    assert t1["attachments"][0]["fileName"] == "отчёт.pdf"
+    assert t1["attachments"][0]["viewMode"] == "document"
+    assert t1["attachments"][0]["previewUrl"] == "/api/source/files/ing_1/preview"
+    assert t1["attachments"][1]["fileName"] == "таблица.md"
+    assert "1 | 2" in t1["attachments"][1]["text"]
+    assert t2.get("attachments", []) == []

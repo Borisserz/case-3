@@ -1,8 +1,8 @@
 /** Up to five labeled documents in one chat. */
 
-import type { SourceDraft } from "./liberTypes";
+import type { SourceAttachment, SourceDraft, SourcePart } from "./liberTypes";
 
-export type SourcePart = { name: string; text: string };
+export type { SourcePart };
 
 const MAX_DOCS = 5;
 
@@ -18,6 +18,32 @@ function docsTitle(n: number): string {
   return `${n} ${word}`;
 }
 
+function docUrls(draft: {
+  viewMode?: "text" | "document";
+  previewUrl?: string | null;
+  originalUrl?: string | null;
+  ingestId?: string;
+}) {
+  const isDoc = draft.viewMode === "document" || Boolean(draft.ingestId);
+  const previewUrl = isDoc
+    ? draft.previewUrl ||
+      (draft.ingestId
+        ? `/api/source/files/${encodeURIComponent(draft.ingestId)}/preview`
+        : null)
+    : draft.previewUrl;
+  const originalUrl = isDoc
+    ? draft.originalUrl ||
+      (draft.ingestId
+        ? `/api/source/files/${encodeURIComponent(draft.ingestId)}/original`
+        : null)
+    : draft.originalUrl;
+  return {
+    viewMode: (isDoc ? "document" : "text") as "document" | "text",
+    previewUrl: previewUrl ?? null,
+    originalUrl: originalUrl ?? null,
+  };
+}
+
 export function mergeSourcePack(
   current: SourceDraft | null,
   next: SourceDraft,
@@ -26,10 +52,26 @@ export function mergeSourcePack(
     current?.parts?.length
       ? current.parts
       : current?.text
-        ? [{ name: current.fileName || current.title || "Документ", text: current.text }]
+        ? [
+            {
+              name: current.fileName || current.title || "Документ",
+              text: current.text,
+              title: current.title,
+              ...docUrls(current),
+              ingestId: current.ingestId,
+              format: current.format,
+            },
+          ]
         : [];
   const name = (next.fileName || next.title || "Документ").trim() || "Документ";
-  const part = { name, text: next.text };
+  const part: SourcePart = {
+    name,
+    text: next.text,
+    title: next.title || name,
+    ...docUrls(next),
+    ingestId: next.ingestId,
+    format: next.format,
+  };
   const idx = existing.findIndex((p) => p.name === name);
   let parts = existing.slice();
   if (idx >= 0) parts[idx] = part;
@@ -47,6 +89,43 @@ export function mergeSourcePack(
     fileName: parts.map((p) => p.name).join(", "),
     parts,
   };
+}
+
+export function attachmentsFromDraft(
+  draft: SourceDraft | null | undefined,
+): SourceAttachment[] {
+  if (!draft || !draft.text) return [];
+  if (draft.parts?.length) {
+    return draft.parts
+      .filter((p) => (p.text || "").trim())
+      .slice(0, MAX_DOCS)
+      .map((p) => {
+        const urls = docUrls(p);
+        return {
+          title: p.title || p.name,
+          text: p.text,
+          fileName: p.name,
+          viewMode: urls.viewMode,
+          previewUrl: urls.previewUrl,
+          originalUrl: urls.originalUrl,
+          ingestId: p.ingestId,
+          format: p.format,
+        };
+      });
+  }
+  const urls = docUrls(draft);
+  return [
+    {
+      title: draft.title,
+      text: draft.text,
+      fileName: draft.fileName,
+      viewMode: urls.viewMode,
+      previewUrl: urls.previewUrl,
+      originalUrl: urls.originalUrl,
+      ingestId: draft.ingestId,
+      format: draft.format,
+    },
+  ];
 }
 
 export function draftFromDocuments(
