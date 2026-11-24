@@ -51,7 +51,6 @@ function ChatTurnNote({
 type Props = {
   msgs: Msg[];
   reduceMotion: boolean | null;
-  hasStoredReport: boolean;
   /** Julius-style session rename — chat column only (not sidebar). */
   sessionTitle?: string | null;
   thinkingLabel?: string;
@@ -59,7 +58,6 @@ type Props = {
   downloadsPulseMsgId: string | null;
   messagesRef: React.RefObject<HTMLDivElement | null>;
   bottomRef: React.RefObject<HTMLDivElement | null>;
-  onRestore: () => void;
   onOpenSource: (draft: SourceAttachment) => void;
   onOpenIntent: (text: string) => void;
   onOpenReport: (msgId: string, result: RunResult) => void;
@@ -80,8 +78,6 @@ type Props = {
   onOpenDashboardCard?: (msgId: string) => void;
   /** Full-screen table of the shots already on the card. */
   onReadDashboard?: (card: import("./domain/dashboardCapture").DashboardCard) => void;
-  onOpenDashboard?: () => void;
-  onPickFile?: () => void;
   onPickStarter?: (prompt: string) => void;
   onRefineVisual?: (preview: { id: string; kind: string; url: string }) => void;
 };
@@ -89,13 +85,11 @@ type Props = {
 export function ChatMessages({
   msgs,
   reduceMotion,
-  hasStoredReport,
   sessionTitle = null,
   workMode = null,
   downloadsPulseMsgId,
   messagesRef,
   bottomRef,
-  onRestore,
   onOpenSource,
   onOpenIntent,
   onOpenReport,
@@ -110,8 +104,6 @@ export function ChatMessages({
   onMakePresentation,
   onOpenDashboardCard,
   onReadDashboard,
-  onOpenDashboard,
-  onPickFile,
   onPickStarter,
   onRefineVisual,
 }: Props) {
@@ -138,13 +130,7 @@ export function ChatMessages({
       <AnimatePresence initial={false}>
         {msgs.length === 0 &&
           !/preview=(artifact|deck|deck-busy|flow)/.test(window.location.search) && (
-            <EmptyState
-              hasStoredReport={hasStoredReport}
-              onRestore={onRestore}
-              workMode={workMode}
-              onOpenDashboard={onOpenDashboard}
-              onPickFile={onPickFile}
-            />
+            <EmptyState workMode={workMode} />
           )}
         {msgs.map((m, mi) => {
           const hasArtifact =

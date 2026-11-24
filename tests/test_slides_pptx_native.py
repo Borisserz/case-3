@@ -293,6 +293,53 @@ def test_native_botanical_card_row_and_texture(tmp_path: Path) -> None:
     assert "p:bg" in xml or "a:blip" in xml
 
 
+def test_botanical_title_without_photo_stays_dark_not_mustard(tmp_path: Path) -> None:
+    """No hero photo must not fall back to the old mustard accent title field."""
+    from pptx.dml.color import RGBColor
+    from pptx.util import Emu
+
+    from case3.deck_theme import resolve_deck_theme
+
+    style = resolve_deck_theme("botanical").as_dict()
+    deck = {
+        "version": 1,
+        "aspect": "16:9",
+        "palette": "atelier",
+        "language": "ru",
+        "theme_id": "botanical",
+        "style": style,
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "title",
+                "title": "Налоги: невидимая основа современной жизни",
+                "subtitle": "Налоги — это социальный контракт, а не наказание",
+            }
+        ],
+    }
+    out = build_native_pptx(deck, tmp_path / "botanical_title.pptx")
+    slide = Presentation(str(out)).slides[0]
+    mustard = RGBColor(0xC4, 0xAD, 0x7A)
+    full = Emu(12192000)  # 13.333" wide
+    tall = Emu(6858000)  # 7.5" high
+    mustard_full_bleeds = []
+    for shape in slide.shapes:
+        if shape.shape_type != MSO_SHAPE_TYPE.AUTO_SHAPE:
+            continue
+        if shape.width < full * 0.95 or shape.height < tall * 0.95:
+            continue
+        fill = shape.fill
+        try:
+            rgb = fill.fore_color.rgb
+        except Exception:
+            continue
+        if rgb == mustard:
+            mustard_full_bleeds.append(shape)
+    assert not mustard_full_bleeds, "botanical title must not paint full-bleed mustard accent"
+    texts = "\n".join(s.text_frame.text for s in slide.shapes if s.has_text_frame)
+    assert "Налоги" in texts
+
+
 def test_media_photo_not_squashed_in_pptx(tmp_path: Path) -> None:
     """Square Flux photos must not fill a wide box with both width+height."""
     sq = tmp_path / "fig_01.png"

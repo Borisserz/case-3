@@ -32,7 +32,7 @@ _ANALYZE = re.compile(
     re.IGNORECASE,
 )
 _PRESENTATION = re.compile(
-    r"презентац|презу|преза|слайд|pptx|\bdeck\b",
+    r"презентац|резентац|презу|преза|слайд|pptx|\bdeck\b",
     re.IGNORECASE,
 )
 _DIAGRAM = re.compile(

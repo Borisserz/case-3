@@ -27,7 +27,7 @@
   min-height: 0;
   border-radius: var(--radius-xl);
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  background: var(--sheet);
+  background: var(--paper);
   box-shadow: var(--shadow-float);
   overflow: hidden;
 }
@@ -248,7 +248,7 @@ button:disabled {
 }
 
 .btn.primary:active:not(:disabled) {
-  background: #000;
+  background: var(--primary-hover);
 }
 
 .btn.danger {
@@ -621,7 +621,7 @@ button:disabled {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
+  background: var(--paper);
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -886,7 +886,7 @@ button:disabled {
   width: var(--sidebar-w);
   flex-shrink: 0;
   padding: 0.9rem 0.75rem 0.9rem;
-  background: color-mix(in srgb, var(--surface-2) 72%, var(--paper));
+  background: var(--paper);
   border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   /* Width drives shell-column reflow every frame — keep in sync with padding */
   transition:
@@ -976,7 +976,7 @@ button:disabled {
 
 .liber-sidebar-word {
   font-family: var(--serif);
-  font-size: 1.15rem;
+  font-size: 1.02rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);

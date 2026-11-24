@@ -1478,7 +1478,7 @@ def generate_chat_charts(
     types_list = ", ".join(sorted(CHART_TYPES))
     palette_hint = "\n".join(intent_palette_lines(palette))
     system = (
-        "Ты визуализатор аналитики Liber. Построй по запросу 1-"
+        "Ты визуализатор аналитики Inspectra. Построй по запросу 1-"
         f"{cap} Chart.js график(а) строго по числам из Source и согласованного сценария.\n"
         f"Допустимые type: {types_list}.\n"
         f"{palette_hint}\n"

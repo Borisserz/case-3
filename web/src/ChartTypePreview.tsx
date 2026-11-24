@@ -407,7 +407,7 @@ function metaFor(typeId: string): (typeof META)[ChartTypeId] {
   return {
     title: typeId || "Chart",
     chip: typeId || "chart",
-    blurb: "Тип из каталога Liber",
+    blurb: "Тип из каталога Inspectra",
     Glyph: GlyphBar,
   };
 }

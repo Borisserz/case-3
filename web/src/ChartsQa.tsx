@@ -36,7 +36,7 @@ export function ChartsQa() {
   return (
     <div className="charts-qa" data-testid="charts-qa">
       <header className="charts-qa-head">
-        <h1>Liber live charts QA</h1>
+        <h1>Inspectra live charts QA</h1>
         <p>
           Все whitelist-типы · inline Chart.js · DPR≥2 (retina → 3) · PDF — истина
           печати

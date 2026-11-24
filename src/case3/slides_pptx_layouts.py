@@ -192,6 +192,49 @@ def _layout_title(
                 color=colors["ink2"],
             )
         return
+    # Botanical without hero photo: keep fern/sheet bg (already applied), ivory type.
+    # Never fall through to mustard accent title-field (legacy look).
+    if dark and hero_bleed and not used_photo:
+        _brand(slide, colors)
+        kicker = str(s.get("kicker") or "").strip()
+        y = Inches(1.85)
+        if kicker:
+            _add_textbox(
+                slide,
+                _MARGIN_X,
+                Inches(1.4),
+                Inches(10.5),
+                Inches(0.32),
+                kicker.upper(),
+                size_pt=12,
+                bold=True,
+                color=colors.get("foil", colors["accent"]),
+            )
+            y = Inches(2.15)
+        _add_textbox(
+            slide,
+            _MARGIN_X,
+            y,
+            Inches(10.8),
+            Inches(2.4),
+            str(s.get("title") or ""),
+            size_pt=48,
+            bold=True,
+            color=colors["ink"],
+        )
+        sub = str(s.get("subtitle") or s.get("takeaway") or "").strip()
+        if sub:
+            _add_textbox(
+                slide,
+                _MARGIN_X,
+                Inches(5.1),
+                Inches(10.5),
+                Inches(1.3),
+                sub,
+                size_pt=18,
+                color=colors["muted"],
+            )
+        return
     split = _split_ratio(style)
     if split is None:
         _paint_title_field(slide, s, style)

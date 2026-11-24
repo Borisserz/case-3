@@ -1009,7 +1009,17 @@ def _turn_attachments(
     raw_meta = meta.get("attachments")
     raw_src = (source_text or "").strip()
     if "# Данные дашборда" in raw_src:
-        return []
+        # The screen stays on the user line, so history can open the same preview.
+        return [
+            {
+                "name": name if name.lower().endswith(".md") else f"{name}.md",
+                "title": name.removesuffix(".md"),
+                "fileName": name if name.lower().endswith(".md") else f"{name}.md",
+                "text": _clip_prose(body, 100_000),
+                "viewMode": "text",
+            }
+            for name, body in dashboard_parts(raw_src)
+        ]
     parts = split_sources(raw_src)
     if isinstance(raw_meta, list) and raw_meta:
         out: list[dict[str, Any]] = []

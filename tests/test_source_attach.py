@@ -36,6 +36,23 @@ def test_merge_leaves_a_body_that_already_has_the_table(tmp_path: Path):
     assert merge_ingested_sources(body, [{"ingestId": ingest_id}], tmp_path) == body
 
 
+def test_merged_pdf_table_unlocks_bare_report_and_diagram_gate(tmp_path: Path):
+    ingest_id = "20261124T120003Z_abcdef"
+    folder = tmp_path / "runs" / "uploads" / "ingest" / ingest_id
+    folder.mkdir(parents=True)
+    (folder / "source.txt").write_text("| Регион | Факт |\n| --- | --- |\n| Минск | 120 |\n", encoding="utf-8")
+    intent = "сделай отчет"
+    merged = merge_ingested_sources(
+        intent,
+        [{"fileName": "PivotTableElement13.pdf", "ingestId": ingest_id}],
+        tmp_path,
+    )
+    assert not validate_input_heuristics(intent, intent, output_mode="report")[0]
+    for mode in ("report", "diagram"):
+        valid, msg = validate_input_heuristics(merged, intent, output_mode=mode)
+        assert valid, msg
+
+
 def test_edited_markdown_is_not_replaced_by_the_pdf_file(tmp_path: Path):
     ingest_id = "20261124T120002Z_abcdef"
     folder = tmp_path / "runs" / "uploads" / "ingest" / ingest_id

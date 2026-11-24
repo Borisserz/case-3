@@ -238,8 +238,7 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
         triage = triage_pdf(path)
     except ImportError as exc:
         raise IngestDependencyError(
-            "pypdfium2 не установлен. На desk: uv sync "
-            "(пакет в основных зависимостях case-3)."
+            "pypdfium2 не установлен. На desk: uv pip install -r requirements.txt"
         ) from exc
     except ValueError as exc:
         raise SourceIngestError(str(exc), code="bad_pdf") from exc
@@ -260,7 +259,7 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
         )
         raise ScanPdfError(
             "В PDF нет пригодного текстового слоя (похоже на скан)."
-            f"{detail} OCR в Liber пока не подключён — нужен цифровой PDF/DOCX."
+            f"{detail} OCR в Inspectra пока не подключён — нужен цифровой PDF/DOCX."
         )
 
     # Same cells as «В данные»: 64×500, repeated neighbours stay, markdown table.
@@ -279,7 +278,7 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
     if not md.strip():
         raise ScanPdfError(
             "Из PDF не удалось извлечь текст (пустой текстовый слой или только "
-            "картинки). OCR в Liber пока не подключён — нужен цифровой PDF/DOCX."
+            "картинки). OCR в Inspectra пока не подключён — нужен цифровой PDF/DOCX."
         )
     if triage.scan_pages:
         warns.append(

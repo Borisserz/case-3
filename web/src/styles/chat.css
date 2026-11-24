@@ -194,9 +194,9 @@
 
 .chat-bias button.is-on,
 .chat-bias button.is-on:hover:not(:disabled) {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--sheet);
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: var(--sheet);
+  color: var(--primary);
   box-shadow: none;
 }
 
@@ -249,9 +249,9 @@
 }
 
 .empty-action-btn.is-primary {
-  background: var(--ink);
-  color: var(--sheet);
-  border-color: var(--ink);
+  background: var(--primary);
+  color: var(--on-primary);
+  border-color: var(--primary);
 }
 
 .empty-action-btn.is-primary:hover {
@@ -294,8 +294,8 @@
   border: 0;
   border-radius: 999px;
   padding: 0.48rem 0.95rem;
-  background: var(--ink);
-  color: var(--sheet);
+  background: var(--primary);
+  color: var(--on-primary);
   font: inherit;
   font-size: 0.92rem;
   cursor: pointer;
@@ -2631,7 +2631,7 @@
   padding: 0.32rem 0.75rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--ink);
+  background: var(--primary);
   color: var(--on-primary, #fff);
   font-size: 0.72rem;
   font-weight: 650;
@@ -2745,7 +2745,7 @@
 }
 
 .deck-slides-film-anchor.is-on {
-  background: var(--ink);
+  background: var(--primary);
   color: var(--on-primary, #fff);
 }
 

@@ -1,4 +1,4 @@
-# AGENTS.md — case-3 / Liber Atelier
+# AGENTS.md — case-3 / Inspectra
 
 Ты работаешь в репозитории **case-3**: Source+Intent → **Qwen** (LaTeX + Chart.js HTML + фото) → PDF/DOCX (Docker TeX) + Liber chat UI.
 
@@ -21,7 +21,7 @@
 | UI | `web/src/` (Vite + React) |
 
 Прод-контур: **Windows desk**, Qwen (`VISION_*`), Image API (`IMAGE_API_BASE_URL`).  
-Запуск: `scripts\api.cmd` + `scripts\web.cmd` — см. README и `docs/knowledge/ops-windows.md`.  
+Локальный стол без Docker: `uv venv --python 3.12`, `uv pip install -r requirements.txt`, `uv run inspectra`; фронт в `web/`: `npm i`, `npm run dev`. Windows-скрипты `scripts\api.cmd` + `scripts\web.cmd` остаются. PDF/DOCX по-прежнему через Docker TeX — это отложено. См. README и `docs/knowledge/ops-windows.md`.  
 Карта папок: [`docs/knowledge/repo-map.md`](docs/knowledge/repo-map.md). One-shot matrix/gallery → `scripts/archive/`.
 
 ## Состояние на 2026-11-23

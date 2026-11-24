@@ -22,7 +22,7 @@ export function DeckStylePreview({ style }: Props) {
     >
       <div className="deck-style-preview-slide">
         <div className="deck-style-preview-bar" />
-        <p className="deck-style-preview-kicker">Liber · превью</p>
+        <p className="deck-style-preview-kicker">Inspectra · превью</p>
         <h3 className="deck-style-preview-title">Итоги квартала</h3>
         <p className="deck-style-preview-sub">
           Единое оформление для вашей следующей презентации.

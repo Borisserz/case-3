@@ -323,7 +323,7 @@ _CHART_WORDS = (
     ("stacked_bar", r"накоплен|stacked"),
     ("grouped_bar", r"группир|grouped"),
     ("horizontal_bar", r"горизонтал"),
-    ("donut", r"пончик|кольц|donut"),
+    ("donut", r"пончик|кольц|donut|кругов"),
     ("line", r"лине|лини|\bline\b"),
     ("area", r"площад|\barea\b"),
     ("scatter", r"точк|scatter|рассеян"),
@@ -803,12 +803,13 @@ def parse_new_slide(text: str | None) -> str | None:
 
 
 def chart_type_named(text: str | None) -> str:
-    """A whitelist chart type named next to the word «график»."""
+    """Whitelist chart type. Donut synonyms work without «график»; others need it."""
     raw = _norm(text or "")
-    if not re.search(r"график", raw, re.IGNORECASE):
-        return ""
+    has_grafik = bool(re.search(r"график", raw, re.IGNORECASE))
     for key, pattern in _CHART_WORDS:
-        if re.search(pattern, raw, re.IGNORECASE):
+        if not re.search(pattern, raw, re.IGNORECASE):
+            continue
+        if key == "donut" or has_grafik:
             return key
     return ""
 
@@ -818,7 +819,7 @@ def parse_title(text: str | None) -> str:
     raw = _norm(text or "")
     match = re.search(
         r"(?:поменяй|смени|измени|переименуй)\s+заголовок"
-        r"(?:\s+(?:презентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?|\d{1,2}\s+слайд\w*|"
+        r"(?:\s+(?:презентац\w*|резентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?|\d{1,2}\s+слайд\w*|"
         r"(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)\w*\s+слайд\w*))?"
         r"(?:\s+(?:на|в))?\s*[:—–-]?\s*(.+)",
         raw,
@@ -851,7 +852,7 @@ def _slide_number_named(text: str | None) -> int:
 def title_target(text: str | None) -> str:
     """deck when the message names the presentation, report when it names the report."""
     raw = _norm(text or "")
-    if re.search(r"презентац|презу|преза|слайд", raw, re.IGNORECASE):
+    if re.search(r"презентац|резентац|презу|преза|слайд", raw, re.IGNORECASE):
         return "deck"
     if re.search(r"отч[её]т|документ", raw, re.IGNORECASE):
         return "report"
@@ -954,7 +955,7 @@ def edit_clauses(text: str | None) -> list[str]:
 
 _NEW_BUILD_ARTIFACT = re.compile(
     r"\b(?:сделай|собери|перестрой|пересобери|подготовь|оформи|сверстай|сгенерируй|напиши|создай)\b"
-    r"[^.!?\n]{0,120}\b(?:новый\s+|новую\s+)?(?:отчет\w*|презентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
+    r"[^.!?\n]{0,120}\b(?:новый\s+|новую\s+)?(?:отчет\w*|презентац\w*|резентац\w*|през[уа]|схем\w*|pdf|docx|word|ворд|pptx)\b",
     re.IGNORECASE,
 )
 _NEW_CHART_ARTIFACT = re.compile(
@@ -1183,7 +1184,7 @@ def resolve_act(
                 say="Сокращу каждый раздел по документам. Новых чисел не добавлю.",
             )
         if re.search(r"структур", raw, re.IGNORECASE) and re.search(
-            r"презентац|слайд|дек", raw, re.IGNORECASE
+            r"презентац|резентац|слайд|дек", raw, re.IGNORECASE
         ):
             if not has_deck:
                 return ChatAct(
@@ -1544,18 +1545,22 @@ def resolve_act(
         ):
             return _hue_act(raw, hue)
 
+    named_chart = chart_type_named(raw)
     if (
         not question
         and not _explicit_new_artifact(raw)
-        and re.search(r"график", raw, re.IGNORECASE)
         and re.search(r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE)
+        and (
+            re.search(r"график", raw, re.IGNORECASE)
+            or (named_chart and has_chart)
+        )
     ):
         if not (has_report or has_deck or has_chart):
             return ChatAct(
                 kind="talk",
                 say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
             )
-        chart = chart_type_named(raw)
+        chart = named_chart
         index = chart_at(raw)
         if not chart:
             names = ", ".join(CHART_SAY[key] for key in ("line", "bar", "donut", "horizontal_bar", "area", "scatter"))
@@ -1690,7 +1695,7 @@ def resolve_act(
     if (
         has_deck
         and named_pack
-        and re.search(r"презентац|презу|преза", raw, re.IGNORECASE)
+        and re.search(r"презентац|резентац|презу|преза", raw, re.IGNORECASE)
         and not re.search(
             r"сделай|собрать|подготовь|оформи|сверстай|нарисуй|построй|сгенерируй|новую|новый",
             raw,

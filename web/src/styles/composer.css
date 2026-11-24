@@ -134,17 +134,15 @@
 }
 
 .composer-mode-pill.is-on {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--sheet);
+  color: var(--primary);
   font-weight: 650;
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--on-primary) 12%, transparent) inset,
-    0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: none;
 }
 
 .composer-mode-pill.is-on:active:not(:disabled) {
-  background: var(--primary-hover);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 8%, transparent) inset;
+  background: var(--surface-2);
+  box-shadow: none;
 }
 
 .composer-mode-pill:disabled {
@@ -443,7 +441,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: var(--muted);
+  color: var(--link);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
@@ -452,8 +450,8 @@
 }
 
 .composer-data:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--secondary) 45%, transparent);
-  color: var(--primary);
+  background: color-mix(in srgb, var(--link) 10%, transparent);
+  color: var(--link-hover);
 }
 
 .composer-data:disabled {
@@ -543,20 +541,21 @@ button.send {
   width: 2.4rem;
   height: 2.4rem;
   padding: 0;
-  background: var(--primary);
-  color: var(--on-primary);
+  background: transparent;
+  color: var(--muted);
   border: none;
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--on-primary) 12%, transparent) inset;
+  box-shadow: none;
   transition: background var(--dur-mid) var(--ease-out), color var(--dur-fast),
     box-shadow var(--dur-fast), transform var(--dur-fast);
   white-space: nowrap;
 }
 
 button.send:not(:disabled):hover {
-  background: var(--primary-hover);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--ink);
 }
 
 button.send:not(:disabled):active {
@@ -565,8 +564,8 @@ button.send:not(:disabled):active {
 
 button.send:disabled {
   opacity: 1;
-  background: color-mix(in srgb, var(--secondary) 68%, var(--primary));
-  color: color-mix(in srgb, var(--primary) 55%, var(--sheet));
+  background: transparent;
+  color: var(--muted-2);
   cursor: not-allowed;
   box-shadow: none;
 }

@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 case3 = "case3.cli:main"
+inspectra = "case3.desk:main"
 
 [build-system]
 requires = ["setuptools>=68"]

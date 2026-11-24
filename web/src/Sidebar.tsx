@@ -333,7 +333,7 @@ export function Sidebar({
   return (
     <aside
       className={`liber-sidebar${collapsed ? " is-collapsed" : ""}`}
-      aria-label="Навигация Liber"
+      aria-label="Навигация Inspectra"
     >
       <div className="liber-sidebar-top">
         <div className="liber-sidebar-brand">
@@ -342,7 +342,7 @@ export function Sidebar({
             className="liber-sidebar-brand-text liber-side-label"
             aria-hidden={collapsed}
           >
-            <span className="liber-sidebar-word">Liber</span>
+            <span className="liber-sidebar-word">Inspectra</span>
             <span
               className={`liber-sidebar-live${healthReady ? " ok" : ""}`}
               title={healthHint}

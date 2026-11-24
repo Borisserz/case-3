@@ -458,6 +458,10 @@ def test_memory_view_keeps_the_dashboard_screen(tmp_path: Path) -> None:
     view = memory_view(tmp_path, run_id)
     assert view is not None
     assert "Минск" in view["turns"][0]["dashboard_source"]
+    attached = view["turns"][0]["attachments"]
+    assert attached[0]["viewMode"] == "text"
+    assert "Минск" in attached[0]["text"]
+    assert attached[0]["text"].startswith("# Данные дашборда")
 
 
 def test_followup_uses_the_dashboard_screen_not_the_later_note(tmp_path: Path) -> None:

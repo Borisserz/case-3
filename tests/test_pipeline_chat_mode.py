@@ -158,6 +158,17 @@ def test_prior_chat_visuals_picks_last_chart_and_skips_clarifying_edit(tmp_path:
         "Делаю круговую диаграмму оранжевой.",
         kind="chart",
     ) is False
+    assert pipeline._is_clarifying_visual_request(
+        "создай график",
+        "Чтобы построить график, мне нужно уточнить, какие именно данные из таблицы "
+        "вы хотите визуализировать. Какой вариант вам интереснее?",
+        kind="chart",
+    ) is True
+    assert pipeline._is_clarifying_visual_request(
+        "создай график",
+        "Вот столбчатый график Факт vs План по регионам.",
+        kind="chart",
+    ) is False
 
     root = tmp_path / "project"
     (root / "prompt" / "gold").mkdir(parents=True)

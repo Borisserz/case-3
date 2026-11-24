@@ -32,14 +32,6 @@ _PROCESS_DIAG = re.compile(
 _IN_REPORT = re.compile(r"\bв\s+отч[её]т", re.IGNORECASE)
 _IN_PRESENTATION = re.compile(r"\bв\s+презентаци(?:ю|и)", re.IGNORECASE)
 
-_REPORT_CHART_CLARIFY = (
-    "Построить график в чате или добавить в отчёт? "
-    "Напишите «график в чате» или «график в отчёте»."
-)
-_PRESENTATION_CHART_CLARIFY = (
-    "Построить график в чате или добавить в презентацию? "
-    "Напишите «график в чате» или «график в презентации»."
-)
 _PRIMARY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("presentation", _PRESENTATION),
     ("report", _REPORT),
@@ -239,15 +231,13 @@ def plan_turn(
         kind, reason = "chat", "chart_in_chat"
     elif (
         chartish
-        and effective_hint in {"report", "presentation"}
+        and effective_hint in {"report", "presentation", "diagram"}
         and not explicit_container
+        and not process_diagramma
     ):
-        kind, reason = "clarify", "plaque_chart_ambiguous"
-        clarify_prompt = (
-            _REPORT_CHART_CLARIFY
-            if effective_hint == "report"
-            else _PRESENTATION_CHART_CLARIFY
-        )
+        # Plaque is a bias, not a destination lock: bare «создай график» draws in chat.
+        # Explicit «в отчёте» / «в презентации» still goes through explicit_container.
+        kind, reason = "chat", "plaque_chart_defaults_chat"
     elif _QUESTION.search(raw) and not make:
         kind, reason = "chat", "question"
     elif make and len(container_primaries) >= 2:

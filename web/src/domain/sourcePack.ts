@@ -222,9 +222,12 @@ export function composerPlaques(draft: SourceDraft | null): ComposerPlaque[] {
 export function attachmentsFromDraft(
   draft: SourceDraft | null | undefined,
 ): SourceAttachment[] {
-  if (!draft || (!draft.text && !draft.parts?.length)) return [];
+  if (!draft) return [];
+  if (!draft.text && !draft.parts?.length && !draft.ingestId) return [];
   return sourceParts(draft)
-    .filter((part) => (part.text || "").trim())
+    // Keep ingest-backed parts even when markdown is empty so the API can
+    // rehydrate from runs/uploads/ingest/<id>/source.txt.
+    .filter((part) => (part.text || "").trim() || Boolean(part.ingestId))
     .slice(0, MAX_DOCS)
     .map((part) => {
       const urls = docUrls(part);

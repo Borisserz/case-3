@@ -30,7 +30,7 @@ export function DiagramChatCard({ diagram, siblings = [], onOpen }: Props) {
             <p className="diagram-chat-eyebrow">
               {typeRu}
               <span aria-hidden> · </span>
-              Liber
+              Inspectra
             </p>
             <h3 className="diagram-chat-title">{title}</h3>
           </div>

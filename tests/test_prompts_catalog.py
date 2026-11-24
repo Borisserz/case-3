@@ -102,7 +102,7 @@ def test_continuation_prompt_from_md() -> None:
 
 
 def test_summary_system_from_md_file() -> None:
-    assert "Liber Atelier" in SUMMARY_SYSTEM
+    assert "Inspectra" in SUMMARY_SYSTEM
     path = prompts.prompt_dir() / "summary_system.md"
     assert path.is_file()
     assert "MEDIA_DELIVERED" in path.read_text(encoding="utf-8")

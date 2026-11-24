@@ -92,6 +92,39 @@ def test_files_from_shot_downloads_when_the_body_is_only_a_path() -> None:
     assert files[1].ext == "pdf"
 
 
+def test_capture_documents_stages_shot_files_then_deletes_them(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pathlib import Path
+
+    from case3 import dashboard_remote
+
+    png = b"\x89PNG\r\nhello"
+    payload = {
+        "ok": True,
+        "png": {"name": "screen.png", "data_b64": base64.b64encode(png).decode()},
+    }
+    seen: list[str] = []
+    real = dashboard_remote.tempfile.TemporaryDirectory
+
+    def wrapped(*args, **kwargs):
+        held = real(*args, **kwargs)
+        seen.append(held.name)
+        return held
+
+    class Parsed:
+        markdown = "# Данные дашборда\n\n## Экран\n\nкарточка\n"
+        warnings: list[str] = []
+
+    def parse(**_k):
+        assert (Path(seen[0]) / "shot.png").read_bytes() == png
+        return Parsed()
+
+    monkeypatch.setattr(dashboard_remote.tempfile, "TemporaryDirectory", wrapped)
+    docs = capture_documents(payload, fetch_named=lambda _name: None, parse=parse)
+    assert docs[0]["markdown"].startswith("# Данные дашборда")
+    assert "path" not in docs[0]
+    assert seen and not Path(seen[0]).exists()
+
+
 def test_capture_documents_uses_one_parse_for_png_and_pdf() -> None:
     png = b"\x89PNG\r\nhello"
     pdf = b"%PDF-1.4 table"

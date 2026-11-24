@@ -153,7 +153,7 @@ def build_intent_from_ui(
             "первая строка mermaid соответствует type; id узлов ASCII, подписи RU из Source; "
             "держи схему компактной: 6–12 узлов (не >14; длинные списки инспекций/регионов группируй в 3–5 групп, без паутины из 30–40 узлов); "
             "для flowchart: каждый узел :::start|process|decision|ok|warn|data + classDef "
-            "(Liber hex, без фиолетового); цвета задаёт модель"
+            "(Inspectra hex, без фиолетового); цвета задаёт модель"
         )
     parts.append("\n".join(req))
     return "\n\n".join(parts).strip()

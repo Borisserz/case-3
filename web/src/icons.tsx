@@ -278,7 +278,7 @@ export function IconLiberMark({ size = 28 }: { size?: number }) {
         fontSize="15"
         fontWeight="600"
       >
-        L
+        I
       </text>
     </svg>
   );

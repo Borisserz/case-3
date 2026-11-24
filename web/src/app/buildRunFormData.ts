@@ -136,7 +136,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
   if (prior) fd.append("prior_run_id", prior);
   const carried = (carriedRunId || "").trim();
   if (carried) fd.append("carried_run_id", carried);
-  if (draftSnap?.text) {
+  if (draftSnap) {
     const metas = attachmentsFromDraft(draftSnap).map((a) => ({
       title: a.title,
       fileName: a.fileName,

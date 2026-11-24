@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -119,7 +120,7 @@ def files_from_shot(payload: dict, fetch_named) -> list[ShotFile]:
                 shown = raw_path.strip() if isinstance(raw_path, str) else name
                 raise DashboardRemoteError(
                     f"Сервис вернул путь {shown}, но этого файла нет на компьютере, "
-                    f"где запущен Liber. API должен стоять на той же машине, что и его сервис.",
+                    f"где запущен Inspectra. API должен стоять на той же машине, что и его сервис.",
                     "no_bytes",
                 )
         if not data:
@@ -153,8 +154,23 @@ def join_pdfs(parts: list[bytes]) -> bytes | None:
         out.close()
 
 
+def stage_shot_files(png: bytes | None, pdf: bytes | None) -> tempfile.TemporaryDirectory:
+    """Keep the raw snapshot off the user's downloads. Deleted when the holder closes."""
+    held = tempfile.TemporaryDirectory(prefix="inspectra-shot-")
+    root = Path(held.name)
+    if png:
+        (root / "shot.png").write_bytes(png)
+    if pdf:
+        (root / "shot.pdf").write_bytes(pdf)
+    return held
+
+
 def capture_documents(payload: dict, fetch_named, parse) -> list[dict]:
-    """One markdown: PNG and every table PDF go through parse_dashboard together."""
+    """One markdown: PNG and every table PDF go through parse_dashboard together.
+
+    The PNG/PDF land in a temp directory and are removed before the caller
+    returns, so the desk never offers those files as a download.
+    """
     if not isinstance(payload, dict) or not payload.get("ok"):
         detail = ""
         if isinstance(payload, dict):
@@ -167,10 +183,14 @@ def capture_documents(payload: dict, fetch_named, parse) -> list[dict]:
     pdf = join_pdfs([item.data for item in pdfs])
     if png is None and pdf is None:
         raise DashboardRemoteError("в снимке нет PNG и PDF", "empty")
+    held = stage_shot_files(png, pdf)
     try:
-        result = parse(png=png, pdf=pdf)
-    except DashboardSourceError as exc:
-        raise DashboardRemoteError(exc.message, exc.code) from exc
+        try:
+            result = parse(png=png, pdf=pdf)
+        except DashboardSourceError as exc:
+            raise DashboardRemoteError(exc.message, exc.code) from exc
+    finally:
+        held.cleanup()
     source_name = pngs[0].name if pngs else pdfs[0].name
     title = dashboard_title(result.markdown)
     return [

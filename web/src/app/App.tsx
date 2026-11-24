@@ -162,7 +162,7 @@ export default function App() {
   const [deckApplyHint, setDeckApplyHint] = useState<string | null>(null);
   const [deckPacks, setDeckPacks] =
     useState<DeckThemePackInfo[]>(FALLBACK_DECK_PACKS);
-  const [hasStoredReport, setHasStoredReport] = useState(false);
+  const [, setHasStoredReport] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // history / folders / sidebar → useReportHistory (below, after busy)
   /** Text of attached .txt/.md for Source tab / plaque. */
@@ -361,7 +361,7 @@ export default function App() {
   });
 
 
-  const { restoreLastReport, startNewReport } = useReportSession({
+  const { startNewReport } = useReportSession({
     setMsgs,
     setChatTitle,
     setChat,
@@ -498,13 +498,6 @@ export default function App() {
     });
     setFile(null);
     setPlaqueDismissed(false);
-    // Remove un-analyzed empty card shell from transcript; user triggers query via composer.
-    cardsRef.current.delete(id);
-    setMsgs((list) =>
-      list.filter(
-        (msg) => !(msg.id === id && msg.role === "bot" && !msg.text.trim()),
-      ),
-    );
   }, [setFile, setMsgs, setSourceDraft, showToast]);
 
   const onDashboardShot = useCallback(
@@ -619,6 +612,11 @@ export default function App() {
     if (card.viewer.includes("/open")) {
       setPhraseViewer(card.viewer);
       setDashboardOpen(true);
+      return;
+    }
+    const saved = card.shots.filter((shot) => shot.markdown.trim());
+    if (saved.length && !(card.mrt || "").trim()) {
+      openDashboardRead(shotsTitle(saved), shotsSource(saved));
       return;
     }
     const known = (card.mrt || "").trim();
@@ -963,14 +961,12 @@ export default function App() {
                 <ChatMessages
                   msgs={msgs}
                   reduceMotion={reduceMotion}
-                  hasStoredReport={hasStoredReport}
                   sessionTitle={chatTitle}
                   thinkingLabel={thinkingLabel}
                   workMode={workMode}
                   downloadsPulseMsgId={downloadsPulseMsgId}
                   messagesRef={messagesRef}
                   bottomRef={bottomRef}
-                  onRestore={restoreLastReport}
                   onOpenSource={openAttached}
                   onReadDashboard={(card) =>
                     openDashboardRead(shotsTitle(card.shots), shotsSource(card.shots))
@@ -987,8 +983,6 @@ export default function App() {
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
                   onOpenDashboardCard={openDashboardCard}
-                  onOpenDashboard={openFreshDashboard}
-                  onPickFile={() => fileRef.current?.click()}
                   onPickStarter={(prompt) => {
                     setChat(prompt);
                     chatRef.current?.focus();

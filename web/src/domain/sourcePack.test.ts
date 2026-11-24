@@ -91,6 +91,18 @@ describe("sourcePack", () => {
     assert.equal(single[0].text, "Текст заметки");
   });
 
+  it("keeps ingest-backed parts even when markdown text is empty", () => {
+    const single = attachmentsFromDraft({
+      title: "Pivot.pdf",
+      text: "",
+      fileName: "Pivot.pdf",
+      viewMode: "document",
+      ingestId: "20261124T120000Z_abcdef",
+    });
+    assert.equal(single.length, 1);
+    assert.equal(single[0].ingestId, "20261124T120000Z_abcdef");
+  });
+
   it("saves an edited markdown back into that plaque only", () => {
     const packed = mergeSourcePack(
       mergeSourcePack(null, {

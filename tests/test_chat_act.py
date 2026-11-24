@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from case3.chat_act import resolve_act
+from case3.chat_act import chart_type_named, resolve_act
 
 
 def test_two_edit_verbs_split_and_a_table_cell_stays_whole():
@@ -444,6 +444,42 @@ def test_chart_word_picks_a_real_type():
     assert ask.op == "ask"
     assert "пончик" in ask.say
     assert resolve_act("сделай график линейным").kind == "talk"
+
+
+def test_chart_type_named_donut_without_grafik_word():
+    assert chart_type_named("пончик") == "donut"
+    assert chart_type_named("круговую") == "donut"
+    assert chart_type_named("сделай круговую") == "donut"
+
+
+def test_chart_type_named_ignores_area_without_grafik_word():
+    assert chart_type_named("сделай площадь меньше") == ""
+    assert chart_type_named("сделай график площадью") == "area"
+    assert resolve_act("сделай площадь меньше", has_chart=True).kind == "talk"
+
+
+def test_krugovaya_retypes_chart_without_grafik_word():
+    act = resolve_act("сделай круговую", has_chart=True)
+    assert act.kind == "revise"
+    assert act.op == "retype_charts"
+    assert act.chart == "donut"
+    assert act.op != "ask"
+
+
+def test_typo_rezentaciya_retitle_and_recolor():
+    title = resolve_act(
+        "поменяй заголовок резентации на Итоги",
+        has_deck=True,
+    )
+    assert title.op == "retitle"
+    assert title.title == "Итоги"
+    assert title.title_on == "deck"
+    recolor = resolve_act(
+        "перекрась резентацию в Northstar",
+        has_deck=True,
+    )
+    assert recolor.op == "recolor_deck"
+    assert recolor.pack == "board"
 
 
 def test_question_mark_on_a_clear_edit_still_edits():

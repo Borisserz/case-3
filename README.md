@@ -1,4 +1,4 @@
-# case-3 — Liber Atelier
+# case-3 — Inspectra
 
 Аналитическое рабочее пространство (Chat-first UI + FastAPI + LaTeX/Pandoc/LibreOffice/Playwright) для работы с дашбордами **Stimulsoft** и документами (`.pdf`, `.docx`, `.txt`, `.md`):
 
@@ -13,7 +13,37 @@
 
 ---
 
-## Быстрый запуск в Docker (Full-Stack: Frontend + Backend + TeX)
+## Запуск у себя, без Docker
+
+Два терминала. Скрипты не нужны.
+
+**Бэк**, из корня репозитория:
+
+```bash
+uv venv --python 3.12
+uv pip install -r requirements.txt
+uv run inspectra
+```
+
+**Фронт**, вторым окном:
+
+```bash
+cd web
+npm i
+npm run dev
+```
+
+- Сайт: http://127.0.0.1:5173
+- API: http://127.0.0.1:8000/docs
+- Живой чат, дашборд и превью работают без Docker.
+- Графики в чате, один раз: `uv run playwright install chromium`
+- Свой Qwen: скопируй `.env.example` → `.env` и поставь `VISION_API_BASE_URL`.
+
+`uv run` без имени не знает, что запускать. Команда стола — `uv run inspectra`. Перезагрузка кода на каждый файл рвёт длинную сборку, поэтому её нет. Для неё: `CASE3_RELOAD=1 uv run inspectra`.
+
+Печать PDF и DOCX по-прежнему собирается образом TeX. Это отложено: стол поднимается без Docker.
+
+## Позже: полный стек в Docker
 
 Весь стек (`frontend` на Nginx `:5173` + `backend` на FastAPI `:8000` со встроенным TeX Live, Pandoc, LibreOffice и Playwright Chromium) поднимается одной командой:
 
@@ -21,7 +51,7 @@
 docker compose up -d --build
 ```
 
-- **Интерфейс Liber UI:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE-стриминг на `backend:8000`)
+- **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE-стриминг на `backend:8000`)
 - **Swagger / OpenAPI:** http://127.0.0.1:8000/docs
 - **Проверка готовности:** `curl -s http://127.0.0.1:5173/api/health`
 

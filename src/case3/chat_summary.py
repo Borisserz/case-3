@@ -126,7 +126,7 @@ def build_summary_user(
             "\nINTENT (пожелание, не факт доставки):\n" + intent_s[:1200]
         )
     parts.append(
-        "\nНапиши сообщение для чата Liber. Только текст ответа, без преамбулы. "
+        "\nНапиши сообщение для чата Inspectra. Только текст ответа, без преамбулы. "
         "Не преувеличивай MEDIA_DELIVERED."
     )
     return "\n".join(parts)

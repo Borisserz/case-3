@@ -20,7 +20,7 @@ _GENERIC = re.compile(r"^фото\s+\d+$", re.IGNORECASE)
 
 SCHEMA_MAX = 3
 
-_SYSTEM = """You redraw photographs of diagrams as Liber Mermaid.
+_SYSTEM = """You redraw photographs of diagrams as Inspectra Mermaid.
 Return only one JSON object:
 {"diagrams":[{"id":"dia_01","type":"flowchart","title":"...","mermaid":"flowchart TD\\n  A[Label] --> B[Label]"}]}
 

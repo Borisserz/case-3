@@ -47,7 +47,7 @@ export function useChatChrome({
   const touchStartYRef = useRef<number | null>(null);
 
   useEffect(() => {
-    document.title = chatTitle ? `${chatTitle} · Liber` : "Liber";
+    document.title = chatTitle ? `${chatTitle} · Inspectra` : "Inspectra";
   }, [chatTitle]);
 
   const stopScrollLoop = useCallback(() => {

@@ -27,5 +27,7 @@
 | [0021](0021-chat-screens-are-the-later-source.md) | Later turns and files use the chat's screens | Accepted |
 | [0022](0022-concurrent-multiuser-runs.md) | Multi-user concurrent execution & per-browser workspace isolation | Accepted |
 | [0024](0024-grounded-context-packet.md) | Grounded Context Packet after TTG, before chat LLM | Accepted |
+| [0025](0025-inspectra-desk-green.md) | Desk name Inspectra, tax-desk green `#307060` | Accepted |
+| [0026](0026-local-desk-without-docker.md) | Local desk starts with uv and npm, Docker stays for print | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

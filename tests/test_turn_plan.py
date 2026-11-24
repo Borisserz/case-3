@@ -11,10 +11,13 @@ def test_format_route_projection_report_goal():
     assert text.startswith("Маршрут:")
 
 
-def test_format_route_projection_clarify_empty():
+def test_format_route_projection_plaque_chart_is_chat():
     p = plan_turn("построй график по регионам", mode_hint="auto", bias="report")
-    assert p.kind == "clarify"
-    assert format_route_projection(p) == ""
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
+    text = format_route_projection(p)
+    assert "цель: чат" in text
+    assert "в чате: график" in text
 
 
 def test_format_route_projection_chat_chart_flags():
@@ -31,6 +34,12 @@ def test_auto_report_and_presentation_from_language():
 
     p = plan_turn("Собери презентацию", mode_hint="auto")
     assert p.kind == "presentation"
+
+
+def test_typo_rezentaciya_routes_to_presentation():
+    assert plan_turn("создай резентацию", mode_hint="auto").kind == "presentation"
+    assert plan_turn("создай презентацию", mode_hint="auto").kind == "presentation"
+    assert plan_turn("создай резентацию", mode_hint="presentation").kind == "presentation"
 
 
 def test_bare_primary_artifact_noun_builds_that_artifact():
@@ -86,6 +95,17 @@ def test_bare_chart_auto_is_chat_chart():
     assert p.want_chat_chart is True
 
 
+def test_dorabotay_grafik_krugovaya_is_revise_when_prior_chart():
+    assert (
+        plan_turn(
+            "Доработай график, сделай круговую",
+            mode_hint="auto",
+            has_chart=True,
+        ).kind
+        == "revise"
+    )
+
+
 def test_make_chart_linear_is_revise_when_prior_chart():
     p = plan_turn(
         "сделай график линейным",
@@ -109,38 +129,41 @@ def test_new_linear_chart_is_chat_not_revise():
     assert p.edit_act is None
 
 
-def test_report_plaque_plus_chart_clarifies():
+def test_report_plaque_plus_chart_defaults_to_chat_chart():
     p = plan_turn("построй график по регионам", mode_hint="auto", bias="report")
-    assert p.kind == "clarify"
-    assert p.clarify_prompt == (
-        "Построить график в чате или добавить в отчёт? "
-        "Напишите «график в чате» или «график в отчёте»."
-    )
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
+    assert p.clarify_prompt is None
 
 
-def test_presentation_plaque_plus_chart_clarifies():
+def test_presentation_plaque_plus_chart_defaults_to_chat_chart():
     p = plan_turn("построй график по регионам", mode_hint="auto", bias="presentation")
-    assert p.kind == "clarify"
-    assert p.clarify_prompt == (
-        "Построить график в чате или добавить в презентацию? "
-        "Напишите «график в чате» или «график в презентации»."
-    )
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
+    assert p.clarify_prompt is None
 
 
-def test_report_mode_hint_plus_chart_clarifies_without_bias():
+def test_report_mode_hint_plus_chart_defaults_to_chat_chart():
     p = plan_turn("построй график по регионам", mode_hint="report")
-    assert p.kind == "clarify"
-    assert "добавить в отчёт" in (p.clarify_prompt or "")
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
 
 
-def test_explicit_mode_hint_wins_conflicting_bias_for_clarify():
+def test_explicit_mode_hint_chart_defaults_to_chat_over_conflicting_bias():
     p = plan_turn(
         "построй график по регионам",
         mode_hint="presentation",
         bias="report",
     )
-    assert p.kind == "clarify"
-    assert "добавить в презентацию" in (p.clarify_prompt or "")
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
+
+
+def test_diagram_plaque_plus_chart_is_chat_chart_not_diagram_build():
+    p = plan_turn("создай график", mode_hint="diagram")
+    assert p.kind == "chat"
+    assert p.want_chat_chart is True
+    assert p.want_chat_diagram is False
 
 
 def test_explicit_in_chat_under_plaque_is_chat():

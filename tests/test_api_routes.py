@@ -102,47 +102,58 @@ def test_run_returns_202_and_status_poll(
     assert payload["run_id"] == run_id
 
 
-def test_run_clarify_returns_chat_without_slot_or_run_files(
-    client: TestClient, repo_root: Path
+def test_run_plaque_chart_starts_chat_chart_run(
+    client: TestClient, repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    started: list[str] = []
+
+    def _fake_spawn(job, slot_gen=None):
+        started.append(job.output_mode)
+        api_mod._release_pipeline_slot(job.run_id, generation=slot_gen)
+
+    monkeypatch.setattr(api_mod, "_spawn_pipeline_thread", _fake_spawn)
     r = client.post(
         "/api/run",
         data={
             "intent": "Построй график по регионам",
             "output_mode": "report",
             "artifact_bias": "report",
+            "source_text": "| Регион | Факт |\n| --- | --- |\n| Минск | 120 |\n",
         },
     )
 
-    assert r.status_code == 200, r.text
+    assert r.status_code == 202, r.text
     body = r.json()
-    assert body["ok"] is True
-    assert body["mode"] == "chat"
-    assert body["output_mode"] == "chat"
-    assert "график в чате" in body["chat"].lower()
-    assert body["route_plan"]["kind"] == "clarify"
-    assert "run_id" not in body
-    assert api_mod._PIPELINE_SLOT.locked() is False
-    assert list((repo_root / "runs" / "out").iterdir()) == []
+    assert body["route_plan"]["kind"] == "chat"
+    assert body["route_plan"]["want_chat_chart"] is True
+    assert started == ["chat"]
 
 
-def test_run_explicit_mode_wins_conflicting_plaque_for_clarify(
-    client: TestClient,
+def test_run_explicit_mode_chart_defaults_to_chat_over_conflicting_plaque(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    started: list[str] = []
+
+    def _fake_spawn(job, slot_gen=None):
+        started.append(job.output_mode)
+        api_mod._release_pipeline_slot(job.run_id, generation=slot_gen)
+
+    monkeypatch.setattr(api_mod, "_spawn_pipeline_thread", _fake_spawn)
     r = client.post(
         "/api/run",
         data={
             "intent": "Построй график по регионам",
             "output_mode": "presentation",
             "artifact_bias": "report",
+            "source_text": "| Регион | Факт |\n| --- | --- |\n| Минск | 120 |\n",
         },
     )
 
-    assert r.status_code == 200, r.text
+    assert r.status_code == 202, r.text
     body = r.json()
-    assert body["route_plan"]["kind"] == "clarify"
-    assert "добавить в презентацию" in body["chat"]
-    assert "добавить в отчёт" not in body["chat"]
+    assert body["route_plan"]["kind"] == "chat"
+    assert body["route_plan"]["want_chat_chart"] is True
+    assert started == ["chat"]
 
 
 def test_run_named_analyze_stays_chat_under_report_plaque(

@@ -1130,8 +1130,19 @@ _CLARIFY_ANSWER_CUE = re.compile(
 )
 
 
+_CREATE_VISUAL_CUE = re.compile(
+    r"(?:создай|построй|построить|нарисуй|сделай|показать|покажи)\b",
+    re.IGNORECASE,
+)
+_CHART_OPTION_CLARIFY = re.compile(
+    r"(?:какие\s+именно|какой\s+вариант|несколько\s+вариантов|"
+    r"нужно\s+уточнить|мне\s+нужно\s+уточнить|какой\s+вариант\s+вам)",
+    re.IGNORECASE,
+)
+
+
 def _is_clarifying_visual_request(turn_text: str | None, answer: str | None, *, kind: str) -> bool:
-    """True when user wrote a bare 'edit chart/diagram' and the assistant asked how."""
+    """True when the assistant only asks how/which data — do not also draw."""
     turn = (turn_text or "").strip()
     ans = (answer or "").strip()
     if not turn or not ans:
@@ -1141,11 +1152,18 @@ def _is_clarifying_visual_request(turn_text: str | None, answer: str | None, *, 
         if kind == "chart"
         else bool(re.search(r"схем|диаграмм|блок", turn, re.IGNORECASE))
     )
-    if not noun_ok or not _BARE_VISUAL_EDIT_CUE.search(turn):
+    if not noun_ok:
         return False
     if _CONCRETE_VISUAL_SPEC.search(turn):
         return False
-    return bool(_CLARIFY_ANSWER_CUE.search(ans))
+    if not _CLARIFY_ANSWER_CUE.search(ans):
+        return False
+    # Bare edit («измени график») or create that only asks which series/option.
+    if _BARE_VISUAL_EDIT_CUE.search(turn):
+        return True
+    if _CREATE_VISUAL_CUE.search(turn) and _CHART_OPTION_CLARIFY.search(ans):
+        return True
+    return False
 
 
 def run_pipeline(
