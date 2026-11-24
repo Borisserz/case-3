@@ -208,11 +208,17 @@ def validate_input_heuristics(
     illustrations and do not replace factual data.
     """
     combined = ((source_text or "") + "\n" + (intent or "")).strip()
-    if len(combined) < 4:
+    is_chat = (output_mode or "").strip().lower() == "chat"
+    if not combined:
+        return False, _format_refusal_message(output_mode)
+    if not is_chat and len(combined) < 4:
         return False, _format_refusal_message(output_mode)
 
     # 1. Check for keyboard mash / repetitive characters
-    raw_letters = "".join(re.findall(r"[a-zA-Zа-яА-ЯёЁ]", combined.lower()))
+    text_for_mash = ((intent or "") if is_chat else combined).strip()
+    raw_letters = "".join(re.findall(r"[a-zA-Zа-яА-ЯёЁ]", text_for_mash.lower()))
+    if is_chat and not raw_letters and not re.search(r"\d", text_for_mash):
+        return False, _format_refusal_message(output_mode)
     if len(raw_letters) >= 4:
         unique_letters = set(raw_letters)
         if len(unique_letters) <= 2:
@@ -221,6 +227,10 @@ def validate_input_heuristics(
             return False, _format_refusal_message(output_mode)
         if len(raw_letters) >= 8 and re.search(r"(.{2,4})\1{2,}", raw_letters):
             return False, _format_refusal_message(output_mode)
+
+    # In chat mode, any non-empty, non-keyboard-mash message goes directly to the LLM!
+    if is_chat:
+        return True, None
 
     # 2. Strong data signals: digits, markdown lists, tables, key-values
     # If any digit is present (e.g. counts, percentages, dates, metrics), always pass

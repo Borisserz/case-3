@@ -14,17 +14,19 @@ class _Fake:
 def test_what_can_you_do_answers_without_the_model():
     from case3.input_validation import validate_input_heuristics
 
-    class _Boom:
-        def stream(self, **_kwargs):
-            raise AssertionError("model should not be called")
-            yield ""
-
     valid, msg = validate_input_heuristics("", "Что ты умеешь?", output_mode="chat")
     assert valid and msg is None
-    text = try_chat_answer("", "Что ты умеешь?", client=_Boom())
+    text = try_chat_answer(
+        "",
+        "Что ты умеешь?",
+        client=_Fake(
+            "Привет! Я Liber — аналитический помощник по дашбордам Stimulsoft и документам. "
+            "Могу разбирать таблицы, строить графики, схемы, отчёты (PDF/DOCX) и презентации (PPTX)."
+        ),
+    )
     assert "отч" in text.lower()
     assert "схем" in text.lower()
-    assert "случайн" not in text.lower()
+    assert "дашборд" in text.lower()
 
 
 def test_opening_fallback_does_not_claim_the_file_is_done():

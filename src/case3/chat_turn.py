@@ -1768,13 +1768,6 @@ def try_chat_answer(
     A number the user wrote is kept. A number neither they nor the document
     stated is not shown. A clash on the same word becomes one question.
     """
-    from case3.input_validation import capability_reply
-
-    reply = capability_reply(latest_user_line(intent))
-    if reply:
-        if on_delta:
-            on_delta(reply)
-        return reply
     note, drop = choice_instruction(intent)
     if not _answering_choice(intent):
         clash = fact_conflict(latest_user_line(intent), source)

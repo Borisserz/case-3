@@ -62,6 +62,16 @@ def test_short_garbage():
         valid, msg = validate_input_heuristics(garbage, "")
         assert not valid
         assert "недостаточно данных" in msg.lower()
+    # In chat mode, any short meaningful question or greeting passes to LLM!
+    for chat_msg in ["привет", "ку", "кто ты?", "как дела?", "помоги с дашбордом", "что умеешь?"]:
+        valid, msg = validate_input_heuristics(chat_msg, chat_msg, output_mode="chat")
+        assert valid, f"Expected chat mode to pass '{chat_msg}' to LLM"
+        assert msg is None
+    # Empty or keyboard mash in chat mode is still rejected
+    valid_empty, _ = validate_input_heuristics("", "", output_mode="chat")
+    assert not valid_empty
+    valid_mash, _ = validate_input_heuristics("ывафыавфа", "ывафыавфа", output_mode="chat")
+    assert not valid_mash
 
 
 def test_repetitive_keyboard_smash():
