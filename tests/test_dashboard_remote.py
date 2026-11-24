@@ -707,3 +707,22 @@ def test_finish_dashboard_phrase_calls_post_open_when_zero_filters() -> None:
         ("http://127.0.0.1:8040/open?open=0", {"filters": {}, "mrt": "plain.mrt"})
     ]
     assert done["viewer"] == "http://127.0.0.1:8040/open?mrt=plain.mrt"
+
+
+def test_fetch_filter_catalog_falls_back_when_question_llm_fails() -> None:
+    class _Client:
+        def __init__(self) -> None:
+            self.posts: list[dict] = []
+
+        def post(self, url: str, json=None, headers=None):  # noqa: A002
+            body = dict(json or {})
+            self.posts.append(body)
+            if "question" in body:
+                return _Resp(500, {"count": 0, "filters": [], "error": "Задай LLM_MODEL в .env"})
+            return _Resp(200, {"count": 1, "filters": [{"name": "Year", "value": "2025"}]})
+
+    c = _Client()
+    cat = fetch_filter_catalog("http://127.0.0.1:8040", c, question="покажи за 2025")
+    assert c.posts == [{"question": "покажи за 2025"}, {}]
+    assert cat["count"] == 1
+    assert cat["filters"][0]["name"] == "Year"

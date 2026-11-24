@@ -484,6 +484,16 @@ def fetch_dashboard_preview(base: str, mrt: str, client) -> tuple[bytes, str]:
     return content, media
 
 
+def _parse_json_dict(response) -> dict | None:
+    if response is None:
+        return None
+    try:
+        data = response.json()
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def fetch_filter_catalog(
     base: str,
     client,
@@ -491,11 +501,12 @@ def fetch_filter_catalog(
     *,
     question: str = "",
 ) -> dict:
-    """POST /filters (with GET fallback for mocks) to read filters or pick .mrt + fill result."""
+    """POST /filters (with fallback to {} / GET) to read filters or pick .mrt + fill result."""
     root = base.rstrip("/")
     name = (mrt or "").strip()
     q = (question or "").strip()
     response = None
+    body: dict | None = None
     if hasattr(client, "post"):
         payload: dict[str, object] = {}
         if q:
@@ -507,27 +518,42 @@ def fetch_filter_catalog(
             json=payload,
             headers={"Accept": "application/json"},
         )
-        if int(getattr(response, "status_code", 500) or 500) in {404, 405} or not isinstance(
-            getattr(response, "json", lambda: None)(), dict
-        ) or "filters" not in (response.json() or {}):
+        status = int(getattr(response, "status_code", 500) or 500)
+        body = _parse_json_dict(response)
+        # If question pick/LLM failed on viewer side (not stripped .mrt 422), retry catalog without question
+        if q and status != 422 and (status >= 400 or body is None or body.get("error")):
+            fallback_payload: dict[str, object] = {"mrt": name} if name else {}
+            retry = client.post(
+                f"{root}/filters",
+                json=fallback_payload,
+                headers={"Accept": "application/json"},
+            )
+            retry_status = int(getattr(retry, "status_code", 500) or 500)
+            retry_body = _parse_json_dict(retry)
+            if retry_status < 400 and isinstance(retry_body, dict) and isinstance(
+                retry_body.get("filters"), list
+            ):
+                response = retry
+                body = retry_body
+                status = retry_status
+        if status in {404, 405} or body is None or "filters" not in body:
             response = None
+            body = None
     if response is None and hasattr(client, "get"):
         url = f"{root}/filters"
         if name:
             url = f"{url}?mrt={quote(name)}"
         response = client.get(url)
+        body = _parse_json_dict(response)
     status = int(getattr(response, "status_code", 500) or 500)
-    try:
-        body = response.json()
-    except Exception as exc:
-        raise DashboardRemoteError("сервис фильтров вернул не JSON", "filters") from exc
+    if body is None:
+        raise DashboardRemoteError("сервис фильтров вернул не JSON", "filters")
     if (
         status >= 400
-        or not isinstance(body, dict)
         or body.get("error")
         or not isinstance(body.get("filters"), list)
     ):
-        detail = str(body.get("error") or "") if isinstance(body, dict) else ""
+        detail = str(body.get("error") or "")
         raise DashboardRemoteError(detail or "нет списка фильтров", "filters")
     return body
 
