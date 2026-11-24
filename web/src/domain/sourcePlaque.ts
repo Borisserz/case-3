@@ -26,3 +26,12 @@ export function removeAttachedSource(): {
     file: null,
   };
 }
+
+/** Clear any attached document/file from composer once the server accepts a send. */
+export function detachSourceAfterSend(opts: {
+  startedOnServer: boolean;
+  hidden: boolean;
+}): ReturnType<typeof removeAttachedSource> | null {
+  if (!opts.startedOnServer || opts.hidden) return null;
+  return removeAttachedSource();
+}

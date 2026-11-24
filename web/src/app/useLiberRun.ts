@@ -42,6 +42,7 @@ import {
   uid,
 } from "../domain/runHelpers";
 import { loadCarriedRun } from "../domain/carriedRun";
+import { detachSourceAfterSend } from "../domain/sourcePlaque";
 import { priorRunIdFromMessages } from "../domain/priorRun";
 import {
   offersNewChat,
@@ -85,7 +86,9 @@ export type LiberSendDeps = {
     chatRef: RefObject<HTMLTextAreaElement | null>;
     setChat: Dispatch<SetStateAction<string>>;
     setChatTitle: Dispatch<SetStateAction<string | null>>;
+    setFile: Dispatch<SetStateAction<File | null>>;
     setSourceDraft: Dispatch<SetStateAction<SourceDraft | null>>;
+    setPlaqueDismissed: Dispatch<SetStateAction<boolean>>;
     setAttachPhotos: Dispatch<SetStateAction<File[]>>;
   };
     desk: {
@@ -142,7 +145,9 @@ export function useLiberRun(deps: LiberSendDeps) {
       chatRef,
       setChat,
       setChatTitle,
+      setFile,
       setSourceDraft,
+      setPlaqueDismissed,
       setAttachPhotos,
     },
     desk: {
@@ -399,10 +404,19 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       throw new Error(formatApiDetailError(data, fallback));
     }
     startedOnServer = true;
+    const detached = detachSourceAfterSend({
+      startedOnServer,
+      hidden: Boolean(hidden),
+    });
     if (!hidden) {
       setChat("");
       if (chatRef.current) chatRef.current.style.height = "44px";
       setAttachPhotos([]);
+    }
+    if (detached) {
+      setFile(detached.file);
+      setSourceDraft(detached.sourceDraft);
+      setPlaqueDismissed(detached.plaqueDismissed);
     }
 
     // Sync photo-edit response (no poll)
@@ -1312,7 +1326,9 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
       setStopping,
       setChat,
       setChatTitle,
+      setFile,
       setSourceDraft,
+      setPlaqueDismissed,
       setAttachPhotos,
       setHasStoredReport,
       setToast,

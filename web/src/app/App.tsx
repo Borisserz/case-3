@@ -212,6 +212,8 @@ export default function App() {
     setActiveArtifact(null);
     setRailCollapsed(false);
     setRailExiting(false);
+    setFile(null);
+    setPlaqueDismissed(false);
   }, [setActiveArtifact, setRailCollapsed, setRailExiting]);
 
   const {
@@ -407,7 +409,9 @@ export default function App() {
       chatRef,
       setChat,
       setChatTitle,
+      setFile,
       setSourceDraft,
+      setPlaqueDismissed,
       setAttachPhotos,
     },
     desk: {

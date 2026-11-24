@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hideSourcePlaque, removeAttachedSource } from "./sourcePlaque.ts";
+import {
+  detachSourceAfterSend,
+  hideSourcePlaque,
+  removeAttachedSource,
+} from "./sourcePlaque.ts";
 
 describe("hideSourcePlaque", () => {
   it("hides the chip and keeps the document", () => {
@@ -17,5 +21,20 @@ describe("hideSourcePlaque", () => {
     assert.equal(next.plaqueDismissed, false);
     assert.equal(next.sourceDraft, null);
     assert.equal(next.file, null);
+  });
+
+  it("detaches any attached document only after accepted non-hidden send", () => {
+    assert.deepEqual(
+      detachSourceAfterSend({ startedOnServer: true, hidden: false }),
+      { plaqueDismissed: false, sourceDraft: null, file: null },
+    );
+    assert.equal(
+      detachSourceAfterSend({ startedOnServer: false, hidden: false }),
+      null,
+    );
+    assert.equal(
+      detachSourceAfterSend({ startedOnServer: true, hidden: true }),
+      null,
+    );
   });
 });

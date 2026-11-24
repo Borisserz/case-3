@@ -28,7 +28,6 @@ import {
   type HistoryItem,
 } from "../domain/reportHistory";
 import { reportReadyText, reportTitle, uid } from "../domain/runHelpers";
-import { draftFromDocuments } from "../domain/sourcePack";
 import { loadOpenChat, rememberOpenChat } from "../domain/openChat";
 import { botHistoryResult, messagesFromMemory } from "../domain/priorRun";
 import { chatToReopen, historyRailRun } from "../domain/reviseRefresh";
@@ -273,9 +272,7 @@ export function useReportHistory({
           botMsgId = bot?.id ?? null;
         }
         setMsgs(next);
-        onRestoreSource?.(
-          memory ? draftFromDocuments(memory.documents) : null,
-        );
+        onRestoreSource?.(null);
         if (botMsgId && shownHasArtifact) {
           openReportArtifact?.(botMsgId, shown);
         }
