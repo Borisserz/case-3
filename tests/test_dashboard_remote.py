@@ -659,7 +659,7 @@ def test_fetch_filter_catalog_with_question_uses_post_and_propagates_picked_mrt(
     assert done["viewer"] == "http://127.0.0.1:8040/open?mrt=revenue.mrt&rf=xyz"
 
 
-def test_plan_dashboard_phrase_adopts_validated_catalog_result_only_when_in_phrase() -> None:
+def test_plan_dashboard_phrase_adopts_all_catalog_result_params() -> None:
     catalog = {
         "mrt": "revenue.mrt",
         "filters": [
@@ -691,9 +691,73 @@ def test_plan_dashboard_phrase_adopts_validated_catalog_result_only_when_in_phra
     )
     assert plan["pull"] is True
     assert plan["mrt"] == "revenue.mrt"
-    # month=2 ("Февраль") is mentioned in phrase -> adopted from catalog["result"];
-    # region=99 ("Брест") is NOT in phrase -> stays default 10 ("Минск").
-    assert plan["filters"] == {"month": 2, "region": 10}
+    assert plan["filters"] == {"month": 2, "region": 99}
+
+
+def test_plan_and_finish_forward_full_stimulsoft_result_not_present_in_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DASHBOARD_SERVICE_URL", "http://127.0.0.1:8040")
+    catalog = {
+        "count": 5,
+        "dashboard": {
+            "description": "## Поступления в бюджет.mrt\n...",
+            "mrt": "Поступления в бюджет.mrt",
+            "mrt_path": "D:\\dahboard\\dash_prod\\dash\\dashboards\\Поступления в бюджет.mrt",
+        },
+        "filters": [
+            {
+                "alias": "Год",
+                "choices": [
+                    {"key": "2023", "value": "2023"},
+                    {"key": "2024", "value": "2024"},
+                    {"key": "2025", "value": "2025"},
+                    {"key": "2026", "value": "2026"},
+                ],
+                "name": "year",
+                "value": "2026",
+            }
+        ],
+        "result": {
+            "month": "3",
+            "trendtype": "cumulative",
+            "typenum": "1000000",
+            "vtypevd": "0000000",
+            "year": "2025",
+        },
+    }
+    plan = plan_dashboard_phrase(
+        "открой анализ за февраль 2025",
+        catalog,
+        lambda **_k: '{"pull": true, "filters": {"year": "2025"}, "say": "Открываю поступления за февраль 2025."}',
+    )
+    assert plan["pull"] is True
+    assert plan["mrt"] == "Поступления в бюджет.mrt"
+    assert plan["filters"] == {
+        "year": 2025,
+        "month": 3,
+        "trendtype": "cumulative",
+        "typenum": 1000000,
+        "vtypevd": "0000000",
+    }
+    poster = _Poster(url="http://127.0.0.1:8040/open?mrt=ok")
+    done = finish_dashboard_phrase(plan, "http://127.0.0.1:8040", poster)
+    assert poster.posts == [
+        (
+            "http://127.0.0.1:8040/open?open=0",
+            {
+                "filters": {
+                    "year": 2025,
+                    "month": 3,
+                    "trendtype": "cumulative",
+                    "typenum": 1000000,
+                    "vtypevd": "0000000",
+                },
+                "mrt": "Поступления в бюджет.mrt",
+            },
+        )
+    ]
+    assert done["viewer"] == "http://127.0.0.1:8040/open?mrt=ok"
 
 
 def test_finish_dashboard_phrase_calls_post_open_when_zero_filters() -> None:

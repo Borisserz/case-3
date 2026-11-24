@@ -370,6 +370,34 @@ def validated_catalog_result(catalog: dict, phrase: str) -> dict[str, object]:
     return _validate_filter_map(catalog, phrase, catalog.get("result"))
 
 
+def catalog_result_filters(catalog: dict) -> dict[str, object]:
+    """Adopt all non-empty POST /filters result parameters for POST /open."""
+    raw = catalog.get("result")
+    if not isinstance(raw, dict):
+        return {}
+    fields = [item for item in (catalog.get("filters") or []) if isinstance(item, dict)]
+    by_name: dict[str, dict] = {}
+    for field in fields:
+        for label in (field.get("name"), field.get("alias")):
+            key = _norm(label)
+            if key:
+                by_name[key] = field
+    picked: dict[str, object] = {}
+    for key, value in raw.items():
+        if value in (None, ""):
+            continue
+        field = by_name.get(_norm(key))
+        if field is not None:
+            name = str(field.get("name") or key).strip()
+            if name:
+                picked[name] = _value_for_open(field, value)
+        else:
+            name = str(key or "").strip()
+            if name:
+                picked[name] = _open_value(value)
+    return picked
+
+
 def open_payload(filters: dict[str, object]) -> dict[str, object]:
     return {"filters": dict(filters)}
 
@@ -679,12 +707,13 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
     if not might_ask_dashboard(text):
         return {"pull": False}
     base_filters = defaults_from_catalog(catalog)
+    result_overlay = catalog_result_filters(catalog)
     overlay: dict[str, object] = {}
     say = ""
     named = phrase_names_choice(text, catalog)
     dash_obj = catalog.get("dashboard") if isinstance(catalog.get("dashboard"), dict) else {}
     picked_mrt = str(catalog.get("mrt") or dash_obj.get("mrt") or "").strip()
-    if base_filters or named:
+    if base_filters or named or result_overlay:
         from case3.prompts import load as load_prompt
 
         raw = str(
@@ -701,12 +730,11 @@ def plan_dashboard_phrase(text: str, catalog: dict, complete) -> dict:
         say = _say_from_model(raw)
         model_pull = bool(_json_object(raw).get("pull"))
         if not model_pull:
-            if not (base_filters and _EXPLICIT_DASHBOARD_OPEN.search(text or "")):
+            if not ((base_filters or result_overlay) and _EXPLICIT_DASHBOARD_OPEN.search(text or "")):
                 return {"pull": False}
         elif named:
             overlay = filters_from_model(catalog, text, raw)
-    result_overlay = validated_catalog_result(catalog, text)
-    filters = {**base_filters, **result_overlay, **overlay}
+    filters = {**base_filters, **overlay, **result_overlay}
     explicit_plain_open = bool(picked_mrt and _EXPLICIT_DASHBOARD_OPEN.search(text or ""))
     if not filters and not explicit_plain_open:
         return {
