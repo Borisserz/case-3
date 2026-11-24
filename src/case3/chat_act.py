@@ -439,24 +439,32 @@ def parse_section_rename(text: str | None) -> tuple[str, str] | None:
     return old, new
 
 
+def _text_after_slide_cue(raw: str) -> str:
+    wrote = re.search(r"(?:напиши|текст)\s+(.+)$", raw, re.IGNORECASE)
+    if not wrote:
+        return ""
+    body = re.sub(
+        r"^(?:на\s+)?"
+        r"(?:слайд\w*(?:\s+\d{1,2})?|\d{1,2}\s*слайд\w*|"
+        r"(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)\w*\s+слайд\w*)"
+        r"\s*",
+        "",
+        wrote.group(1),
+        flags=re.IGNORECASE,
+    )
+    return body.strip(" .:—–-")
+
+
 def parse_slide_body(text: str | None) -> tuple[int, str]:
     raw = _norm(text or "").strip()
     if re.search(r"добав|перестав|перемест|подвинь|убери|удали", raw, re.IGNORECASE):
         return 0, ""
     if not re.search(r"напиши|текст", raw, re.IGNORECASE):
         return 0, ""
-    match = re.search(r"слайд\w*\s+(\d{1,2})", raw, re.IGNORECASE)
-    if not match:
-        match = re.search(r"(\d{1,2})\s*слайд\w*", raw, re.IGNORECASE)
-    if not match:
+    index = _slide_number_named(raw)
+    if not index:
         return 0, ""
-    body = re.sub(
-        r"^[\s:—\-]*(?:напиши|поставь|текст|на)?\s*",
-        "",
-        raw[match.end() :],
-        flags=re.IGNORECASE,
-    ).strip(" .")
-    return int(match.group(1)), body
+    return index, _text_after_slide_cue(raw)
 
 
 def _slot_index(raw: str, noun: str) -> int:
@@ -870,9 +878,9 @@ def parse_slide_bullets(text: str | None) -> tuple[int, tuple[str, ...]] | None:
     if not re.search(r"пункт|тезис", raw, re.IGNORECASE):
         return None
     number = re.search(r"слайд\w*\s+(\d{1,2})|(\d{1,2})\s*слайд", raw, re.IGNORECASE)
-    if not number:
+    index = int(number.group(1) or number.group(2)) if number else _slide_number_named(raw)
+    if not index:
         return 0, ()
-    index = int(number.group(1) or number.group(2))
     tail = re.search(r"(?:пункт\w*|тезис\w*)\s*[:—-]?\s*(.*)$", raw, re.IGNORECASE)
     body = (tail.group(1) if tail else "").strip()
     parts = [part.strip(" .") for part in re.split(r"\s*[;•]\s*|\n+", body) if part.strip(" .")]
@@ -1499,7 +1507,11 @@ def resolve_act(
                 say="Меняю схему по твоей фразе. Новых чисел не добавлю.",
             )
 
-    if not question and (_REWRITE.search(raw) or _PROSE.search(raw)):
+    if (
+        not question
+        and (_REWRITE.search(raw) or _PROSE.search(raw))
+        and not (has_deck and re.search(r"слайд", raw, re.IGNORECASE))
+    ):
         if not has_report:
             if re.search(r"отч[её]т|раздел|абзац", raw, re.IGNORECASE):
                 return ChatAct(
@@ -1772,6 +1784,39 @@ def resolve_act(
             op="add_slide",
             title=topic,
             say=f"Добавляю слайд «{topic}». Новых чисел нет.",
+        )
+
+    if not question and re.search(r"слайд", raw, re.IGNORECASE) and (
+        re.search(
+            r"измени|поправь|исправь|перепиши|переписать|переделай|переделать",
+            raw,
+            re.IGNORECASE,
+        )
+        or (
+            _slide_number_named(raw)
+            and re.search(r"сделай|сделать|короче|проще|упрости", raw, re.IGNORECASE)
+        )
+    ):
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        index = _slide_number_named(raw)
+        if not index:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Какой слайд изменить? Например «измени слайд 1» или «на слайде 2 напиши …».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            slide=index,
+            say=(
+                f"Что изменить на слайде {index}? "
+                f"Например «на слайде {index} напиши …» или «убери слайд {index}»."
+            ),
         )
 
     if (

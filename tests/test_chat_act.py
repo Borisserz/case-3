@@ -469,6 +469,29 @@ def test_slide_text_and_a_new_slide_stay_on_the_deck():
     assert resolve_act("добавь слайд про риски").kind == "talk"
 
 
+def test_a_named_slide_edit_is_not_a_section_rewrite():
+    vague = resolve_act("можешь изменить слайд первый", has_deck=True, has_report=True)
+    assert vague.op == "ask"
+    assert vague.slide == 1
+    assert "слайде 1" in vague.say
+    fixed = resolve_act("поправь слайд 1", has_deck=True, has_report=True)
+    assert fixed.op == "ask"
+    assert fixed.slide == 1
+    shorter = resolve_act("сделай первый слайд короче", has_deck=True, has_report=True)
+    assert shorter.op == "ask"
+    assert shorter.slide == 1
+    written = resolve_act("на первом слайде напиши теорию", has_deck=True, has_report=True)
+    assert written.op == "slide_text"
+    assert written.slide == 1
+    assert written.title == "теорию"
+    points = resolve_act("на первом слайде пункты: риски; сроки", has_deck=True)
+    assert points.op == "slide_bullets"
+    assert points.slide == 1
+    section = resolve_act("поправь введение", has_report=True, has_deck=True)
+    assert section.op == "rewrite"
+    assert section.section == "Введение"
+
+
 def test_one_named_chart_does_not_retype_the_rest():
     one = resolve_act("второй график сделай линейным", has_report=True)
     assert one.op == "retype_chart"

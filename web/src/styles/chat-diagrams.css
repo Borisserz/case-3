@@ -1903,6 +1903,12 @@
   width: 100%;
 }
 
+.deck-file-card.is-pptx,
+.deck-file-card.is-deck-pdf {
+  width: min(100%, 34rem);
+  max-width: 34rem;
+}
+
 .deck-file-card.is-pptx .deck-file-card-sheet {
   aspect-ratio: 16 / 9;
   min-height: 16rem;
