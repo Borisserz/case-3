@@ -34,3 +34,18 @@ def test_merge_leaves_a_body_that_already_has_the_table(tmp_path: Path):
     (folder / "source.txt").write_text(table, encoding="utf-8")
     body = f"===== отчёт.pdf =====\n{table}"
     assert merge_ingested_sources(body, [{"ingestId": ingest_id}], tmp_path) == body
+
+
+def test_edited_markdown_is_not_replaced_by_the_pdf_file(tmp_path: Path):
+    ingest_id = "20261124T120002Z_abcdef"
+    folder = tmp_path / "runs" / "uploads" / "ingest" / ingest_id
+    folder.mkdir(parents=True)
+    (folder / "source.txt").write_text("| Регион | Факт |\n| --- | --- |\n| Минск | 120 |\n", encoding="utf-8")
+    edited = "===== отчёт.pdf =====\n| Регион | Факт |\n| --- | --- |\n| Минск | 90 |\n"
+    merged = merge_ingested_sources(
+        edited,
+        [{"ingestId": ingest_id, "sourceEdited": True}],
+        tmp_path,
+    )
+    assert merged == edited
+    assert "120" not in merged

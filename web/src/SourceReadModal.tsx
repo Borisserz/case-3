@@ -11,28 +11,44 @@ import { useFocusTrap } from "./useFocusTrap";
 
 type Props = {
   docs: SourceAttachment[];
+  startIndex?: number;
   onClose: () => void;
+  onSave?: (index: number, text: string) => void;
 };
 
-export function SourceReadModal({ docs, onClose }: Props) {
+export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const [activeIdx, setActiveIdx] = useState(startIndex);
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   useFocusTrap(dialogRef, { active: true });
 
+  const openKey = docs.map((doc) => doc.fileName || doc.title).join("\n");
+
   useEffect(() => {
-    setActiveIdx(0);
+    setActiveIdx(startIndex);
     setQuery("");
-  }, [docs]);
+    setEditing(false);
+    setCopied(false);
+  }, [openKey, startIndex]);
 
   const safeIdx = Math.min(activeIdx, Math.max(0, docs.length - 1));
   const activeDoc = docs[safeIdx] || docs[0];
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (editingRef.current) {
+        setEditing(false);
+        return;
+      }
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -47,6 +63,19 @@ export function SourceReadModal({ docs, onClose }: Props) {
     () => (activeDoc ? renderLightMd(activeDoc.text || "", query) : ""),
     [activeDoc, query],
   );
+
+  function beginEdit() {
+    setDraft(activeDoc?.text || "");
+    setEditing(true);
+    window.setTimeout(() => editorRef.current?.focus(), 0);
+  }
+
+  function saveEdit() {
+    const next = draft.replace(/\r\n/g, "\n");
+    if (!next.trim()) return;
+    onSave?.(safeIdx, next);
+    setEditing(false);
+  }
 
   if (!activeDoc) return null;
 
@@ -99,14 +128,43 @@ export function SourceReadModal({ docs, onClose }: Props) {
             </h2>
           </div>
           <div className="dash-read-head-controls">
-            <input
-              type="search"
-              className="dash-read-search"
-              placeholder="Найти в документе…"
-              aria-label="Поиск по документу"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+            {editing ? null : (
+              <input
+                type="search"
+                className="dash-read-search"
+                placeholder="Найти в документе…"
+                aria-label="Поиск по документу"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            )}
+            {editing ? (
+              <>
+                <button
+                  type="button"
+                  className="stimul-download-btn"
+                  onClick={saveEdit}
+                >
+                  Сохранить
+                </button>
+                <button
+                  type="button"
+                  className="stimul-copy-btn"
+                  onClick={() => setEditing(false)}
+                >
+                  Отмена
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="stimul-copy-btn"
+                onClick={beginEdit}
+              >
+                Изменить
+              </button>
+            )}
+            {editing ? null : (
             <button
               type="button"
               className={`stimul-copy-btn${copied ? " is-ok" : ""}`}
@@ -114,6 +172,7 @@ export function SourceReadModal({ docs, onClose }: Props) {
             >
               {copied ? "Скопировано" : "Копировать"}
             </button>
+            )}
             {downloadTarget.kind === "url" ? (
               <a
                 className="stimul-download-btn"
@@ -152,6 +211,7 @@ export function SourceReadModal({ docs, onClose }: Props) {
                   onClick={() => {
                     setActiveIdx(idx);
                     setCopied(false);
+                    setEditing(false);
                   }}
                 >
                   {doc.fileName || doc.title}
@@ -159,7 +219,16 @@ export function SourceReadModal({ docs, onClose }: Props) {
               ))}
             </nav>
           ) : null}
-          {activeDoc.text?.trim() ? (
+          {editing ? (
+            <textarea
+              ref={editorRef}
+              className="source-read-editor"
+              aria-label="Текст документа"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              spellCheck
+            />
+          ) : activeDoc.text?.trim() ? (
             <div
               className="msg-body msg-md source-read-md"
               dangerouslySetInnerHTML={{ __html: html }}

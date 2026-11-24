@@ -1,6 +1,6 @@
 /** Stimulsoft viewer → one markdown per PNG and per table PDF. */
 
-import { mergeSourcePack } from "./sourcePack";
+import { mergeSourcePack, sourcePackRejects } from "./sourcePack";
 import type { SourceDraft } from "./liberTypes";
 
 export const CAPTURE_MESSAGE = "liber-dashboard-capture";
@@ -368,19 +368,25 @@ export function shotsSource(shots: DashboardShot[]): string {
 export function attachCaptureMarkdowns(
   current: SourceDraft | null,
   docs: { name: string; markdown: string }[],
-): SourceDraft | null {
+): { draft: SourceDraft | null; rejected: number } {
   let next = current;
+  let rejected = 0;
   for (const doc of docs) {
     const text = (doc.markdown || "").trim();
     if (!text) continue;
     const title = shotTitle(doc.name, text);
     const fileName = `${title}.md`;
-    next = mergeSourcePack(next, {
+    const incoming = {
       title,
       text,
       fileName,
-      viewMode: "text",
-    });
+      viewMode: "text" as const,
+    };
+    if (sourcePackRejects(next, incoming)) {
+      rejected += 1;
+      continue;
+    }
+    next = mergeSourcePack(next, incoming);
   }
-  return next;
+  return { draft: next, rejected };
 }

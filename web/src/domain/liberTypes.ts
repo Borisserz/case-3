@@ -126,6 +126,8 @@ export type SourceAttachment = {
   originalUrl?: string | null;
   ingestId?: string;
   format?: string;
+  /** User edited the markdown. The original ingest file must not replace it. */
+  sourceEdited?: boolean;
 };
 
 export type SourcePart = {
@@ -137,6 +139,8 @@ export type SourcePart = {
   originalUrl?: string | null;
   ingestId?: string;
   format?: string;
+  /** User edited the markdown. The original ingest file must not replace it. */
+  sourceEdited?: boolean;
 };
 
 export type SourceDraft = {

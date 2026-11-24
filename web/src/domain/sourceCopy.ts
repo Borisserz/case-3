@@ -5,6 +5,8 @@ export const SOURCE_LABEL = "Документ";
 export const SCREEN_READ_NOTE = "Числа с экрана модель могла прочитать";
 
 export const ATTACHED_TOAST = "Данные прикреплены";
+export const SOURCE_LIMIT_TOAST =
+  "Лимит — 5 документов. Открепите один, чтобы добавить новый.";
 
 export function screenReadNote(fromScreen: boolean): string {
   return fromScreen ? SCREEN_READ_NOTE : "";

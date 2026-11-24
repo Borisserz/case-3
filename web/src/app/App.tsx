@@ -36,6 +36,7 @@ import {
   composerPlaques,
   dropSourcePart,
   ensureSourceParts,
+  replaceSourcePartText,
   sourceParts,
 } from "../domain/sourcePack";
 import { docsForSourceModal } from "../domain/sourceRead";
@@ -175,6 +176,8 @@ export default function App() {
   const [sourceReadDocs, setSourceReadDocs] = useState<
     SourceAttachment[] | null
   >(null);
+  const [sourceReadAt, setSourceReadAt] = useState(0);
+  const [sourceReadLive, setSourceReadLive] = useState(false);
   const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
   const activeCardId = useRef<string | null>(null);
   const cardsRef = useRef<Map<string, DashboardCard>>(new Map());
@@ -480,7 +483,18 @@ export default function App() {
         ensureSourceParts(current),
         card.shots.map((shot) => ({ name: shot.name, markdown: shot.markdown })),
       );
-      return next;
+      const rejected = next.rejected;
+      const added = card.shots.length;
+      queueMicrotask(() =>
+        showToast(
+          rejected
+            ? "Лимит — 5 документов. Открепите один, чтобы добавить новый."
+            : `Данные прикреплены (${added} экр.) — напишите вопрос или выберите действие`,
+          rejected ? 5200 : 3200,
+          rejected ? "warn" : "default",
+        ),
+      );
+      return next.draft;
     });
     setFile(null);
     setPlaqueDismissed(false);
@@ -491,7 +505,6 @@ export default function App() {
         (msg) => !(msg.id === id && msg.role === "bot" && !msg.text.trim()),
       ),
     );
-    showToast(`Данные прикреплены (${card.shots.length} экр.) — напишите вопрос или выберите действие`, 3200);
   }, [setFile, setMsgs, setSourceDraft, showToast]);
 
   const onDashboardShot = useCallback(
@@ -528,9 +541,72 @@ export default function App() {
         openDashboardRead(draft.title || draft.fileName || "Данные дашборда", draft.text);
         return;
       }
+      setSourceReadLive(false);
+      setSourceReadAt(0);
       setSourceReadDocs(docsForSourceModal(draft));
     },
     [openDashboardRead],
+  );
+
+  const saveSourceRead = useCallback(
+    (index: number, text: string) => {
+      const current = sourceReadDocs?.[index];
+      if (!current) return;
+      const nextText = text.replace(/\r\n/g, "\n");
+      const parts = sourceDraft ? sourceParts(sourceDraft) : [];
+      let partIndex = sourceReadLive && parts[index] ? index : -1;
+      if (partIndex < 0) {
+        partIndex = parts.findIndex(
+          (part) =>
+            (current.ingestId && part.ingestId === current.ingestId) ||
+            (part.name === (current.fileName || current.title) &&
+              part.text === current.text),
+        );
+      }
+      if (partIndex < 0) {
+        partIndex = parts.findIndex((part) =>
+          current.ingestId
+            ? part.ingestId === current.ingestId
+            : part.name === (current.fileName || current.title),
+        );
+      }
+      if (sourceDraft && partIndex >= 0) {
+        setSourceDraft(replaceSourcePartText(sourceDraft, partIndex, nextText));
+        showToast("Текст документа обновлён", 2000);
+      } else {
+        showToast("Текст в сообщении обновлён", 2200);
+      }
+      setSourceReadDocs((docs) =>
+        docs
+          ? docs.map((doc, i) =>
+              i === index ? { ...doc, text: nextText, sourceEdited: true } : doc,
+            )
+          : docs,
+      );
+      const same = (doc: SourceAttachment) =>
+        (current.ingestId && doc.ingestId === current.ingestId) ||
+        ((doc.fileName || doc.title) === (current.fileName || current.title) &&
+          doc.text === current.text);
+      setMsgs((list) =>
+        list.map((msg) => {
+          if (msg.role !== "user") return msg;
+          let changed = false;
+          const attachments = msg.attachments?.map((doc) => {
+            if (!same(doc)) return doc;
+            changed = true;
+            return { ...doc, text: nextText, sourceEdited: true as const };
+          });
+          const attachment =
+            msg.attachment && same(msg.attachment)
+              ? { ...msg.attachment, text: nextText, sourceEdited: true as const }
+              : msg.attachment;
+          if (msg.attachment && attachment !== msg.attachment) changed = true;
+          if (!changed) return msg;
+          return { ...msg, attachments, attachment };
+        }),
+      );
+    },
+    [setMsgs, showToast, sourceDraft, sourceReadDocs, sourceReadLive],
   );
 
   const openDashboardCard = useCallback((id: string) => {
@@ -1028,18 +1104,11 @@ export default function App() {
                   }
                   onOpenPlaque={(index) => {
                     if (!sourceDraft) return;
-                    const part = sourceParts(sourceDraft)[index];
-                    if (!part) return;
-                    openAttached({
-                      title: part.title || part.name,
-                      text: part.text,
-                      fileName: part.name,
-                      viewMode: part.viewMode,
-                      previewUrl: part.previewUrl,
-                      originalUrl: part.originalUrl,
-                      ingestId: part.ingestId,
-                      format: part.format,
-                    });
+                    const packed = ensureSourceParts(sourceDraft) ?? sourceDraft;
+                    if (!sourceParts(packed)[index]) return;
+                    setSourceReadLive(true);
+                    setSourceReadAt(index);
+                    setSourceReadDocs(docsForSourceModal(packed));
                   }}
                   onDismissPlaque={(index) => {
                     if (!sourceDraft) return;
@@ -1430,7 +1499,9 @@ export default function App() {
       {sourceReadDocs?.length ? (
         <SourceReadModal
           docs={sourceReadDocs}
+          startIndex={sourceReadAt}
           onClose={() => setSourceReadDocs(null)}
+          onSave={saveSourceRead}
         />
       ) : null}
 

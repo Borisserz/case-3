@@ -2191,9 +2191,20 @@ async def api_run(
                     if not isinstance(item, dict):
                         continue
                     row_att: dict[str, Any] = {}
-                    for k in ("title", "fileName", "viewMode", "previewUrl", "originalUrl", "ingestId", "format"):
+                    for k in (
+                        "title",
+                        "fileName",
+                        "viewMode",
+                        "previewUrl",
+                        "originalUrl",
+                        "ingestId",
+                        "format",
+                        "sourceEdited",
+                    ):
                         v = item.get(k)
-                        if isinstance(v, str) and v.strip():
+                        if k == "sourceEdited" and v is True:
+                            row_att[k] = True
+                        elif isinstance(v, str) and v.strip():
                             row_att[k] = v.strip()[:500]
                     if row_att:
                         attachments_meta.append(row_att)

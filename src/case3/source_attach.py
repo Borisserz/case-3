@@ -8,6 +8,13 @@ from pathlib import Path
 _INGEST_ID_OK = re.compile(r"^[0-9]{8}T[0-9]{6}Z_[0-9a-f]{6}$")
 
 
+def _source_was_edited(row: dict) -> bool:
+    flag = row.get("sourceEdited")
+    if flag is True:
+        return True
+    return str(flag or "").strip().lower() in {"1", "true", "yes"}
+
+
 def ingested_markdown(root: Path, ingest_id: str) -> str:
     """Markdown saved at upload time. Empty when the id or the file is missing."""
     ingest_id = (ingest_id or "").strip()
@@ -47,6 +54,8 @@ def merge_ingested_sources(
         if not ingest_id or ingest_id in seen:
             continue
         seen.add(ingest_id)
+        if _source_was_edited(row):
+            continue
         text = ingested_markdown(root, ingest_id)
         if text and text not in body and text not in extracts:
             extracts.append(text)

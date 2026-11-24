@@ -151,11 +151,12 @@ describe("attachCaptureMarkdowns", () => {
       { name: "dashboard_20261121.png", markdown: "# Экран\n\nфильтр" },
       { name: "Оплаты_20261121.pdf", markdown: "| a |\n| --- |\n| 1 |" },
     ]);
-    assert.equal(next?.parts?.length, 2);
-    assert.equal(next?.parts?.[0].name, "Экран дашборда.md");
-    assert.equal(next?.parts?.[1].name, "Оплаты_20261121.md");
-    assert.match(next?.text || "", /===== Экран дашборда.md =====/);
-    assert.match(next?.text || "", /===== Оплаты_20261121.md =====/);
+    assert.equal(next.rejected, 0);
+    assert.equal(next.draft?.parts?.length, 2);
+    assert.equal(next.draft?.parts?.[0].name, "Экран дашборда.md");
+    assert.equal(next.draft?.parts?.[1].name, "Оплаты_20261121.md");
+    assert.match(next.draft?.text || "", /===== Экран дашборда.md =====/);
+    assert.match(next.draft?.text || "", /===== Оплаты_20261121.md =====/);
     assert.equal(markdownDocName("Оплаты_20261121.pdf"), "Оплаты_20261121.md");
   });
 });

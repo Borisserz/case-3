@@ -83,11 +83,22 @@ export function mergeSourcePack(
     format: next.format,
   };
   const idx = existing.findIndex((p) => p.name === name);
+  if (current && sourcePackRejects(current, next)) return current;
   let parts = existing.slice();
   if (idx >= 0) parts[idx] = part;
-  else if (parts.length < MAX_DOCS) parts.push(part);
-  else parts = [...parts.slice(1), part];
+  else parts.push(part);
   return packParts(parts, next);
+}
+
+export function sourcePackRejects(
+  current: SourceDraft | null,
+  next: { fileName?: string; title?: string },
+): boolean {
+  if (!current) return false;
+  const name = (next.fileName || next.title || "Документ").trim() || "Документ";
+  const existing = sourceParts(current).filter((part) => part.text.trim());
+  if (existing.some((part) => part.name === name)) return false;
+  return existing.length >= MAX_DOCS;
 }
 
 function splitPacked(text: string): { name: string; markdown: string }[] {
@@ -159,6 +170,20 @@ function packParts(parts: SourcePart[], seed: SourceDraft): SourceDraft {
   };
 }
 
+export function replaceSourcePartText(
+  draft: SourceDraft,
+  index: number,
+  text: string,
+): SourceDraft {
+  const parts = sourceParts(draft).map((part, i) =>
+    i === index
+      ? { ...part, text: text.replace(/\r\n/g, "\n"), sourceEdited: true }
+      : part,
+  );
+  if (!parts[index]) return draft;
+  return packParts(parts, draft);
+}
+
 export function dropSourcePart(
   draft: SourceDraft,
   index: number,
@@ -212,6 +237,7 @@ export function attachmentsFromDraft(
         originalUrl: urls.originalUrl,
         ingestId: part.ingestId,
         format: part.format,
+        sourceEdited: part.sourceEdited,
       };
     });
 }

@@ -145,6 +145,7 @@ export function buildRunFormData(args: BuildRunFormDataArgs): FormData {
       originalUrl: a.originalUrl,
       ingestId: a.ingestId,
       format: a.format,
+      sourceEdited: a.sourceEdited || undefined,
     }));
     if (metas.length) {
       fd.append("attachments_json", JSON.stringify(metas));

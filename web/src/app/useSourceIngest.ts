@@ -9,8 +9,8 @@ import {
 } from "react";
 import { LONG_TEXT_CHARS } from "../domain/liberConstants";
 import type { SourceDraft } from "../domain/liberTypes";
-import { ATTACHED_TOAST, sourceCameFromScreen } from "../domain/sourceCopy";
-import { mergeSourcePack } from "../domain/sourcePack";
+import { ATTACHED_TOAST, SOURCE_LIMIT_TOAST, sourceCameFromScreen } from "../domain/sourceCopy";
+import { mergeSourcePack, sourcePackRejects } from "../domain/sourcePack";
 import { readTextFile } from "../domain/runHelpers";
 import { failedDashboardSnapshot, parseDashboard } from "../domain/dashboardParse";
 import { paperclipAction } from "../domain/paperclipRoute";
@@ -25,7 +25,7 @@ type Deps = {
   setForbidImages: Dispatch<SetStateAction<boolean>>;
   setMaxImages: Dispatch<SetStateAction<number>>;
   setDrag: Dispatch<SetStateAction<boolean>>;
-  showToast: (message: string, ms?: number) => void;
+  showToast: (message: string, ms?: number, tone?: "default" | "warn") => void;
 };
 
 export function useSourceIngest({
@@ -49,16 +49,21 @@ export function useSourceIngest({
   }, []);
 
   const applySourceDraft = useCallback(
-    (draft: SourceDraft) => {
-      setFile(null);
+    (draft: SourceDraft, addedToast?: string) => {
       setSourceDraft((current) => {
+        if (sourcePackRejects(current, draft)) {
+          queueMicrotask(() => showToast(SOURCE_LIMIT_TOAST, 5200, "warn"));
+          return current;
+        }
+        if (addedToast) queueMicrotask(() => showToast(addedToast, 2800));
         const merged = mergeSourcePack(current, draft);
         return { ...merged, fromScreen: sourceCameFromScreen(merged.text) };
       });
+      setFile(null);
       setPlaqueDismissed(false);
       setDeckApplyHint(null);
     },
-    [setFile, setSourceDraft, setPlaqueDismissed, setDeckApplyHint],
+    [setFile, setSourceDraft, setPlaqueDismissed, setDeckApplyHint, showToast],
   );
 
   const capturePastedSource = useCallback(
@@ -66,11 +71,14 @@ export function useSourceIngest({
       const trimmed = text.trim();
       if (trimmed.length <= LONG_TEXT_CHARS) return false;
       revokeBlob();
-      applySourceDraft({
-        title: "Документ",
-        text: trimmed,
-        viewMode: "text",
-      });
+      applySourceDraft(
+        {
+          title: "Документ",
+          text: trimmed,
+          viewMode: "text",
+        },
+        ATTACHED_TOAST,
+      );
       return true;
     },
     [applySourceDraft, revokeBlob],
@@ -88,26 +96,30 @@ export function useSourceIngest({
           void (async () => {
             try {
               const out = await ingestOfficeSource(f);
-              applySourceDraft({
-                title: out.filename || f.name,
-                text: out.markdown,
-                fileName: out.filename || f.name,
-                viewMode: "text",
-                originalUrl: out.original_url || null,
-                ingestId: out.ingest_id,
-                format: out.format,
-              });
-              showToast(ATTACHED_TOAST, 2800);
+              applySourceDraft(
+                {
+                  title: out.filename || f.name,
+                  text: out.markdown,
+                  fileName: out.filename || f.name,
+                  viewMode: "text",
+                  originalUrl: out.original_url || null,
+                  ingestId: out.ingest_id,
+                  format: out.format,
+                },
+                ATTACHED_TOAST,
+              );
             } catch {
               try {
                 const text = await readTextFile(f);
-                applySourceDraft({
-                  title: f.name,
-                  text,
-                  fileName: f.name,
-                  viewMode: "text",
-                });
-                showToast(ATTACHED_TOAST, 2800);
+                applySourceDraft(
+                  {
+                    title: f.name,
+                    text,
+                    fileName: f.name,
+                    viewMode: "text",
+                  },
+                  ATTACHED_TOAST,
+                );
               } catch (err) {
                 showToast(
                   err instanceof Error
@@ -124,21 +136,19 @@ export function useSourceIngest({
           void (async () => {
             try {
               const out = await ingestOfficeSource(f);
-              applySourceDraft({
-                title: out.filename,
-                text: out.markdown,
-                fileName: out.filename,
-                viewMode: "document",
-                previewUrl: out.preview_url || null,
-                originalUrl: out.original_url || null,
-                ingestId: out.ingest_id,
-                format: out.format,
-              });
-              if (out.warnings?.length) {
-                showToast(out.warnings[0], 5000);
-              } else {
-                showToast(`Документ: ${out.filename}`, 2800);
-              }
+              applySourceDraft(
+                {
+                  title: out.filename,
+                  text: out.markdown,
+                  fileName: out.filename,
+                  viewMode: "document",
+                  previewUrl: out.preview_url || null,
+                  originalUrl: out.original_url || null,
+                  ingestId: out.ingest_id,
+                  format: out.format,
+                },
+                out.warnings?.[0] || `Документ: ${out.filename}`,
+              );
             } catch (err) {
               showToast(
                 err instanceof Error
@@ -155,17 +165,15 @@ export function useSourceIngest({
           void (async () => {
             try {
               const out = await parseDashboard(f, null);
-              applySourceDraft({
-                title: f.name,
-                text: out.markdown,
-                fileName: f.name,
-                viewMode: "text",
-              });
-              if (out.warnings.length) {
-                showToast(out.warnings[0], 5000);
-              } else {
-                showToast(ATTACHED_TOAST, 2800);
-              }
+              applySourceDraft(
+                {
+                  title: f.name,
+                  text: out.markdown,
+                  fileName: f.name,
+                  viewMode: "text",
+                },
+                out.warnings[0] || ATTACHED_TOAST,
+              );
             } catch (err) {
               const message =
                 err instanceof Error

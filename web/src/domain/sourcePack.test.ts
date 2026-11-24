@@ -6,6 +6,8 @@ import {
   dropSourcePart,
   ensureSourceParts,
   mergeSourcePack,
+  replaceSourcePartText,
+  sourcePackRejects,
 } from "./sourcePack";
 
 describe("sourcePack", () => {
@@ -87,5 +89,50 @@ describe("sourcePack", () => {
     assert.equal(single.length, 1);
     assert.equal(single[0].title, "notes.txt");
     assert.equal(single[0].text, "Текст заметки");
+  });
+
+  it("saves an edited markdown back into that plaque only", () => {
+    const packed = mergeSourcePack(
+      mergeSourcePack(null, {
+        title: "отчёт.pdf",
+        text: "| Регион | Факт |\n| --- | --- |\n| Минск | 120 |",
+        fileName: "отчёт.pdf",
+        viewMode: "document",
+        ingestId: "ing_1",
+      }),
+      {
+        title: "ещё.md",
+        text: "не трогать",
+        fileName: "ещё.md",
+      },
+    );
+    const next = replaceSourcePartText(packed, 0, "| Регион | Факт |\n| --- | --- |\n| Минск | 90 |");
+    const attachments = attachmentsFromDraft(next);
+    assert.equal(attachments[0].sourceEdited, true);
+    assert.match(attachments[0].text, /90/);
+    assert.equal(attachments[1].text, "не трогать");
+    assert.match(next.text, /Минск \| 90/);
+    assert.doesNotMatch(next.text, /120/);
+  });
+
+  it("refuses a sixth document and keeps the five already attached", () => {
+    let packed = null as ReturnType<typeof mergeSourcePack> | null;
+    for (let i = 1; i <= 5; i += 1) {
+      packed = mergeSourcePack(packed, {
+        title: `док-${i}.md`,
+        text: `текст ${i}`,
+        fileName: `док-${i}.md`,
+      });
+    }
+    assert.equal(sourcePackRejects(packed, { fileName: "док-6.md" }), true);
+    assert.equal(sourcePackRejects(packed, { fileName: "док-1.md" }), false);
+    const kept = mergeSourcePack(packed, {
+      title: "док-6.md",
+      text: "лишний",
+      fileName: "док-6.md",
+    });
+    assert.equal(kept, packed);
+    assert.match(kept?.text || "", /текст 1/);
+    assert.doesNotMatch(kept?.text || "", /лишний/);
   });
 });

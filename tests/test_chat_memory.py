@@ -489,6 +489,14 @@ def test_followup_uses_the_dashboard_screen_not_the_later_note(tmp_path: Path) -
     assert "Минск" in source_for_followup("сколько факт", saved, "сколько факт", picture=False)
     long_other = "Договор\n\n" + ("пункт про срок. " * 80)
     assert source_for_followup(long_other, saved, "что в договоре", picture=False) == long_other
+    attached = (
+        "# Отчёт\n\n| Регион | Факт |\n| --- | --- |\n| Гомель | 90 |\n"
+    )
+    scheme = source_for_followup(attached, saved, "сделай схему", picture=True)
+    assert "Гомель" in scheme and "90" in scheme
+    short_doc = "Выручка отдела за январь составила 90 тысяч."
+    deck = source_for_followup(short_doc, saved, "сделай презентацию по этим данным", picture=False)
+    assert "90 тысяч" in deck
     brest = tmp_path / "runs" / "uploads" / "brest.md"
     brest.write_text(
         "# Данные дашборда\n\n| Уровень | Факт |\n| --- | --- |\n| Брест | 7 |\n",

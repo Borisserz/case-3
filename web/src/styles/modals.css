@@ -1406,6 +1406,21 @@
   line-height: 1.68;
 }
 
+.source-read-editor {
+  width: 100%;
+  flex: 1;
+  min-height: 55vh;
+  resize: vertical;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  padding: 0.9rem 1rem;
+}
+
 .stimul-sheet.is-result .settings-modal-body {
   flex: none;
   min-height: auto;

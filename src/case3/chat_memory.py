@@ -837,22 +837,31 @@ def latest_dashboard_note(root: Path, prior_run_id: str) -> str:
     return ""
 
 
+def _echoed_question(here: str, user_text: str) -> bool:
+    """True when Source is the question itself, not a newly attached document."""
+    clean_user = (user_text or "").strip()
+    clean_here = (here or "").strip()
+    if not clean_here:
+        return True
+    if clean_here == clean_user:
+        return True
+    return bool(clean_user) and clean_user in clean_here
+
+
 def source_for_followup(current: str, screen: str, user_text: str, *, picture: bool) -> str:
-    """Keep every saved screen. A different long document stays as it is."""
+    """Keep every saved screen. A newly attached document stays in front of them."""
     here = current or ""
     saved = _merge_screens([screen, here])
     if not saved:
         return here
     if dashboard_parts(here):
         return saved
-    asked = picture or bool(_ON_THIS_DATA.search(user_text or ""))
-    clean_user = (user_text or "").strip()
-    clean_here = here.strip()
-    same_as_question = clean_here == clean_user or (
-        bool(clean_user) and clean_user in clean_here
-    )
-    if asked or same_as_question or len(here) < 600:
+    if _echoed_question(here, user_text):
         return saved
+    asked = picture or bool(_ON_THIS_DATA.search(user_text or ""))
+    extra = saved.strip()
+    if asked and extra and extra not in here:
+        return here.rstrip() + "\n\n" + extra
     return here
 
 

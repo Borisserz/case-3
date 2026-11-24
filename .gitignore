@@ -104,3 +104,4 @@ workers/*/.wrangler/
 # Generated outputs
 pipeline_generations/
 
+.worktrees/
