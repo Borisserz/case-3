@@ -145,6 +145,14 @@ export function moveHistoryToFolder(
   return updateHistoryItem(runId, { folderId });
 }
 
+export function removeHistory(runId: string): HistoryItem[] {
+  const id = runId.trim();
+  if (!id) return loadHistory();
+  return writeHistory(
+    loadHistory().filter((h) => h.runId !== id && h.priorRunId !== id),
+  );
+}
+
 export function mergeServerHistory(
   local: HistoryItem[],
   server: HistoryItem[],

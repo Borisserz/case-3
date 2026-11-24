@@ -49,6 +49,7 @@ import {
   offersNewChat,
   refreshRevisedArtifact,
   refreshSteps,
+  reviseChatStaysText,
 } from "../domain/reviseRefresh";
 import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
 import {
@@ -456,6 +457,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               isolated,
               op: step.op || asString(data.op),
               memorySection: nextMemorySection,
+              quietCards: reviseChatStaysText(step.op || asString(data.op)),
             },
           );
         }

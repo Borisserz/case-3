@@ -262,7 +262,8 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
             f"{detail} OCR в Inspectra пока не подключён — нужен цифровой PDF/DOCX."
         )
 
-    # Same cells as «В данные»: 64×500, repeated neighbours stay, markdown table.
+    # A ruled grid stays cell by cell. A letter or résumé has no grid:
+    # pdfplumber then glues words, so the page text comes from pdfium.
     from case3.dashboard_source import DashboardSourceError, parse_dashboard
 
     try:
@@ -275,6 +276,11 @@ def _pdf_to_markdown(path: Path) -> tuple[str, list[str]]:
         raise SourceIngestError(exc.message, code=exc.code) from exc
     md = result.markdown
     warns.extend(result.warnings)
+    if result.pdf_table_count == 0:
+        prose = _pdf_via_pdfium(path).strip()
+        if prose:
+            md = prose + "\n"
+            warns = [note for note in warns if "не разбилась" not in note]
     if not md.strip():
         raise ScanPdfError(
             "Из PDF не удалось извлечь текст (пустой текстовый слой или только "

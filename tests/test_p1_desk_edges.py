@@ -42,7 +42,7 @@ def test_health_ok_requires_live_vision(
     api_mod.clear_health_cache()
 
 
-def test_warnings_name_failed_charts_and_figures() -> None:
+def test_warnings_stay_off_the_desk() -> None:
     lines = _warnings(
         {
             "charts_planned": ["cht_01", "cht_02"],
@@ -56,14 +56,7 @@ def test_warnings_name_failed_charts_and_figures() -> None:
         },
         max_images=2,
     )
-    assert any("cht_02" in line for line in lines)
-    assert any("fig_01" in line for line in lines)
-    assert not any("cht_01" in line for line in lines)
-    assert not any("usr_01" in line for line in lines)
-    assert _warnings(
-        {"figures_planned": ["fig_01"], "media_status": {"fig_01": {"ok": False}}},
-        max_images=0,
-    ) == []
+    assert lines == []
 
 
 def test_resume_crash_does_not_stay_running(tmp_path: Path, monkeypatch) -> None:

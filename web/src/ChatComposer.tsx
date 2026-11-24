@@ -17,8 +17,6 @@ import {
   IconStop,
 } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
-import { isDashboardSource } from "./domain/dashboardCapture";
-import { dashboardStarterChips } from "./domain/dashboardTables";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
 
@@ -34,8 +32,6 @@ type Props = {
   onPreviewPhoto?: (photo: { url: string; name: string }) => void;
   plaques: { title: string; subtitle: string; fileName?: string }[];
   sourceDraft: SourceDraft | null;
-  /** Latest dashboard markdown in the chat session (even after the first message sent). */
-  activeDashboardSource?: string;
   file: File | null;
   chatRef: RefObject<HTMLTextAreaElement | null>;
   fileRef: RefObject<HTMLInputElement | null>;
@@ -86,7 +82,6 @@ export function ChatComposer({
   onPreviewPhoto,
   plaques,
   sourceDraft,
-  activeDashboardSource = "",
   file,
   chatRef,
   fileRef,
@@ -171,29 +166,6 @@ export function ChatComposer({
             ))}
           </div>
         ) : null}
-        {(() => {
-          const dashText = isDashboardSource(sourceDraft?.text || "")
-            ? sourceDraft?.text || ""
-            : isDashboardSource(activeDashboardSource)
-              ? activeDashboardSource
-              : "";
-          if (!dashText || busy) return null;
-          const chips = dashboardStarterChips(dashText);
-          return (
-            <div className="composer-dash-chips" aria-label="Быстрые запросы по дашборду">
-              {chips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  className="composer-dash-chip"
-                  onClick={() => onPickStarter?.(chip.prompt)}
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          );
-        })()}
 
         {deckApplyHint ? (
           <div className="composer-deck-hint" role="status">

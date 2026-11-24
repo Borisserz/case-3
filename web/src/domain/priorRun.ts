@@ -137,6 +137,8 @@ export function messagesFromMemory(
   return lines;
 }
 
+const STORED_MODES = new Set(["report", "diagram", "presentation"]);
+
 export function botHistoryResult(
   line: Pick<ThreadLine, "runId" | "outputMode" | "previews">,
   fallbackRunId: string,
@@ -158,6 +160,36 @@ export function botHistoryResult(
     figures_planned: [],
     warnings: [],
   };
+}
+
+/** A past report, scheme, or deck can be opened even when only the run id was kept. */
+export function historyResult(
+  line: Pick<ThreadLine, "runId" | "outputMode" | "previews">,
+  fallbackRunId: string,
+): RunResult | undefined {
+  const fromPreviews = botHistoryResult(line, fallbackRunId);
+  if (fromPreviews) return fromPreviews;
+  const mode = (line.outputMode || "").trim();
+  const runId = (line.runId || "").trim();
+  if (!runId || !STORED_MODES.has(mode)) return undefined;
+  return {
+    run_id: runId,
+    status: "ok",
+    output_mode: mode,
+    downloads: {},
+    charts_ok: 0,
+    figures_ok: 0,
+    charts_planned: [],
+    figures_planned: [],
+    warnings: [],
+  };
+}
+
+export function storedOpenLabel(mode: string | undefined): string | null {
+  if (mode === "report") return "Открыть отчёт";
+  if (mode === "diagram") return "Открыть схему";
+  if (mode === "presentation") return "Открыть презентацию";
+  return null;
 }
 
 export function priorRunIdFromMessages(

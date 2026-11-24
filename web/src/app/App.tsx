@@ -41,8 +41,8 @@ import {
 } from "../domain/sourcePack";
 import { docsForSourceModal } from "../domain/sourceRead";
 import { uid } from "../domain/runHelpers";
+import { loadOpenChat } from "../domain/openChat";
 import { carriedArtifactId, memoryStripLine } from "../domain/memoryStrip";
-import { LiberHelp } from "../LiberHelp";
 import { ChatMessages } from "../ChatMessages";
 import { ChartsQa } from "../lazyChartsQa";
 import { IconPanelRight } from "../icons";
@@ -239,6 +239,7 @@ export default function App() {
     onCreateFolder,
     onRenameFolder,
     onDeleteFolder,
+    deleteChat,
   } = useReportHistory({
     busy,
     setMsgs,
@@ -863,24 +864,6 @@ export default function App() {
     return null;
   }, [railArtifact, msgs]);
 
-  /** Active dashboard markdown across current sourceDraft or any message in this chat. */
-  const activeDashboardSource = useMemo((): string => {
-    if (sourceDraft?.text && isDashboardSource(sourceDraft.text)) {
-      return sourceDraft.text;
-    }
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      const m = msgs[i];
-      if (m.role === "bot" && m.dashboard?.shots.length) {
-        const src = shotsSource(m.dashboard.shots);
-        if (isDashboardSource(src)) return src;
-      }
-      if (m.role === "user" && m.attachment?.text && isDashboardSource(m.attachment.text)) {
-        return m.attachment.text;
-      }
-    }
-    return "";
-  }, [sourceDraft?.text, msgs]);
-
   // Visual QA all chart types: http://127.0.0.1:5173/?preview=charts-qa
   if (/preview=charts-qa/.test(window.location.search)) {
     return (
@@ -945,6 +928,15 @@ export default function App() {
           onCreateFolder={onCreateFolder}
           onRenameFolder={onRenameFolder}
           onDeleteFolder={onDeleteFolder}
+          onDeleteChat={(runId) => {
+            const wasOpen = loadOpenChat() === runId;
+            void deleteChat(runId).then((ok) => {
+              if (!ok || !wasOpen) return;
+              startNewReport();
+              setWorkMode(null);
+              setDeckApplyHint(null);
+            });
+          }}
           onSettings={() => setSettingsOpen(true)}
           busy={busy}
         />
@@ -957,7 +949,6 @@ export default function App() {
               <div
                 className={`desk chat-desk${msgs.length === 0 ? " is-empty-home" : ""}`}
               >
-                <LiberHelp />
                 <ChatMessages
                   msgs={msgs}
                   reduceMotion={reduceMotion}
@@ -983,10 +974,6 @@ export default function App() {
                   onOpenPhoto={openUserPhoto}
                   onResumeRun={resumeFailedRun}
                   onOpenDashboardCard={openDashboardCard}
-                  onPickStarter={(prompt) => {
-                    setChat(prompt);
-                    chatRef.current?.focus();
-                  }}
                   onRefineVisual={(preview) => {
                     const isDia =
                       preview.kind === "diagram" || preview.id.startsWith("dia_");
@@ -1036,7 +1023,6 @@ export default function App() {
                   onPreviewPhoto={openUserPhoto}
                   plaques={plaques}
                   sourceDraft={sourceDraft}
-                  activeDashboardSource={activeDashboardSource}
                   file={file}
                   chatRef={chatRef}
                   fileRef={fileRef}

@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArtifactCard } from "./ArtifactCard";
 import { DashboardChatCard } from "./DashboardChatCard";
-import { shotsSource } from "./domain/dashboardCapture";
-import { dashboardStarterChips } from "./domain/dashboardTables";
 import { ContextPlaque } from "./ContextPlaque";
 import { EmptyState } from "./EmptyState";
 import { IconCopy, IconLiberMark } from "./icons";
@@ -13,8 +11,20 @@ import { LONG_TEXT_CHARS } from "./domain/liberConstants";
 import type { LiberWorkMode } from "./domain/liberModes";
 import type { CraftFilmFrame } from "./domain/craftSteps";
 import type { Msg, RunResult, SourceAttachment, UserPhotoThumb } from "./domain/liberTypes";
+import { storedOpenLabel } from "./domain/priorRun";
 import { reportThumb, reportTitle } from "./domain/runHelpers";
-import { MsgMarkdown } from "./lightMd";
+import { hideAssemblyGaps } from "./domain/runHelpers";
+import { MsgMarkdown as RawMarkdown } from "./lightMd";
+
+function MsgMarkdown({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  return <RawMarkdown text={hideAssemblyGaps(text)} streaming={streaming} />;
+}
 import { ThinkingFold } from "./ThinkingFold";
 
 function ChatTurnNote({
@@ -78,8 +88,14 @@ type Props = {
   onOpenDashboardCard?: (msgId: string) => void;
   /** Full-screen table of the shots already on the card. */
   onReadDashboard?: (card: import("./domain/dashboardCapture").DashboardCard) => void;
-  onPickStarter?: (prompt: string) => void;
   onRefineVisual?: (preview: { id: string; kind: string; url: string }) => void;
+  /** Open an older report, scheme, or deck in the side preview. */
+  onOpenStoredRun?: (
+    msgId: string,
+    runId: string,
+    kind: "diagram" | "report" | "presentation",
+    diagramId?: string,
+  ) => void;
 };
 
 export function ChatMessages({
@@ -104,8 +120,8 @@ export function ChatMessages({
   onMakePresentation,
   onOpenDashboardCard,
   onReadDashboard,
-  onPickStarter,
   onRefineVisual,
+  onOpenStoredRun,
 }: Props) {
   const showSessionHead = Boolean(sessionTitle && msgs.length > 0);
   const [openChart, setOpenChart] = useState<{ url: string; title: string } | null>(null);
@@ -242,7 +258,9 @@ export function ChatMessages({
                   <div className="msg-bot-stack">
                     {(m.lead || "").trim() ? (
                       <MsgMarkdown text={m.lead || ""} />
-                    ) : null}
+                    ) : (
+                      <MsgMarkdown text={m.text || "Отчёт готов"} />
+                    )}
                     {m.thinking?.length ||
                     m.craftFilm?.length ||
                     m.craftSubsteps?.length ||
@@ -279,10 +297,6 @@ export function ChatMessages({
                         }
                       />
                     ) : null}
-                    {(m.lead || "").trim() &&
-                    (m.lead || "").trim() !== (m.text || "").trim() ? null : (
-                      <MsgMarkdown text={m.text || "Отчёт готов"} />
-                    )}
                     <ArtifactCard
                       title={reportTitle(m.result)}
                       thumbUrl={reportThumb(m.result)}
@@ -343,7 +357,7 @@ export function ChatMessages({
                     {(() => {
                       const displayWarns = (m.result.warnings || []).filter(
                         (w) =>
-                          !/charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
+                          !/не\s+собрал|charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
                             w
                           )
                       );
@@ -361,7 +375,7 @@ export function ChatMessages({
                         aria-label="Копировать текст"
                         onClick={() => {
                           void navigator.clipboard?.writeText(
-                            m.text || "Отчёт готов",
+                            hideAssemblyGaps(m.text || "Отчёт готов"),
                           );
                         }}
                       >
@@ -501,29 +515,39 @@ export function ChatMessages({
                                   : undefined
                               }
                             />
-                            {m.dashboard.shots.length > 0 && onPickStarter ? (
-                              <div
-                                className="composer-dash-chips msg-dash-chips"
-                                aria-label="Быстрые запросы по дашборду"
-                              >
-                                {dashboardStarterChips(
-                                  shotsSource(m.dashboard.shots),
-                                  m.dashboard.shots.length,
-                                ).map((chip) => (
-                                  <button
-                                    key={chip.label}
-                                    type="button"
-                                    className="composer-dash-chip"
-                                    onClick={() => onPickStarter(chip.prompt)}
-                                  >
-                                    {chip.label}
-                                  </button>
-                                ))}
-                              </div>
-                            ) : null}
                           </>
                         ) : null}
                         <ChatTurnNote msg={m} onNewChat={onNewChat} />
+                        {onOpenStoredRun && m.result?.run_id
+                          ? (() => {
+                              const label = storedOpenLabel(m.result.output_mode);
+                              const hasDiagramPreview = (m.result.previews || []).some(
+                                (p) => p.kind === "diagram" || p.id.startsWith("dia_"),
+                              );
+                              if (!label) return null;
+                              if (m.result.output_mode === "diagram" && hasDiagramPreview) {
+                                return null;
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  className="msg-inline-chart-refine"
+                                  onClick={() =>
+                                    onOpenStoredRun(
+                                      m.id,
+                                      m.result!.run_id,
+                                      m.result!.output_mode as
+                                        | "diagram"
+                                        | "report"
+                                        | "presentation",
+                                    )
+                                  }
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })()
+                          : null}
                         {m.result &&
                           !(
                             m.result.downloads?.pdf || m.result.downloads?.docx
@@ -549,15 +573,27 @@ export function ChatMessages({
                                     <button
                                       type="button"
                                       className="msg-inline-chart-open"
-                                      onClick={() =>
+                                      onClick={() => {
+                                        const diagram =
+                                          p.kind === "diagram" || p.id.startsWith("dia_");
+                                        if (
+                                          diagram &&
+                                          onOpenStoredRun &&
+                                          m.result?.run_id
+                                        ) {
+                                          onOpenStoredRun(
+                                            m.id,
+                                            m.result.run_id,
+                                            "diagram",
+                                            p.id,
+                                          );
+                                          return;
+                                        }
                                         setOpenChart({
                                           url: p.url,
-                                          title:
-                                            p.kind === "diagram" || p.id.startsWith("dia_")
-                                              ? "Схема"
-                                              : "График",
-                                        })
-                                      }
+                                          title: diagram ? "Схема" : "График",
+                                        });
+                                      }}
                                     >
                                       <img src={p.url} alt="" />
                                     </button>

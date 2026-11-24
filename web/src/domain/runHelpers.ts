@@ -84,6 +84,28 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
   return "Отчёт готов";
 }
 
+/** Chat copy stays about what arrived. A dead PDF or deck still says so. */
+export function hideAssemblyGaps(text: string): string {
+  const heading = /^(?:#{1,6}\s+|\*\*)?\s*недостатк[а-яё]*\s*\**\s*$/i;
+  const sentence =
+    /[^.!?\n]*?(?:не\s+собрал[а-яё]*|планировалось\s+\d+\s+график[а-яё]*|недостающ[а-яё]{0,12}график[а-яё]*)[^.!?\n]*[.!?…]?/gi;
+  const blocks = (text || "")
+    .trim()
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const lines = block
+        .split("\n")
+        .filter((line) => !heading.test(line.trim()));
+      return lines
+        .join("\n")
+        .replace(sentence, (bit) => (/pdf|слайд/i.test(bit) ? bit : ""))
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
+    })
+    .filter(Boolean);
+  return blocks.join("\n\n");
+}
+
 /** Suppressed: soft media failures are handled silently without popup toasts. */
 export function softMediaFailToast(_result?: {
   warnings?: string[];

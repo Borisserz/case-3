@@ -209,3 +209,47 @@ def test_history_shows_one_row_per_chat(tmp_path: Path, monkeypatch) -> None:
     client = TestClient(app)
     items = client.get("/api/history").json()["items"]
     assert [item["runId"] for item in items] == [second]
+
+
+def test_hide_chat_drops_the_chain_and_stays_hidden(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(run_store, "ROOT", tmp_path)
+    out = tmp_path / "runs" / "out"
+    first = "source_20261118T100000Z"
+    second = "source_20261118T110000Z"
+    other = "source_20261118T120000Z"
+    for run_id, prior, title in (
+        (first, "", "Отчёт"),
+        (second, first, "Ещё точнее"),
+        (other, "", "Другой"),
+    ):
+        folder = out / run_id
+        folder.mkdir(parents=True)
+        (folder / "meta.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "prior_run_id": prior,
+                    "status": "ok",
+                    "preview": {"title": title},
+                    "started_at": run_id.removeprefix("source_"),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    client = TestClient(app)
+    hidden = client.post("/api/history/hide", json={"runId": second})
+    assert hidden.status_code == 200, hidden.text
+    assert set(hidden.json()["hidden"]) == {first, second}
+    items = client.get("/api/history").json()["items"]
+    assert [item["runId"] for item in items] == [other]
+
+    pinned = client.post(
+        "/api/history/sync",
+        json={"items": [{"runId": other, "pinned": True}], "folders": []},
+    )
+    assert pinned.status_code == 200
+    again = client.get("/api/history").json()["items"]
+    assert [item["runId"] for item in again] == [other]
+    saved = json.loads((tmp_path / "runs" / "user_history.json").read_text(encoding="utf-8"))
+    assert set(saved["hidden"]) == {first, second}

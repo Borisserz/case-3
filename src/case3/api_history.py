@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from case3 import run_store
@@ -287,6 +287,7 @@ def get_history(
     out_dir = run_store.ROOT / "runs" / "out"
     user_data = _load_user_history(wid)
     pinned_set = set(user_data.get("pinned", []))
+    hidden_set = {str(item) for item in user_data.get("hidden") or [] if item}
     item_folders = user_data.get("item_folders", {})
     folders = user_data.get("folders", [])
 
@@ -296,6 +297,8 @@ def get_history(
         if not isinstance(ent, dict):
             continue
         if wid != "default" and sanitize_workspace_id(ent.get("workspace_id")) != wid:
+            continue
+        if run_id in hidden_set:
             continue
         is_pinned = run_id in pinned_set
         items.append(
@@ -352,7 +355,71 @@ def sync_history(
             "pinned": sorted(pinned_set),
             "folders": folders_list,
             "item_folders": item_folders,
+            "hidden": [str(item) for item in current.get("hidden") or [] if item],
         }
         _save_user_history(new_data, wid)
 
     return {"ok": True}
+
+
+def _chat_chain_ids(run_id: str, entries: dict[str, Any]) -> set[str]:
+    """The clicked row plus earlier and later turns of the same chat."""
+    ids = {run_id}
+    cursor = run_id
+    seen: set[str] = set()
+    while cursor and cursor not in seen:
+        seen.add(cursor)
+        ent = entries.get(cursor)
+        parent = str(ent.get("prior_run_id") or "") if isinstance(ent, dict) else ""
+        if not parent:
+            break
+        ids.add(parent)
+        cursor = parent
+    growing = True
+    while growing:
+        growing = False
+        for rid, ent in entries.items():
+            if rid in ids or not isinstance(ent, dict):
+                continue
+            if str(ent.get("prior_run_id") or "") in ids:
+                ids.add(rid)
+                growing = True
+    return ids
+
+
+class HistoryHideBody(BaseModel):
+    runId: str
+
+
+@router.post("/api/history/hide")
+def hide_history_chat(
+    body: HistoryHideBody,
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
+) -> dict[str, Any]:
+    """Drop a chat from the sidebar. The run files stay on disk."""
+    run_id = body.runId.strip()
+    if not run_id or not RUN_ID_OK.match(run_id):
+        raise HTTPException(status_code=400, detail="bad run id")
+    wid = sanitize_workspace_id(x_workspace_id)
+    entries = _sync_history_index(run_store.ROOT / "runs" / "out")
+    chain = _chat_chain_ids(run_id, entries)
+    with _history_lock:
+        current = _load_user_history(wid)
+        hidden = {str(item) for item in current.get("hidden") or [] if item}
+        hidden |= chain
+        pinned = [item for item in current.get("pinned") or [] if item not in hidden]
+        item_folders = {
+            key: value
+            for key, value in dict(current.get("item_folders") or {}).items()
+            if key not in hidden
+        }
+        _save_user_history(
+            {
+                "pinned": pinned,
+                "folders": current.get("folders") or [],
+                "item_folders": item_folders,
+                "hidden": sorted(hidden),
+            },
+            wid,
+        )
+    return {"ok": True, "hidden": sorted(chain)}

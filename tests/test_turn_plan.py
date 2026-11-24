@@ -195,6 +195,19 @@ def test_process_diagramma_is_diagram_mode():
     assert p.kind == "diagram"
 
 
+def test_chart_from_a_scheme_stays_a_chart():
+    phrase = "а можешь график нарисовать по данной схеме"
+    plan = plan_turn(phrase, mode_hint="auto", has_diagram=True)
+    assert plan.kind == "chat"
+    assert plan.want_chat_chart is True
+    assert plan.want_chat_diagram is False
+    drawn = plan_turn("построй график по этой схеме", mode_hint="auto")
+    assert drawn.kind == "chat"
+    assert drawn.want_chat_chart is True
+    still_schema = plan_turn("нарисуй схему по графику", mode_hint="auto")
+    assert still_schema.kind == "diagram"
+
+
 def test_schema_is_diagram_mode():
     p = plan_turn("Нарисуй схему онбординга", mode_hint="auto")
     assert p.kind == "diagram"

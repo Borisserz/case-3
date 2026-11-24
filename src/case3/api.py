@@ -2560,10 +2560,7 @@ def _warnings(meta: dict[str, Any], *, max_images: int) -> list[str]:
             lines.append(f"Рисунок {fid} не собрался")
     if lines:
         log.info("media soft-failed: %s", ", ".join(lines))
-    if len(lines) > 4:
-        extra = len(lines) - 3
-        lines = lines[:3] + [f"Ещё {extra} не собрались"]
-    return lines
+    return []
 
 
 def datetime_stamp() -> str:

@@ -5,9 +5,17 @@ import {
   historyRailRun,
   offersNewChat,
   refreshSteps,
+  reviseChatStaysText,
   revisedRailPlan,
   reviseSurface,
 } from "./reviseRefresh";
+
+test("a wording edit does not repeat the pdf and diagram", () => {
+  assert.equal(reviseChatStaysText("rewrite"), true);
+  assert.equal(reviseChatStaysText("rename_heading"), true);
+  assert.equal(reviseChatStaysText("refine_diagram"), false);
+  assert.equal(reviseChatStaysText("add_slide"), false);
+});
 
 test("only a full chat offers a new-chat button", () => {
   assert.equal(offersNewChat("full"), true);

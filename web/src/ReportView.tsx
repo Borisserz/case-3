@@ -433,7 +433,7 @@ export function ReportView({
       {(() => {
         const displayWarns = (warnings || []).filter(
           (w) =>
-            !/charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
+            !/не\s+собрал|charts? (?:failed|skipped)|фото пропущены|Image API|Часть медиа|skipped/i.test(
               w
             )
         );

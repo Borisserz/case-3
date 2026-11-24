@@ -10,6 +10,7 @@ import {
   IconPin,
   IconPlus,
   IconSettings,
+  IconTrash,
 } from "./icons";
 import {
   historyInFolder,
@@ -38,6 +39,7 @@ type Props = {
   onCreateFolder: (name: string) => void;
   onRenameFolder: (id: string, name: string) => void;
   onDeleteFolder: (id: string) => void;
+  onDeleteChat: (runId: string) => void;
   onSettings: () => void;
   busy?: boolean;
 };
@@ -57,6 +59,7 @@ function HistoryRow({
   onOpen,
   onTogglePin,
   onMoveToFolder,
+  onDelete,
   busy,
 }: {
   item: HistoryItem;
@@ -64,9 +67,11 @@ function HistoryRow({
   onOpen: () => void;
   onTogglePin: () => void;
   onMoveToFolder: (folderId: string | null) => void;
+  onDelete: () => void;
   busy: boolean;
 }) {
   const [menu, setMenu] = useState(false);
+  const confirm = useConfirm();
   return (
     <li className={`liber-hist-row${item.pinned ? " is-pinned" : ""}`}>
       <button
@@ -143,6 +148,28 @@ function HistoryRow({
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          className="liber-hist-act liber-hist-act-danger"
+          title="Удалить чат"
+          aria-label={`Удалить чат ${item.title}`}
+          disabled={busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            void (async () => {
+              const ok = await confirm({
+                title: "Удалить чат?",
+                eyebrow: "чат · удаление",
+                message: `Чат «${item.title}» пропадёт из списка.`,
+                confirmLabel: "Удалить",
+                danger: true,
+              });
+              if (ok) onDelete();
+            })();
+          }}
+        >
+          <IconTrash size={14} />
+        </button>
       </div>
     </li>
   );
@@ -157,6 +184,7 @@ function FolderBlock({
   onOpenHistory,
   onTogglePin,
   onMoveToFolder,
+  onDeleteChat,
   onRename,
   onDelete,
   busy,
@@ -169,6 +197,7 @@ function FolderBlock({
   onOpenHistory: (item: HistoryItem) => void;
   onTogglePin: (runId: string) => void;
   onMoveToFolder: (runId: string, folderId: string | null) => void;
+  onDeleteChat: (runId: string) => void;
   onRename: (name: string) => void;
   onDelete: () => void;
   busy: boolean;
@@ -269,6 +298,7 @@ function FolderBlock({
                 onOpen={() => onOpenHistory(h)}
                 onTogglePin={() => onTogglePin(h.runId)}
                 onMoveToFolder={(fid) => onMoveToFolder(h.runId, fid)}
+                onDelete={() => onDeleteChat(h.runId)}
               />
             ))
           )}
@@ -300,6 +330,7 @@ export function Sidebar({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onDeleteChat,
   onSettings,
   busy = false,
 }: Props) {
@@ -396,6 +427,7 @@ export function Sidebar({
                         onOpen={() => onOpenHistory(h)}
                         onTogglePin={() => onTogglePin(h.runId)}
                         onMoveToFolder={(fid) => onMoveToFolder(h.runId, fid)}
+                        onDelete={() => onDeleteChat(h.runId)}
                       />
                     ))}
                   </ul>
@@ -475,6 +507,7 @@ export function Sidebar({
                           onOpenHistory={onOpenHistory}
                           onTogglePin={onTogglePin}
                           onMoveToFolder={onMoveToFolder}
+                          onDeleteChat={onDeleteChat}
                           onRename={(name) => onRenameFolder(f.id, name)}
                           onDelete={() => onDeleteFolder(f.id)}
                           busy={busy}
@@ -498,6 +531,7 @@ export function Sidebar({
                         onOpen={() => onOpenHistory(h)}
                         onTogglePin={() => onTogglePin(h.runId)}
                         onMoveToFolder={(fid) => onMoveToFolder(h.runId, fid)}
+                        onDelete={() => onDeleteChat(h.runId)}
                       />
                     ))}
                   </ul>

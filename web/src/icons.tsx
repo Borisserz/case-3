@@ -144,6 +144,17 @@ export function IconPin(p: IconProps) {
   );
 }
 
+export function IconTrash(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M4 7h16" />
+      <path {...stroke} d="M9 7V5.5h6V7" />
+      <path {...stroke} d="M7.5 7l.8 12h7.4l.8-12" />
+      <path {...stroke} d="M10 11v5M14 11v5" />
+    </svg>
+  );
+}
+
 export function IconFolder(p: IconProps) {
   return (
     <svg {...base(p)}>

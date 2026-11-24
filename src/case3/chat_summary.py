@@ -132,16 +132,33 @@ def build_summary_user(
     return "\n".join(parts)
 
 
-def missing_chart_note(media: dict[str, Any] | None) -> str:
-    """Spoken line when a planned chart never became a file."""
-    planned = int((media or {}).get("charts_planned") or 0)
-    ok = int((media or {}).get("charts_ok") or 0)
-    missed = planned - ok
-    if missed <= 0:
-        return ""
-    if missed == 1:
-        return "Один график не собрался и в файл не попал."
-    return f"Графиков не собралось: {missed} из {planned}."
+_GAP_HEADING = re.compile(
+    r"^(?:#{1,6}\s+|\*\*)?\s*недостатк\w*\s*\**\s*$",
+    re.IGNORECASE,
+)
+_GAP_SENTENCE = re.compile(
+    r"[^.!?\n]*?(?:не\s+собрал\w*|планировалось\s+\d+\s+график\w*|недостающ\w+[^.!?\n]{0,40}график\w*)[^.!?\n]*[.!?…]?",
+    re.IGNORECASE,
+)
+
+
+def _keep_gap_sentence(match: re.Match[str]) -> str:
+    sentence = match.group(0)
+    if re.search(r"pdf|слайд", sentence, re.IGNORECASE):
+        return sentence
+    return ""
+
+
+def omit_assembly_gaps(text: str) -> str:
+    """Drop chat lines about charts that did not render. Keep a dead PDF."""
+    blocks: list[str] = []
+    for block in re.split(r"\n\s*\n", (text or "").strip()):
+        lines = [line for line in block.split("\n") if not _GAP_HEADING.match(line.strip())]
+        cleaned = _GAP_SENTENCE.sub(_keep_gap_sentence, "\n".join(lines))
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+        if cleaned:
+            blocks.append(cleaned)
+    return "\n\n".join(blocks)
 
 
 def seal_chat_summary(
@@ -160,11 +177,7 @@ def seal_chat_summary(
         )
         shown = " ".join(part for part in (bang, loc) if part) or err.splitlines()[0][:240]
         return f"PDF не собрался. {shown}"
-    note = missing_chart_note(media)
-    body = (text or "").strip()
-    if note and note not in body:
-        body = (body + "\n\n" + note).strip()
-    return body
+    return omit_assembly_gaps(text or "")
 
 
 def local_summary_blurb(
@@ -198,9 +211,6 @@ def local_summary_blurb(
         parts.append(f"иллюстраций: {figures_ok}")
     if parts:
         bits.append("Внутри — " + ", ".join(parts) + ".")
-    note = missing_chart_note(m)
-    if note:
-        bits.append(note)
     fact = _first_table_fact(data)
     if fact:
         bits.append(fact + ".")
@@ -304,7 +314,7 @@ def generate_chat_summary(
     if not is_clean_chat_summary(text, intent=intent):
         log.warning("chat summary failed clean check (leaked reasoning/English) — rejecting: %s", text[:80])
         return ""
-    return text
+    return omit_assembly_gaps(text)
 
 
 def try_generate_chat_summary(

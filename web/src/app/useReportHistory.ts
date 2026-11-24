@@ -19,6 +19,7 @@ import {
   mergeServerHistory,
   moveHistoryToFolder,
   pushHistory,
+  removeHistory,
   renameFolder,
   saveRunPayload,
   syncServerHistory,
@@ -29,7 +30,7 @@ import {
 } from "../domain/reportHistory";
 import { reportReadyText, reportTitle, uid } from "../domain/runHelpers";
 import { loadOpenChat, rememberOpenChat } from "../domain/openChat";
-import { botHistoryResult, messagesFromMemory } from "../domain/priorRun";
+import { historyResult, messagesFromMemory } from "../domain/priorRun";
 import { chatToReopen, historyRailRun } from "../domain/reviseRefresh";
 import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
 
@@ -231,7 +232,7 @@ export function useReportHistory({
                     text: line.text,
                     lead: line.lead,
                     dashboard: line.dashboard,
-                    result: botHistoryResult(line, result.run_id),
+                    result: historyResult(line, result.run_id),
                   },
             )
           : [];
@@ -338,6 +339,28 @@ export function useReportHistory({
     [history, persistServer],
   );
 
+  const deleteChat = useCallback(
+    async (runId: string) => {
+      try {
+        const res = await fetch("/api/history/hide", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId }),
+        });
+        if (!res.ok) {
+          showToast("Чат не удалился");
+          return false;
+        }
+      } catch {
+        showToast("Чат не удалился");
+        return false;
+      }
+      setHistory(removeHistory(runId));
+      return true;
+    },
+    [showToast],
+  );
+
   const onDeleteFolder = useCallback(
     (id: string) => {
       const next = deleteFolder(id);
@@ -360,5 +383,6 @@ export function useReportHistory({
     onCreateFolder,
     onRenameFolder,
     onDeleteFolder,
+    deleteChat,
   };
 }

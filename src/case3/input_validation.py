@@ -225,7 +225,9 @@ def validate_input_heuristics(
             return False, _format_refusal_message(output_mode)
         if raw_letters in _COMMON_KEYBOARD_MASH:
             return False, _format_refusal_message(output_mode)
-        if len(raw_letters) >= 8 and re.search(r"(.{2,4})\1{2,}", raw_letters):
+        # The whole message is "asdfasdfasdf". A repeat inside a lecture
+        # (формулы a b a b → ababab) is not mash.
+        if len(raw_letters) >= 8 and re.fullmatch(r"(.{2,4})\1{2,}", raw_letters):
             return False, _format_refusal_message(output_mode)
 
     # In chat mode, any non-empty, non-keyboard-mash message goes directly to the LLM!

@@ -100,7 +100,20 @@ _REF = re.compile(
 _AGAIN = re.compile(r"^(?:ещё|еще|снова)\b", re.IGNORECASE)
 _BARE_AGAIN = re.compile(r"^(?:ещё|еще|снова)[.!?\s]*$", re.IGNORECASE)
 _BRIEF_ONLY = re.compile(
-    r"^(?:еще\s+)?(?:короче|точнее|не нравится)[.!?\s]*$",
+    r"^(?:еще\s+|чуть\s+|немного\s+)?"
+    r"(?:короче|точнее|не нравится|строже|построже|подробнее|проще|яснее|суше)[.!?\s]*$",
+    re.IGNORECASE,
+)
+_POLITE_LEAD = re.compile(
+    r"^(?:а\s+)?(?:можешь|можете|можно(?!\s+ли)|пожалуйста|давай(?:те)?|надо|нужно)\s+",
+    re.IGNORECASE,
+)
+_MANNER = re.compile(
+    r"строже|построже|короче|подробн|проще|упрост|точнее|яснее|суше|деловее",
+    re.IGNORECASE,
+)
+_OTHER_STRUCTURE = re.compile(
+    r"схем|график|слайд|таблиц|спис|фото|презентац|резентац",
     re.IGNORECASE,
 )
 _SECTION_PATTERNS = (
@@ -109,7 +122,7 @@ _SECTION_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|уточни|сократи|распиши|разверни|расширь|дополни)\s+"
+        r"(?:переделай|переделать|перепиши|переписать|улучши|поправь|исправь|исправить|уточни|сократи|распиши|разверни|расширь|дополни)\s+"
         r"(?:раздел\w*\s+|абзац\w*\s+|глав\w*\s+)?[«\"]?"
         r"([A-Za-zА-Яа-яЁё0-9][^:.\n,!?—–]{1,48})",
         re.IGNORECASE,
@@ -248,7 +261,10 @@ def _clean_name(name: str) -> str:
     cleaned = re.split(r"\s+(?:мне|пожалуйста)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
     while True:
         trimmed = re.sub(
-            r"\s+(?:покороче|короче|кратко|вкратце|подробнее|подробней|детальнее|проще|попроще|понятнее|понятней|лучше|аккуратнее|красивее|строже|деловитее|сжатее|полнее|целиком)\s*$",
+            r"\s+(?:(?:чуть|немного|по)\s+)?"
+            r"(?:покороче|короче|кратко|вкратце|подробнее|подробней|детальнее|"
+            r"проще|попроще|понятнее|понятней|лучше|аккуратнее|красивее|"
+            r"строже|построже|суше|яснее|деловитее|сжатее|полнее|целиком)\s*$",
             "",
             cleaned,
             flags=re.IGNORECASE,
@@ -411,7 +427,9 @@ def chart_at(text: str | None) -> int:
 
 def parse_section_rename(text: str | None) -> tuple[str, str] | None:
     raw = _norm(text or "").strip()
-    match = re.search(r"переименуй(?:те)?\s+раздел\s+(.+?)\s+в\s+(.+)$", raw, re.IGNORECASE)
+    match = re.search(
+        r"переимен\w*\s+раздел\w*\s+(.+?)\s+в\s+(.+)$", raw, re.IGNORECASE
+    )
     if not match:
         return None
     old = match.group(1).strip()
@@ -454,7 +472,10 @@ def _slot_index(raw: str, noun: str) -> int:
 
 def _swap(raw: str) -> tuple[str, str] | None:
     match = re.search(
-        r"(?:замени|смени|поменяй|исправь)\s+(.+?)\s+на\s+(.+)$", raw, re.IGNORECASE
+        r"(?:замени(?:ть)?|смени(?:ть)?|поменя(?:й|ть)|исправ(?:ь|ить))\s+"
+        r"(?:пожалуйста\s+)?(.+?)\s+на\s+(.+)$",
+        raw,
+        re.IGNORECASE,
     )
     if not match:
         return None
@@ -701,7 +722,7 @@ def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
     if tail:
         return fid, tail.group(1).strip(" .")
     inline = re.search(
-        r"(?:на фото|у фото|это фото)\s+(?:сделай|убери|добавь|поправь|измени|перерисуй)\s+(.{2,})$",
+        r"(?:на фото|у фото|это фото)\s+(?:сделай|сделать|убери|убрать|удали|удалить|добавь|поправь|измени|перерисуй)\s+(.{2,})$",
         raw,
         re.IGNORECASE,
     )
@@ -754,7 +775,7 @@ def parse_diagram_edit(text: str | None) -> str | None:
         re.IGNORECASE,
     )
     fix = re.search(
-        r"доработай|исправь|поправь|измени|убери|перерисуй|уточни|переделай",
+        r"доработай|исправь|поправь|измени|убери|убрать|удали|удалить|перерисуй|уточни|переделай|добав|вставь|допиш|упрост",
         raw,
         re.IGNORECASE,
     )
@@ -771,9 +792,74 @@ def parse_diagram_edit(text: str | None) -> str | None:
     match = re.search(r"на\s+схеме\s+(.+)$", raw, re.IGNORECASE)
     if match and match.group(1).strip(" ."):
         return match.group(1).strip(" .")
+    onto = re.search(
+        r"(?:добав\w*|вставь\w*|допиш\w*|убери|убрать|удали\w*|упрости\w*)\s+(?:в|на|из)\s+схем\w*\s+(.+)$",
+        raw,
+        re.IGNORECASE,
+    )
+    if onto and onto.group(1).strip(" ."):
+        return onto.group(1).strip(" .")
     if fix:
-        return ""
+        return _diagram_change(raw)
     return None
+
+
+def _diagram_change(raw: str) -> str:
+    """The change itself. Empty when the line only says «поправь схему»."""
+    text = re.sub(
+        r"^(?:можешь\s+|можно\s+|пожалуйста[, ]+)",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    ).strip()
+    core = re.sub(
+        r"^(?:добав\w*|вставь\w*|допиш\w*|убери|убрать|удали\w*|упрости\w*|доработай|исправь|поправь|"
+        r"измени\w*|перерисуй|уточни|переделай)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    core = re.sub(r"^(?:в|на|из)\s+схем\w*\s*", "", core, flags=re.IGNORECASE)
+    core = re.sub(r"\s+(?:в|на|из)\s+схем\w*\s*$", "", core, flags=re.IGNORECASE)
+    core = re.sub(r"^схем\w*\s*[:—-]?\s*", "", core, flags=re.IGNORECASE).strip(" .,:;—-")
+    if len(core) < 2:
+        manner = _MANNER.search(text)
+        return manner.group(0) if manner else ""
+    return text.strip(" .")
+
+
+def parse_diagram_tone(text: str | None) -> str | None:
+    """«Схему чуть проще» edits the open scheme. A new scheme stays a build."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"схем", raw, re.IGNORECASE) or not _MANNER.search(raw):
+        return None
+    if len(raw) > 80:
+        return None
+    if re.search(r"нов(?:ую|ый|ое)", raw, re.IGNORECASE):
+        return None
+    if re.search(r"отч[её]т|слайд|график|таблиц", raw, re.IGNORECASE):
+        return None
+    return raw
+
+
+def parse_diagram_branch(text: str | None) -> str | None:
+    """«Добавь ветку про кассу» while a scheme is already open."""
+    raw = _norm(text or "").strip()
+    if re.search(r"отч[её]т|документ|презентац|в\s+отч", raw, re.IGNORECASE):
+        return None
+    if re.search(r"схем", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"добав|вставь|допиш|убери|удали", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"ветк|узел|блок|раздел", raw, re.IGNORECASE):
+        return None
+    body = re.sub(
+        r"^(?:можешь\s+|можно\s+|пожалуйста[, ]+)",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    return body or None
 
 
 def parse_slide_bullets(text: str | None) -> tuple[int, tuple[str, ...]] | None:
@@ -818,7 +904,7 @@ def parse_title(text: str | None) -> str:
     """«Поменяй заголовок на Гомель» → Гомель. Empty when no new title."""
     raw = _norm(text or "")
     match = re.search(
-        r"(?:поменяй|смени|измени|переименуй)\s+заголовок"
+        r"(?:поменя(?:й|ть)|смени(?:ть)?|измени(?:ть)?|переимен\w*)\s+заголовок"
         r"(?:\s+(?:презентац\w*|резентац\w*|презу|преза|отч[её]т\w*|документ\w*|слайд\w*(?:\s+\d{1,2})?|\d{1,2}\s+слайд\w*|"
         r"(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)\w*\s+слайд\w*))?"
         r"(?:\s+(?:на|в))?\s*[:—–-]?\s*(.+)",
@@ -860,9 +946,9 @@ def title_target(text: str | None) -> str:
 
 
 def _brief_for(raw: str) -> str:
-    if "точн" in raw.casefold():
+    if re.search(r"точн|строж|построж|суше|яснее|делове", raw, re.IGNORECASE):
         return "clearer"
-    if re.search(r"короче|сократ", raw, re.IGNORECASE):
+    if re.search(r"короче|сократ|проще|упрост", raw, re.IGNORECASE):
         return "tighter"
     if re.search(r"не нравится|слаб|размыт", raw, re.IGNORECASE):
         return "dislike"
@@ -990,6 +1076,11 @@ def resolve_act(
 ) -> ChatAct:
     """Classify one user message. Build wins when they name a new artifact."""
     raw = _norm(text or "").strip()
+    for _ in range(2):
+        stripped = _POLITE_LEAD.sub("", raw).strip()
+        if stripped == raw or not stripped:
+            break
+        raw = stripped
     has_any = has_deck or has_report or has_diagram or has_chart
 
     if _unsupported_shape(raw):
@@ -1385,6 +1476,10 @@ def resolve_act(
                 say="Что заменить в списке? Напиши «в списке замени кассу на выручку».",
             )
         diagram_edit = parse_diagram_edit(raw)
+        if diagram_edit is None and has_diagram:
+            diagram_edit = parse_diagram_tone(raw)
+        if diagram_edit is None and has_diagram:
+            diagram_edit = parse_diagram_branch(raw)
         if diagram_edit is not None:
             if not has_diagram:
                 return ChatAct(
@@ -1426,6 +1521,22 @@ def resolve_act(
             brief=_brief_for(raw),
             say=f"Перепишу раздел «{name}» по документам. Новых чисел не добавлю.",
         )
+
+    if (
+        not question
+        and has_report
+        and not _OTHER_STRUCTURE.search(raw)
+        and (_MANNER.search(raw) or re.search(r"исправ", raw, re.IGNORECASE))
+    ):
+        touched = section_target(raw)
+        if touched:
+            return ChatAct(
+                kind="revise",
+                op="rewrite",
+                section=touched,
+                brief=_brief_for(raw),
+                say=f"Перепишу раздел «{touched}» по документам. Новых чисел не добавлю.",
+            )
 
     if not question and re.search(r"слайд", raw, re.IGNORECASE) and re.search(
         r"убери|удали|убрать|удалить", raw, re.IGNORECASE
@@ -1549,7 +1660,11 @@ def resolve_act(
     if (
         not question
         and not _explicit_new_artifact(raw)
-        and re.search(r"смени|поменяй|сделай|переделай|вид", raw, re.IGNORECASE)
+        and re.search(
+            r"смени|поменя|сделай|сделать|переделай|исправ|вид",
+            raw,
+            re.IGNORECASE,
+        )
         and (
             re.search(r"график", raw, re.IGNORECASE)
             or (named_chart and has_chart)

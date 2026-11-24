@@ -9,6 +9,7 @@ from case3.chat_summary import (
     build_outline,
     build_summary_user,
     local_summary_blurb,
+    omit_assembly_gaps,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "preview_sample.tex"
@@ -98,13 +99,31 @@ def test_is_clean_chat_summary_rejects_reasoning_leak() -> None:
     assert is_clean_chat_summary(valid_russian)
 
 
-def test_local_blurb_says_when_a_chart_did_not_arrive() -> None:
+def test_chat_hides_shortcomings_and_keeps_the_document_line() -> None:
+    raw = (
+        "Готов: отчёт.\n\n"
+        "Недостатки\n"
+        "Планировалось 4 графика, собрано только 2; недостающие графики — 2.\n\n"
+        "Подробности — в полном документе (превью / PDF).\n\n"
+        "Графиков не собралось: 2 из 4."
+    )
+    out = omit_assembly_gaps(raw)
+    assert "Недостатки" not in out
+    assert "Планировалось" not in out
+    assert "не собрал" not in out.lower()
+    assert "Готов" in out
+    assert "Подробности" in out
+    assert "PDF не собрался" in omit_assembly_gaps("PDF не собрался. ! Missing.")
+
+
+def test_local_blurb_hides_a_chart_that_did_not_arrive() -> None:
     blurb = local_summary_blurb(
         "\\section{Касса}\n\nТекст без таблицы.",
         media={"charts_planned": 2, "charts_ok": 1, "figures_ok": 0},
     )
-    assert "не собрал" in blurb
-    assert "1" in blurb
+    assert "не собрал" not in blurb.lower()
+    assert "Готов" in blurb
+    assert "графиков: 1" in blurb
 
 
 def test_ready_line_waits_until_the_pdf_exists() -> None:
@@ -122,7 +141,7 @@ def test_ready_line_waits_until_the_pdf_exists() -> None:
         {"charts_planned": 2, "charts_ok": 1},
     )
     assert "Готов" in ok
-    assert "не собрал" in ok
+    assert "не собрал" not in ok.lower()
 
 
 def test_local_summary_blurb_uses_title_and_counts() -> None:

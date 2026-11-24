@@ -122,6 +122,41 @@ def test_pdf_missing_pypdfium2(
         file_to_markdown(src)
 
 
+def test_prose_pdf_keeps_spaces_and_is_not_a_failed_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = tmp_path / "cv.pdf"
+    src.write_bytes(b"%PDF-1.4")
+
+    class FakeTriage:
+        usable = True
+        scan_pages: list[int] = []
+
+        def warn(self) -> None:
+            return None
+
+    class FakeDash:
+        markdown = (
+            "# Данные дашборда\n\n## Таблица PDF\n\nFirebasemultiplayer\n"
+        )
+        warnings = ["Таблица не разбилась на ячейки, оставлен текст страницы."]
+        pdf_table_count = 0
+
+    monkeypatch.setattr("case3.source_ingest.triage_pdf", lambda _path: FakeTriage())
+    monkeypatch.setattr(
+        "case3.dashboard_source.parse_dashboard",
+        lambda **_kwargs: FakeDash(),
+    )
+    monkeypatch.setattr(
+        "case3.source_ingest._pdf_via_pdfium",
+        lambda _path: "Firebase multiplayer, and on-device AI.\n",
+    )
+    result = file_to_markdown(src)
+    assert "Firebase multiplayer" in result.markdown
+    assert "Данные дашборда" not in result.markdown
+    assert result.warnings == []
+
+
 def test_markdown_over_limit_rejected(tmp_path: Path) -> None:
     src = tmp_path / "big.txt"
     src.write_text("x" * 100, encoding="utf-8")

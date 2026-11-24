@@ -376,6 +376,73 @@ def test_diagram_edit_is_not_a_new_diagram():
     assert follow.kind == "revise"
     assert follow.op == "refine_diagram"
     assert "стрелки" in follow.title
+    branch = resolve_act(
+        "можешь добавить еще ветку в схему",
+        has_diagram=True,
+        has_report=True,
+    )
+    assert branch.op == "refine_diagram"
+    assert "ветк" in branch.title
+    user_node = resolve_act(
+        "добавь раздел про пользователя",
+        has_diagram=True,
+        has_report=True,
+    )
+    assert user_node.op == "refine_diagram"
+    assert "пользовател" in user_node.title
+
+
+def test_polite_edits_reach_every_structure():
+    section = resolve_act("можешь заключение чуть строже", has_report=True)
+    assert section.op == "rewrite"
+    assert section.section == "Заключение"
+    assert section.brief == "clearer"
+    strict = resolve_act("исправь заключение чуть строже", has_report=True)
+    assert strict.op == "rewrite"
+    assert strict.section == "Заключение"
+    again = resolve_act("чуть строже", has_report=True, last_section="Заключение")
+    assert again.op == "rewrite"
+    assert again.section == "Заключение"
+
+    table = resolve_act("можешь в таблице поменять Гомель на Брест", has_report=True)
+    assert table.op == "replace_cell"
+    assert table.section == "Гомель"
+    assert table.title == "Брест"
+    polite = resolve_act("в таблице замени пожалуйста Гомель на Брест", has_report=True)
+    assert polite.section == "Гомель"
+
+    chart = resolve_act("можешь график сделать столбцами", has_chart=True)
+    assert chart.op == "retype_charts"
+    assert chart.chart == "bar"
+
+    photo = resolve_act("можешь на фото убрать фон", has_report=True)
+    assert photo.op == "edit_photo"
+    assert "фон" in photo.title
+
+    renamed = resolve_act(
+        "можешь переименовать раздел Введение в Обзор", has_report=True
+    )
+    assert renamed.op == "rename_heading"
+    assert renamed.section == "Введение"
+    assert renamed.title == "Обзор"
+
+    listed = resolve_act("можешь в списке заменить кассу на выручку", has_report=True)
+    assert listed.op == "replace_item"
+    assert listed.section == "кассу"
+
+    simpler = resolve_act("упрости схему", has_diagram=True)
+    assert simpler.op == "refine_diagram"
+    softer = resolve_act("давай схему чуть проще", has_diagram=True)
+    assert softer.op == "refine_diagram"
+    removed = resolve_act("можешь убрать из схемы кассу", has_diagram=True)
+    assert removed.op == "refine_diagram"
+    assert "кассу" in removed.title
+
+    assert resolve_act("почему график зелёный", has_chart=True).kind == "talk"
+    assert resolve_act("сделай новую схему", has_diagram=True).kind == "build"
+    assert resolve_act("что на схеме", has_diagram=True).kind == "talk"
+    vague = resolve_act("поправь", has_report=True, has_diagram=True)
+    assert vague.op == "ask"
 
 
 def test_slide_points_are_not_the_title():

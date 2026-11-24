@@ -81,6 +81,22 @@ def test_repetitive_keyboard_smash():
         assert "недостаточно данных" in msg.lower()
 
 
+def test_algebra_letters_inside_a_lecture_are_not_mash():
+    lecture = (
+        "# Логика\n\n"
+        "Отрицание a или b. Формула: a b a b a b a b.\n\n"
+        "1. Нейрон считает сумму входов.\n"
+        "2. Если Y > 0, образ узнан.\n"
+    )
+    valid, msg = validate_input_heuristics(
+        lecture,
+        "сделай презу по документу",
+        output_mode="presentation",
+    )
+    assert valid, msg
+    assert msg is None
+
+
 def test_pure_greetings_and_intent_triggers():
     triggers = [
         "привет",

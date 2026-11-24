@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   botHistoryResult,
+  historyResult,
+  storedOpenLabel,
   messagesFromMemory,
   priorRunIdFromMessages,
 } from "./priorRun";
@@ -170,6 +172,25 @@ test("messagesFromMemory and botHistoryResult restore inline chart/diagram previ
   assert.equal(res?.output_mode, "chat");
   assert.equal(res?.previews?.length, 2);
   assert.equal(res?.charts_ok, 1);
+});
+
+test("a past report or deck can be opened from its run id", () => {
+  const report = historyResult(
+    { role: "bot", text: "Готово", runId: "run_rep", outputMode: "report" },
+    "head",
+  );
+  assert.equal(report?.run_id, "run_rep");
+  assert.equal(report?.output_mode, "report");
+  assert.equal(storedOpenLabel(report?.output_mode), "Открыть отчёт");
+  const deck = historyResult(
+    { role: "bot", text: "Слайды", runId: "run_deck", outputMode: "presentation" },
+    "head",
+  );
+  assert.equal(storedOpenLabel(deck?.output_mode), "Открыть презентацию");
+  assert.equal(
+    historyResult({ role: "bot", text: "привет", runId: "run_chat", outputMode: "chat" }, "head"),
+    undefined,
+  );
 });
 
 test("messagesFromMemory restores attached documents on user turns", () => {

@@ -39,6 +39,14 @@ _DIAGRAM = re.compile(
     r"схем|flowchart|mermaid",
     re.IGNORECASE,
 )
+# «по данной схеме» / «из графика» names the source, not the file to build.
+_SOURCE_NOUN = re.compile(
+    r"(?:по|из|на\s+основе|на\s+базе|от)\s+"
+    r"(?:эт(?:ой|ого|у)\s+|данн(?:ой|ого|ым)\s+|текущ(?:ей|его)\s+|"
+    r"открыт(?:ой|ого)\s+|приложенн(?:ой|ого)\s+)?"
+    r"(схем\w*|график\w*|диаграмм\w*)",
+    re.IGNORECASE,
+)
 _REPORT = re.compile(
     r"отч[её]т|\bpdf\b|\bdocx\b|\bword\b|ворд|справк",
     re.IGNORECASE,
@@ -121,8 +129,27 @@ def _plaque_blocked(raw: str, plaque: str) -> bool:
     return True
 
 
+def _source_spans(raw: str) -> list[tuple[int, int]]:
+    return [(match.start(1), match.end(1)) for match in _SOURCE_NOUN.finditer(raw)]
+
+
+def _covered(match: re.Match[str], spans: list[tuple[int, int]]) -> bool:
+    return any(start <= match.start() and match.end() <= end for start, end in spans)
+
+
+def _chart_is_the_product(raw: str, spans: list[tuple[int, int]]) -> bool:
+    for match in _CHART_REQ.finditer(raw):
+        window = raw[max(0, match.start() - 32) : match.start()]
+        if _NEG_BEFORE.search(window) or _covered(match, spans):
+            continue
+        return True
+    return False
+
+
 def _live_kinds(raw: str) -> list[str]:
     found: list[str] = []
+    spans = _source_spans(raw)
+    chart_product = _chart_is_the_product(raw, spans)
     for kind, pattern in (
         ("presentation", _PRESENTATION),
         ("report", _REPORT),
@@ -131,6 +158,8 @@ def _live_kinds(raw: str) -> list[str]:
         for match in pattern.finditer(raw):
             window = raw[max(0, match.start() - 32) : match.start()]
             if _NEG_BEFORE.search(window):
+                continue
+            if kind == "diagram" and chart_product and _covered(match, spans):
                 continue
             found.append(kind)
             break

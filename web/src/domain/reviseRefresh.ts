@@ -9,6 +9,24 @@ export function offersNewChat(op: string): boolean {
   return op === "full";
 }
 
+const TEXT_ONLY_REVISE = new Set([
+  "rewrite",
+  "rewrite_all",
+  "retitle",
+  "rename_heading",
+  "replace_cell",
+  "replace_item",
+  "add_item",
+  "delete_section",
+  "undo",
+  "redo",
+]);
+
+/** A wording edit keeps the PDF and diagram on the first message. */
+export function reviseChatStaysText(op: string): boolean {
+  return TEXT_ONLY_REVISE.has(op.trim());
+}
+
 export function reviseSurface(
   op: string,
   titleOn = "",
@@ -157,7 +175,13 @@ export async function refreshRevisedArtifact(
   msgId: string,
   hosts: RefreshHosts,
   artifactRunId = "",
-  options?: { remember?: boolean; isolated?: boolean; op?: string; memorySection?: string },
+  options?: {
+    remember?: boolean;
+    isolated?: boolean;
+    op?: string;
+    memorySection?: string;
+    quietCards?: boolean;
+  },
 ): Promise<void> {
   const plan = revisedRailPlan(runId, artifactRunId, surface, options?.op || "");
   let result = await readStatus(plan.fetchId);
@@ -186,12 +210,21 @@ export async function refreshRevisedArtifact(
   } else if (options?.op === "undo") {
     result = { ...result, memory_section: "" };
   }
-  hosts.setMsgs((msgs) =>
-    msgs.map((msg) => {
-      if (msg.id !== msgId || msg.role !== "bot") return msg;
-      return { ...msg, result, pending: false };
-    }),
-  );
+  if (!options?.quietCards) {
+    hosts.setMsgs((msgs) =>
+      msgs.map((msg) => {
+        if (msg.id !== msgId || msg.role !== "bot") return msg;
+        return { ...msg, result, pending: false };
+      }),
+    );
+  } else {
+    hosts.setMsgs((msgs) =>
+      msgs.map((msg) => {
+        if (msg.id !== msgId || msg.role !== "bot") return msg;
+        return { ...msg, pending: false };
+      }),
+    );
+  }
   if (options?.remember !== false) {
     hosts.rememberRun(
       plan.chainHead && plan.chainHead !== result.run_id

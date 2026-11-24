@@ -12,6 +12,7 @@ import {
   mergeServerHistory,
   moveHistoryToFolder,
   pushHistory,
+  removeHistory,
   saveUserTurn,
   syncServerHistory,
   togglePinHistory,
@@ -54,6 +55,16 @@ describe("reportHistory folders + pin", () => {
     const list = loadHistory();
     assert.equal(list[0].runId, "a");
     assert.equal(list[0].pinned, true);
+  });
+
+  it("removes one chat and keeps the rest", () => {
+    pushHistory({ id: "a", title: "A", runId: "a", savedAt: 1 });
+    pushHistory({ id: "b", title: "B", runId: "b", savedAt: 2 });
+    const left = removeHistory("b");
+    assert.deepEqual(
+      left.map((item) => item.runId),
+      ["a"],
+    );
   });
 
   it("create folder and move chat", () => {

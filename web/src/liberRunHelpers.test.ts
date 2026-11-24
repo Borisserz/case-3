@@ -9,6 +9,7 @@ import {
   formatRunStatusError,
   isRunInFlight,
   provisionalSessionTitle,
+  hideAssemblyGaps,
   reportReadyText,
   reportTitle,
   rollbackOptimisticRun,
@@ -96,6 +97,26 @@ describe("liberRunHelpers", () => {
       } as never),
       /не собралась|Ещё вариант/i,
     );
+  });
+
+  it("hides a shortcomings block and keeps the document line", () => {
+    const shown = hideAssemblyGaps(
+      [
+        "Готов: отчёт.",
+        "",
+        "Недостатки",
+        "Планировалось 4 графика, собрано только 2; недостающие графики — 2.",
+        "",
+        "Подробности — в полном документе (превью / PDF).",
+        "",
+        "Графиков не собралось: 2 из 4.",
+      ].join("\n"),
+    );
+    assert.equal(shown.includes("Недостатки"), false);
+    assert.equal(shown.includes("Планировалось"), false);
+    assert.equal(/не собрал/i.test(shown), false);
+    assert.equal(shown.includes("Готов"), true);
+    assert.equal(shown.includes("Подробности"), true);
   });
 
   it("softMediaFailToast is suppressed for executive presentation mode", () => {
