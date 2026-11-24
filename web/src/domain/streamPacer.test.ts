@@ -160,4 +160,100 @@ describe("streamPacer", () => {
     await pacer.markDone("Быстрый текст!");
     assert.equal(pacer.getVisible(), "Быстрый текст!");
   });
+
+  it("reveals markdown table header+sep and each row whole without flashing partial pipes", async () => {
+    const clock = makeManualClock();
+    const emitted: string[] = [];
+    const pacer = createStreamPacer({
+      baseCps: 80,
+      onUpdate: (v) => emitted.push(v),
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+
+    const tableMd = [
+      "Вводная строка.",
+      "",
+      "| Область | Факт | План |",
+      "| --- | --- | --- |",
+      "| Минск | 184 520 | 180 000 |",
+      "| Брест | 57 846 | 60 000 |",
+      "",
+      "Итог положительный.",
+    ].join("\n");
+
+    const donePromise = pacer.markDone(tableMd);
+    for (let i = 0; i < 80 && pacer.isDraining(); i += 1) {
+      clock.step(30);
+    }
+    await donePromise;
+    assert.equal(pacer.getVisible(), tableMd);
+
+    // None of the intermediate frames may expose a half-typed "| ..." table line
+    for (const snap of emitted) {
+      const lines = snap.split("\n");
+      for (let idx = 0; idx < lines.length; idx += 1) {
+        const line = lines[idx];
+        if (!/^\s*\|/.test(line)) continue;
+        assert.match(line, /^\s*\|.+\|\s*$/, `partial pipe line leaked: ${JSON.stringify(line)} in ${JSON.stringify(snap)}`);
+      }
+      const headerIdx = lines.indexOf("| Область | Факт | План |");
+      if (headerIdx >= 0) {
+        assert.equal(lines[headerIdx + 1], "| --- | --- | --- |", `header appeared without separator: ${JSON.stringify(snap)}`);
+      }
+    }
+
+    const withHeader = emitted.findIndex((s) => s.includes("| --- | --- | --- |"));
+    const withRow1 = emitted.findIndex((s) => s.includes("| Минск | 184 520 | 180 000 |"));
+    const withRow2 = emitted.findIndex((s) => s.includes("| Брест | 57 846 | 60 000 |"));
+    assert.ok(withHeader >= 0 && withRow1 > withHeader && withRow2 > withRow1);
+  });
+
+  it("holds incomplete SSE table row until complete line arrives, then reveals whole row", () => {
+    const clock = makeManualClock();
+    const emitted: string[] = [];
+    const pacer = createStreamPacer({
+      baseCps: 120,
+      onUpdate: (v) => emitted.push(v),
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+
+    pacer.pushTarget("Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184");
+    for (let i = 0; i < 20; i += 1) {
+      clock.step(30);
+    }
+    assert.equal(pacer.getVisible(), "Данные:\n\n| Регион | Факт |\n| --- | --- |\n");
+
+    pacer.pushTarget("Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n");
+    for (let i = 0; i < 10; i += 1) {
+      clock.step(30);
+    }
+    assert.equal(
+      pacer.getVisible(),
+      "Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n",
+    );
+    assert.equal(emitted.some((s) => s.endsWith("| Минск | 184")), false);
+    pacer.stop();
+  });
+
+  it("does not stall standalone non-table pipe text on markDone", async () => {
+    const clock = makeManualClock();
+    const pacer = createStreamPacer({
+      baseCps: 80,
+      onUpdate: () => {},
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+    const text = "| заметка без таблицы";
+    const p = pacer.markDone(text);
+    for (let i = 0; i < 40 && pacer.isDraining(); i += 1) {
+      clock.step(30);
+    }
+    await p;
+    assert.equal(pacer.getVisible(), text);
+  });
 });

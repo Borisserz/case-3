@@ -44,6 +44,124 @@ function safeSliceEnd(text: string, rawEnd: number): number {
   return clamped;
 }
 
+const TABLE_ROW_RE = /^\s*\|.+\|\s*$/;
+const TABLE_SEP_RE = /^\s*\|[\s:|-]+\|\s*$/;
+const PIPE_START_RE = /^\s*\|/;
+const PARTIAL_SEP_RE = /^\s*\|?[\s:|-]*$/;
+
+function isInsideCodeFence(text: string, pos: number): boolean {
+  let count = 0;
+  let idx = 0;
+  while (idx < pos) {
+    const hit = text.indexOf("```", idx);
+    if (hit < 0 || hit >= pos) break;
+    count += 1;
+    idx = hit + 3;
+  }
+  return count % 2 === 1;
+}
+
+function lineBounds(
+  text: string,
+  pos: number,
+): { start: number; nl: number; endWithNl: number; line: string } {
+  const prevNl = pos > 0 ? text.lastIndexOf("\n", pos - 1) : -1;
+  const start = prevNl + 1;
+  const nl = text.indexOf("\n", start);
+  const endWithNl = nl >= 0 ? nl + 1 : text.length;
+  const line = text.slice(start, nl >= 0 ? nl : text.length);
+  return { start, nl, endWithNl, line };
+}
+
+function hasSeparatorAbove(target: string, lineStart: number): boolean {
+  let pos = lineStart;
+  while (pos > 0) {
+    const nl = pos - 1;
+    const prevStart = nl > 0 ? target.lastIndexOf("\n", nl - 1) + 1 : 0;
+    const line = target.slice(prevStart, nl);
+    if (!PIPE_START_RE.test(line)) return false;
+    if (TABLE_SEP_RE.test(line)) return true;
+    pos = prevStart;
+  }
+  return false;
+}
+
+function stepTableBoundary(
+  target: string,
+  currentEnd: number,
+  candidateEnd: number,
+  done: boolean,
+): { end: number; tableAction: "none" | "hold" | "snap" } {
+  if (candidateEnd <= currentEnd) {
+    return { end: candidateEnd, tableAction: "none" };
+  }
+  const curLine = lineBounds(target, currentEnd);
+  let pipeStart = -1;
+  if (PIPE_START_RE.test(curLine.line) && !isInsideCodeFence(target, curLine.start)) {
+    pipeStart = curLine.start;
+  } else {
+    let scan = curLine.nl;
+    while (scan >= 0 && scan + 1 < candidateEnd) {
+      const nextLine = lineBounds(target, scan + 1);
+      if (PIPE_START_RE.test(nextLine.line) && !isInsideCodeFence(target, nextLine.start)) {
+        pipeStart = nextLine.start;
+        break;
+      }
+      scan = nextLine.nl;
+    }
+  }
+  if (pipeStart < 0) {
+    return { end: candidateEnd, tableAction: "none" };
+  }
+  if (pipeStart > currentEnd) {
+    return { end: pipeStart, tableAction: "none" };
+  }
+  if (currentEnd > pipeStart) {
+    return { end: candidateEnd, tableAction: "none" };
+  }
+
+  const row1 = lineBounds(target, pipeStart);
+  if (hasSeparatorAbove(target, pipeStart)) {
+    if (row1.nl >= 0) {
+      return TABLE_ROW_RE.test(row1.line)
+        ? { end: row1.endWithNl, tableAction: "snap" }
+        : { end: candidateEnd, tableAction: "none" };
+    }
+    if (done) {
+      return TABLE_ROW_RE.test(row1.line)
+        ? { end: target.length, tableAction: "snap" }
+        : { end: candidateEnd, tableAction: "none" };
+    }
+    return { end: currentEnd, tableAction: "hold" };
+  }
+
+  if (row1.nl < 0) {
+    return done
+      ? { end: candidateEnd, tableAction: "none" }
+      : { end: currentEnd, tableAction: "hold" };
+  }
+  if (!TABLE_ROW_RE.test(row1.line)) {
+    return { end: candidateEnd, tableAction: "none" };
+  }
+
+  const row2 = lineBounds(target, row1.nl + 1);
+  if (row2.nl < 0) {
+    if (done) {
+      return TABLE_SEP_RE.test(row2.line)
+        ? { end: target.length, tableAction: "snap" }
+        : { end: candidateEnd, tableAction: "none" };
+    }
+    return PARTIAL_SEP_RE.test(row2.line)
+      ? { end: currentEnd, tableAction: "hold" }
+      : { end: candidateEnd, tableAction: "none" };
+  }
+
+  if (TABLE_SEP_RE.test(row2.line)) {
+    return { end: row2.endWithNl, tableAction: "snap" };
+  }
+  return { end: candidateEnd, tableAction: "none" };
+}
+
 export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
   const baseCps = Math.max(20, opts.baseCps ?? 68);
   const instant = Boolean(opts.instant);
@@ -61,6 +179,7 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
   let stopped = false;
   let rafId: number | null = null;
   let lastTs: number | null = null;
+  let rowHoldUntilTs = 0;
   const waiters: Array<() => void> = [];
 
   const resolveWaiters = () => {
@@ -100,16 +219,43 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
       return;
     }
 
+    const prevEnd = safeSliceEnd(target, floatRevealed);
+    if (ts < rowHoldUntilTs && prevEnd < target.length) {
+      const peek = stepTableBoundary(target, prevEnd, Math.min(target.length, prevEnd + 1), done);
+      if (peek.tableAction === "snap") {
+        rafId = scheduleFrame(tick);
+        return;
+      }
+      if (peek.tableAction === "hold") {
+        lastTs = null;
+        return;
+      }
+      rowHoldUntilTs = 0;
+    }
+
     const cps = done
       ? backlog > 300
         ? Math.min(1200, Math.max(baseCps * 1.6, backlog))
         : Math.max(baseCps * 1.5, backlog * 2.2)
       : baseCps + Math.min(260, backlog * 0.4);
 
-    floatRevealed = Math.min(target.length, floatRevealed + (cps * dtMs) / 1000);
-    const end = safeSliceEnd(target, floatRevealed);
-    if (end > floatRevealed) {
+    const nextFloat = Math.min(target.length, floatRevealed + (cps * dtMs) / 1000);
+    const candidateEnd = safeSliceEnd(target, nextFloat);
+    const step = stepTableBoundary(target, prevEnd, candidateEnd, done);
+    const end = step.end;
+
+    if (step.tableAction === "snap") {
       floatRevealed = end;
+      const rowDelayMs = done ? (backlog > 300 ? 55 : 85) : 115;
+      rowHoldUntilTs = ts + rowDelayMs;
+    } else if (step.tableAction === "hold") {
+      floatRevealed = end;
+      emitIfChanged(target.slice(0, end));
+      lastTs = null;
+      return;
+    } else {
+      floatRevealed = end === candidateEnd ? Math.max(nextFloat, end) : end;
+      rowHoldUntilTs = 0;
     }
     emitIfChanged(target.slice(0, end));
 
@@ -154,6 +300,7 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
       const visible = target.slice(0, safeSliceEnd(target, floatRevealed));
       const keep = commonPrefixLen(visible, next);
       target = next;
+      rowHoldUntilTs = 0;
       if (instant) {
         floatRevealed = target.length;
         emitIfChanged(target);

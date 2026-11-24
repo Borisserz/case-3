@@ -79,20 +79,26 @@ export function stabilizeStreamingMd(raw: string): string {
   let text = (raw || "").replace(/\r\n/g, "\n");
   // Avoid flashing bare heading hashes ("## ") before heading text arrives.
   text = text.replace(/(?:^|\n)#{1,3}[ \t]*$/, "");
-  // Avoid flashing partial table separator ("| ---" without closing "|") under a header row.
-  const lines = text.split("\n");
-  if (
-    lines.length >= 2 &&
-    isTableRow(lines[lines.length - 2]) &&
-    /^\s*\|[\s:|-]*$/.test(lines[lines.length - 1])
-  ) {
-    lines.pop();
-    text = lines.join("\n");
-  }
   const fenceCount = (text.match(/```/g) || []).length;
   if (fenceCount % 2 === 1) {
     return `${text}\n\`\`\``;
   }
+  // Hide incomplete trailing pipe rows or unconfirmed header lines so raw pipes don't flicker as text.
+  const lines = text.split("\n");
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1];
+    const prev = lines.length >= 2 ? lines[lines.length - 2] : "";
+    if (/^\s*\|/.test(last) && !isTableRow(last)) {
+      lines.pop();
+      continue;
+    }
+    if (isTableRow(last) && !isTableSep(last) && !isTableSep(prev) && !isTableRow(prev)) {
+      lines.pop();
+      continue;
+    }
+    break;
+  }
+  text = lines.join("\n");
   // Close dangling bold/inline-code in the active trailing paragraph so lines don't snap later.
   const lastBreak = text.lastIndexOf("\n\n");
   const head = lastBreak >= 0 ? text.slice(0, lastBreak + 2) : "";

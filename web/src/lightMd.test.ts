@@ -47,3 +47,15 @@ test("renderLightMdBlocks splits top-level blocks and keeps code fences intact",
   assert.match(blocks[2], /^<pre class="src-code">/);
   assert.match(blocks[3], /^<ul class="src-ul">/);
 });
+
+test("stabilizeStreamingMd hides partial table rows and unconfirmed headers during streaming", () => {
+  assert.equal(
+    stabilizeStreamingMd("| Регион | Факт |\n| --- | --- |\n| Минск | 184"),
+    "| Регион | Факт |\n| --- | --- |",
+  );
+  assert.equal(stabilizeStreamingMd("Итоги\n\n| Регион | Факт |"), "Итоги");
+  assert.equal(
+    stabilizeStreamingMd("Итоги\n\n| Регион | Факт |\n| ---"),
+    "Итоги",
+  );
+});
