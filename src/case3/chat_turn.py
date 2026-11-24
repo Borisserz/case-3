@@ -1450,6 +1450,7 @@ def generate_chat_charts(
     client: LLMClient | None = None,
     extra_context: str = "",
     previous_chart: dict | None = None,
+    context_block: str = "",
 ) -> tuple[list[dict], dict[str, dict]]:
     """Build and render 1..max_charts grounded Chart.js PNGs for an inline chat turn."""
     from pathlib import Path
@@ -1494,7 +1495,17 @@ def generate_chat_charts(
     if color_line:
         system += "\n" + color_line
     prior_scenario = _asks_about_prior_scenario(message, intent)
-    mem_ctx = _visual_memory_context(intent, extra_context)
+    packet_context = (context_block or "").strip()
+    if packet_context:
+        mem_parts = [packet_context]
+        if (extra_context or "").strip():
+            mem_parts.append(
+                "Анализ и расчёты текущего ответа:\n"
+                + (extra_context or "").strip()[:2500]
+            )
+        mem_ctx = "\n\n".join(mem_parts)
+    else:
+        mem_ctx = _visual_memory_context(intent, extra_context)
     clipped_src = _clip_source(source, focus=f"{message}\n{mem_ctx}".strip())
     prompt_parts = [f"ЗАПРОС:\n{message}"]
     if isinstance(previous_chart, dict) and (previous_chart.get("html") or "").strip():
@@ -1611,6 +1622,7 @@ def generate_chat_diagram(
     client: LLMClient | None = None,
     extra_context: str = "",
     previous_diagram: dict | None = None,
+    context_block: str = "",
 ) -> tuple[list[dict], dict[str, dict]]:
     """One Mermaid schema from the chat text. No report file."""
     from pathlib import Path
@@ -1621,7 +1633,17 @@ def generate_chat_diagram(
 
     llm = client or _client(2048, 60.0)
     message = latest_user_line(intent) or intent
-    mem_ctx = _visual_memory_context(intent, extra_context)
+    packet_context = (context_block or "").strip()
+    if packet_context:
+        mem_parts = [packet_context]
+        if (extra_context or "").strip():
+            mem_parts.append(
+                "Анализ и расчёты текущего ответа:\n"
+                + (extra_context or "").strip()[:2500]
+            )
+        mem_ctx = "\n\n".join(mem_parts)
+    else:
+        mem_ctx = _visual_memory_context(intent, extra_context)
     diag_parts = [message]
     if isinstance(previous_diagram, dict):
         prev_code = str(previous_diagram.get("mermaid") or previous_diagram.get("code") or "").strip()
@@ -1907,6 +1929,7 @@ def try_chat_answer(
     on_delta: Callable[[str], None] | None = None,
     on_replace: Callable[[str], None] | None = None,
     report: str = "",
+    context_block: str = "",
 ) -> str:
     """Full chat answer. No TeX.
 
@@ -1923,7 +1946,7 @@ def try_chat_answer(
             return question
 
     system = load_prompt("chat_answer").strip()
-    user = _user_block(source, intent)
+    user = (context_block or "").strip() or _user_block(source, intent)
     if note:
         user += "\n\n" + note
     extra = (report or "").strip()
@@ -1951,6 +1974,9 @@ def try_chat_answer(
             "\n\nЧисла из реплик пользователя",
             "\n\nКарточка этого чата",
             "\n\nПредыдущий ход",
+            "## Контекст диалога",
+            "## Числа из прошлых реплик пользователя",
+            "## Выбранные источники",
         )
     )
     if said and has_memory and not landing:

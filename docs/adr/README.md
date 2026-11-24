@@ -26,5 +26,6 @@
 | [0020](0020-dashboard-landing-is-a-short-note.md) | Closing a dashboard writes a short note, not an essay | Accepted |
 | [0021](0021-chat-screens-are-the-later-source.md) | Later turns and files use the chat's screens | Accepted |
 | [0022](0022-concurrent-multiuser-runs.md) | Multi-user concurrent execution & per-browser workspace isolation | Accepted |
+| [0024](0024-grounded-context-packet.md) | Grounded Context Packet after TTG, before chat LLM | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

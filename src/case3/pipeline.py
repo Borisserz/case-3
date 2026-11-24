@@ -10,7 +10,7 @@ import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar, copy_context
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable  # Any used by user_figures metas
@@ -1404,6 +1404,56 @@ def run_pipeline(
             if deriv:
                 enriched_source = (enriched_source + "\n\n## Производные\n\n" + deriv).strip()
 
+        from case3.context_packet import build_context_packet, render_chat_user_block
+        from case3.turn_plan import TurnPlan, TurnStep, plan_turn
+
+        if has_typed_route:
+            media = route_plan.get("build_media")
+            media = media if isinstance(media, dict) else {}
+            raw_steps = (
+                route_plan.get("steps")
+                if isinstance(route_plan.get("steps"), list)
+                else []
+            )
+            packet_plan = TurnPlan(
+                route_version=str(route_plan.get("route_version") or ""),
+                kind=str(route_plan.get("kind") or "chat"),
+                steps=[
+                    TurnStep(kind=str(step.get("kind") or "chat"))
+                    for step in raw_steps
+                    if isinstance(step, dict)
+                ]
+                or [TurnStep(kind="chat")],
+                want_chat_chart=route_chart,
+                want_chat_diagram=route_diagram,
+                build_media={str(key): bool(value) for key, value in media.items()},
+                edit_act=None,
+                mode_hint=str(route_plan.get("mode_hint") or "chat"),
+                reason=str(route_plan.get("reason") or ""),
+                clarify_prompt=(
+                    str(route_plan.get("clarify_prompt"))
+                    if route_plan.get("clarify_prompt")
+                    else None
+                ),
+                note=str(route_plan.get("note")) if route_plan.get("note") else None,
+            )
+        else:
+            packet_plan = plan_turn(turn_text, mode_hint="chat")
+        packet = build_context_packet(
+            plan=packet_plan,
+            user_text=turn_text,
+            source_text=enriched_source,
+            root=root,
+            prior_run_id=prior or None,
+        )
+        context_block = render_chat_user_block(packet)
+        packet_source = "\n\n".join(
+            chunk.text.strip() for chunk in packet.evidence if chunk.text.strip()
+        )
+        grounded_source = packet_source or enriched_source
+        meta["selection_manifest"] = asdict(packet.selection_manifest)
+        _write_meta(meta, out, logs)
+
         if user_figs:
             materialize_user_figures(user_figs, out / "figures")
         charts_list: list[dict[str, Any]] = []
@@ -1417,9 +1467,10 @@ def run_pipeline(
             report = chat_report_block(root, prior, turn_text)
             BUS.start(run_id)
             answer = try_chat_answer(
-                enriched_source,
+                grounded_source,
                 asked,
                 report=report,
+                context_block=context_block,
                 on_delta=lambda piece: BUS.publish(run_id, piece),
                 on_replace=lambda full: BUS.replace(run_id, full),
             )
@@ -1448,7 +1499,7 @@ def run_pipeline(
                 and not answer_declines_chart(answer)
                 and should_auto_chat_chart(
                     turn_text,
-                    enriched_source,
+                    grounded_source,
                     answer,
                     has_prior_diagram=prev_diagram is not None,
                 )
@@ -1457,7 +1508,7 @@ def run_pipeline(
             if (explicit_chart or auto_chart) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
-                    enriched_source,
+                    grounded_source,
                     intent or user_text,
                     max_charts=eff_charts_budget if explicit_chart else 1,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
@@ -1465,16 +1516,18 @@ def run_pipeline(
                     charts_dir=work / "charts",
                     extra_context=answer,
                     previous_chart=prev_chart,
+                    context_block=context_block,
                 )
             if wants_diag:
                 bump("charts", "рисую схему…")
                 diagrams, diagram_status = generate_chat_diagram(
-                    enriched_source,
+                    grounded_source,
                     intent or user_text,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
                     figs_dir=out / "figures",
                     extra_context=answer,
                     previous_diagram=prev_diagram,
+                    context_block=context_block,
                 )
                 media_status.update(diagram_status)
                 if diagrams:
@@ -1645,10 +1698,7 @@ def run_pipeline(
             _write_meta(meta, out, logs)
 
         if mode == "chat":
-            from case3.chat_memory import focus_source
-
-            asked = str(meta.get("chat_prompt") or turn_text)
-            return _finish_chat_answer(user_intent, focus_source(source_raw, asked))
+            return _finish_chat_answer(user_intent, source_raw)
         if mode in {"report", "diagram", "presentation"}:
             spoken_about = turn_text.strip()
             attached = source_raw.strip()

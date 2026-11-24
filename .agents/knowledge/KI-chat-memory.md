@@ -1,17 +1,19 @@
 # KI: Chat memory
 
 ## What
-One Liber chat is a chain of runs. The chain explains the next line. It is not a source of numbers.
+One Liber chat is a chain of runs. The chain explains the next line. It is not a source of numbers. Chat answers (Phase A) get one **GCP** per turn after TTG — selected evidence plus dialogue, not a blind paste of Source + full thread.
 
 ## Entry
 - Chain, thread, screen: `src/case3/chat_memory.py` (`load_chain`, `format_thread`, `memory_view`, `report_tex`)
-- Prompt the model sees: `src/case3/chat_turn.py` (`_user_block`, `report_context`, `try_chat_answer`)
-- Assembly as `/api/run`: `prior_turn.prior_block_for_form` → `insert_prior_turn` → `user_text_before_ui` → `try_chat_answer`
+- **GCP (chat):** `src/case3/context_packet.py` (`build_context_packet`, `render_chat_user_block`) · `src/case3/context_select.py` (`catalog_sources`, `select_evidence`, `select_dialogue`)
+- Wire: `pipeline._finish_chat_answer` → `build_context_packet` → `meta["selection_manifest"]` → `try_chat_answer(..., context_block=...)`; inline chart/diagram get the same `context_block`
+- Legacy prompt (builds / no packet): `src/case3/chat_turn.py` (`_user_block`, `report_context`)
+- Assembly as `/api/run`: `prior_turn.prior_block_for_form` → `insert_prior_turn` → `user_text_before_ui` → chat path uses GCP instead of duplicating `format_thread` in the user block
 - Open report in a chat answer: `pipeline._finish_chat_answer` → `chat_report_block`
 - Digits in a new file: `src/case3/fact_ground.py`, called from `generate_document` and `slides_job`
 - Edit router: `chat_act.resolve_act`. Execution: `chat_revise.try_chat_revise`
 - Screen: `GET /api/runs/{id}/memory` → `web/src/domain/priorRun.ts` → `MsgMarkdown`
-- Why: ADR-0013. Allow-list: ADR-0015. New files bind the number to its word: ADR-0016. ADR-0011 keeps SSE, cancel, and the diagram ceiling only.
+- Why: ADR-0013. Allow-list: ADR-0015. New files bind the number to its word: ADR-0016. **GCP:** ADR-0024 after **TTG** ADR-0023. ADR-0011 keeps SSE, cancel, and the diagram ceiling only.
 
 ## Invariants
 - Max 48 hops. The last 8 keep paragraphs: 2000, 1600, 1200, then 800. A turn past that is one line of 160 characters, digits stripped, and that block is cut from the front past 6000. The prompt cap is 150000 characters. A legal thread is pasted whole. A chat answer may run to 4096 tokens.
@@ -19,6 +21,7 @@ One Liber chat is a chain of runs. The chain explains the next line. It is not a
 - Question cap 6000, head plus the last paragraph. Chat source cap is 80000 characters. A dashboard table under that cap is pasted whole, with a line «Вижу все N строк.» A longer one keeps the header, the rows the question names, then as many other rows as fit, and the line says «Вижу K из M».
 - `dialogue`: 12 notes, 300 characters, line breaks kept on write and on read.
 - Allowed numbers: Source ∪ the current message ∪ `format_user_numbers` (user fields only, cap 40). Assistant fields and a bare thread digit stay illegal. Not the report block, not chart JSON. Spoken cardinals count as digits. «один» does not.
+- **GCP chat:** evidence budget 80k, dialogue 24k (`context_packet`). Dialogue excerpts in the packet are never `number_evidence`. Compare N sources → equal `per_source_quota`; one named doc → others omitted (`explicit_focus`). Renderer order: текущий запрос → маршрут → выбранные источники → покрытие → диалог → артефакт → прошлые числа пользователя → ограничение. Sections labeled «не Source» stay non-evidence. `selection_manifest` is written to `meta.json` every chat answer.
 - In a new file a historical pair (`2 слайд`) is legal only beside that stem. Source and this message stay global. Chart `data` arrays ignore the pair. A chat answer may still repeat the value.
 - A named section is included once. Two equally matching headings stay as an outline only.
 - Regex order in `resolve_act` is the spec. Do not add a second model to route edits. Two clauses joined by «и» or «;» run in sentence order when each clause is its own edit. A semicolon inside one table row stays one act.
@@ -42,3 +45,4 @@ One Liber chat is a chain of runs. The chain explains the next line. It is not a
 - `105 865,2` is one number (`105865.2`). The fragments `105` and `865.2` are not allowed on their own. In a chart array `[100,40]` the comma splits, so both points stay. `[12,5]` is one point `12.5`, and so is `105 865,2`. A label that names one table row keeps only that row's cells: Гомельская cannot show Минская's sum. A month label is not a row. A chart `null` keeps its category. A markdown list marker `1.` is not a number. A four-digit year at the start of a line stays: `2024. Выручка 10` keeps 2024. `1.1` still is a number. Card text on a slide is checked the same way as the title. A horizontal bar grows with the number of regions, up to 900px.
 - A Source longer than the chat cap also sends its markdown headings, capped at 1200. Under the cap the file is pasted whole and the outline is not repeated.
 - A plain message lifts an old turn on one stem when that is the only content stem, and on two stems when the question has two or more.
+- With `context_block` set, `try_chat_answer` does not fall back to `_user_block`; `report_context` still appends when the question names a section. Phase B will extend GCP to revise/build; until then assemblies keep `format_thread` / `focus_source` on non-chat paths.
