@@ -1044,6 +1044,43 @@ def test_change_photo_edits_the_chat_png_not_a_new_one(tmp_path: Path, monkeypat
     assert "?v=" in result["previews"][0]["url"]
 
 
+def test_unnamed_color_asks_when_a_chart_and_a_photo_are_both_open(tmp_path: Path, monkeypatch):
+    report = "source_20261119T140000Z"
+    out = _report_dir(tmp_path, report)
+    figs = out / "figures"
+    figs.mkdir()
+    (figs / "fig_01.png").write_bytes(b"png")
+    meta_path = out / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["charts_planned"] = ["cht_01"]
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("a bare color must ask, not edit")
+
+    monkeypatch.setattr("case3.figure_edit.edit_figure_in_run", boom)
+    asked = try_chat_revise("сделай красным", report, root=tmp_path)
+    assert asked is not None
+    assert asked["op"] == "ask"
+    folded = asked["chat"].casefold()
+    assert "фото" in folded and "график" in folded
+    assert "Введение" not in asked["chat"]
+
+    seen: dict[str, object] = {}
+
+    def fake_edit(out_dir, figure_id, *, mode, prompt, caption=None, formats=None, cfg=None):
+        seen["id"] = figure_id
+        seen["prompt"] = prompt
+        return {"figure_id": figure_id}
+
+    monkeypatch.setattr("case3.figure_edit.edit_figure_in_run", fake_edit)
+    edited = try_chat_revise("сделай машину красной", report, root=tmp_path)
+    assert edited is not None
+    assert edited["op"] == "edit_photo"
+    assert seen["id"] == "fig_01"
+    assert "красн" in str(seen["prompt"]).casefold()
+
+
 def test_photo_phrase_edits_the_only_png(tmp_path: Path, monkeypatch):
     report = "source_20261119T130000Z"
     out = _report_dir(tmp_path, report)
@@ -1168,3 +1205,75 @@ def test_retype_chart_hides_raw_english_js_error_from_user(tmp_path: Path, monke
     assert "chart JS error" not in msg
     assert "reading 'axis'" not in msg
     assert any("а" <= ch.lower() <= "я" for ch in msg)
+
+
+def _tex_report(tmp_path: Path, run_id: str, tex: str, *, charts: list[dict] | None = None) -> Path:
+    out = tmp_path / "runs" / "out" / run_id
+    out.mkdir(parents=True)
+    meta: dict = {"run_id": run_id, "output_mode": "report", "artifacts": {"pdf": "a.pdf"}}
+    if charts:
+        meta["charts_planned"] = [item["id"] for item in charts]
+    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    (out / "note.tex").write_text(tex, encoding="utf-8")
+    if charts:
+        (out / "figures.json").write_text(
+            json.dumps({"figures": [], "charts": charts, "diagrams": []}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return out
+
+
+def test_delete_named_chart_strips_it_and_keeps_the_other(tmp_path: Path, monkeypatch):
+    run_id = "source_20261125T120000Z"
+    tex = (
+        "\\section{Введение}\nТекст.\n"
+        "\\begin{figure}[H]\n\\includegraphics{figures/cht_01.png}\n\\caption{Поступления}\n\\end{figure}\n"
+        "\\begin{figure}[H]\n\\includegraphics{figures/cht_02.png}\n\\caption{План}\n\\end{figure}\n"
+    )
+    out = _tex_report(
+        tmp_path,
+        run_id,
+        tex,
+        charts=[
+            {"id": "cht_01", "caption": "Поступления", "type": "bar"},
+            {"id": "cht_02", "caption": "План", "type": "bar"},
+        ],
+    )
+    monkeypatch.setattr("case3.run_rebuild.rebuild_run_docs", lambda *_a, **_k: {})
+    result = try_chat_revise("удали график поступления", run_id, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "delete_chart"
+    assert result["surface"] == "report"
+    fresh = (out / "note.tex").read_text(encoding="utf-8")
+    assert "cht_01" not in fresh
+    assert "cht_02" in fresh
+    assert "Поступления" not in fresh
+
+
+def test_delete_second_paragraph_leaves_the_heading(tmp_path: Path, monkeypatch):
+    run_id = "source_20261125T120100Z"
+    tex = "\\section{Введение}\nПервый факт.\n\nВторой факт про кассу.\n\n\\section{Итог}\nКонец.\n"
+    out = _tex_report(tmp_path, run_id, tex)
+    monkeypatch.setattr("case3.run_rebuild.rebuild_run_docs", lambda *_a, **_k: {})
+    result = try_chat_revise("удали второй абзац введения", run_id, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "delete_paragraph"
+    assert result["surface"] == "report"
+    fresh = (out / "note.tex").read_text(encoding="utf-8")
+    assert "Первый факт" in fresh
+    assert "Второй факт" not in fresh
+    assert "\\section{Введение}" in fresh
+
+
+def test_delete_block_removes_the_section(tmp_path: Path, monkeypatch):
+    run_id = "source_20261125T120200Z"
+    tex = "\\section{Введение}\nВода.\n\n\\section{Итог}\nФакт.\n"
+    out = _tex_report(tmp_path, run_id, tex)
+    monkeypatch.setattr("case3.run_rebuild.rebuild_run_docs", lambda *_a, **_k: {})
+    result = try_chat_revise("удали блок введение", run_id, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "delete_section"
+    assert result["surface"] == "report"
+    fresh = (out / "note.tex").read_text(encoding="utf-8")
+    assert "\\section{Введение}" not in fresh
+    assert "\\section{Итог}" in fresh

@@ -99,6 +99,42 @@ class _Seq:
         yield self.texts.pop(0)
 
 
+def test_section_draft_retries_when_the_model_copies_the_paragraph():
+    from case3.chat_turn import draft_section
+
+    current = "Выручка была 10, стала 12. Это длинная фраза про кассу и смену."
+    shorter = "Выручка была 10, стала 12."
+    client = _Seq([current, shorter])
+    kept = draft_section(
+        section="Введение",
+        current=current,
+        source=current,
+        brief="tighter",
+        user_text="сделай короче",
+        client=client,
+    )
+    assert kept == shorter
+    assert client.calls == 2
+    assert "не изменил" in client.seen[1]
+
+
+def test_section_draft_drops_a_paragraph_the_model_copies_twice():
+    from case3.chat_turn import draft_section
+
+    current = "Выручка была 10, стала 12."
+    client = _Seq([current, current])
+    kept = draft_section(
+        section="Введение",
+        current=current,
+        source=current,
+        brief="tighter",
+        user_text="сделай короче",
+        client=client,
+    )
+    assert kept == ""
+    assert client.calls == 2
+
+
 class _Boom:
     def stream(self, **_kwargs):
         raise AssertionError("model should not be called")

@@ -13,6 +13,7 @@ from case3.chart_html import ChartHtmlError, sanitize_chart_html
 from case3.chart_style import (
     apply_kpi_palette_vars,
     apply_palette_to_html,
+    fade_fill_on_html,
     intent_palette_lines,
     normalize_palette_id,
 )
@@ -567,6 +568,94 @@ def paint_hue_charts_in_run(
         "ok": True,
         "hue": hue,
         "charts_recolored": len(painted_paths) or painted,
+        "media_status": dict(meta.get("media_status") or {}),
+        "artifacts": {k: str(p) for k, p in (artifacts or {}).items()},
+        "undo": undo_meta(out_dir),
+    }
+
+
+def fade_charts_in_run(
+    out_dir: Path,
+    *,
+    all_charts: bool = False,
+    formats: set[str] | None = None,
+) -> dict[str, Any]:
+    """Lower fill alpha on existing charts. Numbers, labels, and type stay. No model call."""
+    from case3.charts import render_charts_batch
+    from case3.slides_chart_data import attach_series_ir_to_charts
+
+    out_dir = out_dir.resolve()
+    fj_path = out_dir / "figures.json"
+    if not fj_path.is_file():
+        raise ChartEditError("figures.json not found")
+    try:
+        fj = json.loads(fj_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartEditError(f"could not read figures.json: {exc}") from exc
+    charts = [c for c in (fj.get("charts") or []) if isinstance(c, dict)]
+    if not charts:
+        raise ChartEditError("нет графиков для осветления")
+
+    def _paintable(chart: dict[str, Any]) -> bool:
+        html = str(chart.get("html") or "")
+        if not html.strip():
+            return False
+        if str(chart.get("type") or "") == "kpi" or 'class="kpi"' in html:
+            return False
+        return True
+
+    chosen = [chart for chart in charts if _paintable(chart)]
+    if not all_charts:
+        chosen = chosen[-1:]
+    if not chosen:
+        raise ChartEditError("нет графика, у которого можно сделать заливку прозрачнее")
+
+    from case3.run_undo import capture_before_edit, undo_meta
+
+    capture_before_edit(out_dir, kind="fade_chart", target="soft-fill")
+    want_ids = {str(chart.get("id") or "") for chart in chosen}
+    figs_dir = out_dir / "figures"
+    figs_dir.mkdir(parents=True, exist_ok=True)
+    work_root = out_dir / "chart_fade_work"
+    painted_paths: dict[str, Path] = {}
+    batch_items: list[tuple[str, dict[str, Any], Path, Path]] = []
+    for index, chart in enumerate(charts):
+        cid = str(chart.get("id") or "").strip()
+        if cid not in want_ids:
+            continue
+        chart = dict(chart)
+        chart["html"] = fade_fill_on_html(str(chart.get("html") or ""))
+        chart["style_user"] = True
+        charts[index] = chart
+        png_path = figs_dir / f"{cid}.png"
+        batch_items.append((cid, chart, png_path, work_root / cid))
+    batch_res = render_charts_batch(batch_items) if batch_items else {}
+    for cid, _chart, png_path, _cdir in batch_items:
+        if batch_res.get(cid, {}).get("ok"):
+            painted_paths[cid] = png_path
+    attach_series_ir_to_charts(charts)
+    fj["charts"] = charts
+    fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _mut(meta: dict[str, Any]) -> None:
+        med = dict(meta.get("media_status") or {})
+        for cid, png_path in painted_paths.items():
+            med[cid] = {"ok": True, "path": str(png_path), "kind": "chart"}
+        meta["media_status"] = med
+
+    meta = update_meta(out_dir, _mut)
+    artifacts = None
+    if formats:
+        try:
+            artifacts = rebuild_run_docs(out_dir, formats=formats)
+        except Exception as exc:
+            log.warning("rebuild_run_docs failed during fade: %s", exc)
+    from case3.deck_refresh import refresh_deck_from_ir
+
+    refresh_deck_from_ir(out_dir)
+    return {
+        "ok": True,
+        "charts_faded": len(painted_paths) or len(batch_items),
         "media_status": dict(meta.get("media_status") or {}),
         "artifacts": {k: str(p) for k, p in (artifacts or {}).items()},
         "undo": undo_meta(out_dir),

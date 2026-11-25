@@ -24,7 +24,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
 - `reportHistory.ts` — local history + last-run payloads
-- `ArtifactRail.tsx` — sidecar: tabs (Превью·PDF·Схема·Source), Export, resize, sticky TOC (`RailToc`), figure→PDF, SourcePane
+- `ArtifactRail.tsx` — sidecar: tabs (Превью·PDF·Схема·Source), Export, resize, sticky TOC (`RailToc`), figure→PDF, SourcePane. An original PDF/DOCX/DOC/RTF on a report or presentation is a card (`SourceOriginCard`); click opens `SourceReadModal` with the extracted markdown. Pasted text stays in the rail.
 - Source draft click-to-edit (2026-11-02): live `sourceDraft` + artifact `kind=source` → preview click → textarea; Esc/blur back; write-through to draft — spec `2026-11-02-liber-source-draft-edit-design`
 - Report collapse (C11): chevron on headings in `ReportView`; body until next same/higher level; `sessionStorage` `liber-report-collapse:{runId}` via `reportSections.ts`
 - `DiagramPane.tsx` / `MermaidView.tsx` / `DiagramFullscreen.tsx` / `downloadDiagramPng.ts` — tab «Схема»; PNG + **SVG** download (live DOM; API `GET …/diagrams/{id}/svg` fallback). The same `dia_*` PNG is injected into PDF/DOCX

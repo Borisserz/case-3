@@ -158,6 +158,7 @@ def plan_turn(
     has_report: bool = False,
     has_diagram: bool = False,
     has_chart: bool = False,
+    has_photo: bool = False,
     last_section: str = "",
     last_op: str = "",
 ) -> TurnPlan:
@@ -191,6 +192,7 @@ def plan_turn(
             has_report=has_report,
             has_diagram=has_diagram,
             has_chart=has_chart,
+            has_photo=has_photo,
             last_section=last_section,
             last_op=last_op,
         )
@@ -230,6 +232,7 @@ def plan_turn(
             has_report=has_report,
             has_diagram=has_diagram,
             has_chart=has_chart,
+            has_photo=has_photo,
             last_section=last_section,
             last_op=last_op,
         )

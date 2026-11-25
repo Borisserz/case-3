@@ -404,7 +404,7 @@ export function DashboardPickModal({
           <div>
             <p className="settings-modal-eyebrow">данные · стимулсофт</p>
             <h2 id={titleId} className="settings-modal-title">
-              Выбрать данные
+              BI система
             </h2>
           </div>
           <div className="dash-viewer-actions">

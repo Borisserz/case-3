@@ -39,8 +39,9 @@ import {
 import { reportToMarkdown } from "./domain/reportMarkdown";
 import { modeSurfaces } from "./domain/liberModes";
 import { SOURCE_LABEL } from "./domain/sourceCopy";
-import { sourceRailView } from "./domain/sourceRead";
 import { redoChord, undoChord } from "./domain/undoChord";
+import { sourceOpensAsCard, sourceRailView } from "./domain/sourceRead";
+import { SourceOriginCard } from "./SourceOriginCard";
 import { SourcePane } from "./SourcePane";
 import {
   RAIL_WIDTH_DEFAULT,
@@ -124,8 +125,14 @@ type Props = {
   report: ReportBundle | null;
   sourceText?: string | null;
   sourceTitle?: string | null;
-  /** Prior user-message Source (PDF/DOCX) — report «Текст» tab shows viewer. */
+  /** Prior user-message Source (PDF/DOCX) — report «Документ» tab. */
   sourceAttachment?: import("./domain/liberTypes").SourceAttachment | null;
+  /** Every original file on that send. Office files become cards. */
+  sourceDocs?: import("./domain/liberTypes").SourceAttachment[] | null;
+  onOpenSourceDoc?: (
+    docs: import("./domain/liberTypes").SourceAttachment[],
+    index: number,
+  ) => void;
   /** Pre-run sourceDraft — Source tab click-to-edit. */
   sourceEditable?: boolean;
   onSourceTextChange?: (text: string) => void;
@@ -196,6 +203,8 @@ export function ArtifactRail({
   sourceText,
   sourceTitle,
   sourceAttachment = null,
+  sourceDocs = null,
+  onOpenSourceDoc,
   sourceEditable = false,
   onSourceTextChange,
   palettes = [],
@@ -373,12 +382,34 @@ export function ArtifactRail({
   const sourceAsDocument =
     (artifact.kind === "source" && artifact.viewMode === "document") ||
     Boolean(reportSourceDoc);
+  const sourceArtifactDoc =
+    artifact.kind === "source"
+      ? {
+          title: artifact.title,
+          text: artifact.text,
+          fileName: artifact.fileName,
+          viewMode: artifact.viewMode,
+          previewUrl: artifact.previewUrl,
+          originalUrl: artifact.originalUrl,
+          format: artifact.format,
+        }
+      : null;
+  const originDocs = (
+    sourceDocs?.length
+      ? sourceDocs
+      : sourceArtifactDoc
+        ? [sourceArtifactDoc]
+        : sourceAttachment
+          ? [sourceAttachment]
+          : []
+  ).filter(sourceOpensAsCard);
 
   const hasSource =
     surfaces.showSource &&
     Boolean(
       (sourceText && sourceText.length > 0) ||
         reportSourceDoc ||
+        originDocs.length > 0 ||
         artifact.kind === "source" ||
         artifact.kind === "intent",
     );
@@ -1095,7 +1126,19 @@ export function ArtifactRail({
                 />
               ) : null}
 
-              {!showDiagramSurface && tab === "source" ? (
+              {!showDiagramSurface && tab === "source" && originDocs.length > 0 ? (
+                <div className="source-origin-stage">
+                  {originDocs.map((doc, index) => (
+                    <SourceOriginCard
+                      key={`${doc.fileName || doc.title}-${index}`}
+                      doc={doc}
+                      onOpen={() => onOpenSourceDoc?.(originDocs, index)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+
+              {!showDiagramSurface && tab === "source" && originDocs.length === 0 ? (
                 <SourcePane
                   title={displaySourceTitle}
                   text={displaySource}

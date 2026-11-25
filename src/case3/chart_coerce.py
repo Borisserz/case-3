@@ -27,6 +27,37 @@ from case3.chart_donut import _unwrap_donut_layout, enhance_donut_html
 
 log = logging.getLogger("case3.charts")
 
+_CHART_SLOT_LINE = re.compile(
+    r"(?m)^[ \t]*%CASE3_CHART:([a-z][a-z0-9_]{0,31})%[^\n]*\r?\n?"
+)
+
+
+def drop_stick_charts(
+    tex: str,
+    charts: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, Any]], list[str]]:
+    """Drop a chart that is one dash in an empty frame, and its TeX slot."""
+    from case3.chart_type_fit import chart_is_stick
+
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for chart in charts or []:
+        cid = str(chart.get("id") or "").strip()
+        if chart_is_stick(chart):
+            if cid:
+                dropped.append(cid)
+            continue
+        kept.append(chart)
+    if dropped and tex:
+        gone = set(dropped)
+
+        def _keep(match: re.Match[str]) -> str:
+            return "" if match.group(1) in gone else match.group(0)
+
+        tex = _CHART_SLOT_LINE.sub(_keep, tex)
+    return tex, kept, dropped
+
+
 def polish_charts(
     charts: list[dict[str, Any]],
     *,

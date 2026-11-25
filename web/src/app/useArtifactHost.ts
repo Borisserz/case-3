@@ -21,7 +21,7 @@ import type {
 } from "../domain/liberTypes";
 import { reportTitle } from "../domain/runHelpers";
 import { sourceRailView } from "../domain/sourceRead";
-import { loadRailWidth, saveRailWidth } from "../domain/railWidth";
+import { loadRailWidth } from "../domain/railWidth";
 
 type Deps = {
   msgs: Msg[];
@@ -52,24 +52,6 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
       lastArtifactRef.current = activeArtifact;
     }
   }, [activeArtifact, railExiting]);
-
-  // Source PDF/DOCX needs a wide rail — bump once when document opens.
-  useEffect(() => {
-    if (
-      activeArtifact?.kind !== "source" ||
-      activeArtifact.viewMode !== "document"
-    ) {
-      return;
-    }
-    setRailWidthPct((w) => {
-      if (w >= 70) return w;
-      saveRailWidth(70);
-      return 70;
-    });
-  }, [
-    activeArtifact?.kind,
-    activeArtifact?.kind === "source" ? activeArtifact.viewMode : null,
-  ]);
 
   const openReportArtifact = useCallback(
     (msgId: string, result: RunResult, tab?: ArtifactTab) => {
@@ -194,14 +176,6 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
         originalUrl,
         format: draft.format,
       });
-      // Document needs room — bump rail if still at a narrow preset.
-      if (isDoc) {
-        setRailWidthPct((w) => {
-          if (w >= 70) return w;
-          saveRailWidth(70);
-          return 70;
-        });
-      }
     },
     [],
   );

@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import {
   docsForSourceModal,
   resolveOriginalDownload,
+  sourceDocBadge,
   sourceModalEyebrow,
+  sourceOpensAsCard,
   sourceRailView,
 } from "./sourceRead";
 
@@ -69,6 +71,36 @@ describe("sourceRead", () => {
     assert.equal(sourceRailView("", true), "document");
     assert.equal(sourceRailView("   ", true), "document");
     assert.equal(sourceRailView("", false), "text");
+  });
+
+  it("opens an original office file as a card and leaves pasted text in the rail", () => {
+    assert.equal(
+      sourceOpensAsCard({
+        title: "лаба.pdf",
+        text: "# Лаба\n\nТекст",
+        fileName: "лаба.pdf",
+        viewMode: "document",
+        format: "pdf",
+      }),
+      true,
+    );
+    assert.equal(
+      sourceOpensAsCard({
+        title: "заметка",
+        text: "Просто текст",
+        viewMode: "text",
+      }),
+      false,
+    );
+    assert.equal(
+      sourceOpensAsCard({
+        title: "снимок",
+        text: "# Данные дашборда\n\n| A |\n| --- |\n| 1 |",
+        viewMode: "text",
+      }),
+      false,
+    );
+    assert.equal(sourceDocBadge({ title: "a", fileName: "отчёт.docx" }), "DOCX");
   });
 
   it("formats crisp modal eyebrow from format or extension", () => {

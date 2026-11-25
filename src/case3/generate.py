@@ -17,6 +17,7 @@ from case3.chart_style import palette_fallback_table, palette_from_intent
 from case3.diagram_style import format_diagram_color_prompt
 from case3.chart_coerce import (
     coerce_chart_types,
+    drop_stick_charts,
     ensure_all_charts_match_types,
     polish_charts,
 )
@@ -1196,6 +1197,9 @@ def generate_document(
         charts = ensure_all_charts_match_types(charts)
     # Model often ignores Intent palette / emits ghostly hbar fills — enforce after grounding.
     charts = polish_charts(charts, palette_id=palette_from_intent(intent_text))
+    tex, charts, sticks = drop_stick_charts(tex, charts)
+    if sticks:
+        log.warning("dropped stick charts (one point or empty plot): %s", ", ".join(sticks))
     if dropped:
         log.warning(
             "dropped fact numbers absent from Source and the user message: %s",

@@ -177,6 +177,8 @@ export function useLiberRun(deps: LiberSendDeps) {
   } = deps;
 
   const inFlightRef = useRef(false);
+  const msgsRef = useRef(msgs);
+  msgsRef.current = msgs;
 
   return useCallback(
 async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; title?: string }) => {
@@ -457,6 +459,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               op: step.op || asString(data.op),
               memorySection: nextMemorySection,
               quietCards: reviseChatStaysText(step.op || asString(data.op)),
+              readMsgs: () => msgsRef.current,
             },
           );
         }

@@ -8,7 +8,7 @@ Generate and edit report photos via office HTTP API; optional user uploads; chat
 - Gen: `generate_all_figures` in pipeline images stage
 - Edit in report: `figure_edit.edit_figure_in_run`
 - Chat-only: `api` `photo_mode=edit` / `POST /api/photo/edit`
-- Chat «измени фото …» is img2img of the existing `fig_*` / `usr_*` PNG (`edit_figure_in_run` mode `edit`). «сделай фото» still generates a new one. A bare «измени фото» asks what to change.
+- Chat photo edit is img2img of the existing `fig_*` / `usr_*` PNG (`edit_figure_in_run` mode `edit`). That includes «измени фото …», «отредактируй …», «сделай машину красной», «а не синей», «перекрась машину», «поменяй цвет машины». «создай / нарисуй / сделай фото / сделай красную машину» generates a new picture. A bare «измени фото» asks what to change. A color line that names neither photo nor chart («сделай красным», «поменяй цвет», «перекрась») asks «фото или график?», when both are open. A named chart color stays a chart recolor. A named deck color stays the deck.
 - Worker: `workers/case3-image` (optional)
 
 ## Invariants

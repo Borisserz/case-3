@@ -578,7 +578,6 @@ export function ChatMessages({
                                     p.kind === "diagram" || p.id.startsWith("dia_");
                                   const photo =
                                     p.kind === "figure" || p.id.startsWith("fig_");
-                                  const chart = !diagram && !photo;
                                   return (
                                   <figure key={p.id} className="msg-inline-chart-card">
                                     <a
@@ -621,7 +620,7 @@ export function ChatMessages({
                                     >
                                       <img src={p.url} alt="" />
                                     </button>
-                                    {onRefineVisual && !chart ? (
+                                    {onRefineVisual && diagram ? (
                                       <figcaption>
                                         <button
                                           type="button"

@@ -25,6 +25,7 @@ Rules:
 - If Intent says AUTO / «на усмотрение» → **you** pick type(s) from Source; never default everything to `bar`.
 - `charts[].type` **must match** the Chart.js `type:` / KPI markup you emit (`donut` → `doughnut`, `horizontal_bar` → `indexAxis:'y'`, `kpi` → `.kpi` cards).
 - Deliver a **full** chart: honest numbers from Source, Russian labels when Source is RU, legend/axes readable, palette from Intent.
+- A chart needs **at least two numbers**. One number is a `kpi` card. Do not emit a bar, line, area, ring, or scatter that has a single point — that draws as a dash in an empty frame and is dropped.
 
 ## Chart HTML — design freely (no gold paste)
 

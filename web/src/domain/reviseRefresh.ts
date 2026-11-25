@@ -18,6 +18,14 @@ const TEXT_ONLY_REVISE = new Set([
   "replace_item",
   "add_item",
   "delete_section",
+  "delete_chart",
+  "delete_paragraph",
+  "add_paragraph",
+  "add_section",
+  "caption",
+  "delete_item",
+  "add_row",
+  "delete_row",
   "undo",
   "redo",
 ]);
@@ -56,7 +64,17 @@ export function reviseSurface(
     op === "replace_cell" ||
     op === "replace_item" ||
     op === "add_item" ||
-    op === "refine_diagram"
+    op === "refine_diagram" ||
+    op === "delete_section" ||
+    op === "delete_chart" ||
+    op === "delete_paragraph" ||
+    op === "rewrite_all" ||
+    op === "add_paragraph" ||
+    op === "add_section" ||
+    op === "caption" ||
+    op === "delete_item" ||
+    op === "add_row" ||
+    op === "delete_row"
   ) {
     return "report";
   }
@@ -165,6 +183,41 @@ type RefreshHosts = {
   openReportArtifact: (msgId: string, result: RunResult, tab?: ArtifactTab) => void;
 };
 
+/** The open report card, so a chat edit repaints it instead of a new bubble. */
+export function reportOwnerId(
+  msgs: Msg[],
+  fetchId: string,
+  chainHead: string,
+): string {
+  const wanted = new Set([fetchId.trim(), chainHead.trim()].filter(Boolean));
+  if (!wanted.size) return "";
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    const msg = msgs[i];
+    if (msg.role !== "bot" || !msg.result?.run_id) continue;
+    const rid = msg.result.run_id;
+    const chain = (msg.result.chain_head || "").trim();
+    if (wanted.has(rid) || (chain && wanted.has(chain))) return msg.id;
+  }
+  return "";
+}
+
+function paintReportResult(prev: RunResult, fresh: RunResult): RunResult {
+  return {
+    ...prev,
+    preview: fresh.preview !== undefined ? fresh.preview : prev.preview,
+    downloads: fresh.downloads !== undefined ? fresh.downloads : prev.downloads,
+    diagrams: fresh.diagrams !== undefined ? fresh.diagrams : prev.diagrams,
+    warnings: fresh.warnings !== undefined ? fresh.warnings : prev.warnings,
+    slides_status: fresh.slides_status ?? prev.slides_status,
+    slides_stage: fresh.slides_stage ?? prev.slides_stage,
+    slides_error: fresh.slides_error ?? prev.slides_error,
+    slide_pngs: fresh.slide_pngs !== undefined ? fresh.slide_pngs : prev.slide_pngs,
+    deck: fresh.deck !== undefined ? fresh.deck : prev.deck,
+    memory_section:
+      fresh.memory_section !== undefined ? fresh.memory_section : prev.memory_section,
+  };
+}
+
 async function readStatus(runId: string): Promise<RunResult | null> {
   const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/status`);
   if (!res.ok) return null;
@@ -183,6 +236,7 @@ export async function refreshRevisedArtifact(
     op?: string;
     memorySection?: string;
     quietCards?: boolean;
+    readMsgs?: () => Msg[];
   },
 ): Promise<void> {
   const plan = revisedRailPlan(runId, artifactRunId, surface, options?.op || "");
@@ -239,5 +293,18 @@ export async function refreshRevisedArtifact(
         : result,
     );
   }
-  if (!emptyReport) hosts.openReportArtifact(msgId, result, plan.tab);
+  const ownerId = reportOwnerId(
+    options?.readMsgs?.() ?? [],
+    plan.fetchId,
+    plan.chainHead,
+  );
+  if (ownerId) {
+    hosts.setMsgs((msgs) =>
+      msgs.map((msg) => {
+        if (msg.id !== ownerId || msg.role !== "bot" || !msg.result) return msg;
+        return { ...msg, result: paintReportResult(msg.result, result) };
+      }),
+    );
+  }
+  if (!emptyReport) hosts.openReportArtifact(ownerId || msgId, result, plan.tab);
 }

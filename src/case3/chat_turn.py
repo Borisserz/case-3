@@ -1498,6 +1498,8 @@ def generate_chat_charts(
     )
     from case3.chart_html import CHART_TYPES
     from case3.chart_style import (
+        asks_for_softer_fill,
+        fade_fill_on_html,
         hue_from_text,
         hue_prompt_line,
         intent_palette_lines,
@@ -1527,6 +1529,27 @@ def generate_chat_charts(
         '{"charts": [{"id": "cht_01", "type": "bar", "caption": "...", "html": "<canvas id=\'c\'></canvas><script>...</script>"}]}'
     )
     message = latest_user_line(intent) or intent or "Построй график по данным."
+    if isinstance(previous_chart, dict) and asks_for_softer_fill(message):
+        raw_html = str(previous_chart.get("html") or "")
+        faded_html = fade_fill_on_html(raw_html) if raw_html.strip() else ""
+        if faded_html and re.search(r"new Chart|<canvas", faded_html, re.IGNORECASE):
+            from case3.chart_harden import full_chat_canvas
+
+            item = dict(previous_chart)
+            item["id"] = str(item.get("id") or "cht_01")
+            item["html"] = full_chat_canvas(
+                faded_html,
+                chart_type=str(item.get("type") or ""),
+            )
+            item["style_user"] = True
+            out_figs = Path(figs_dir)
+            out_charts = Path(charts_dir)
+            out_figs.mkdir(parents=True, exist_ok=True)
+            out_charts.mkdir(parents=True, exist_ok=True)
+            status = render_charts_batch(
+                [(item["id"], item, out_figs / f"{item['id']}.png", out_charts)]
+            )
+            return [item], status
     color_line = hue_prompt_line(message)
     if color_line:
         system += "\n" + color_line
@@ -1632,7 +1655,14 @@ def generate_chat_charts(
         if named_hue:
             item["html"] = paint_hue_on_html(str(item.get("html") or ""), named_hue)
             item["hue"] = named_hue
-    grounded = [item for item in grounded if not chart_plot_blank(str(item.get("html") or ""))]
+    from case3.chart_type_fit import chart_is_stick
+
+    grounded = [
+        item
+        for item in grounded
+        if not chart_plot_blank(str(item.get("html") or ""))
+        and not chart_is_stick(item)
+    ]
     if not grounded:
         return [], {}
 
@@ -2311,6 +2341,10 @@ def _numbers_grounded(draft: str, allowed: str, source: str = "") -> bool:
     return True
 
 
+def _same_paragraph(left: str, right: str) -> bool:
+    return " ".join((left or "").split()) == " ".join((right or "").split())
+
+
 def draft_section(
     *,
     section: str,
@@ -2323,12 +2357,13 @@ def draft_section(
     """One replacement paragraph. Empty when the draft adds a number or fails.
 
     A number the user wrote in this message is allowed. A number from neither
-    the section, the source, nor that message is not.
+    the section, the source, nor that message is not. A copy of the current
+    paragraph is not a rewrite: one retry, then nothing.
     """
     system = load_prompt("chat_section").strip()
     task = _BRIEF_LINE.get(brief, _BRIEF_LINE["prettier"])
     said = (user_text or "").strip()[:500]
-    user = (
+    base = (
         f"Раздел: {(section or 'Раздел').strip()[:80]}\n"
         f"Задача: {task}\n\n"
         f"СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ:\n{said or '(нет)'}\n\n"
@@ -2336,16 +2371,41 @@ def draft_section(
         f"SOURCE:\n{_clip_source(source, focus=said)}"
     )
     tokens = 900 if brief == "longer" else 500
-    text = ""
-    try:
-        llm = client or _client(tokens, 40.0)
-        text = _accepted(
-            _speak(llm, system=system, user_text=user, max_tokens=tokens, on_delta=None)
-        )
-    except (LLMError, LLMConfigError, OSError, ValueError) as exc:
-        log.warning("section draft failed: %s", exc)
+    current_flat = " ".join((current or "").split())
+    must_shrink = brief == "tighter"
+
+    def once(extra: str = "") -> str:
+        user = f"{base}\n\n{extra}" if extra else base
         text = ""
-    allowed = f"{current}\n{source}\n{said}"
-    if not text or not _numbers_grounded(text, allowed, source=source):
-        return ""
-    return " ".join(text.split())
+        try:
+            llm = client or _client(tokens, 40.0)
+            text = _accepted(
+                _speak(llm, system=system, user_text=user, max_tokens=tokens, on_delta=None)
+            )
+        except (LLMError, LLMConfigError, OSError, ValueError) as exc:
+            log.warning("section draft failed: %s", exc)
+            text = ""
+        allowed = f"{current}\n{source}\n{said}"
+        if not text or not _numbers_grounded(text, allowed, source=source):
+            return ""
+        return " ".join(text.split())
+
+    def missed(text: str) -> bool:
+        if not text:
+            return False
+        if _same_paragraph(text, current):
+            return True
+        return must_shrink and len(text) >= len(current_flat)
+
+    text = once()
+    if missed(text):
+        text = once(
+            "Предыдущий вариант не изменил абзац. "
+            "Верни другой текст короче, без дословного повтора. "
+            "Факты и числа те же."
+        )
+        if not text or _same_paragraph(text, current):
+            return ""
+        if must_shrink and len(text) >= len(current_flat):
+            return ""
+    return text

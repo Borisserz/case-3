@@ -75,7 +75,7 @@ _CHITCHAT = re.compile(
 _CHART_FOLLOWUP = re.compile(
     r"горизонтальн|вертикальн|столбчат|кругов\w*|кольц\w*|бублик|пончик|пирог|\bbar\b|\bdonut\b|\bdoughnut\b|\bpie\b|\bline\b|"
     r"палитр|перекрас|цвет\w*|оранжев\w*|син\w*|голуб\w*|зел[её]н\w*|красн\w*|ж[её]лт\w*|сер[ыоа]\w*|ч[её]рн\w*|"
-    r"тепл\w*|холодн\w*|\b(?:ocean|sunset|mono|atelier|editorial)\b|"
+    r"тепл\w*|холодн\w*|прозрачнее|полупрозрач|\b(?:ocean|sunset|mono|atelier|editorial)\b|"
     r"легенд|ось|осям|подпис\w*|убери\s+итог|без\s+итог",
     re.IGNORECASE,
 )
@@ -192,11 +192,19 @@ def asks_for_generated_photo(text: str | None) -> bool:
     raw = _norm(text or "").strip()
     if not raw or wants_chat_chart(raw):
         return False
-    from case3.chat_act import parse_photo_edit
+    from case3.chat_act import creates_new_picture, parse_photo_edit
 
     if parse_photo_edit(raw) is not None:
         return False
-    return wants_generated_images(raw, "")
+    if wants_generated_images(raw, ""):
+        return True
+    if not creates_new_picture(raw):
+        return False
+    return not re.search(
+        r"отч|презентац|слайд|график|диаграмм|схем|таблиц|раздел",
+        raw,
+        re.IGNORECASE,
+    )
 
 
 def photo_subject(text: str | None) -> str:

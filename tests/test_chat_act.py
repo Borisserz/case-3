@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from case3.chat_act import chart_type_named, resolve_act
+from case3.turn_plan import plan_turn
 
 
 def test_two_edit_verbs_split_and_a_table_cell_stays_whole():
@@ -398,6 +399,13 @@ def test_diagram_edit_is_not_a_new_diagram():
     )
     assert user_node.op == "refine_diagram"
     assert "пользовател" in user_node.title
+    section = resolve_act(
+        "поменяй раздел введение, сделай его короче и убери воду",
+        has_diagram=True,
+        has_report=True,
+    )
+    assert section.op == "rewrite"
+    assert section.section == "Введение"
 
 
 def test_polite_edits_reach_every_structure():
@@ -730,6 +738,106 @@ def test_a_new_photo_request_is_not_a_pixel_edit():
     assert act.op != "edit_photo"
 
 
+def test_a_visual_change_edits_the_photo_even_without_the_word_photo():
+    from case3.turn_plan import plan_turn
+
+    samples = (
+        ("сделай там машину красной а не синей", "красн"),
+        ("сделай машину красной а не синей", "красн"),
+        ("сделай машину красной", "красн"),
+        ("отредактируй, сделай машину красной", "красн"),
+        ("измени, сделай машину красной", "красн"),
+        ("перекрась машину в красный", "машин"),
+        ("поменяй цвет машины на красный", "машин"),
+        ("убери людей с фото", "люд"),
+    )
+    for line, bit in samples:
+        act = resolve_act(line, has_report=True, has_chart=True)
+        assert act.op == "edit_photo", line
+        assert bit in act.title.casefold(), (line, act.title)
+        plan = plan_turn(line, has_report=True, has_chart=True)
+        assert plan.kind == "revise", line
+        assert plan.reason == "photo_edit", line
+
+
+def test_creating_a_picture_does_not_edit_or_recolor_a_chart():
+    from case3.turn_plan import plan_turn
+    from case3.turn_route import asks_for_generated_photo
+
+    for line in (
+        "создай фото красной машины",
+        "сделай фото цеха",
+        "создай картинку цеха",
+        "нарисуй красную машину",
+        "сделай красную машину",
+    ):
+        act = resolve_act(line, has_report=True, has_chart=True)
+        assert act.op != "edit_photo", line
+        assert act.op != "recolor_hue", line
+        assert asks_for_generated_photo(line), line
+        plan = plan_turn(line, has_report=True, has_chart=True)
+        assert plan.kind != "revise", line
+
+
+def test_editing_a_named_section_is_not_a_photo_edit():
+    act = resolve_act("отредактируй введение", has_report=True, has_chart=True)
+    assert act.op == "rewrite"
+    assert act.section == "Введение"
+
+
+def test_unnamed_color_asks_photo_or_chart_when_both_are_open():
+    for line in (
+        "сделай красным",
+        "поменяй цвет",
+        "измени цвет",
+        "перекрась",
+        "перекрась в красный",
+        "зеленый цвет сделай",
+    ):
+        act = resolve_act(line, has_report=True, has_chart=True, has_photo=True)
+        assert act.op == "ask", line
+        folded = act.say.casefold()
+        assert "фото" in folded and "график" in folded, line
+
+
+def test_named_photo_and_chart_stay_apart_when_both_are_open():
+    photo = resolve_act(
+        "сделай машину красной", has_report=True, has_chart=True, has_photo=True
+    )
+    assert photo.op == "edit_photo"
+    on_photo = resolve_act(
+        "на фото сделай красным", has_report=True, has_chart=True, has_photo=True
+    )
+    assert on_photo.op == "edit_photo"
+    car = resolve_act(
+        "поменяй цвет машины на красный", has_report=True, has_chart=True, has_photo=True
+    )
+    assert car.op == "edit_photo"
+    chart = resolve_act("столбцы зеленые", has_chart=True, has_photo=True)
+    assert chart.op == "recolor_hue"
+    graphs = resolve_act(
+        "перекрась графики в красный", has_report=True, has_chart=True, has_photo=True
+    )
+    assert graphs.op == "recolor_hue"
+    deck = resolve_act(
+        "Перекрась презу в синий", has_deck=True, has_chart=True, has_photo=True
+    )
+    assert deck.op == "recolor_deck"
+
+
+def test_unnamed_color_follows_the_only_open_picture():
+    photo = resolve_act("сделай красным", has_report=True, has_photo=True)
+    assert photo.op == "edit_photo"
+    assert "красн" in photo.title.casefold()
+    chart = resolve_act("сделай красным", has_report=True, has_chart=True)
+    assert chart.op == "recolor_hue"
+    painted = resolve_act("перекрась в красный", has_report=True, has_chart=True)
+    assert painted.op == "recolor_hue"
+    bare = resolve_act("поменяй цвет", has_report=True, has_chart=True)
+    assert bare.op != "edit_photo"
+    assert "график" in bare.say.casefold()
+
+
 def test_photo_without_a_change_asks():
     act = resolve_act("поправь фото", has_report=True)
     assert act.op == "ask"
@@ -1034,5 +1142,77 @@ def test_retitle_slide_n_and_table_replace_verbs_and_expand_section() -> None:
 
     assert _word_hit("Пинский р-н", "Пинский р-н")
     assert _swap_text("Пинский р-н", "Пинский р-н", "г. Пинск") == "г. Пинск"
+
+
+def test_change_section_rewrites_the_open_report() -> None:
+    act = resolve_act("измени раздел введение", has_report=True)
+    assert act.kind == "revise"
+    assert act.op == "rewrite"
+    assert act.section == "Введение"
+
+    named = resolve_act(
+        "измени введение: убери воду и оставь только факт про кассу",
+        has_report=True,
+    )
+    assert named.op == "rewrite"
+    assert named.section == "Введение"
+
+    with_water = resolve_act(
+        "измени раздел введение, сделай его короче и убери воду",
+        has_report=True,
+    )
+    assert with_water.op == "rewrite"
+    assert with_water.section == "Введение"
+    assert with_water.brief == "tighter"
+
+    plan = plan_turn("поменяй раздел выводы, сделай короче", has_report=True)
+    assert plan.kind == "revise"
+    assert plan.edit_act is not None
+    assert plan.edit_act.op == "rewrite"
+    assert plan.edit_act.section == "Выводы"
+    assert plan.edit_act.brief == "tighter"
+
+
+def test_delete_chart_does_not_restyle_it() -> None:
+    act = resolve_act("удали график", has_report=True, has_chart=True)
+    assert act.op == "delete_chart"
+    assert act.chart_at == 0
+
+    second = resolve_act("убери второй график", has_report=True, has_chart=True)
+    assert second.op == "delete_chart"
+    assert second.chart_at == 2
+
+    named = resolve_act("удали график поступления", has_report=True, has_chart=True)
+    assert named.op == "delete_chart"
+    assert "поступлен" in named.title.casefold()
+
+    style = resolve_act("на графике убери легенду", has_report=True, has_chart=True)
+    assert style.op == "restyle_chart"
+
+
+def test_delete_paragraph_or_block() -> None:
+    paragraph = resolve_act("удали второй абзац введения", has_report=True)
+    assert paragraph.op == "delete_paragraph"
+    assert paragraph.slot == 2
+    assert paragraph.section == "Введения"
+
+    block = resolve_act("удали блок введение", has_report=True)
+    assert block.op == "delete_section"
+    assert block.section == "Введение"
+
+    bare = resolve_act("удали абзац", has_report=True)
+    assert bare.op == "ask"
+    assert "абзац" in bare.say.lower()
+
+
+def test_section_change_and_chart_delete_run_together() -> None:
+    from case3.chat_act import edit_clauses
+
+    clauses = edit_clauses("измени введение и удали график")
+    assert len(clauses) == 2
+    first = resolve_act(clauses[0], has_report=True, has_chart=True)
+    second = resolve_act(clauses[1], has_report=True, has_chart=True)
+    assert first.op == "rewrite"
+    assert second.op == "delete_chart"
 
 

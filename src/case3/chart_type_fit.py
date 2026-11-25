@@ -118,6 +118,33 @@ def chart_type_change_warning(chart: dict[str, Any], target: str) -> str:
     return ""
 
 
+def chart_is_stick(chart: dict[str, Any]) -> bool:
+    """One number, or no plot at all. That renders as a dash in an empty frame."""
+    ctype = str(chart.get("type") or "").strip()
+    html = str(chart.get("html") or "")
+    if ctype == "kpi" or _is_kpi_html(html):
+        return False
+    ir = extract_chart_series(html, chart_type=ctype or "bar")
+    if not ir:
+        return True
+    if ir.get("type") == "scatter":
+        pts = (ir.get("series") or [{}])[0].get("points") or []
+        return len(pts) < 2
+    finite = 0
+    for series in ir.get("series") or []:
+        if not isinstance(series, dict):
+            continue
+        for raw in series.get("values") or []:
+            if raw is None or raw == "":
+                continue
+            try:
+                float(raw)
+            except (TypeError, ValueError):
+                continue
+            finite += 1
+    return finite < 2
+
+
 def _rounded(nums: list[float]) -> tuple[float, ...]:
     return tuple(sorted(round(n, 6) for n in nums))
 

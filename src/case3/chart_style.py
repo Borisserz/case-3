@@ -540,3 +540,95 @@ def intent_palette_lines(palette_id: str, style_notes: str = "") -> list[str]:
             "(легенда/сетка/толщина линий — по желанию; цвета — из палитры выше)"
         )
     return lines
+
+
+SOFT_FILL_MARK = "/* case3-soft-fill */"
+SOFT_FILL_ALPHA = 0.28
+
+_SOFT_FILL = re.compile(
+    r"прозрачнее|попрозрачнее|полупрозрач|прозрачн(?:ым|ая|ые|ого|ыми)|побледн|менее\s+насыщ",
+    re.IGNORECASE,
+)
+_NOT_SOFT = re.compile(r"непрозрач|без\s+прозрач", re.IGNORECASE)
+_SOFT_AND_TYPE = re.compile(
+    r"площад|столбч|лине[йя]|пончик|кругов|горизонт|точеч|кольц|бублик|"
+    r"\barea\b|\bbar\b|\bline\b|\bpie\b|\bdoughnut\b|\bdonut\b|\bscatter\b",
+    re.IGNORECASE,
+)
+_BG_COLOR = re.compile(
+    r"backgroundColor\s*:\s*(?P<body>\[[^\]]*\]|(?P<q>['\"])(?P<one>[^'\"]+)(?P=q)|rgba?\([^)]+\))",
+    re.IGNORECASE,
+)
+_COLOR_TOKEN = re.compile(
+    r"#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}\b|"
+    r"rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*[0-9.]+)?\s*\)",
+    re.IGNORECASE,
+)
+
+
+def asks_for_softer_fill(text: str | None) -> bool:
+    """True when the line only asks to make the current chart fill more transparent."""
+    raw = (text or "").replace("ё", "е").replace("Ё", "Е")
+    if re.search(r"(?:^|\s)(?:почему|зачем)\b", raw, re.IGNORECASE):
+        return False
+    if _NOT_SOFT.search(raw) or not _SOFT_FILL.search(raw):
+        return False
+    return not _SOFT_AND_TYPE.search(raw)
+
+
+def _fade_color_token(token: str, alpha: float) -> str:
+    token = (token or "").strip()
+    hex6 = re.fullmatch(r"#([0-9A-Fa-f]{6})", token)
+    if hex6:
+        h = hex6.group(1)
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha:.2f})"
+    hex3 = re.fullmatch(r"#([0-9A-Fa-f]{3})", token)
+    if hex3:
+        r, g, b = (int(ch * 2, 16) for ch in hex3.group(1))
+        return f"rgba({r},{g},{b},{alpha:.2f})"
+    parsed = re.fullmatch(
+        r"rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9.]+))?\s*\)",
+        token,
+        flags=re.IGNORECASE,
+    )
+    if not parsed:
+        return token
+    if parsed.group(4):
+        nxt = max(0.12, round(float(parsed.group(4)) * 0.55, 2))
+    else:
+        nxt = alpha
+    return f"rgba({parsed.group(1)},{parsed.group(2)},{parsed.group(3)},{nxt:.2f})"
+
+
+def fade_fill_on_html(html: str, *, alpha: float = SOFT_FILL_ALPHA) -> str:
+    """Lower chart fill alpha. The line (borderColor) and the numbers stay."""
+    src = html or ""
+    if not src.strip():
+        return src
+
+    def _repl(match: re.Match[str]) -> str:
+        body = match.group("body")
+        faded = _COLOR_TOKEN.sub(lambda tok: _fade_color_token(tok.group(0), alpha), body)
+        if body.startswith("["):
+            return f"backgroundColor:{faded}"
+        inner = faded
+        if len(inner) >= 2 and inner[0] in "'\"" and inner[-1] == inner[0]:
+            inner = inner[1:-1]
+        return f"backgroundColor:'{inner}'"
+
+    out = _BG_COLOR.sub(_repl, src)
+    if out == src:
+        border = re.search(r"borderColor\s*:\s*(['\"])([^'\"]+)\1", src, flags=re.IGNORECASE)
+        if border:
+            faded = _fade_color_token(border.group(2), alpha)
+            out = re.sub(
+                r"(datasets\s*:\s*\[\s*\{)",
+                rf"\1backgroundColor:'{faded}',",
+                src,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+    if SOFT_FILL_MARK not in out:
+        out = SOFT_FILL_MARK + out
+    return out

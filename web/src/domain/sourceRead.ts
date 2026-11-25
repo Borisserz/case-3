@@ -1,5 +1,6 @@
 /** Helpers for full-screen Markdown document preview modal + original download. */
 
+import { isDashboardSource } from "./dashboardCapture";
 import type { SourceAttachment, SourceDraft } from "./liberTypes";
 import { attachmentsFromDraft } from "./sourcePack";
 
@@ -55,6 +56,34 @@ export function resolveOriginalDownload(
     text: doc.text || "",
     fileName: safeDownloadName(name, ".md"),
   };
+}
+
+const OFFICE_EXT = new Set(["pdf", "docx", "doc", "rtf"]);
+
+function officeExt(doc: Pick<SourceAttachment, "format" | "fileName" | "title">): string {
+  const raw = (doc.format || "").trim().toLowerCase();
+  if (raw) return raw;
+  for (const name of [doc.fileName, doc.title]) {
+    const match = (name || "").match(/\.([a-z0-9]{1,8})$/i);
+    if (match) return match[1].toLowerCase();
+  }
+  return "";
+}
+
+/** PDF/DOCX/DOC/RTF. The rail shows a card; the markdown opens in the modal. */
+export function sourceOpensAsCard(
+  doc: Pick<SourceAttachment, "viewMode" | "ingestId" | "format" | "fileName" | "title" | "text">,
+): boolean {
+  if (isDashboardSource(doc.text || "")) return false;
+  if (doc.viewMode === "document" || Boolean(doc.ingestId)) return true;
+  return OFFICE_EXT.has(officeExt(doc));
+}
+
+export function sourceDocBadge(
+  doc: Pick<SourceAttachment, "format" | "fileName" | "title">,
+): string {
+  const ext = officeExt(doc);
+  return ext ? ext.toUpperCase() : "DOC";
 }
 
 /** Right rail shows the extracted markdown. The original PDF stays a download. */

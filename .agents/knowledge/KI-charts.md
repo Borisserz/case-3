@@ -31,10 +31,12 @@ LLM HTML (Chart.js) → sanitize → Playwright PNG → inject; Liber edit resty
 - KPI = HTML cards, not canvas
 - Frame CSP + abort non-file routes in Playwright
 - After gen: polish palette + harden hbar geometry/fill (+ stack gaps)
+- A chart with fewer than two numbers (one bar, one point, empty stub) is a stick: `drop_stick_charts` removes it and its `%CASE3_CHART` slot before render. One number stays a `kpi`. The preview row has «Удалить» beside «Править»; that drops the figure from the open report, and «Готово» rebuilds PDF/DOCX.
 
 ## Gotchas
 - Type/palette-only edit is **local** (`apply_type_to_chart` + palette); modes include `local_type` / `local_palette`. LLM only when «Как изменить» (style notes) non-empty — never for type-only. Live `POST …/preview` is the same local path (`preview_chart_html`); style notes deferred until Apply.
 - A named hue («зелёный», «столбцы зелёные», «сделай в зелёных цветах») is `recolor_hue`: paint the existing chart HTML and re-render PNG. It is not a chart-type question and not a new data brief. Preset names (ocean, закат) stay `recolor_charts`. `paint_hue_on_html` injects `backgroundColor` when Chart.js would otherwise stay default blue. `chat_answer.md` answers such a line in one sentence.
+- «прозрачнее» / «сделай цвета прозрачнее» on an existing chart is `fade_chart`: `fade_fill_on_html` lowers `backgroundColor` alpha (about 0.28, and again by 0.55 if it is already rgba) and re-renders the PNG. Numbers, labels, and type stay. A type word in the same line («площадь», «столбцы») stays a retype. The mark `case3-soft-fill` stops `_solidify_pale_bar_fill` from painting that wash solid again.
 - Leaving donut: `_unwrap_donut_layout` + landscape canvas + hide unnamed Chart.js legend (else «undefined»)
 - G8: model picks concrete `charts[].type` + matching HTML; coerce only safety net — **do not** paste gold HTML
 - KPI palette via CSS vars (`apply_kpi_palette_vars`) — frame `.kpi` uses `--kpi-value`, not hardcoded orange; palette-only edit on KPI skips Chart.js remap

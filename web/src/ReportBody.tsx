@@ -27,6 +27,7 @@ import { bustFromUrl, colIsNumeric } from "./reportTableNumeric";
 import type { PreviewBlock } from "./domain/reportPreview";
 import { renderKatexInHtml } from "./domain/renderMath";
 import { MermaidView } from "./MermaidView";
+import { useConfirm } from "./ConfirmModal";
 import type { DiagramInfo } from "./DiagramFullscreen";
 import { Fragment, type Dispatch, type SetStateAction } from "react";
 
@@ -136,6 +137,7 @@ export function ReportBody({
   openMediaId = null,
   onOpenMediaId,
 }: ReportBodyProps) {
+  const confirm = useConfirm();
   let figN = 0;
   let tabN = 0;
   let headN = 0;
@@ -927,16 +929,43 @@ export function ReportBody({
                   {((isChart && canEditFigure) || (isPhoto && canEditImage)) &&
                   !sheetOpen &&
                   !imageOpen ? (
-                    <button
-                      type="button"
-                      className="report-media-edit-btn"
-                      onClick={() => {
-                        onActiveBlockId?.(null);
-                        onOpenMediaId?.(b.id);
-                      }}
-                    >
-                      Править
-                    </button>
+                    <span className="report-fig-actions">
+                      <button
+                        type="button"
+                        className="report-media-edit-btn"
+                        onClick={() => {
+                          onActiveBlockId?.(null);
+                          onOpenMediaId?.(b.id);
+                        }}
+                      >
+                        Править
+                      </button>
+                      {isChart && onDeleteFigure ? (
+                        <button
+                          type="button"
+                          className="report-media-edit-btn is-delete"
+                          onClick={() => {
+                            const name = (b.caption || caption).trim();
+                            void (async () => {
+                              const ok = await confirm({
+                                title: "Удалить график?",
+                                eyebrow: "отчёт",
+                                message: name
+                                  ? `График «${name}» пропадёт из отчёта. Текст раздела останется.`
+                                  : "График пропадёт из отчёта. Текст раздела останется.",
+                                confirmLabel: "Удалить",
+                                danger: true,
+                              });
+                              if (ok) {
+                                await onDeleteFigure(b.id);
+                              }
+                            })();
+                          }}
+                        >
+                          Удалить
+                        </button>
+                      ) : null}
+                    </span>
                   ) : isDiagram && onJumpToDiagram ? (
                     <button
                       type="button"

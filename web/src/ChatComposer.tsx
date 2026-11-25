@@ -266,7 +266,7 @@ export function ChatComposer({
                 title="Открыть дашборд и забрать текущий экран"
                 onClick={onOpenDashboard}
               >
-                Выбрать данные
+                BI система
               </button>
             ) : null}
             {showDeckStyleBtn ? (

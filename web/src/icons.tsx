@@ -1,5 +1,7 @@
 /** Liber stroke icons — 1.5–1.75 weight, no emoji chrome. */
 
+import mnsMark from "./assets/mns-heraldry.png";
+
 type IconProps = {
   size?: number;
   className?: string;
@@ -273,34 +275,14 @@ export function IconSlides(p: IconProps) {
 
 export function IconLiberMark({ size = 28 }: { size?: number }) {
   return (
-    <svg
+    <img
+      src={mnsMark}
       width={size}
       height={size}
-      viewBox="0 0 32 32"
+      alt=""
       aria-hidden
+      draggable={false}
       className="liber-mark"
-    >
-      <circle cx="16" cy="16" r="15" fill="var(--surface-3, #e8e8e6)" />
-      <circle
-        cx="16"
-        cy="16"
-        r="14"
-        fill="none"
-        stroke="var(--accent, #1a1a1a)"
-        strokeWidth="1.25"
-        opacity="0.35"
-      />
-      <text
-        x="16"
-        y="21"
-        textAnchor="middle"
-        fill="var(--accent, #1a1a1a)"
-        fontFamily="Crimson Text, Georgia, serif"
-        fontSize="15"
-        fontWeight="600"
-      >
-        I
-      </text>
-    </svg>
+    />
   );
 }

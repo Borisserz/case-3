@@ -16,7 +16,7 @@ _HEADING = re.compile(
     re.IGNORECASE,
 )
 _CHART_OPS = frozenset(
-    {"retype_chart", "retype_charts", "recolor_charts", "recolor_hue"}
+    {"retype_chart", "retype_charts", "recolor_charts", "recolor_hue", "fade_chart"}
 )
 _SECTION_OPS = frozenset(
     {

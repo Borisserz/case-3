@@ -152,9 +152,12 @@ export function useLiberDevPreviews({
           "Собери отчёт по демо: таблица KPI, один line-график, спокойная палитра atelier, без лишней воды и без выдуманных цифр — только Source.",
         chips: ["демо", "палитра: atelier", "графики: ≤2"],
         attachment: {
-          title: "northstar_demo.md",
-          text: "# Source\n\nДемонстрационный файл для вкладки Source.\n",
-          fileName: "northstar_demo.md",
+          title: "Пояснительная записка.pdf",
+          text: "# Пояснительная записка\n\n## Введение\n\nИсходный документ для отчёта. Текст и таблица открываются в модалке.\n\n| Показатель | Факт |\n| --- | --- |\n| Выручка | 12,4 |\n",
+          fileName: "пояснительная.pdf",
+          viewMode: "document",
+          format: "pdf",
+          ingestId: "ing_preview",
         },
       },
       {

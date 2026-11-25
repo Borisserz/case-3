@@ -144,6 +144,12 @@ def _surface(act: Any) -> str:
         "caption",
         "rewrite_all",
         "refine_diagram",
+        "delete_section",
+        "delete_item",
+        "add_row",
+        "delete_row",
+        "delete_chart",
+        "delete_paragraph",
     }:
         return "report"
     return ""
@@ -341,6 +347,7 @@ def _batch_edits(
     has_report: bool,
     has_diagram: bool,
     has_chart: bool = False,
+    has_photo: bool = False,
     last_section: str,
     last_op: str,
     edit_act: ChatAct | None = None,
@@ -358,6 +365,7 @@ def _batch_edits(
             has_report=has_report,
             has_diagram=has_diagram,
             has_chart=has_chart,
+            has_photo=has_photo,
             last_section=last_section,
             last_op=last_op,
         )
@@ -427,7 +435,7 @@ def try_chat_revise(
         carried_id = ""
     if not rows and carried_path is None:
         return None
-    has_deck = has_report = has_diagram = has_chart = False
+    has_deck = has_report = has_diagram = has_chart = has_photo = False
     edit: dict[str, Any] = {}
     for _run_id, path, row in rows:
         deck, report, diagram = _flags(row, path)
@@ -435,6 +443,7 @@ def try_chat_revise(
         has_report = has_report or report or any(path.glob("*.tex"))
         has_diagram = has_diagram or diagram
         has_chart = has_chart or _has_chart(row, path)
+        has_photo = has_photo or bool(_photo_pngs(path / "figures"))
         edit = merge_edit(edit, row.get("last_edit"))
     carried_meta: dict[str, Any] = _read(carried_path) if carried_path else {}
     if carried_path is not None:
@@ -443,6 +452,7 @@ def try_chat_revise(
         has_report = has_report or report or any(carried_path.glob("*.tex"))
         has_diagram = has_diagram or diagram
         has_chart = has_chart or _has_chart(carried_meta, carried_path)
+        has_photo = has_photo or bool(_photo_pngs(carried_path / "figures"))
         if not edit:
             edit = merge_edit(edit, carried_meta.get("last_edit"))
     if rows:
@@ -460,6 +470,7 @@ def try_chat_revise(
         has_report=has_report,
         has_diagram=has_diagram,
         has_chart=has_chart,
+        has_photo=has_photo,
         last_section=str(edit.get("section") or ""),
         last_op=str(edit.get("op") or ""),
         edit_act=edit_act,
@@ -474,6 +485,7 @@ def try_chat_revise(
         has_report=has_report,
         has_diagram=has_diagram,
         has_chart=has_chart,
+        has_photo=has_photo,
         last_section=str(edit.get("section") or ""),
         last_op=str(edit.get("op") or ""),
     )
@@ -546,6 +558,8 @@ def try_chat_revise(
         "caption",
         "rewrite_all",
         "delete_section",
+        "delete_chart",
+        "delete_paragraph",
     }:
         for run_id, path, _row in reversed(rows):
             if any(path.glob("*.tex")):
@@ -573,6 +587,7 @@ def try_chat_revise(
         "retype_chart",
         "recolor_charts",
         "recolor_hue",
+        "fade_chart",
     }:
         for run_id, path, row in reversed(rows):
             if _has_chart(row, path):
@@ -609,6 +624,8 @@ def try_chat_revise(
             "caption",
             "rewrite_all",
             "delete_section",
+            "delete_chart",
+            "delete_paragraph",
         }
         deck_ops = deck_edit_ops
         if act.op in {"undo", "redo"} and history_surface == "deck" and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
@@ -619,7 +636,7 @@ def try_chat_revise(
             work_id, work_dir = carried_id, carried_path
         elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
             work_id, work_dir = carried_id, carried_path
-        elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}:
+        elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue", "fade_chart"}:
             has_here = _has_chart(_read(work_dir), work_dir)
             has_carried = _has_chart(carried_meta, carried_path)
             if not has_here and has_carried:
@@ -644,6 +661,8 @@ def try_chat_revise(
         say = _recolor_charts(work_dir, act.palette) or say
     elif act.op == "recolor_hue" and act.palette:
         say = _recolor_hue(work_dir, act.palette, act.chart) or say
+    elif act.op == "fade_chart":
+        say = _fade_charts(work_dir, text) or say
     elif act.op == "rewrite":
         say = _rewrite(work_dir, text, act) or say
     elif act.op == "delete_slide" and act.slide:
@@ -690,6 +709,10 @@ def try_chat_revise(
         say = _edit_photo(work_dir, act.section, act.title) or say
     elif act.op == "delete_section" and act.section:
         say = _delete_section(work_dir, act.section) or say
+    elif act.op == "delete_chart":
+        say = _delete_chart(work_dir, int(act.chart_at or 0), act.title) or say
+    elif act.op == "delete_paragraph":
+        say = _delete_paragraph(work_dir, act) or say
     elif act.op == "slide_bullets" and act.slide and act.items:
         say = _slide_bullets(work_id, work_dir, act.slide, act.items) or say
     elif act.op == "retitle" and act.title:
@@ -697,7 +720,7 @@ def try_chat_revise(
             say = _retitle_slide(work_id, work_dir, act.title, act.slide or 1) or say
         else:
             say = _retitle(work_id, work_dir, act.title) or say
-    elif act.op == "ask":
+    elif act.op == "ask" and "фото или график" not in (say or "").casefold():
         say = _with_headings(say, work_dir)
 
     chain_ids = {run_id for run_id, _path, _row in rows}
@@ -710,6 +733,7 @@ def try_chat_revise(
         "retype_chart",
         "recolor_charts",
         "recolor_hue",
+        "fade_chart",
         "restyle_chart",
     } and _chart_edit_shown(say):
         if not any(work_dir.glob("*.tex")) and not _flags(work_meta)[0]:
@@ -1001,7 +1025,7 @@ def _type_landed(out_dir: Path, chart_id: str, chart_type: str) -> bool:
 
 def _chart_edit_shown(say: str) -> bool:
     low = (say or "").casefold()
-    return low.startswith(("меняю", "поправил", "перекрасил"))
+    return low.startswith(("меняю", "поправил", "перекрасил", "делаю"))
 
 
 def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
@@ -2091,6 +2115,210 @@ def _edit_photo(out_dir: Path, figure_id: str, instruction: str) -> str:
     return f"Меняю фото.{note}"
 
 
+def _charts_in_document(out_dir: Path) -> list[tuple[str, str]]:
+    """Chart ids in reading order, with the caption the user can name."""
+    captions: dict[str, str] = {}
+    path = out_dir / "figures.json"
+    if path.is_file():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        charts = payload.get("charts") if isinstance(payload, dict) else None
+        if isinstance(charts, list):
+            for chart in charts:
+                if not isinstance(chart, dict):
+                    continue
+                cid = str(chart.get("id") or "").strip()
+                if cid:
+                    captions[cid] = str(chart.get("caption") or cid)
+    known = _chart_ids(out_dir)
+    tex = ""
+    texs = sorted(out_dir.glob("*.tex"))
+    if texs:
+        try:
+            tex = texs[0].read_text(encoding="utf-8")
+        except OSError:
+            tex = ""
+    ordered: list[str] = []
+    for match in re.finditer(r"cht_[A-Za-z0-9_]+", tex):
+        cid = match.group(0)
+        if cid not in ordered:
+            ordered.append(cid)
+    for cid in known:
+        if cid not in ordered:
+            ordered.append(cid)
+    return [(cid, captions.get(cid, cid)) for cid in ordered]
+
+
+def _strip_chart(tex: str, chart_id: str) -> str:
+    def drop_figure(match: re.Match[str]) -> str:
+        return "" if chart_id in match.group(0) else match.group(0)
+
+    patched = re.sub(r"\\begin\{figure\}.*?\\end\{figure\}", drop_figure, tex, flags=re.S)
+    patched = re.sub(
+        rf"(?m)^[ \t]*%CASE3_CHART:{re.escape(chart_id)}%[^\n]*\n?",
+        "",
+        patched,
+    )
+    return re.sub(r"\n{3,}", "\n\n", patched)
+
+
+def _drop_chart_record(out_dir: Path, chart_id: str) -> None:
+    path = out_dir / "figures.json"
+    if path.is_file():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get("charts"), list):
+            payload["charts"] = [
+                chart
+                for chart in payload["charts"]
+                if not (isinstance(chart, dict) and str(chart.get("id") or "") == chart_id)
+            ]
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    meta_path = out_dir / "meta.json"
+    meta = _read(out_dir)
+    planned = meta.get("charts_planned")
+    if isinstance(planned, list):
+        meta["charts_planned"] = [item for item in planned if str(item) != chart_id]
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+
+def _delete_chart(out_dir: Path, index: int, hint: str) -> str:
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import capture_before_edit
+
+    charts = _charts_in_document(out_dir)
+    if not charts:
+        return "Графиков в этом отчёте нет."
+    chosen: tuple[str, str] | None = None
+    if index:
+        if index > len(charts):
+            return f"Графика {index} нет. Сейчас их {len(charts)}."
+        chosen = charts[index - 1]
+    elif hint:
+        hits = [item for item in charts if _titles_match(hint, item[1])]
+        if len(hits) != 1:
+            shown = ", ".join(cap for _cid, cap in charts[:6])
+            return f"Не вижу один график «{hint}». Сейчас: {shown}."
+        chosen = hits[0]
+    elif len(charts) == 1:
+        chosen = charts[0]
+    else:
+        shown = ", ".join(f"{n}. {cap}" for n, (_cid, cap) in enumerate(charts[:6], start=1))
+        return f"Какой график убрать? Сейчас: {shown}."
+    cid, cap = chosen
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, график убрать некуда."
+    tex_path = texs[0]
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    patched = _strip_chart(tex, cid)
+    if patched == tex:
+        return f"График «{cap}» в тексте отчёта не нашёл."
+    figures_path = out_dir / "figures.json"
+    figures_raw = figures_path.read_text(encoding="utf-8") if figures_path.is_file() else ""
+    meta_path = out_dir / "meta.json"
+    meta_raw = meta_path.read_text(encoding="utf-8") if meta_path.is_file() else ""
+    try:
+        capture_before_edit(out_dir, kind="chart_delete", target=cid)
+    except Exception as exc:  # noqa: BLE001
+        return str(exc)
+    tex_path.write_text(patched, encoding="utf-8")
+    _drop_chart_record(out_dir, cid)
+    try:
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except Exception:  # noqa: BLE001
+        tex_path.write_text(tex, encoding="utf-8")
+        if figures_raw:
+            figures_path.write_text(figures_raw, encoding="utf-8")
+        if meta_raw:
+            meta_path.write_text(meta_raw, encoding="utf-8")
+        return "График не убрал: сборка PDF не прошла. Текст остался как был."
+    return f"Убрал график «{cap}»."
+
+
+def _paragraph_index_to_delete(
+    tex: str, ordinal: int, section: str, hint: str
+) -> int | str:
+    from case3.tex_preview import find_paragraph_spans
+
+    spans = find_paragraph_spans(tex)
+    if section:
+        under = _paragraphs_under(tex, section)
+        if under is None:
+            titles = _heading_titles(tex)
+            shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
+            return f"Раздела «{section}» нет одного. Есть: {shown}."
+        pool = under
+    else:
+        pool = list(range(1, len(spans) + 1))
+    if hint:
+        hits = [
+            index
+            for index in pool
+            if _word_hit(_paragraph_text(tex, index), hint)
+            or hint.casefold() in _paragraph_text(tex, index).casefold()
+        ]
+        if len(hits) != 1:
+            return f"Не вижу один абзац «{hint}»."
+        return hits[0]
+    if ordinal:
+        if ordinal > len(pool):
+            return f"В этом месте абзацев: {len(pool)}."
+        return pool[ordinal - 1]
+    if len(pool) == 1:
+        return pool[0]
+    return "Какой абзац убрать? Напиши «удали второй абзац введения»."
+
+
+def _delete_paragraph(out_dir: Path, act: Any) -> str:
+    from case3.paragraph_edit import ParagraphEditError, patch_paragraph_in_tex
+    from case3.render import RenderError
+    from case3.run_rebuild import rebuild_run_docs
+    from case3.run_undo import UndoError, capture_before_edit, clear_undo
+
+    texs = sorted(out_dir.glob("*.tex"))
+    if not texs:
+        return "В этом чате нет текста отчёта, абзац убрать некуда."
+    tex_path = texs[0]
+    try:
+        tex = tex_path.read_text(encoding="utf-8")
+    except OSError:
+        return "Не смог прочитать отчёт."
+    found = _paragraph_index_to_delete(
+        tex,
+        int(getattr(act, "slot", 0) or 0),
+        str(getattr(act, "section", "") or ""),
+        str(getattr(act, "title", "") or ""),
+    )
+    if isinstance(found, str):
+        return found
+    section = str(getattr(act, "section", "") or "")
+    try:
+        capture_before_edit(out_dir, kind="paragraph_delete", target=section or str(found))
+    except UndoError as exc:
+        return str(exc)
+    try:
+        patched = patch_paragraph_in_tex(tex, found, "", allow_delete=True)
+        tex_path.write_text(patched, encoding="utf-8")
+        rebuild_run_docs(out_dir, formats={"pdf", "docx"})
+    except (ParagraphEditError, RenderError, OSError) as exc:
+        tex_path.write_text(tex, encoding="utf-8")
+        try:
+            clear_undo(out_dir)
+        except OSError:
+            pass
+        return f"Абзац не убрал: {exc}"
+    place = f" «{section}»" if section else ""
+    return f"Убрал абзац{place}."
+
+
 def _delete_section(out_dir: Path, name: str) -> str:
     import re
 
@@ -2231,6 +2459,19 @@ def _slide_bullets(run_id: str, out_dir: Path, index: int, items: tuple[str, ...
     )
     shown = "; ".join(items)
     return f"Ставлю на слайд {index} пункты: {shown}."
+
+
+def _fade_charts(out_dir: Path, text: str) -> str:
+    from case3.chart_edit import ChartEditError, fade_charts_in_run
+
+    all_of_them = bool(re.search(r"графики|все\s+график", text or "", re.IGNORECASE))
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    try:
+        fade_charts_in_run(out_dir, all_charts=all_of_them, formats=formats)
+    except ChartEditError as exc:
+        return _friendly_chart_edit_error(exc)
+    note = " PDF и DOCX тоже." if formats else ""
+    return f"Делаю заливку прозрачнее. Числа и тип те же.{note}"
 
 
 def _recolor_hue(out_dir: Path, hue: str, chart_type: str = "") -> str:

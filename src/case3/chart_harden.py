@@ -575,6 +575,8 @@ def _count_labels(html: str) -> int:
 
 def _solidify_pale_bar_fill(html: str) -> str:
     """Turn ghostly rgba(…,0.18) bar fills into readable solid / mid-alpha ink."""
+    if "case3-soft-fill" in (html or ""):
+        return html or ""
 
     def _bump(m: re.Match[str]) -> str:
         r, g, b = int(m.group(1)), int(m.group(2)), int(m.group(3))

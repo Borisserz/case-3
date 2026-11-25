@@ -47,6 +47,9 @@ test("a report edit refreshes the report rail and a question does not", () => {
   assert.equal(reviseSurface("rewrite"), "report");
   assert.equal(reviseSurface("retype_charts"), "report");
   assert.equal(reviseSurface("retitle", "report"), "report");
+    assert.equal(reviseSurface("delete_section"), "report");
+  assert.equal(reviseSurface("delete_chart"), "report");
+  assert.equal(reviseSurface("delete_paragraph"), "report");
   assert.equal(reviseSurface("ask"), null);
   assert.equal(reviseSurface(""), null);
 });
@@ -140,6 +143,66 @@ test("refreshRevisedArtifact preserves cleared memorySection on undo", async () 
     );
     assert.equal(msgs[0]?.result?.memory_section, "");
     assert.equal((remembered as import("./liberTypes").RunResult | null)?.memory_section, "");
+  } finally {
+    globalThis.fetch = origFetch;
+    (globalThis as { window?: unknown }).window = origWindow;
+  }
+});
+
+test("a chat edit updates the open report and leaves the preview on that card", async () => {
+  const { refreshRevisedArtifact } = await import("./reviseRefresh");
+  const origFetch = globalThis.fetch;
+  const origWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = globalThis;
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      run_id: "report_run",
+      status: "ok",
+      preview: { title: "Отчёт", blocks: [{ type: "paragraph", id: "para-1", text: "Новый" }] },
+      downloads: { pdf: "a.pdf" },
+    }),
+  })) as unknown as typeof fetch;
+
+  let msgs = [
+    {
+      id: "report-msg",
+      role: "bot",
+      text: "Готово",
+      result: {
+        run_id: "report_run",
+        preview: { title: "Отчёт", blocks: [{ type: "paragraph", id: "para-1", text: "Старый" }] },
+      },
+    },
+    { id: "chat-msg", role: "bot", text: "", pending: true },
+  ] as unknown as import("./liberTypes").Msg[];
+  let opened = "";
+  try {
+    await refreshRevisedArtifact(
+      "chat_head",
+      "report",
+      "chat-msg",
+      {
+        setMsgs: (fn) => {
+          msgs = fn(msgs);
+        },
+        rememberRun: () => {},
+        openReportArtifact: (msgId) => {
+          opened = msgId;
+        },
+      },
+      "report_run",
+      {
+        op: "rewrite",
+        quietCards: true,
+        readMsgs: () => msgs,
+      },
+    );
+    const report = msgs.find((msg) => msg.id === "report-msg");
+    const chat = msgs.find((msg) => msg.id === "chat-msg");
+    assert.equal(report?.role === "bot" ? report.result?.preview?.blocks?.[0]?.text : "", "Новый");
+    assert.equal(chat?.role === "bot" ? chat.result : undefined, undefined);
+    assert.equal(opened, "report-msg");
   } finally {
     globalThis.fetch = origFetch;
     (globalThis as { window?: unknown }).window = origWindow;

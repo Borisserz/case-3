@@ -224,21 +224,26 @@ def _named(raw: str, table: tuple[tuple[str, str], ...]) -> str:
 
 def hue_edit(text: str | None) -> str:
     """Hue when the line is a color change, not a mention of a green zone."""
-    from case3.chart_style import hue_from_text
-
     raw = _norm(text or "").strip()
+    if parse_photo_edit(raw) is not None or creates_new_picture(raw):
+        return ""
+    try:
+        from case3.chart_style import hue_from_text
+    except ImportError:
+        return ""
+
     hue = hue_from_text(raw)
     if not hue:
         return ""
     if re.search(r"цвет|палитр|перекрас|гамм|доработ", raw, re.IGNORECASE):
         return hue
     if len(raw) <= 48 and re.search(
-        r"сделай|столбц|график|покрас|лини|пончик|кругов",
+        r"столбц|график|покрас|лини|пончик|кругов",
         raw,
         re.IGNORECASE,
     ):
         return hue
-    if len(raw) <= 24:
+    if len(raw) <= 24 and _bare_color_line(raw):
         return hue
     return ""
 
@@ -752,31 +757,187 @@ _PHOTO_EDIT_TAIL = re.compile(
     rf"\s*[:—–,-]?\s*(.*)$",
     re.IGNORECASE,
 )
+_COLOR_INS = (
+    r"(?:красн(?:ой|ым)|син(?:ей|им)|бел(?:ой|ым)|черн(?:ой|ым)|"
+    r"зелен(?:ой|ым)|желт(?:ой|ым)|сер(?:ой|ым)|розов(?:ой|ым)|"
+    r"оранжев(?:ой|ым)|голуб(?:ым))"
+)
+_COLOR_ACC = (
+    r"(?:красн(?:ую|ый|ое|ые)|син(?:юю|ий|ее|ие)|бел(?:ую|ый|ое|ые)|"
+    r"черн(?:ую|ый|ое|ые)|зелен(?:ую|ый|ое|ые)|желт(?:ую|ый|ое|ые)|"
+    r"сер(?:ую|ый|ое|ые)|оранжев(?:ую|ый|ое)|розов(?:ую|ый|ое)|голуб(?:ой|ую|ое))"
+)
+_ACCUSATIVE_SCENE = re.compile(
+    rf"^(?:пожалуйста[, ]+)?(?:сделай|сделать)\s+(?:мне\s+)?(?:нов\w+\s+)?{_COLOR_ACC}\s+\S+",
+    re.IGNORECASE,
+)
+_MAKE_STATE = re.compile(
+    rf"(?:сделай|сделать)\s+(?:там\s+)?(?:эту\s+|этот\s+|это\s+)?"
+    rf"(?!фото\b|фотк|картинк|изображен|иллюстрац)"
+    rf"[а-я]{{3,}}\s+(?:{_COLOR_INS}|темнее|светлее|ярче|четче|контрастнее)\b",
+    re.IGNORECASE,
+)
 
 
-def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
-    """None when this is not a pixel edit of a photo already on the table.
+def _bare_color_line(raw: str) -> bool:
+    """True when the line is only a color command, not a sentence about an object."""
+    rest = re.sub(
+        r"зелен\w*|оранж\w*|желт\w*|красн\w*|голуб\w*|син\w*|сер\w*|черн\w*|"
+        r"цвет\w*|сделай|сделать|график\w*|столбц\w*|пожалуйста|\bв\b|\bи\b",
+        " ",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    return len(" ".join(rest.split())) <= 2
 
-    ("", "") means the photo was named and the change was not.
-    The id is "" when the user did not name usr_NN or fig_NN.
-    «измени фото сделай небо темнее» keeps the original and edits it.
-    «сделай фото» is a new picture, not an edit.
+
+def creates_new_picture(text: str | None) -> bool:
+    """«создай фото», «нарисуй красную машину», «сделай красную машину».
+
+    A change to a picture already on the table is not a new picture.
     """
     raw = _norm(text or "").strip()
-    if re.search(r"подпис", raw, re.IGNORECASE):
-        return None
-    if not re.search(rf"\bфото\b|usr_|{_PHOTO_NOUN}", raw, re.IGNORECASE):
-        return None
-    if _FRESH_PHOTO.search(raw) and not re.search(
-        r"измени|поправ|перерисуй|отредактир|исправ|внеси\s+изменен|убери",
+    if not raw:
+        return False
+    if re.search(
+        r"\b(?:а\s+не|вместо)\b|\bтам\b|отредактир|перерисуй|перекрас|поменяй\s+цвет|измени\s+цвет",
         raw,
         re.IGNORECASE,
     ):
+        return False
+    if _FRESH_PHOTO.search(raw):
+        return True
+    if re.match(
+        r"(?:пожалуйста[, ]+)?(?:создай|создать|нарисуй|нарисовать|сгенерируй|сгенерировать)\b",
+        raw,
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(_ACCUSATIVE_SCENE.search(raw))
+
+
+def _document_not_photo(raw: str) -> bool:
+    if re.search(rf"\b(?:фото|фотк\w*|картинк\w*|изображен\w*|иллюстрац\w*)\b|usr_|fig_", raw, re.IGNORECASE):
+        return False
+    if re.search(
+        r"раздел|абзац|глав\w*|заголовок|слайд|презентац|резентац|\bпрезу\b|\bпреза\b|"
+        r"график|таблиц|схем|диаграмм|\bтекст\b",
+        raw,
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(section_target(raw))
+
+
+def _photo_edit_request(raw: str) -> bool:
+    if _PHOTO_EDIT_LEAD.search(raw):
+        return True
+    if re.search(r"отредактир|(?<![а-я])перерисуй", raw, re.IGNORECASE):
+        return True
+    if _MAKE_STATE.search(raw):
+        return True
+    if re.search(r"\bа\s+не\b|\bвместо\b", raw, re.IGNORECASE) and re.search(
+        r"сделай|измени|отредактир|перекрас", raw, re.IGNORECASE
+    ):
+        return True
+    if re.search(r"перекрась|перекрасить|поменяй\s+цвет|смени\s+цвет|измени\s+цвет", raw, re.IGNORECASE):
+        if re.search(
+            r"стиль|тем[уы]|палитр|график|презентац|резентац|\bпрезу\b|\bпреза\b|слайд",
+            raw,
+            re.IGNORECASE,
+        ):
+            return False
+        subject = _color_subject(raw)
+        return bool(subject) and not _subject_is_just_a_color(subject)
+    return False
+
+
+_NAMED_SURFACE = re.compile(
+    r"фото|фотк\w*|картинк\w*|изображен\w*|иллюстрац\w*|"
+    r"график\w*|столбц\w*|легенд\w*|палитр\w*|пончик\w*|"
+    r"презентац\w*|резентац\w*|\bпрезу\b|\bпреза\b|слайд\w*|\bстиль\b|\bтем[ауы]\b|"
+    r"машин\w*|неб\w*|люд\w*",
+    re.IGNORECASE,
+)
+
+
+def _color_subject(raw: str) -> str:
+    changed = re.search(
+        r"(?:поменяй|смени|измени)\s+цвет\s+(.+)$",
+        raw,
+        re.IGNORECASE,
+    )
+    if changed:
+        return changed.group(1).strip()
+    painted = re.search(r"(?:перекрась|перекрасить)\s+(.+)$", raw, re.IGNORECASE)
+    return painted.group(1).strip() if painted else ""
+
+
+def _subject_is_just_a_color(subject: str) -> bool:
+    rest = re.sub(r"^(?:в|на)\s+", "", subject or "", flags=re.IGNORECASE).strip()
+    if not rest:
+        return True
+    return _bare_color_line(rest)
+
+
+_HUE_WORD = re.compile(
+    r"зелен|оранж|желт|красн|голуб|(?<![а-я])син|сер(?:ый|ая|ое|ые|ого|ым)|черн",
+    re.IGNORECASE,
+)
+
+
+def _unnamed_color(raw: str) -> bool:
+    """A color change that does not say photo, chart, deck, or a thing in the picture."""
+    if _NAMED_SURFACE.search(raw) or _MAKE_STATE.search(raw):
+        return False
+    if re.search(
+        r"перекрась|перекрасить|поменяй\s+цвет|смени\s+цвет|измени\s+цвет",
+        raw,
+        re.IGNORECASE,
+    ):
+        return True
+    if not _HUE_WORD.search(raw):
+        return False
+    return _bare_color_line(raw) or bool(re.search(r"\bцвет\b", raw, re.IGNORECASE))
+
+
+def _photo_or_chart(raw: str, *, has_photo: bool, has_chart: bool) -> ChatAct | None:
+    """Ask when a color line could hit either picture. A named one is not a clash."""
+    if not _unnamed_color(raw):
         return None
-    if not _PHOTO_EDIT_LEAD.search(raw):
-        return None
-    found = re.search(r"\b(usr_[A-Za-z0-9_]+|fig_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
-    fid = found.group(1) if found else ""
+    if has_photo and has_chart:
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say="Фото или график? Напиши «на фото …» или «график …».",
+        )
+    if has_photo and not has_chart:
+        if _HUE_WORD.search(raw):
+            title = _photo_instruction(raw)
+            return ChatAct(
+                kind="revise",
+                op="edit_photo",
+                title=title,
+                say="Меняю фото. Картинку перерисую по твоей фразе.",
+            )
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say="Что изменить на фото? Напиши «на фото сделай небо темнее».",
+        )
+    if has_chart and not has_photo:
+        hue = hue_edit(raw)
+        if hue:
+            return _hue_act(raw, hue)
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say="Какой цвет графика? Напиши «график красным» или «столбцы зеленые».",
+        )
+    return None
+
+
+def _photo_instruction(raw: str) -> str:
     body = ""
     tail = _PHOTO_EDIT_TAIL.search(raw)
     if tail:
@@ -793,13 +954,143 @@ def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
         )
         if inline:
             body = inline.group(1).strip(" .")
-    body = re.sub(
+    if not body:
+        cut = re.search(
+            r"убери\s+(.+?)\s+с\s+(?:фото|картинк\w*|изображен\w*)",
+            raw,
+            re.IGNORECASE,
+        )
+        if cut:
+            body = f"убери {cut.group(1).strip(' .')}"
+    if not body:
+        body = re.sub(
+            r"^(?:пожалуйста[, ]+)?"
+            r"(?:отредактиру(?:й|ть)|перерисуй|перекрась|перекрасить|"
+            r"исправ(?:ь|ить)|поправ(?:ь|ить)|измени(?:ть)?)"
+            r"(?:\s+(?:это\s+|данн\w+\s+)?"
+            r"(?:фото|фотк\w*|картинк\w*|изображен\w*|иллюстрац\w*))?"
+            r"\s*[,:]?\s*",
+            "",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(
+            r"^(?:и\s+)?(?:сделай|сделать)\s+(?:там\s+)?",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(r"^(?:поменяй|смени|измени)\s+", "", body, flags=re.IGNORECASE)
+    return re.sub(
         r"^(?:сделай|сделать|чтобы)\s+",
         "",
         body,
         flags=re.IGNORECASE,
-    ).strip(" .")
-    return fid, body
+    ).strip(" .,")
+
+
+def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
+    """None when this is not a pixel edit of a photo already on the table.
+
+    ("", "") means the photo was named and the change was not.
+    The id is "" when the user did not name usr_NN or fig_NN.
+    «измени фото сделай небо темнее» and «сделай машину красной а не синей»
+    keep the original and edit it. «сделай фото» and «нарисуй красную машину»
+    are a new picture, not an edit.
+    """
+    raw = _norm(text or "").strip()
+    if re.search(r"подпис", raw, re.IGNORECASE):
+        return None
+    if _document_not_photo(raw) or creates_new_picture(raw):
+        return None
+    if not _photo_edit_request(raw):
+        return None
+    found = re.search(r"\b(usr_[A-Za-z0-9_]+|fig_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    fid = found.group(1) if found else ""
+    return fid, _photo_instruction(raw)
+
+
+def parse_chart_delete(text: str | None) -> tuple[int, str] | None:
+    """None when this line does not remove a chart.
+
+    ``(index, hint)``. Index 0 and an empty hint means «the chart»: the
+    executor deletes the only one, or asks which caption to remove.
+    """
+    raw = _norm(text or "").strip()
+    if not re.search(r"график", raw, re.IGNORECASE):
+        return None
+    if re.search(r"подпис|легенд|цвет|палитр|шрифт|сетк|\bос[ьи]\b", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return None
+    if not re.search(r"(?:убери|удали|убрать|удалить).{0,40}график", raw, re.IGNORECASE):
+        return None
+    index = chart_at(raw)
+    hint = ""
+    if not index:
+        match = re.search(
+            r"график\w*\s+(?:про\s+|с\s+|«)?([A-Za-zА-Яа-яЁё0-9][^.\n!?]{1,48})",
+            raw,
+            re.IGNORECASE,
+        )
+        if match:
+            hint = _clean_name(match.group(1).strip(" «»\""))
+            if re.fullmatch(r"\d{1,2}", hint):
+                hint = ""
+            if hint.casefold() in {"этот", "эту", "весь", "все", "мне", "пожалуйста"}:
+                hint = ""
+    return index, hint
+
+
+def parse_prose_delete(text: str | None) -> tuple[str, int, str, str] | None:
+    """None when this is not a paragraph or block delete.
+
+    ``("ask", 0, "", "")`` names nothing.
+    ``("section", 0, name, "")`` is «удали блок Введение».
+    ``("paragraph", ordinal, section, hint)`` is one paragraph.
+    """
+    raw = _norm(text or "").strip()
+    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+        return None
+    if re.search(r"график|слайд|таблиц|строк|спис|схем|фото", raw, re.IGNORECASE):
+        return None
+    if re.search(r"\bблок", raw, re.IGNORECASE) and not re.search(r"абзац", raw, re.IGNORECASE):
+        if re.search(r"раздел", raw, re.IGNORECASE):
+            return None
+        match = re.search(
+            r"(?:убери|удали|убрать|удалить)\s+блок\w*\s+[«\"]?(.{2,80})",
+            raw,
+            re.IGNORECASE,
+        )
+        if not match:
+            return ("ask", 0, "", "")
+        name = _clean_name(match.group(1).strip(" «».:"))
+        if not name:
+            return ("ask", 0, "", "")
+        return ("section", 0, name, "")
+    if not re.search(r"абзац", raw, re.IGNORECASE):
+        return None
+    ordinal, _para_name = paragraph_at(raw)
+    section = ""
+    named = re.search(
+        r"абзац\w*(?:\s+\d{1,2})?\s+(?:(?:в|во|раздела|разделе)\s+)?([A-Za-zА-Яа-яЁё-]{4,})",
+        raw,
+        re.IGNORECASE,
+    )
+    if named and named.group(1).casefold() not in {"про", "этот", "эту", "этого"}:
+        section = _clean_name(named.group(1))
+    if not section:
+        known = _KNOWN_SECTION.search(raw)
+        if known:
+            word = known.group(1)
+            section = word[:1].upper() + word[1:]
+    hint = ""
+    about = re.search(r"\bпро\s+([A-Za-zА-Яа-яЁё0-9 -]{3,40})", raw, re.IGNORECASE)
+    if about:
+        hint = _clean_name(about.group(1))
+    if not ordinal and not section and not hint:
+        return ("ask", 0, "", "")
+    return ("paragraph", ordinal, section, hint)
 
 
 def parse_section_delete(text: str | None) -> str | None:
@@ -809,7 +1100,11 @@ def parse_section_delete(text: str | None) -> str | None:
         return None
     if re.search(r"слайд|спис|таблиц|строк|абзац", raw, re.IGNORECASE):
         return None
-    if not re.search(r"убери|удали|убрать|удалить", raw, re.IGNORECASE):
+    if not re.search(
+        r"(?:убери|удали|убрать|удалить)\s+раздел",
+        raw,
+        re.IGNORECASE,
+    ):
         return None
     match = re.search(
         r"(?:убери|удали|убрать|удалить)\s+раздел\w*\s+[«\"]?(.{2,80})",
@@ -919,6 +1214,12 @@ def parse_diagram_branch(text: str | None) -> str | None:
     if re.search(r"отч[её]т|документ|презентац|в\s+отч", raw, re.IGNORECASE):
         return None
     if re.search(r"схем", raw, re.IGNORECASE):
+        return None
+    if re.search(
+        r"(?:измени|поменя|перепиш|сократ|переделай|распиш|разверн|дополн)",
+        raw,
+        re.IGNORECASE,
+    ) and section_target(raw):
         return None
     if not re.search(r"добав|вставь|допиш|убери|удали", raw, re.IGNORECASE):
         return None
@@ -1112,7 +1413,7 @@ def _unsupported_shape(raw: str) -> bool:
 
 _CLAUSE_JOIN = re.compile(r"\s+и\s+|;\s+")
 _CLAUSE_VERB = re.compile(
-    r"убери|удали|перекрас|перепиш|сократ|добав|перестав|смен|поменя|замен|отмен|верни правк",
+    r"убери|удали|перекрас|перепиш|сократ|добав|перестав|смен|поменя|замен|отмен|верни правк|измени",
     re.IGNORECASE,
 )
 
@@ -1208,6 +1509,7 @@ def resolve_act(
     has_report: bool = False,
     has_diagram: bool = False,
     has_chart: bool = False,
+    has_photo: bool = False,
     last_section: str = "",
     last_op: str = "",
 ) -> ChatAct:
@@ -1228,7 +1530,11 @@ def resolve_act(
     if has_any and _UNDO.search(raw) and len(raw) < 80:
         return ChatAct(kind="revise", op="undo", say="Отменил последнюю правку.")
 
-    if _RECOLOR.search(raw):
+    clash = _photo_or_chart(raw, has_photo=has_photo, has_chart=has_chart)
+    if clash is not None:
+        return clash
+
+    if _RECOLOR.search(raw) and parse_photo_edit(raw) is None:
         charts = bool(_CHARTS.search(raw))
         if charts:
             palette = _named(raw, _PALETTES)
@@ -1431,6 +1737,48 @@ def resolve_act(
                 op="restyle_structure",
                 title=structure,
                 say=f"Собираю презентацию для {STRUCTURE_SAY[structure]}. Текст возьму из документов.",
+            )
+        removed_chart = parse_chart_delete(raw)
+        if removed_chart is not None:
+            if not (has_report or has_chart):
+                return ChatAct(
+                    kind="talk",
+                    say="Графиков в этом чате ещё нет. Могу собрать отчёт или презу.",
+                )
+            index, hint = removed_chart
+            place = f" {index}" if index else (f" «{hint}»" if hint else "")
+            return ChatAct(
+                kind="revise",
+                op="delete_chart",
+                chart_at=index,
+                title=hint,
+                say=f"Убираю график{place}.",
+            )
+        removed_prose = parse_prose_delete(raw)
+        if removed_prose is not None:
+            kind_name, ordinal, name, hint = removed_prose
+            if not has_report:
+                return ChatAct(kind="talk", say="Отчёта в этом чате ещё нет, убирать нечего.")
+            if kind_name == "ask":
+                return ChatAct(
+                    kind="revise",
+                    op="ask",
+                    say="Что убрать? Напиши «удали второй абзац введения» или «удали блок Введение».",
+                )
+            if kind_name == "section":
+                return ChatAct(
+                    kind="revise",
+                    op="delete_section",
+                    section=name,
+                    say=f"Убираю блок «{name}».",
+                )
+            return ChatAct(
+                kind="revise",
+                op="delete_paragraph",
+                slot=ordinal,
+                section=name,
+                title=hint,
+                say="Убираю абзац.",
             )
         removed_section = parse_section_delete(raw)
         if removed_section is not None:
@@ -1650,6 +1998,27 @@ def resolve_act(
             or (_SECTION_VERB.search(raw) and section_target(raw))
             or re.search(r"измени(?:ть)?\s+текст", raw, re.IGNORECASE)
             or _section_write(raw, has_report=has_report)
+            or (
+                re.search(
+                    r"\b(?:измени(?:ть)?|поменя(?:й|ть)|смени(?:ть)?)\s+(?:раздел\w*|абзац\w*|глав\w*)",
+                    raw,
+                    re.IGNORECASE,
+                )
+                and not re.search(
+                    r"заголовок|график|слайд|таблиц|схем|цвет|фото",
+                    raw,
+                    re.IGNORECASE,
+                )
+            )
+            or (
+                re.search(r"\b(?:измени(?:ть)?|поменя(?:й|ть))\b", raw, re.IGNORECASE)
+                and bool(section_target(raw))
+                and not re.search(
+                    r"заголовок|график|слайд|таблиц|схем|цвет|фото|презент",
+                    raw,
+                    re.IGNORECASE,
+                )
+            )
         )
         and not (has_deck and re.search(r"слайд", raw, re.IGNORECASE))
     ):
@@ -1813,6 +2182,15 @@ def resolve_act(
             or ((has_report or has_deck) and re.search(r"график|столбц|цвет", raw, re.IGNORECASE))
         ):
             return _hue_act(raw, hue)
+
+    from case3.chart_style import asks_for_softer_fill
+
+    if has_chart and not _explicit_new_artifact(raw) and asks_for_softer_fill(raw):
+        return ChatAct(
+            kind="revise",
+            op="fade_chart",
+            say="Делаю заливку прозрачнее. Числа и тип те же.",
+        )
 
     named_chart = chart_type_named(raw)
     other_type = bool(re.search(r"друг\w*\s+тип", raw, re.IGNORECASE))
