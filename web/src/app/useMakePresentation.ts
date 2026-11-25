@@ -80,7 +80,7 @@ async (msgId: string, result: RunResult) => {
           pendingDetail: null,
           text: msg.text?.trim()
             ? msg.text
-            : "Собираю презентацию…",
+            : "Думаю над структурой…",
           result: {
             ...msg.result,
             slides_status: alreadyInFlight

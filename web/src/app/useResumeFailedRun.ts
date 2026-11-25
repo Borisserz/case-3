@@ -309,7 +309,10 @@ async (botMsgId: string, runId: string) => {
         return {
           id: botMsgId,
           role: "bot" as const,
-          text: reportReadyText(finalResult, streamedSummary),
+          text: reportReadyText(
+            finalResult,
+            msg.streamingSummary && msg.text.trim() ? msg.text : streamedSummary,
+          ),
           result: finalResult,
           thinking: msg.thinking,
           thinkingStartedAt: msg.thinkingStartedAt,

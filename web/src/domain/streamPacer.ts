@@ -25,60 +25,30 @@ export type StreamPacer = {
   isDraining: () => boolean;
 };
 
-function commonPrefixLen(a: string, b: string): number {
-  const max = Math.min(a.length, b.length);
-  let i = 0;
-  while (i < max && a.charCodeAt(i) === b.charCodeAt(i)) {
-    i += 1;
-  }
-  return i;
-}
-
-const SMALL_EDIT_HOLE = 48;
-const SMALL_EDIT_TAIL = 12;
-
-/** Map a small in-place edit (120 → 125, a renamed label) onto `next`
- * so the already shown tail stays on screen.
- * Returns null when `next` is a different answer.
+/** Keep every character already on screen.
+ * `next` may only drop leading whitespace or add unseen text.
+ * A different answer does not replace the stream.
  */
-function alignShown(visible: string, next: string): number | null {
-  if (!visible || !next) return null;
-  const split = commonPrefixLen(visible, next);
-  if (split >= visible.length) return Math.min(next.length, split);
-  const oldRest = visible.slice(split);
-  const limit = split + SMALL_EDIT_HOLE;
-  for (let hole = 0; hole <= SMALL_EDIT_HOLE && hole < oldRest.length; hole += 1) {
-    const tail = oldRest.slice(hole);
-    if (tail.length < SMALL_EDIT_TAIL) break;
-    const idx = next.indexOf(tail, split);
-    if (idx >= split && idx <= limit) return idx + tail.length;
+function planReveal(
+  shown: string,
+  current: string,
+  next: string,
+): { target: string; floor: number } {
+  if (!shown) return { target: next || "", floor: 0 };
+  const shownBody = shown.trimStart();
+  const nextBody = (next || "").trimStart();
+  const continues =
+    !!next &&
+    (next.startsWith(shown) || (!!shownBody && nextBody.startsWith(shownBody)));
+  if (continues) {
+    const text = next.startsWith(shown)
+      ? next
+      : shownBody + nextBody.slice(shownBody.length);
+    const floor = next.startsWith(shown) ? shown.length : shownBody.length;
+    return { target: text, floor };
   }
-  return null;
-}
-
-/** How many chars of `next` are already on screen.
- * A final payload often drops only the leading newline left after a think-tag,
- * or tweaks a number inside the sentence the user has already read.
- * Neither may rewind the caret to the first differing character.
- */
-function carryReveal(oldTarget: string, revealed: number, next: string): number {
-  const end = safeSliceEnd(oldTarget, revealed);
-  const visible = oldTarget.slice(0, end);
-  const direct = commonPrefixLen(visible, next);
-  const trimmedAll = oldTarget.trim();
-  if (next === trimmedAll) {
-    const lead = oldTarget.length - oldTarget.trimStart().length;
-    const mapped = Math.max(0, Math.min(end, lead + next.length) - lead);
-    return safeSliceEnd(next, mapped);
-  }
-  const trimmedVisible = visible.trimStart();
-  const via = commonPrefixLen(trimmedVisible, next);
-  const aligned = alignShown(trimmedVisible || visible, next);
-  if (aligned != null && aligned >= via && aligned >= direct) {
-    return safeSliceEnd(next, aligned);
-  }
-  if (via > direct) return safeSliceEnd(next, via);
-  return direct;
+  if (current.startsWith(shown)) return { target: current, floor: shown.length };
+  return { target: shown, floor: shown.length };
 }
 
 function safeSliceEnd(text: string, rawEnd: number): number {
@@ -335,49 +305,53 @@ export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
     rafId = scheduleFrame(tick);
   };
 
+  const adopt = (next: string) => {
+    const shown = lastEmit;
+    const plan = planReveal(shown, target, next || "");
+    const droppingLead =
+      shown.trimStart().length < shown.length &&
+      plan.floor === shown.trimStart().length &&
+      plan.target.startsWith(shown.trimStart());
+    target = plan.target;
+    if (droppingLead) floatRevealed = plan.floor;
+    else if (floatRevealed < plan.floor) floatRevealed = plan.floor;
+    if (floatRevealed > target.length) floatRevealed = target.length;
+  };
+
+  const showNow = () => {
+    const end = safeSliceEnd(target, floatRevealed);
+    floatRevealed = end;
+    emitIfChanged(target.slice(0, end));
+  };
+
   return {
     pushTarget(fullText: string) {
       if (stopped) return;
-      target = fullText || "";
+      adopt(fullText || "");
       if (instant) {
         floatRevealed = target.length;
         emitIfChanged(target);
         return;
-      }
-      if (floatRevealed > target.length) {
-        floatRevealed = safeSliceEnd(target, target.length);
-        emitIfChanged(target.slice(0, floatRevealed));
       }
       ensureRunning();
     },
 
     replaceTarget(fullText: string) {
       if (stopped) return;
-      const next = fullText || "";
       rowHoldUntilTs = 0;
+      adopt(fullText || "");
       if (instant) {
-        target = next;
         floatRevealed = target.length;
         emitIfChanged(target);
         return;
       }
-      floatRevealed = carryReveal(target, floatRevealed, next);
-      target = next;
-      const end = safeSliceEnd(target, floatRevealed);
-      floatRevealed = end;
-      emitIfChanged(target.slice(0, end));
+      showNow();
       ensureRunning();
     },
 
     markDone(finalText?: string) {
       if (stopped) return Promise.resolve();
-      if (typeof finalText === "string") {
-        const next = finalText;
-        if (next && next !== target) {
-          floatRevealed = carryReveal(target, floatRevealed, next);
-          target = next;
-        }
-      }
+      if (typeof finalText === "string" && finalText) adopt(finalText);
       done = true;
       if (instant || floatRevealed >= target.length) {
         cancelScheduled();

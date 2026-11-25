@@ -67,7 +67,7 @@ function deckStageLabel(stage?: string | null): string {
     case "llm_retry":
     case "plan":
     case "ir":
-      return "Собираю презентацию";
+      return "Думаю над структурой";
     case "diagrams":
     case "media":
     case "charts":
@@ -76,11 +76,11 @@ function deckStageLabel(stage?: string | null): string {
       return "Рисую слайды";
     case "pptx":
     case "pdf":
-      return "Собираю презентацию";
+      return "Пакую PPTX";
     case "patch":
       return "Сохраняю правки";
     default:
-      return "Собираю презентацию";
+      return "Думаю над структурой";
   }
 }
 

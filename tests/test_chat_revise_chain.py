@@ -1012,6 +1012,38 @@ def test_diagram_phrase_keeps_the_run_palette(tmp_path: Path, monkeypatch):
     assert seen["palette"] == "ocean"
 
 
+def test_change_photo_edits_the_chat_png_not_a_new_one(tmp_path: Path, monkeypatch):
+    run_id = "chat_20261125T120000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    figs = out / "figures"
+    figs.mkdir(parents=True)
+    (figs / "fig_01.png").write_bytes(b"png")
+    (out / "meta.json").write_text(
+        '{"run_id":"chat_20261125T120000Z","status":"ok","output_mode":"chat"}',
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def fake_edit(out_dir, figure_id, *, mode, prompt, caption=None, formats=None, cfg=None):
+        seen["id"] = figure_id
+        seen["mode"] = mode
+        seen["prompt"] = prompt
+        seen["formats"] = formats
+        return {"figure_id": figure_id}
+
+    monkeypatch.setattr("case3.figure_edit.edit_figure_in_run", fake_edit)
+    result = try_chat_revise("измени фото сделай небо темнее", run_id, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "edit_photo"
+    assert seen["id"] == "fig_01"
+    assert seen["mode"] == "edit"
+    assert seen["prompt"] == "небо темнее"
+    assert seen["formats"] == set()
+    assert result["surface"] == "chat"
+    assert result["previews"][0]["id"] == "fig_01"
+    assert "?v=" in result["previews"][0]["url"]
+
+
 def test_photo_phrase_edits_the_only_png(tmp_path: Path, monkeypatch):
     report = "source_20261119T130000Z"
     out = _report_dir(tmp_path, report)

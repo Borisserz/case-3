@@ -3,6 +3,12 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    // Mermaid loads mindmap/timeline/… with a dynamic import. Prebundling
+    // rewrites that to a .vite/deps file the browser cannot fetch, so a
+    // scheme on a slide shows «Не удалось отрисовать схему».
+    exclude: ["mermaid"],
+  },
   server: {
     port: 5173,
     proxy: {

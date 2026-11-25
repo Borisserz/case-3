@@ -1142,7 +1142,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               pending: true,
               pendingStage: stageKey,
               pendingDetail: null,
-              text: streamed || msg.text?.trim() || "Собираю презентацию…",
+              text: streamed || msg.text?.trim() || "Думаю над структурой…",
               result: {
                 ...result,
                 slides_status: slidesJobInFlight(result.slides_status)

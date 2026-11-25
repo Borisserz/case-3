@@ -1000,11 +1000,18 @@ def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[s
             if stem.startswith("fig_")
             else "chart"
         )
+        url = f"/api/runs/{rid}/figures/{png.name}"
+        try:
+            stamp = int(png.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        if stamp:
+            url += f"?v={stamp}"
         previews.append(
             {
                 "id": stem,
                 "kind": kind,
-                "url": f"/api/runs/{rid}/figures/{png.name}",
+                "url": url,
             }
         )
     return previews

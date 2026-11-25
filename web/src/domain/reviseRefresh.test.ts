@@ -69,6 +69,10 @@ test("two edits refresh deck then report, one edit stays a single step", () => {
     { surface: "report", artifactRunId: "r" },
   ]);
   assert.deepEqual(refreshSteps({ op: "ask" }), []);
+  assert.deepEqual(
+    refreshSteps({ op: "retype_charts", surface: "chat", artifact_run_id: "r" }),
+    [],
+  );
 });
 
 test("a later chat edit opens the file and keeps the next message on the head", () => {

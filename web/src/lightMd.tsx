@@ -77,6 +77,8 @@ export function spaceAnswer(raw: string): string {
 /** Stabilize incomplete trailing markdown constructs during live streaming. */
 export function stabilizeStreamingMd(raw: string): string {
   let text = (raw || "").replace(/\r\n/g, "\n");
+  text = text.replace(/!\[[^\]]*\]\([^)\n]*$/g, "");
+  text = text.replace(/!\[[^\]]*$/g, "");
   // Avoid flashing bare heading hashes ("## ") before heading text arrives.
   text = text.replace(/(?:^|\n)#{1,3}[ \t]*$/, "");
   const fenceCount = (text.match(/```/g) || []).length;

@@ -197,7 +197,7 @@ export function useLiberDevPreviews({
         {
           id,
           role: "bot",
-          text: "Собираю презентацию…",
+          text: "Думаю над структурой…",
           pending: true,
           pendingStage: key,
           thinkingMode: "presentation",

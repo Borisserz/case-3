@@ -192,6 +192,10 @@ def asks_for_generated_photo(text: str | None) -> bool:
     raw = _norm(text or "").strip()
     if not raw or wants_chat_chart(raw):
         return False
+    from case3.chat_act import parse_photo_edit
+
+    if parse_photo_edit(raw) is not None:
+        return False
     return wants_generated_images(raw, "")
 
 

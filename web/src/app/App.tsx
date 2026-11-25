@@ -800,7 +800,7 @@ export default function App() {
           pendingBot.thinkingMode || "report",
         )
       : busy
-        ? "Генерирую документ…"
+        ? "Думаю над структурой…"
         : undefined;
 
   // Micro-beats while a stage dwells — more varied phrases in the fold

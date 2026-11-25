@@ -565,7 +565,7 @@ def try_chat_revise(
                 break
     elif packet_pick is None and act.op == "edit_photo":
         for run_id, path, _row in reversed(rows):
-            if any((path / "figures").glob("usr_*.png")):
+            if _photo_pngs(path / "figures"):
                 work_id, work_dir = run_id, path
                 break
     elif packet_pick is None and act.op in {
@@ -626,8 +626,8 @@ def try_chat_revise(
                 work_id, work_dir = carried_id, carried_path
         elif (
             act.op == "edit_photo"
-            and not any((work_dir / "figures").glob("usr_*.png"))
-            and any((carried_path / "figures").glob("usr_*.png"))
+            and not _photo_pngs(work_dir / "figures")
+            and _photo_pngs(carried_path / "figures")
         ):
             work_id, work_dir = carried_id, carried_path
     work_meta = _read(work_dir) or head_meta
@@ -715,6 +715,15 @@ def try_chat_revise(
         if not any(work_dir.glob("*.tex")) and not _flags(work_meta)[0]:
             noted_surface = "chat"
         chart_previews = _chart_previews(work_id, work_dir)
+    photo_previews: list[dict[str, str]] | None = None
+    if act.op == "edit_photo" and str(say or "").startswith("Меняю фото"):
+        if any(work_dir.glob("*.tex")):
+            noted_surface = "report"
+        elif _flags(work_meta)[0]:
+            noted_surface = "deck"
+        else:
+            noted_surface = "chat"
+        photo_previews = _photo_preview(work_id, work_dir, act.section)
     if rows and head_dir.is_dir() and head_id in chain_ids:
         _note(head_dir, text, say, act, surface=noted_surface)
     elif work_id in chain_ids and work_dir.is_dir():
@@ -727,7 +736,7 @@ def try_chat_revise(
         surface=noted_surface,
         artifact_run_id=work_id,
         isolate=isolate,
-        previews=chart_previews,
+        previews=photo_previews if photo_previews is not None else chart_previews,
         memory_section="" if act.op == "undo" and "Отменил" in (say or "") else None,
     )
 
@@ -2013,24 +2022,56 @@ def _add_item(out_dir: Path, slot: int, item: str) -> str:
     )
 
 
+def _photo_pngs(figs: Path) -> list[Path]:
+    """Uploaded and generated photos. Charts and diagrams stay out."""
+    if not figs.is_dir():
+        return []
+    found: list[Path] = []
+    for pattern in ("usr_*.png", "fig_*.png"):
+        found.extend(path for path in figs.glob(pattern) if path.is_file())
+    return sorted(found, key=lambda path: path.name)
+
+
+def _photo_preview(run_id: str, out_dir: Path, figure_id: str) -> list[dict[str, str]]:
+    fid, _err = _choose_photo(out_dir, figure_id)
+    if not fid:
+        return []
+    png = out_dir / "figures" / f"{fid}.png"
+    if not png.is_file():
+        return []
+    try:
+        stamp = int(png.stat().st_mtime)
+    except OSError:
+        stamp = 0
+    url = f"/api/runs/{run_id}/figures/{png.name}"
+    if stamp:
+        url += f"?v={stamp}"
+    return [{"id": fid, "kind": "figure", "url": url}]
+
+
+def _choose_photo(out_dir: Path, figure_id: str) -> tuple[str, str]:
+    pngs = _photo_pngs(out_dir / "figures")
+    fid = (figure_id or "").strip()
+    if fid:
+        dest = out_dir / "figures" / f"{fid}.png"
+        if dest.is_file():
+            return fid, ""
+        shown = ", ".join(path.stem for path in pngs[:6]) or "фото не вижу"
+        return "", f"Фото {fid} нет. Сейчас: {shown}."
+    if len(pngs) == 1:
+        return pngs[0].stem, ""
+    if not pngs:
+        return "", "В этом чате нет фото."
+    shown = ", ".join(path.stem for path in pngs[:6])
+    return "", f"Какое фото менять? Сейчас: {shown}."
+
+
 def _edit_photo(out_dir: Path, figure_id: str, instruction: str) -> str:
     from case3.figure_edit import FigureEditError, edit_figure_in_run
 
-    figs = out_dir / "figures"
-    pngs = sorted(figs.glob("usr_*.png")) if figs.is_dir() else []
-    fid = (figure_id or "").strip()
-    if fid:
-        dest = figs / f"{fid}.png"
-        if not dest.is_file():
-            shown = ", ".join(path.stem for path in pngs[:6]) or "фото не вижу"
-            return f"Фото {fid} нет. Сейчас: {shown}."
-    elif len(pngs) == 1:
-        fid = pngs[0].stem
-    elif not pngs:
-        return "В этом чате нет фото."
-    else:
-        shown = ", ".join(path.stem for path in pngs[:6])
-        return f"Какое фото менять? Сейчас: {shown}."
+    fid, missing = _choose_photo(out_dir, figure_id)
+    if not fid:
+        return missing
     formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
     try:
         edit_figure_in_run(
@@ -2042,7 +2083,12 @@ def _edit_photo(out_dir: Path, figure_id: str, instruction: str) -> str:
         )
     except FigureEditError as exc:
         return str(exc)
-    return f"Меняю фото {fid}. Картинку перерисую по твоей фразе."
+    note = " Исходный снимок остаётся основой."
+    if any(out_dir.glob("*.tex")):
+        note += " PDF и DOCX тоже."
+    elif (out_dir / "slides" / "deck.json").is_file():
+        note += " Слайды тоже."
+    return f"Меняю фото.{note}"
 
 
 def _delete_section(out_dir: Path, name: str) -> str:

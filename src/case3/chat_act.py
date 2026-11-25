@@ -33,6 +33,11 @@ _PROSE = re.compile(
     r"слабо|размыт|перефразир|короче|сократи|подробнее|детальнее|шире",
     re.IGNORECASE,
 )
+# «редактируй введение» is the report, not a chat essay.
+_SECTION_VERB = re.compile(
+    r"редактир|допиш|доработ|\bправь\b|\bправить\b",
+    re.IGNORECASE,
+)
 _VISUAL = re.compile(r"красивее|покрасивее", re.IGNORECASE)
 _REPORT_WORD = re.compile(r"отч[её]т|раздел|абзац", re.IGNORECASE)
 _STOP_NAME = frozenset(
@@ -264,6 +269,13 @@ def next_deck_pack(current: str) -> str:
 def _clean_name(name: str) -> str:
     cleaned = " ".join((name or "").split()).strip(" «»\"")
     cleaned = re.split(r"\s+(?:мне|пожалуйста)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    cleaned = re.split(
+        r"\s+(?:и\s+)?(?:напиш\w*|сделай(?:те)?|добав\w*|убери\w*|постав\w*|"
+        r"чтобы|пусть|больше|длинн\w*|подробн\w*|с\s+числ\w*)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
     while True:
         trimmed = re.sub(
             r"\s+(?:(?:чуть|немного|по)\s+)?"
@@ -718,37 +730,76 @@ def parse_caption(text: str | None) -> tuple[str, str] | None:
     return (found.group(1) if found else ""), caption
 
 
+_PHOTO_NOUN = r"(?:фото|фотк\w*|картинк\w*|иллюстрац\w*|изображен\w*)"
+_FRESH_PHOTO = re.compile(
+    rf"^(?:пожалуйста[, ]+)?(?:сделай|сделать|нарисуй|сгенерируй|сгенерировать|создай|покажи)\s+"
+    rf"(?:мне\s+)?(?:нов\w+\s+)?{_PHOTO_NOUN}",
+    re.IGNORECASE,
+)
+_PHOTO_EDIT_LEAD = re.compile(
+    rf"(?:измени(?:ть)?|поправ(?:ь|ить)|перерисуй|отредактиру(?:й|ть)|исправ(?:ь|ить))\s+"
+    rf"(?:это\s+|данн\w+\s+)?{_PHOTO_NOUN}"
+    rf"|внеси\s+изменени\w*\s+(?:в|на)\s+{_PHOTO_NOUN}"
+    rf"|(?:на|у|это)\s+фото"
+    rf"|фото\s+usr_"
+    rf"|убери\s+.+?\s+с\s+фото",
+    re.IGNORECASE,
+)
+_PHOTO_EDIT_TAIL = re.compile(
+    rf"(?:измени(?:ть)?|поправ(?:ь|ить)|перерисуй|отредактиру(?:й|ть)|исправ(?:ь|ить))\s+"
+    rf"(?:это\s+|данн\w+\s+)?{_PHOTO_NOUN}"
+    rf"(?:\s+(?:usr_[A-Za-z0-9_]+|fig_[A-Za-z0-9_]+))?"
+    rf"\s*[:—–,-]?\s*(.*)$",
+    re.IGNORECASE,
+)
+
+
 def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
     """None when this is not a pixel edit of a photo already on the table.
 
     ("", "") means the photo was named and the change was not.
-    The id is "" when the user did not name usr_NN.
+    The id is "" when the user did not name usr_NN or fig_NN.
+    «измени фото сделай небо темнее» keeps the original and edits it.
+    «сделай фото» is a new picture, not an edit.
     """
     raw = _norm(text or "").strip()
     if re.search(r"подпис", raw, re.IGNORECASE):
         return None
-    if not re.search(r"\bфото\b|usr_", raw, re.IGNORECASE):
+    if not re.search(rf"\bфото\b|usr_|{_PHOTO_NOUN}", raw, re.IGNORECASE):
         return None
-    aimed = re.search(
-        r"на фото|у фото|это фото|поправь\s+фото|измени\s+фото|перерисуй\s+фото|убери\s+.+?\s+с фото|фото\s+usr_",
+    if _FRESH_PHOTO.search(raw) and not re.search(
+        r"измени|поправ|перерисуй|отредактир|исправ|внеси\s+изменен|убери",
         raw,
         re.IGNORECASE,
-    )
-    if not aimed:
+    ):
         return None
-    found = re.search(r"\b(usr_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    if not _PHOTO_EDIT_LEAD.search(raw):
+        return None
+    found = re.search(r"\b(usr_[A-Za-z0-9_]+|fig_[A-Za-z0-9_]+)", raw, re.IGNORECASE)
     fid = found.group(1) if found else ""
-    tail = re.search(r"[:—–-]\s*(.{2,})$", raw)
+    body = ""
+    tail = _PHOTO_EDIT_TAIL.search(raw)
     if tail:
-        return fid, tail.group(1).strip(" .")
-    inline = re.search(
-        r"(?:на фото|у фото|это фото)\s+(?:сделай|сделать|убери|убрать|удали|удалить|добавь|поправь|измени|перерисуй)\s+(.{2,})$",
-        raw,
-        re.IGNORECASE,
-    )
-    if inline:
-        return fid, inline.group(1).strip(" .")
-    return fid, ""
+        body = (tail.group(1) or "").strip(" .")
+    if not body:
+        colon = re.search(r"[:—–-]\s*(.{2,})$", raw)
+        if colon:
+            body = colon.group(1).strip(" .")
+    if not body:
+        inline = re.search(
+            r"(?:на фото|у фото|это фото)\s+(?:сделай|сделать|убери|убрать|удали|удалить|добавь|поправь|измени|перерисуй)\s+(.{2,})$",
+            raw,
+            re.IGNORECASE,
+        )
+        if inline:
+            body = inline.group(1).strip(" .")
+    body = re.sub(
+        r"^(?:сделай|сделать|чтобы)\s+",
+        "",
+        body,
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    return fid, body
 
 
 def parse_section_delete(text: str | None) -> str | None:
@@ -972,7 +1023,28 @@ def _brief_for(raw: str) -> str:
         return "tighter"
     if re.search(r"не нравится|слаб|размыт", raw, re.IGNORECASE):
         return "dislike"
+    if re.search(
+        r"больше\s+текст|длинн|расшир|допиш|разверн|подробн|распиш",
+        raw,
+        re.IGNORECASE,
+    ):
+        return "longer"
     return "prettier"
+
+
+def _section_write(raw: str, *, has_report: bool) -> bool:
+    """«напиши больше текста в разделе введение» edits that section."""
+    if not has_report or not section_target(raw):
+        return False
+    if re.search(r"график|диаграмм|схем|слайд", raw, re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"напиш\w*|сделай(?:те)?|больше\s+текст|длинн\w*",
+            raw,
+            re.IGNORECASE,
+        )
+    )
 
 
 _REWRITE_INSTRUCTION_BODY = re.compile(
@@ -1085,11 +1157,11 @@ def _explicit_new_artifact(raw: str) -> bool:
 
 _CHART_STYLE = re.compile(
     r"подпис|легенд|шрифт|контраст|крупн|мельч|сетк|\bос[ьи]\b|оформ|"
-    r"отредактир|поправ|убери|добав|размер|толщ",
+    r"редактир|поправ|убери|добав|размер|толщ",
     re.IGNORECASE,
 )
 _CHART_STYLE_FILLER = re.compile(
-    r"\b(?:отредактир\w*|поправ\w*|исправ\w*|измени\w*|график\w*|"
+    r"\b(?:отредактир\w*|редактир\w*|поправ\w*|исправ\w*|измени\w*|график\w*|"
     r"пожалуйста|его|ее|её|этот|эта|эту|это)\b",
     re.IGNORECASE,
 )
@@ -1575,7 +1647,9 @@ def resolve_act(
             _REWRITE.search(raw)
             or _PROSE.search(raw)
             or _SECTION_SWAP.search(raw)
+            or (_SECTION_VERB.search(raw) and section_target(raw))
             or re.search(r"измени(?:ть)?\s+текст", raw, re.IGNORECASE)
+            or _section_write(raw, has_report=has_report)
         )
         and not (has_deck and re.search(r"слайд", raw, re.IGNORECASE))
     ):
@@ -1593,12 +1667,17 @@ def resolve_act(
                 op="ask",
                 say="Какой раздел переделать? Напиши название, например «переделай введение».",
             )
+        brief = _brief_for(raw)
+        if brief == "longer":
+            say = f"Дописываю раздел «{name}» в отчёте. Числа только из документа."
+        else:
+            say = f"Перепишу раздел «{name}» по документам. Новых чисел не добавлю."
         return ChatAct(
             kind="revise",
             op="rewrite",
             section=name,
-            brief=_brief_for(raw),
-            say=f"Перепишу раздел «{name}» по документам. Новых чисел не добавлю.",
+            brief=brief,
+            say=say,
         )
 
     if (

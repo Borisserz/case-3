@@ -71,10 +71,14 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
       "В запросе недостаточно данных для составления документа. Пожалуйста, укажите конкретные данные или прикрепите файл."
     );
   }
-  const fromResult = (result?.chat_summary || "").trim();
-  if (fromResult) return fromResult;
-  const fromStream = (streamed || "").trim();
-  if (fromStream) return fromStream;
+  const official = (result?.chat_summary || "").trim();
+  const shown = (streamed || "").trim();
+  if (shown && official) {
+    if (official.startsWith(shown)) return official;
+    return shown;
+  }
+  if (official) return official;
+  if (shown) return shown;
   if (result?.output_mode === "diagram" || result?.diagrams?.length) {
     const n = result.diagrams?.length || 0;
     return n
@@ -86,10 +90,14 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
 
 /** Chat copy stays about what arrived. A dead PDF or deck still says so. */
 export function hideAssemblyGaps(text: string): string {
+  const withoutFakeImage = (text || "").replace(
+    /!\[[^\]]*\]\(\s*(?!https?:|\/)[^)]*\)/gi,
+    "",
+  );
   const heading = /^(?:#{1,6}\s+|\*\*)?\s*недостатк[а-яё]*\s*\**\s*$/i;
   const sentence =
     /[^.!?\n]*?(?:не\s+собрал[а-яё]*|планировалось\s+\d+\s+график[а-яё]*|недостающ[а-яё]{0,12}график[а-яё]*)[^.!?\n]*[.!?…]?/gi;
-  const blocks = (text || "")
+  const blocks = withoutFakeImage
     .trim()
     .split(/\n\s*\n/)
     .map((block) => {
@@ -127,7 +135,7 @@ export function stageLabel(
   if (stage === "queued" && detail) return detail;
   if (detail && stage === "charts") return "Рисую график…";
   if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
-  return "Генерирую документ…";
+  return "Думаю над структурой…";
 }
 
 export function isRunInFlight(status?: string | null): boolean {

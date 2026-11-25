@@ -137,28 +137,19 @@ describe("streamPacer", () => {
     const atReplace = emitted.length;
     pacer.replaceTarget(corrected);
     const after = pacer.getVisible();
-    assert.ok(
-      after.includes("Брест"),
-      `shown tail was erased after a one-digit correction: ${JSON.stringify(after)}`,
-    );
-    assert.ok(after.includes("125"), `correction was not applied: ${JSON.stringify(after)}`);
-    assert.ok(
-      after.length >= before.length - 4,
-      `bubble shrank from ${before.length} to ${after.length}`,
-    );
+    assert.equal(after, before, `shown text was rewritten: ${JSON.stringify(after)}`);
     assert.equal(
-      emitted.slice(atReplace).some((snap) => snap.length < before.length / 2),
+      emitted.slice(atReplace).some((snap) => !snap.startsWith(before)),
       false,
     );
 
     pacer.markDone(corrected);
     clock.step(16);
-    assert.ok(pacer.getVisible().includes("Брест"));
-    assert.notEqual(pacer.getVisible(), corrected);
+    assert.ok(pacer.getVisible().startsWith(before));
     pacer.stop();
   });
 
-  it("still rewinds when the correction is a different answer", () => {
+  it("keeps the shown answer when a later payload is a different text", () => {
     const clock = makeManualClock();
     const pacer = createStreamPacer({
       baseCps: 80,
@@ -172,8 +163,12 @@ describe("streamPacer", () => {
     );
     for (let i = 0; i < 40; i += 1) clock.step(30);
     assert.ok(pacer.getVisible().length > 40);
+    const before = pacer.getVisible();
     pacer.replaceTarget("Совсем другой ответ про кассу и остатки.");
-    assert.ok(pacer.getVisible().length < 15, pacer.getVisible());
+    assert.equal(pacer.getVisible(), before);
+    pacer.markDone("Совсем другой ответ про кассу и остатки.");
+    clock.step(20);
+    assert.ok(pacer.getVisible().startsWith(before));
     pacer.stop();
   });
 

@@ -569,9 +569,10 @@ def test_memory_view_returns_only_uploaded_photos(tmp_path: Path):
     assert view["turns"][0]["photos"] == [
         {"name": "usr_01", "url": f"/api/runs/{run_id}/figures/usr_01.png"}
     ]
-    assert view["turns"][0]["previews"] == [
-        {"id": "cht_01", "kind": "chart", "url": f"/api/runs/{run_id}/figures/cht_01.png"}
-    ]
+    preview = view["turns"][0]["previews"][0]
+    assert preview["id"] == "cht_01"
+    assert preview["kind"] == "chart"
+    assert preview["url"].startswith(f"/api/runs/{run_id}/figures/cht_01.png?v=")
 
 
 def test_verbatim_window_is_eight_and_a_plain_question_lifts_the_ninth():

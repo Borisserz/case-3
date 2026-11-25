@@ -369,7 +369,15 @@ export function DashboardPickModal({
             <div>
               {litRow ? (
                 <figure className="dash-pick-preview">
-                  <img src={previewUrl(litRow.name)} alt="" />
+                  <img
+                    src={previewUrl(litRow.name)}
+                    alt=""
+                    onLoad={(event) => {
+                      event.currentTarget
+                        .closest(".dash-pick-preview-slot")
+                        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                    }}
+                  />
                   <figcaption>
                     <span>{litRow.title || litRow.name}</span>
                     <small>Нажмите карточку, чтобы открыть экран</small>

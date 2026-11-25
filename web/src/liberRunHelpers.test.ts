@@ -60,17 +60,27 @@ describe("liberRunHelpers", () => {
   it("stageLabel scales by thinking mode", () => {
     assert.match(stageLabel("llm", null, "diagram"), /схем/i);
     assert.match(stageLabel("diagram_repair", null, "diagram"), /схем/i);
-    assert.match(stageLabel("llm", null, "presentation"), /презентац/i);
+    assert.match(stageLabel("llm", null, "presentation"), /структур/i);
+    assert.doesNotMatch(stageLabel("llm", null, "presentation"), /собираю презентац/i);
+    assert.doesNotMatch(stageLabel("llm", null, "report"), /собираю документ/i);
     assert.doesNotMatch(stageLabel("llm", null, "presentation"), /структуру слайд/i);
     assert.doesNotMatch(stageLabel("slides_llm", null, "presentation"), /структуру слайд/i);
     assert.match(stageLabel("slides_render", null, "presentation"), /слайд/i);
   });
 
-  it("reportReadyText prefers chat_summary", () => {
+  it("reportReadyText keeps text already on screen", () => {
     assert.equal(
-      reportReadyText({ chat_summary: "  Итог  " } as never, "stream"),
-      "Итог",
+      reportReadyText({ chat_summary: "  Итог  " } as never, "Уже видно начало ответа"),
+      "Уже видно начало ответа",
     );
+    assert.equal(
+      reportReadyText(
+        { chat_summary: "Уже видно начало ответа и конец" } as never,
+        "Уже видно начало ответа",
+      ),
+      "Уже видно начало ответа и конец",
+    );
+    assert.equal(reportReadyText({ chat_summary: "  Итог  " } as never), "Итог");
     assert.equal(reportReadyText(undefined, " streamed "), "streamed");
     assert.equal(reportReadyText(), "Отчёт готов");
   });
@@ -119,6 +129,13 @@ describe("liberRunHelpers", () => {
     assert.equal(/не собрал/i.test(shown), false);
     assert.equal(shown.includes("Готов"), true);
     assert.equal(shown.includes("Подробности"), true);
+    const chart = hideAssemblyGaps(
+      "Вот график по данным.\n\n![График: Факт и План](chart)\n\nСравнение факта и плана.",
+    );
+    assert.equal(chart.includes("!["), false);
+    assert.equal(chart.includes("(chart)"), false);
+    assert.equal(chart.includes("Вот график"), true);
+    assert.equal(chart.includes("Сравнение"), true);
   });
 
   it("softMediaFailToast is suppressed for executive presentation mode", () => {

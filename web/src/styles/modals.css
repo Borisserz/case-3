@@ -919,8 +919,13 @@
   flex-direction: column;
 }
 
+.stimul-sheet.is-pick:has(.dash-pick-preview-slot.is-on) {
+  max-height: none;
+}
+
 .dash-pick-list {
   overflow: auto;
+  max-height: min(24rem, 48vh);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 0.75rem;
@@ -1010,10 +1015,9 @@
 }
 
 .dash-pick-preview {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(9rem, 0.7fr);
-  gap: 0.85rem;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
   margin: 0;
   padding: 0.55rem;
   border-radius: 14px;
@@ -1025,18 +1029,18 @@
 .dash-pick-preview img {
   display: block;
   width: 100%;
-  height: 8.6rem;
-  object-fit: cover;
-  object-position: top center;
+  height: auto;
+  max-height: max(18rem, calc(100vh - 20rem));
+  object-fit: contain;
+  object-position: center center;
   border-radius: 10px;
   background: var(--paper);
 }
 
 .dash-pick-preview figcaption {
   display: grid;
-  gap: 0.35rem;
-  align-content: end;
-  padding: 0.35rem 0.45rem 0.45rem 0;
+  gap: 0.2rem;
+  padding: 0.15rem 0.45rem 0.25rem;
   font-family: var(--serif);
   font-size: 1.15rem;
   line-height: 1.25;
@@ -1138,12 +1142,8 @@
 }
 
 @media (max-width: 720px) {
-  .dash-pick-preview {
-    grid-template-columns: 1fr;
-  }
-
-  .dash-pick-preview img {
-    height: 7.2rem;
+  .dash-pick-list {
+    max-height: min(20rem, 42vh);
   }
 }
 

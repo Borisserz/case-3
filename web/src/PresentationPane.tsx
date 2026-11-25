@@ -1150,7 +1150,7 @@ export function PresentationPane({
         case "llm_retry":
         case "plan":
         case "ir":
-          return "Собираю презентацию";
+          return "Думаю над структурой";
         case "diagrams":
         case "media":
         case "charts":
@@ -1159,9 +1159,9 @@ export function PresentationPane({
           return "Рисую слайды";
         case "pptx":
         case "pdf":
-          return "Собираю презентацию";
+          return "Пакую PPTX";
         default:
-          return making && !stage ? "Запускаю сборку" : "Собираю презентацию";
+          return making && !stage ? "Запускаю сборку" : "Думаю над структурой";
       }
     })();
     const stepKey =
@@ -1185,7 +1185,6 @@ export function PresentationPane({
           <div className="presentation-pending-pulse" />
           <p className="presentation-pending">
             <span className="presentation-pending-working" aria-live="polite">
-              Собираю
               <span className="presentation-pending-time">{elapsedLabel}</span>
             </span>
             <span className="presentation-pending-stage">{stageLabel}</span>
@@ -1264,12 +1263,35 @@ export function PresentationPane({
         }),
       };
 
+  const mermaidFor = (slide: DeckSlide | undefined): string | null => {
+    if (!slide) return null;
+    return (
+      diagrams.find((d) => d.id === slide.media_id)?.mermaid ||
+      diagrams.find((d) => d.id === slide.chart_id)?.mermaid ||
+      null
+    );
+  };
+  const liveThumb = (index: number) =>
+    deck ? (
+      <DeckCanvas
+        runId={runId}
+        deck={deck}
+        index={index}
+        editing={false}
+        onDeckChange={() => {}}
+        onPatch={async () => {}}
+        diagramMermaid={mermaidFor(deck.slides[index])}
+        diagramPalette={deck.palette || defaultPalette}
+      />
+    ) : null;
+
   const galleryItems: DeckGalleryItem[] =
     live && deck?.slides?.length
-      ? deck.slides.map((s) => ({
+      ? deck.slides.map((s, i) => ({
           id: s.id,
           url: pngById[s.id] ?? null,
           title: s.title || "",
+          live: pngById[s.id] ? undefined : liveThumb(i),
         }))
       : slidePngs.map((url, i) => ({
           id: `png-${i}`,
@@ -1641,6 +1663,8 @@ export function PresentationPane({
                         alt=""
                         draggable={false}
                       />
+                    ) : deck ? (
+                      <span className="deck-live-thumb">{liveThumb(i)}</span>
                     ) : (
                       <span className="presentation-thumb-ghost">{label}</span>
                     )}

@@ -2488,11 +2488,18 @@ def _media_previews(
         if not png.is_file():
             continue
         kind = str(st.get("kind") or ("chart" if mid.startswith("cht_") else "figure"))
+        url = f"/api/runs/{run_id}/figures/{png.name}"
+        try:
+            stamp = int(png.stat().st_mtime)
+        except OSError:
+            stamp = 0
+        if stamp:
+            url += f"?v={stamp}"
         out.append(
             {
                 "id": mid,
                 "kind": kind,
-                "url": f"/api/runs/{run_id}/figures/{png.name}",
+                "url": url,
             }
         )
     return out

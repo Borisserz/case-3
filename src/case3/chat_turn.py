@@ -88,6 +88,10 @@ _BRIEF_LINE = {
     "tighter": "Сделай короче. Смысл и числа те же.",
     "dislike": "Перепиши так, чтобы читалось яснее. Смысл и числа те же.",
     "prettier": "Сделай абзац ровнее и яснее. Смысл и числа те же.",
+    "longer": (
+        "Разверни раздел: больше текста. "
+        "Числа бери только из раздела и SOURCE, новых не выдумывай."
+    ),
 }
 
 
@@ -2137,7 +2141,7 @@ def try_chat_answer(
             spoken = text or chat_fallback()
     else:
         spoken = text or chat_fallback()
-    spoken = _hide_memory_marks(spoken)
+    spoken = _strip_fake_images(_hide_memory_marks(spoken))
     if landing:
         spoken = _first_sentences(spoken, 4)
     if streamed_chunks:
@@ -2241,6 +2245,19 @@ _BARE_CHART_JSON = re.compile(
 )
 
 
+_FAKE_MD_IMAGE = re.compile(
+    r"!\[[^\]]*\]\(\s*(?!https?:|/)[^)]*\)",
+    re.IGNORECASE,
+)
+
+
+def _strip_fake_images(text: str) -> str:
+    """Drop a model-written ![caption](chart). The PNG is attached separately."""
+    cleaned = _FAKE_MD_IMAGE.sub("", text or "")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def _hide_memory_marks(text: str) -> str:
     """The model must not read the memory labels aloud or dump raw chart JSON fences."""
     cleaned = _CHART_JSON_FENCE.sub("", text or "")
@@ -2318,11 +2335,12 @@ def draft_section(
         f"ТЕКСТ РАЗДЕЛА:\n{(current or '').strip()[:4000]}\n\n"
         f"SOURCE:\n{_clip_source(source, focus=said)}"
     )
+    tokens = 900 if brief == "longer" else 500
     text = ""
     try:
-        llm = client or _client(500, 40.0)
+        llm = client or _client(tokens, 40.0)
         text = _accepted(
-            _speak(llm, system=system, user_text=user, max_tokens=500, on_delta=None)
+            _speak(llm, system=system, user_text=user, max_tokens=tokens, on_delta=None)
         )
     except (LLMError, LLMConfigError, OSError, ValueError) as exc:
         log.warning("section draft failed: %s", exc)

@@ -29,6 +29,19 @@ def test_what_can_you_do_answers_without_the_model():
     assert "дашборд" in text.lower()
 
 
+def test_chat_answer_drops_a_fake_chart_image():
+    text = try_chat_answer(
+        "| Область | Факт |\n| --- | --- |\n| Минск | 10 |\n",
+        "что в таблице",
+        client=_Fake("Вот разбор Минска.\n\n![График: Факт](chart)\n\nВ таблице 10."),
+        on_delta=lambda _piece: None,
+        on_replace=lambda _full: None,
+    )
+    assert "![" not in text
+    assert "(chart)" not in text
+    assert "Минск" in text
+
+
 def test_opening_fallback_does_not_claim_the_file_is_done():
     line = opening_fallback("presentation", "Выручка 10 и 12")
     assert "презентац" in line.lower()

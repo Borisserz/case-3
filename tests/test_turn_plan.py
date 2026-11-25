@@ -95,6 +95,16 @@ def test_bare_chart_auto_is_chat_chart():
     assert p.want_chat_chart is True
 
 
+def test_change_photo_edits_even_without_a_report():
+    plan = plan_turn("измени фото сделай небо темнее", mode_hint="auto")
+    assert plan.kind == "revise"
+    assert plan.edit_act is not None
+    assert plan.edit_act.op == "edit_photo"
+    assert plan.edit_act.title == "небо темнее"
+    fresh = plan_turn("сделай фото цеха", mode_hint="auto")
+    assert fresh.kind != "revise"
+
+
 def test_change_to_pie_is_revise_when_prior_chart():
     plan = plan_turn("изменить на круговую", mode_hint="auto", has_chart=True)
     assert plan.kind == "revise"

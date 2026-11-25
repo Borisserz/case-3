@@ -124,5 +124,6 @@ def test_photo_request_is_not_a_chart():
     assert asks_for_generated_photo("сделай фото цеха") is True
     assert wants_chat_chart("сделай картинку") is False
     assert asks_for_generated_photo("сделай график по областям") is False
+    assert asks_for_generated_photo("измени фото сделай небо темнее") is False
     assert photo_subject("сделай картинку") != "картинку"
     assert "цеха" in photo_subject("сделай фото цеха")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from case3.chat_act import ChatAct, explicit_new_artifact, resolve_act
+from case3.chat_act import ChatAct, explicit_new_artifact, parse_photo_edit, resolve_act
 from case3.turn_route import (
     _ANALYZE,
     _DIAGRAM,
@@ -183,6 +183,45 @@ def plan_turn(
     container_primaries = _container_primaries_ordered(raw)
 
     has_any_artifact = has_deck or has_report or has_diagram or has_chart
+    if parse_photo_edit(raw) is not None and not explicit_new_artifact(raw):
+        act = resolve_act(
+            raw,
+            bias=bias,
+            has_deck=has_deck,
+            has_report=has_report,
+            has_diagram=has_diagram,
+            has_chart=has_chart,
+            last_section=last_section,
+            last_op=last_op,
+        )
+        if act.kind == "revise" and act.op == "edit_photo":
+            return TurnPlan(
+                route_version=ROUTE_VERSION,
+                kind="revise",
+                steps=[TurnStep(kind="revise")],
+                want_chat_chart=False,
+                want_chat_diagram=False,
+                build_media=_empty_build_media(),
+                edit_act=act,
+                mode_hint=hint,
+                reason="photo_edit",
+                clarify_prompt=None,
+                note=None,
+            )
+        if act.kind == "revise" and act.op == "ask":
+            return TurnPlan(
+                route_version=ROUTE_VERSION,
+                kind="clarify",
+                steps=[TurnStep(kind="clarify")],
+                want_chat_chart=False,
+                want_chat_diagram=False,
+                build_media=_empty_build_media(),
+                edit_act=act,
+                mode_hint=hint,
+                reason="photo_edit_clarify",
+                clarify_prompt=act.say,
+                note=None,
+            )
     if has_any_artifact and not explicit_new_artifact(raw):
         act = resolve_act(
             raw,

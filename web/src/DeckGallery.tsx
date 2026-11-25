@@ -1,12 +1,14 @@
 /** Julius-style Preview grid — all slides at once + structure DnD. */
 
 import { motion } from "framer-motion";
-import { useState, type DragEvent } from "react";
+import { useState, type DragEvent, type ReactNode } from "react";
 
 export type DeckGalleryItem = {
   id: string;
   url: string | null;
   title: string;
+  /** Real slide, drawn when the PNG for a just-added slide is not ready yet. */
+  live?: ReactNode;
 };
 
 type Props = {
@@ -84,6 +86,8 @@ export function DeckGallery({
               <span className="deck-gallery-frame">
                 {item.url ? (
                   <img src={item.url} alt={label} draggable={false} />
+                ) : item.live ? (
+                  <span className="deck-live-thumb">{item.live}</span>
                 ) : (
                   <span className="deck-gallery-ghost">{label}</span>
                 )}

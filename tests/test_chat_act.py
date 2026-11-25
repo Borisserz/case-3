@@ -590,6 +590,36 @@ def test_chart_style_edit_is_not_a_fake_section():
     assert still.chart == "donut"
 
 
+def test_section_edit_stays_on_the_report_not_in_chat():
+    """«редактируй раздел введение…» used to be a chat essay beside the old PDF."""
+    phrases = (
+        "редактируй раздел введение напиши больше текста с числами",
+        "отредактируй введение",
+        "правь раздел введение",
+        "в введении напиши больше текста",
+        "допиши введение",
+        "сделай введение длиннее",
+        "напиши больше текста в разделе введение",
+        "раздел введение сделай подробнее",
+        "доработай введение",
+    )
+    for line in phrases:
+        act = resolve_act(line, has_report=True)
+        assert act.kind == "revise", line
+        assert act.op == "rewrite", line
+        assert act.section.casefold().startswith("введен"), (line, act.section)
+        assert "напиш" not in act.section.casefold(), (line, act.section)
+    longer = resolve_act(
+        "редактируй раздел введение напиши больше текста с числами",
+        has_report=True,
+    )
+    assert longer.brief == "longer"
+    chart = resolve_act("редактируй график", has_chart=True, has_report=True)
+    assert chart.op != "rewrite"
+    assert resolve_act("почему введение слабое?", has_report=True).kind == "talk"
+    assert resolve_act("напиши отчёт", has_report=True).op != "rewrite"
+
+
 def test_report_wording_hits_the_named_section():
     para = resolve_act("поменяй абзац во введении", has_report=True)
     assert para.op == "rewrite"
@@ -662,6 +692,17 @@ def test_why_with_an_edit_verb_stays_talk():
 def test_bare_question_stays_talk():
     act = resolve_act("что это?", has_deck=True, has_report=True)
     assert act.kind == "talk"
+
+
+def test_change_photo_keeps_the_original_and_the_instruction():
+    act = resolve_act("измени фото сделай небо темнее")
+    assert act.kind == "revise"
+    assert act.op == "edit_photo"
+    assert act.title == "небо темнее"
+    bare = resolve_act("измени фото")
+    assert bare.op == "ask"
+    fresh = resolve_act("сделай фото цеха")
+    assert fresh.op != "edit_photo"
 
 
 def test_photo_phrase_is_a_pixel_edit():

@@ -89,6 +89,7 @@ export function refreshSteps(data: {
     steps.push(step);
   }
   if (steps.length) return steps;
+  if (data.surface === "chat") return [];
   const single =
     data.surface === "deck" || data.surface === "report"
       ? data.surface
@@ -202,6 +203,11 @@ export async function refreshRevisedArtifact(
       /* status is enough to open the rail */
     }
   }
+  const emptyReport =
+    surface === "report" &&
+    !result.preview?.blocks?.length &&
+    !result.downloads?.pdf &&
+    !result.downloads?.docx;
   if (!options?.isolated && plan.chainHead && plan.chainHead !== result.run_id) {
     result = { ...result, chain_head: plan.chainHead };
   }
@@ -233,5 +239,5 @@ export async function refreshRevisedArtifact(
         : result,
     );
   }
-  hosts.openReportArtifact(msgId, result, plan.tab);
+  if (!emptyReport) hosts.openReportArtifact(msgId, result, plan.tab);
 }

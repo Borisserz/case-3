@@ -651,8 +651,9 @@ button:disabled {
   justify-content: flex-start;
   align-items: stretch;
   gap: var(--space-3);
-  /* Tighter top — no logo above the hero title */
-  padding-top: clamp(1.35rem, 6vh, 3.25rem);
+  /* A little below the top, toward the optical center. Still flex-start
+     so a tall presentation gallery scrolls instead of lifting the composer. */
+  padding-top: clamp(6.5rem, 18vh, 11rem);
   padding-bottom: min(6vh, 2.5rem);
   box-sizing: border-box;
 }
