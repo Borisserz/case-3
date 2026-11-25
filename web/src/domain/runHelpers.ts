@@ -72,7 +72,8 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
     );
   }
   const official = (result?.chat_summary || "").trim();
-  const shown = (streamed || "").trim();
+  const shownRaw = (streamed || "").trim();
+  const shown = isCannedStatus(shownRaw) ? "" : shownRaw;
   if (shown && official) {
     if (official.startsWith(shown)) return official;
     return shown;
@@ -124,6 +125,14 @@ export function softMediaFailToast(_result?: {
   return null;
 }
 
+const CANNED_BUBBLE =
+  /^(?:думаю над структурой|собираю документ|собираю презентац\w*|генерирую документ|набираю отчёт)[\s.!?…]*$/i;
+
+/** Hardcoded build line. The fold already shows the real step. */
+export function isCannedStatus(text?: string | null): boolean {
+  return CANNED_BUBBLE.test((text || "").trim());
+}
+
 export function stageLabel(
   stage?: string,
   detail?: string | null,
@@ -134,8 +143,9 @@ export function stageLabel(
   }
   if (stage === "queued" && detail) return detail;
   if (detail && stage === "charts") return "Рисую график…";
-  if (stage && STAGE_LABELS[stage]) return STAGE_LABELS[stage];
-  return "Думаю над структурой…";
+  if (!stage || stage === "llm") return "";
+  if (STAGE_LABELS[stage]) return STAGE_LABELS[stage];
+  return "";
 }
 
 export function isRunInFlight(status?: string | null): boolean {

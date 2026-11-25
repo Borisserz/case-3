@@ -21,7 +21,6 @@ import {
   reportReadyText,
   reportTitle,
   RunFailedError,
-  stageLabel,
 } from "../domain/runHelpers";
 import type { Msg, RunResult } from "../domain/liberTypes";
 
@@ -142,9 +141,6 @@ async (botMsgId: string, runId: string) => {
             return appendBotThinking(
               {
                 ...msg,
-                text: msg.streamingSummary
-                  ? msg.text
-                  : stageLabel(stg, det, msg.thinkingMode || "report"),
                 pending: true,
                 pendingStage: stg,
                 pendingDetail: det,
@@ -227,11 +223,6 @@ async (botMsgId: string, runId: string) => {
               return appendBotThinking(
                 {
                   ...msg,
-                  text: stageLabel(
-                    stage,
-                    detail,
-                    msg.thinkingMode || "report",
-                  ),
                   pending: true,
                   pendingStage: stage,
                   pendingDetail: detail,

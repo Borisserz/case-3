@@ -1150,7 +1150,7 @@ export function PresentationPane({
         case "llm_retry":
         case "plan":
         case "ir":
-          return "Думаю над структурой";
+          return "";
         case "diagrams":
         case "media":
         case "charts":
@@ -1161,7 +1161,7 @@ export function PresentationPane({
         case "pdf":
           return "Пакую PPTX";
         default:
-          return making && !stage ? "Запускаю сборку" : "Думаю над структурой";
+          return making && !stage ? "Запускаю сборку" : "";
       }
     })();
     const stepKey =
@@ -1187,7 +1187,9 @@ export function PresentationPane({
             <span className="presentation-pending-working" aria-live="polite">
               <span className="presentation-pending-time">{elapsedLabel}</span>
             </span>
-            <span className="presentation-pending-stage">{stageLabel}</span>
+            {stageLabel ? (
+              <span className="presentation-pending-stage">{stageLabel}</span>
+            ) : null}
           </p>
           <ol className="presentation-pending-steps" aria-label="Этапы">
             {["Структура", "Медиа", "Слайды", "Презентация"].map((label, i) => (

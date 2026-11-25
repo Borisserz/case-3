@@ -10,6 +10,7 @@ import {
   isRunInFlight,
   provisionalSessionTitle,
   hideAssemblyGaps,
+  isCannedStatus,
   reportReadyText,
   reportTitle,
   rollbackOptimisticRun,
@@ -60,9 +61,10 @@ describe("liberRunHelpers", () => {
   it("stageLabel scales by thinking mode", () => {
     assert.match(stageLabel("llm", null, "diagram"), /схем/i);
     assert.match(stageLabel("diagram_repair", null, "diagram"), /схем/i);
-    assert.match(stageLabel("llm", null, "presentation"), /структур/i);
-    assert.doesNotMatch(stageLabel("llm", null, "presentation"), /собираю презентац/i);
-    assert.doesNotMatch(stageLabel("llm", null, "report"), /собираю документ/i);
+    assert.equal(stageLabel("llm", null, "presentation"), "");
+    assert.equal(stageLabel("llm", null, "report"), "");
+    assert.doesNotMatch(stageLabel("llm", null, "presentation"), /собираю презентац|думаю над структур/i);
+    assert.doesNotMatch(stageLabel("llm", null, "report"), /собираю документ|думаю над структур/i);
     assert.doesNotMatch(stageLabel("llm", null, "presentation"), /структуру слайд/i);
     assert.doesNotMatch(stageLabel("slides_llm", null, "presentation"), /структуру слайд/i);
     assert.match(stageLabel("slides_render", null, "presentation"), /слайд/i);
@@ -81,6 +83,11 @@ describe("liberRunHelpers", () => {
       "Уже видно начало ответа и конец",
     );
     assert.equal(reportReadyText({ chat_summary: "  Итог  " } as never), "Итог");
+    assert.equal(isCannedStatus("Думаю над структурой…"), true);
+    assert.equal(
+      reportReadyText({ chat_summary: "Готовый разбор" } as never, "Думаю над структурой…"),
+      "Готовый разбор",
+    );
     assert.equal(reportReadyText(undefined, " streamed "), "streamed");
     assert.equal(reportReadyText(), "Отчёт готов");
   });

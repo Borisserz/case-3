@@ -67,7 +67,7 @@ function deckStageLabel(stage?: string | null): string {
     case "llm_retry":
     case "plan":
     case "ir":
-      return "Думаю над структурой";
+      return "";
     case "diagrams":
     case "media":
     case "charts":
@@ -80,7 +80,7 @@ function deckStageLabel(stage?: string | null): string {
     case "patch":
       return "Сохраняю правки";
     default:
-      return "Думаю над структурой";
+      return "";
   }
 }
 
@@ -106,7 +106,9 @@ function DeckBuildCard({ stage }: { stage?: string | null }) {
   const idx = deckStepIndex(stage);
   return (
     <div className="deck-build-card" aria-busy="true">
-      <p className="deck-build-card-label">{deckStageLabel(stage)}</p>
+      {deckStageLabel(stage) ? (
+        <p className="deck-build-card-label">{deckStageLabel(stage)}</p>
+      ) : null}
       <ol className="deck-build-card-steps" aria-label="Этапы сборки">
         {steps.map((label, i) => (
           <li

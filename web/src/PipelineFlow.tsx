@@ -243,17 +243,14 @@ export function PipelineFlow({
         })}
       </div>
 
+      {failed || label ? (
       <p className="pipeline-flow-label">
-        {failed
-          ? "Сбой на столе"
-          : label ||
-            (mode === "presentation"
-              ? "Думаю над структурой…"
-              : "Набираю отчёт…")}
+        {failed ? "Сбой на столе" : label}
         {detail && !failed ? (
           <span className="pipeline-flow-detail"> · {detail}</span>
         ) : null}
       </p>
+      ) : null}
     </div>
   );
 }

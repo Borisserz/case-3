@@ -799,9 +799,7 @@ export default function App() {
           pendingBot.pendingDetail,
           pendingBot.thinkingMode || "report",
         )
-      : busy
-        ? "Думаю над структурой…"
-        : undefined;
+      : undefined;
 
   // Micro-beats while a stage dwells — more varied phrases in the fold
   useEffect(() => {

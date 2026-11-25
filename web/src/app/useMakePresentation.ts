@@ -11,6 +11,7 @@ import {
 } from "../domain/craftSteps";
 import {
   appendBotThinking,
+  isCannedStatus,
   reportTitle,
   slidesJobInFlight,
   slidesJobNeedsKick,
@@ -78,9 +79,7 @@ async (msgId: string, result: RunResult) => {
           pending: true,
           pendingStage: stageKey,
           pendingDetail: null,
-          text: msg.text?.trim()
-            ? msg.text
-            : "Думаю над структурой…",
+          text: msg.text?.trim() && !isCannedStatus(msg.text) ? msg.text : "",
           result: {
             ...msg.result,
             slides_status: alreadyInFlight

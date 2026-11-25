@@ -402,9 +402,8 @@ function nextFromPool(
 
 function fallbackLine(mode: ThinkingMode): string {
   if (mode === "diagram") return "Работаю над схемой…";
-  if (mode === "presentation") return "Думаю над структурой…";
   if (mode === "chat") return "Готовлю ответ…";
-  return "Работаю над отчётом…";
+  return "";
 }
 
 /**
@@ -443,6 +442,7 @@ export function pushThinkingLine(
   if (!last || last.stageKey !== key) {
     const specific = detailPhrase(opts.stage, opts.detail, rand, mode);
     const text = specific || nextFromPool(pool, used, rand, fallback);
+    if (!text.trim()) return prev;
     const id = `${key}#${prev.length}`;
     return [...prev, { id, text, stageKey: key }];
   }
@@ -454,6 +454,7 @@ export function pushThinkingLine(
   if (dwell < 4 * beatsOnStage) return prev;
 
   const text = nextFromPool(pool, used, rand, fallback);
+  if (!text.trim()) return prev;
   if (used.has(text) && beatsOnStage >= pool.length) return prev;
   const id = `${key}#beat${prev.length}`;
   return [...prev, { id, text, stageKey: key }];
@@ -495,7 +496,7 @@ export function stageLabelForMode(
     },
     presentation: {
       queued: "В очереди…",
-      llm: "Думаю над структурой…",
+      llm: "",
       charts: "Графики для деки…",
       images: "Медиа для слайдов…",
       inject: "Кладу медиа на кадры…",
@@ -525,5 +526,7 @@ export function stageLabelForMode(
       docx: "Готовлю ответ…",
     },
   };
-  return labels[mode][bucket] || fallbackLine(mode);
+  const label = labels[mode][bucket];
+  if (label != null) return label;
+  return fallbackLine(mode);
 }

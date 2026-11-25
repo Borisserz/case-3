@@ -12,8 +12,7 @@ import type { LiberWorkMode } from "./domain/liberModes";
 import type { CraftFilmFrame } from "./domain/craftSteps";
 import type { Msg, RunResult, SourceAttachment, UserPhotoThumb } from "./domain/liberTypes";
 import { storedOpenLabel } from "./domain/priorRun";
-import { reportThumb, reportTitle } from "./domain/runHelpers";
-import { hideAssemblyGaps } from "./domain/runHelpers";
+import { hideAssemblyGaps, isCannedStatus, reportThumb, reportTitle } from "./domain/runHelpers";
 import { MsgMarkdown as RawMarkdown } from "./lightMd";
 
 function MsgMarkdown({
@@ -23,7 +22,9 @@ function MsgMarkdown({
   text: string;
   streaming?: boolean;
 }) {
-  return <RawMarkdown text={hideAssemblyGaps(text)} streaming={streaming} />;
+  const clean = isCannedStatus(text) ? "" : hideAssemblyGaps(text);
+  if (!clean.trim()) return null;
+  return <RawMarkdown text={clean} streaming={streaming} />;
 }
 import { ThinkingFold } from "./ThinkingFold";
 

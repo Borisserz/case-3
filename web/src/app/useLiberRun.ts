@@ -38,7 +38,6 @@ import {
   slidesJobInFlight,
   slidesJobTerminal,
   pipelineWatchKind,
-  stageLabel,
   uid,
 } from "../domain/runHelpers";
 import { loadCarriedRun } from "../domain/carriedRun";
@@ -501,7 +500,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
             {
               ...msg,
               thinkingMode: nextThinkingMode,
-              text: chatAnswer ? msg.text : stageLabel(stage, null, nextThinkingMode),
+              text: chatAnswer ? msg.text : "",
               pending: true,
               pendingStage: stage,
               pendingDetail: null,
@@ -1142,7 +1141,7 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
               pending: true,
               pendingStage: stageKey,
               pendingDetail: null,
-              text: streamed || msg.text?.trim() || "Думаю над структурой…",
+              text: streamed,
               result: {
                 ...result,
                 slides_status: slidesJobInFlight(result.slides_status)
