@@ -25,6 +25,18 @@ def test_normalize_aliases() -> None:
     assert normalize_structure_id("nope") is None
 
 
+def test_appledouble_sidecar_does_not_break_the_catalog(tmp_path, monkeypatch) -> None:
+    (tmp_path / "hire.json").write_text(
+        '{"id":"hire","label":"Hire"}',
+        encoding="utf-8",
+    )
+    (tmp_path / "._hire.json").write_bytes(b"\x00\x05\x16\x07\xa3not-utf8")
+    monkeypatch.setattr("case3.deck_structure._structures_dir", lambda: tmp_path)
+    monkeypatch.setattr("case3.deck_structure._CACHE", None)
+    ids = {row["id"] for row in list_structures()}
+    assert ids == {"hire"}
+
+
 def test_eight_templates_do_not_share_arc_or_pack() -> None:
     wanted = {
         "board_update": "board",

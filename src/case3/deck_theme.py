@@ -36,9 +36,12 @@ def _load_packs() -> dict[str, dict[str, Any]]:
     root = _packs_dir()
     if root.is_dir():
         for path in sorted(root.glob("*.json")):
+            # macOS AppleDouble sidecars (`._pack.json`) match `*.json` and are not UTF-8.
+            if path.name.startswith("._"):
+                continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, json.JSONDecodeError, UnicodeError):
                 continue
             pid = str(data.get("id") or path.stem).strip().lower()
             if pid:
