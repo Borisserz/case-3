@@ -1,8 +1,9 @@
 /** Full-screen Markdown modal for any attached document + original download. */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SourceAttachment } from "./domain/liberTypes";
 import {
+  documentOpenKey,
   resolveOriginalDownload,
   sourceModalEyebrow,
 } from "./domain/sourceRead";
@@ -16,7 +17,12 @@ type Props = {
   onSave?: (index: number, text: string) => void;
 };
 
-export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props) {
+export const SourceReadModal = memo(function SourceReadModal({
+  docs,
+  startIndex = 0,
+  onClose,
+  onSave,
+}: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -29,7 +35,9 @@ export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props
   editingRef.current = editing;
   useFocusTrap(dialogRef, { active: true });
 
-  const openKey = docs.map((doc) => doc.fileName || doc.title).join("\n");
+  const openKey = documentOpenKey(docs);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     setActiveIdx(startIndex);
@@ -48,7 +56,7 @@ export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props
         setEditing(false);
         return;
       }
-      onClose();
+      onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -57,7 +65,9 @@ export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+    // onClose is read through a ref. Depending on it re-locks the page on
+    // every streamed token and pulls focus out of the search field.
+  }, []);
 
   const html = useMemo(
     () => (activeDoc ? renderLightMd(activeDoc.text || "", query) : ""),
@@ -240,4 +250,4 @@ export function SourceReadModal({ docs, startIndex = 0, onClose, onSave }: Props
       </div>
     </div>
   );
-}
+});

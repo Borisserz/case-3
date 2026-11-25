@@ -34,6 +34,8 @@ type Props = {
   previewUrl?: string | null;
   originalUrl?: string | null;
   format?: string;
+  /** Card already shows the title. Keep the search field. */
+  hideTitle?: boolean;
 };
 
 export function SourcePane({
@@ -46,6 +48,7 @@ export function SourcePane({
   previewUrl = null,
   originalUrl = null,
   format,
+  hideTitle = false,
 }: Props) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
@@ -200,7 +203,7 @@ export function SourcePane({
   return (
     <div className={`artifact-source${editing ? " is-editing" : ""}`}>
       <div className="artifact-source-toolbar">
-        <h2 className="artifact-source-title">{title}</h2>
+        {hideTitle ? null : <h2 className="artifact-source-title">{title}</h2>}
         <div className="artifact-source-tools">
           {!editing ? (
             <label className="artifact-source-search">

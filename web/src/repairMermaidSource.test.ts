@@ -55,6 +55,40 @@ describe("repairMermaidSource", () => {
     assert.match(out, /class B process/);
   });
 
+  it("chains flowchart nodes when the model omitted every edge", () => {
+    const raw = `flowchart TD
+ S[Начало]:::start
+ A[Загрузка данных]:::process
+ B[Конкатенация признаков]:::process
+ C[Обучение модели]:::process
+ D[Предсказание]:::ok
+  classDef start fill:#DCE6F0,stroke:#4E79A7,color:#1a2e22
+  classDef ok fill:#D8EBE4,stroke:#59A14F,color:#1a2e22`;
+    const out = repairMermaidSource(raw);
+    assert.match(out, /S --> A/);
+    assert.match(out, /A --> B/);
+    assert.match(out, /B --> C/);
+    assert.match(out, /C --> D/);
+    assert.ok(out.indexOf("classDef ok") < out.indexOf("S --> A"));
+  });
+
+  it("does not add edges when the flowchart already has one", () => {
+    const raw = `flowchart TD
+  A[Start] --> B[Mid]
+  C[End]`;
+    const out = repairMermaidSource(raw);
+    assert.equal(out.split("-->").length - 1, 1);
+  });
+
+  it("does not chain sequence diagrams", () => {
+    const raw = `sequenceDiagram
+  participant A as A
+  participant B as B
+  A->>B: hi`;
+    const out = repairMermaidSource(raw);
+    assert.ok(!out.includes("-->"));
+  });
+
   it("repairs a two-colon role suffix on a node", () => {
     const raw = `flowchart TD
   A["Клиент<br/>Заявка"]::start --> B["Склад"]::process`;

@@ -84,6 +84,43 @@ function repairClassAssignLines(src: string): string {
 }
 
 const SHORT_ROLE = /(?<=[\]\)\}>])::(?!:)(?=[A-Za-z])/g;
+const FLOW_EDGE = /-->|---|-\.->|==>|~~~|--o|o--|--x/;
+const FLOW_NODE = /^\s*([A-Za-z][\w-]*)\s*(?:@\{|\[|\(|\{|>|\/)/;
+const FLOW_SKIP = new Set([
+  "flowchart",
+  "subgraph",
+  "graph",
+  "end",
+  "class",
+  "classdef",
+  "style",
+  "direction",
+  "linkstyle",
+  "click",
+]);
+
+/** TD/LR with only node declarations lays out as a gap row and draws no arrows. */
+function chainEdgelessFlowchart(src: string): string {
+  const lines = src.split(/\r?\n/);
+  if (!lines.some((line) => /^\s*flowchart\b/i.test(line))) return src;
+  if (lines.some((line) => !line.trim().startsWith("%%") && FLOW_EDGE.test(line))) {
+    return src;
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    if (line.trim().startsWith("%%")) continue;
+    const match = FLOW_NODE.exec(line);
+    if (!match) continue;
+    const nodeId = match[1] ?? "";
+    if (FLOW_SKIP.has(nodeId.toLowerCase()) || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    ids.push(nodeId);
+  }
+  if (ids.length < 2) return src;
+  const edges = ids.slice(0, -1).map((id, i) => `  ${id} --> ${ids[i + 1]}`);
+  return `${src.replace(/\s+$/, "")}\n${edges.join("\n")}`;
+}
 
 /** Repair broken `class A,B foo bar` lines + sequence diagram participants + edge-label spaces for live Mermaid. */
 export function repairMermaidSource(source: string): string {
@@ -93,5 +130,6 @@ export function repairMermaidSource(source: string): string {
   raw = repairClassAssignLines(raw);
   raw = repairSequenceDiagramLines(raw);
   raw = raw.replace(EDGE_LABEL_SPACES, "$1|$2| ");
+  raw = chainEdgelessFlowchart(raw);
   return raw;
 }

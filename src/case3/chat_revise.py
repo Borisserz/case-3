@@ -118,6 +118,7 @@ def _surface(act: Any) -> str:
         "add_slide",
         "slide_text",
         "slide_bullets",
+        "rewrite_slide",
         "restyle_structure",
     }:
         return "deck"
@@ -525,6 +526,7 @@ def try_chat_revise(
         "add_slide",
         "slide_text",
         "slide_bullets",
+        "rewrite_slide",
         "restyle_structure",
     }
     if packet_pick is None and act.op in {"undo", "redo"}:
@@ -679,6 +681,8 @@ def try_chat_revise(
         say = _rename_heading(work_dir, act.section, act.title) or say
     elif act.op == "slide_text" and act.slide and act.title:
         say = _slide_text(work_id, work_dir, act.slide, act.title) or say
+    elif act.op == "rewrite_slide" and act.slide:
+        say = _rewrite_slide(work_id, work_dir, act.slide, act.brief, text) or say
     elif act.op == "add_slide" and act.title:
         say = _add_slide(work_id, work_dir, act.title) or say
     elif act.op == "add_row" and act.items:
@@ -874,6 +878,90 @@ def _rename_heading(out_dir: Path, old: str, new: str) -> str:
     except HeadingEditError as exc:
         return str(exc)
     return f"Переименовал раздел «{titles[hits[0] - 1]}» в «{new}». Текст тот же."
+
+
+def _rewrite_slide(run_id: str, out_dir: Path, index: int, brief: str, user_text: str) -> str:
+    """Rewrite one slide from the documents. Title-only leaves the body."""
+    from fastapi import HTTPException
+
+    from case3.api_slides import _enqueue_deck_rebuild, _load_deck_for_patch
+    from case3.chat_act import slide_rewrite_bits
+    from case3.chat_turn import draft_section, draft_slide_title
+    from case3.slides_ir import DeckIrError
+    from case3.slides_patch import apply_deck_text_patch
+
+    try:
+        base, ir_path = _load_deck_for_patch(run_id, out_dir)
+    except HTTPException as exc:
+        detail = str(exc.detail or "")
+        if "already running" in detail:
+            return "Презентация ещё собирается. Подожди немного и повтори."
+        if "deck IR not found" in detail:
+            return "Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать."
+        if "not ok" in detail:
+            return "Эта сборка не дошла до конца, слайд не меняю."
+        return detail or "Не смог открыть презентацию."
+    slides = base.get("slides") if isinstance(base, dict) else None
+    if not isinstance(slides, list) or not slides:
+        return "В этой презентации нет слайдов."
+    if index < 1 or index > len(slides) or not isinstance(slides[index - 1], dict):
+        return f"Слайда {index} нет. Сейчас их {len(slides)}."
+    slide = slides[index - 1]
+    title = str(slide.get("title") or "").strip()
+    bullets = [str(item).strip() for item in (slide.get("bullets") or []) if str(item).strip()]
+    current = "\n".join([title, *bullets]).strip()
+    has_bullets = isinstance(slide.get("bullets"), list) and bool(bullets)
+    title_only = brief == "title" or not has_bullets
+    task = (user_text or "").strip()
+    source = _source_text(out_dir)
+    if title_only:
+        new_title = draft_slide_title(current=title, source=source, user_text=task)
+        new_bullets = ()
+    else:
+        draft_brief = (
+            brief if brief in {"clearer", "tighter", "dislike", "prettier", "longer"} else "clearer"
+        )
+        body = draft_section(
+            section=f"Слайд {index}",
+            current=current,
+            source=source,
+            brief=draft_brief,
+            user_text=task,
+        )
+        new_title, new_bullets = slide_rewrite_bits(
+            body, title_only=False, current_title=title
+        )
+    slide_id = str(slide.get("id") or "")
+    patch: dict[str, object] = {"id": slide_id}
+    if new_title and new_title.casefold() != title.casefold():
+        patch["title"] = new_title
+    if (
+        not title_only
+        and new_bullets
+        and isinstance(slide.get("bullets"), list)
+        and list(new_bullets) != bullets
+    ):
+        patch["bullets"] = list(new_bullets)
+    if "title" not in patch and "bullets" not in patch:
+        return (
+            f"Не стал менять слайд {index}. "
+            f"Напиши текст прямо: «на слайде {index} напиши …»."
+        )
+    try:
+        patched = apply_deck_text_patch(base, {"slides": [patch]})
+    except DeckIrError as exc:
+        return str(exc)
+    _enqueue_deck_rebuild(
+        run_id,
+        out_dir,
+        ir_path,
+        patched,
+        undo_kind="slides_patch",
+        undo_target=slide_id or "*",
+    )
+    if title_only:
+        return f"Заголовок слайда {index} теперь «{new_title}»."
+    return f"Переписал слайд {index}. Новых чисел нет."
 
 
 def _slide_text(run_id: str, out_dir: Path, index: int, text: str) -> str:

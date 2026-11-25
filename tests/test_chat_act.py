@@ -486,16 +486,47 @@ def test_slide_text_and_a_new_slide_stay_on_the_deck():
 
 
 def test_a_named_slide_edit_is_not_a_section_rewrite():
+    from case3.chat_act import slide_rewrite_bits
+
     vague = resolve_act("можешь изменить слайд первый", has_deck=True, has_report=True)
-    assert vague.op == "ask"
+    assert vague.op == "rewrite_slide"
     assert vague.slide == 1
-    assert "слайде 1" in vague.say
+    assert vague.section == ""
     fixed = resolve_act("поправь слайд 1", has_deck=True, has_report=True)
-    assert fixed.op == "ask"
+    assert fixed.op == "rewrite_slide"
     assert fixed.slide == 1
     shorter = resolve_act("сделай первый слайд короче", has_deck=True, has_report=True)
-    assert shorter.op == "ask"
+    assert shorter.op == "rewrite_slide"
     assert shorter.slide == 1
+    assert shorter.brief == "tighter"
+    other = resolve_act("сделай название на первом слайде другое", has_deck=True)
+    assert other.op == "rewrite_slide"
+    assert other.slide == 1
+    assert other.brief == "title"
+    heading = resolve_act("измени заголовок первого слайда", has_deck=True)
+    assert heading.op == "rewrite_slide"
+    assert heading.slide == 1
+    assert heading.brief == "title"
+    unnamed = resolve_act("измени слайд", has_deck=True)
+    assert unnamed.op == "ask"
+    assert unnamed.slide == 0
+    from case3.chat_act import usable_slide_title
+
+    title, bullets = slide_rewrite_bits(
+        "Старый заголовок. Новый заголовок про риски.",
+        title_only=True,
+        current_title="Старый заголовок",
+    )
+    assert title == "Новый заголовок про риски"
+    assert bullets == ()
+    echo = (
+        "Вместо заголовка «Создание нейросети на базе ML.NET» "
+        "на первом слайде укажите короткую фразу"
+    )
+    assert usable_slide_title(echo, "Создание нейросети на базе ML.NET") == ""
+    assert usable_slide_title("Нейросеть на ML.NET", "Создание нейросети на базе ML.NET") == (
+        "Нейросеть на ML.NET"
+    )
     written = resolve_act("на первом слайде напиши теорию", has_deck=True, has_report=True)
     assert written.op == "slide_text"
     assert written.slide == 1
@@ -1214,5 +1245,40 @@ def test_section_change_and_chart_delete_run_together() -> None:
     second = resolve_act(clauses[1], has_report=True, has_chart=True)
     assert first.op == "rewrite"
     assert second.op == "delete_chart"
+
+
+def test_rewrite_slide_changes_the_title_and_keeps_bullets(monkeypatch, tmp_path):
+    from case3.chat_revise import _rewrite_slide
+
+    deck = {
+        "slides": [
+            {
+                "id": "s01",
+                "layout": "bullets",
+                "title": "Старое название",
+                "bullets": ["первый пункт", "второй пункт"],
+            }
+        ]
+    }
+    saved: dict = {}
+
+    def load(_run_id, _out_dir):
+        return deck, tmp_path / "deck.json"
+
+    def enqueue(_run_id, _out_dir, _ir_path, patched, **_kw):
+        saved["deck"] = patched
+
+    def draft(**_kwargs):
+        return "Новый заголовок про риски"
+
+    monkeypatch.setattr("case3.api_slides._load_deck_for_patch", load)
+    monkeypatch.setattr("case3.api_slides._enqueue_deck_rebuild", enqueue)
+    monkeypatch.setattr("case3.chat_turn.draft_slide_title", draft)
+
+    say = _rewrite_slide("run_slide", tmp_path, 1, "title", "сделай название другое")
+    assert "Новый заголовок про риски" in say
+    slide = saved["deck"]["slides"][0]
+    assert slide["title"] == "Новый заголовок про риски"
+    assert slide["bullets"] == ["первый пункт", "второй пункт"]
 
 

@@ -26,7 +26,7 @@ Return **only** one JSON fence — no LaTeX, no commentary.
 6. When Source has actors/roles → prefer `sequence` or swimlane-style flowchart with role nouns.
 7. When Source is hierarchy/topics → `mindmap`; time phases → `timeline`; states → `stateDiagram`.
 8. `type` whitelist: `flowchart` | `sequence` | `mindmap` | `timeline` | `stateDiagram`.
-9. First line of `mermaid` must match `type` (`flowchart TD/LR`, `sequenceDiagram`, `mindmap`, `timeline`, `stateDiagram-v2`).
+9. First line of `mermaid` must match `type` (`flowchart TD/LR`, `sequenceDiagram`, `mindmap`, `timeline`, `stateDiagram-v2`). Join flowchart nodes with `-->`; a bare node list is invalid.
 10. Node ids ASCII; Russian only inside `[]` / `()` / `{}` / participant aliases.
 11. Keep draft `id`s when possible. At most the budget given in the user message. Prefer **1 strong** diagram.
 12. `mermaid`: plain text, **no** ``` fences inside the string.

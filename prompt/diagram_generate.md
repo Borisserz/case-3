@@ -22,7 +22,7 @@ You create **1–{{MAX_DIAGRAMS}}** Mermaid diagrams from Source. Return **only*
 3. Prefer branches `{ромб}`, roles, real Source nouns.
 4. **Annotated flow (short):** `["Заявка<br/>820"]` — ≤4 words, no role codes in labels; edges `|62%|` / `|отказ · 28|`. Digits verbatim; ~1 metric/node.
 5. Types: `flowchart` | `sequence` | `mindmap` | `timeline` | `stateDiagram`.
-6. First mermaid line matches type.
+6. First mermaid line matches type. Join flowchart nodes with `-->` (one edge per line); a bare node list is invalid.
 7. Node ids ASCII; RU only in labels.
 8. **Colors:** every flowchart node `:::role` + `classDef` using the Liber diagram colors table below (system). Do not invent a second palette.
 9. No ``` fences inside mermaid strings. No `click` / links. No purple/neon.

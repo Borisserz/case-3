@@ -1,6 +1,6 @@
 /** Full-screen readout of a parsed dashboard. Tables stay wide enough to read. */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import { shotTitle, splitPackedSources } from "./domain/dashboardCapture";
 import {
   cellSemanticTone,
@@ -171,7 +171,11 @@ function BlockView({
   return <TableBlockView block={block} query={query} docTitle={docTitle} />;
 }
 
-export function DashboardReadModal({ title, text, onClose }: Props) {
+export const DashboardReadModal = memo(function DashboardReadModal({
+  title,
+  text,
+  onClose,
+}: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<"main" | "derivatives">("main");
@@ -193,10 +197,12 @@ export function DashboardReadModal({ title, text, onClose }: Props) {
 
   const hasDerivatives = docs.some((doc) => doc.derivativeBlocks.length > 0);
   const heading = docs.length === 1 ? docs[0].title : title;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -205,7 +211,9 @@ export function DashboardReadModal({ title, text, onClose }: Props) {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+    // Same as SourceReadModal: a new onClose each streamed token was re-locking
+    // the page and knocking the search caret out.
+  }, []);
 
   return (
     <div
@@ -320,4 +328,4 @@ export function DashboardReadModal({ title, text, onClose }: Props) {
       </div>
     </div>
   );
-}
+});

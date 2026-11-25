@@ -86,6 +86,32 @@ export function sourceDocBadge(
   return ext ? ext.toUpperCase() : "DOC";
 }
 
+/**
+ * Search reset key. The document body is not part of it: a streaming answer
+ * must not clear a query typed in the open document.
+ */
+export function documentOpenKey(
+  docs: { fileName?: string | null; title?: string | null }[],
+): string {
+  return docs.map((doc) => (doc.fileName || doc.title || "").trim()).join("\n");
+}
+
+/**
+ * Text the document tab searches. After send, the composer draft is cleared
+ * and the copy on the user message is the document.
+ */
+export function railSourceBody(opts: {
+  kind: string;
+  artifactText?: string | null;
+  attachmentText?: string | null;
+  draftText?: string | null;
+}): string {
+  if (opts.kind === "source" || opts.kind === "intent") {
+    return opts.artifactText || "";
+  }
+  return opts.attachmentText || opts.draftText || "";
+}
+
 /** Right rail shows the extracted markdown. The original PDF stays a download. */
 export function sourceRailView(
   text: string | null | undefined,

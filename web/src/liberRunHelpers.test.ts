@@ -84,6 +84,14 @@ describe("liberRunHelpers", () => {
     );
     assert.equal(reportReadyText({ chat_summary: "  Итог  " } as never), "Итог");
     assert.equal(isCannedStatus("Думаю над структурой…"), true);
+    assert.equal(isCannedStatus("Ок, собираем презентацию (графиков: 1)…"), true);
+    assert.equal(
+      reportReadyText({
+        output_mode: "presentation",
+        chat_summary: "Ок, собираем презентацию (графиков: 1)…",
+      } as never),
+      "",
+    );
     assert.equal(
       reportReadyText({ chat_summary: "Готовый разбор" } as never, "Думаю над структурой…"),
       "Готовый разбор",

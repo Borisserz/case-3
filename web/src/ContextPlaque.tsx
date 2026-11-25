@@ -14,6 +14,8 @@ type Props = {
   /** Composer only — omit in chat history. */
   onDismiss?: () => void;
   disabled?: boolean;
+  /** Hide the remove button's click without blocking «open and search». */
+  dismissDisabled?: boolean;
 };
 
 export function resolveSourceKind(
@@ -57,6 +59,7 @@ export function ContextPlaque({
   onOpen,
   onDismiss,
   disabled = false,
+  dismissDisabled = false,
 }: Props) {
   const kind = resolveSourceKind(fileName, title);
   const shown = displayTitle(title, kind);
@@ -99,7 +102,7 @@ export function ContextPlaque({
           className="context-plaque-x"
           aria-label="Убрать источник"
           title="Убрать источник"
-          disabled={disabled}
+          disabled={dismissDisabled || disabled}
           onClick={(e) => {
             e.stopPropagation();
             onDismiss();

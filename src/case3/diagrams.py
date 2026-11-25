@@ -82,6 +82,25 @@ _SEQ_KEYWORD_AS = re.compile(
     r"^([ \t]*)(participant|actor)\s+(.+?)\s+as\s+(.+)$", re.I
 )
 _AS_LINE = re.compile(r"^([ \t]*)(.+?\s+as\s+.+)$", re.I)
+# Flowchart with nodes but no edges: dagre puts them on one rank (a row for TD)
+# and draws no lines. Models do this when they emit classDefs and forget `-->`.
+_FLOW_HEADER = re.compile(r"(?im)^\s*flowchart\b")
+_FLOW_EDGE = re.compile(r"-->|---|-\.->|==>|~~~|--o|o--|--x")
+_FLOW_NODE = re.compile(r"^\s*([A-Za-z][\w-]*)\s*(?:@\{|\[|\(|\{|>|/)")
+_FLOW_SKIP_IDS = frozenset(
+    {
+        "flowchart",
+        "subgraph",
+        "graph",
+        "end",
+        "class",
+        "classdef",
+        "style",
+        "direction",
+        "linkstyle",
+        "click",
+    }
+)
 
 # Liber soft-premium fallbacks (atelier) — never purple neon.
 _SAFE_FILL = "#dce8df"
@@ -306,6 +325,39 @@ def _quote_flowchart_nodes(mermaid: str) -> str:
     return "\n".join(out_lines)
 
 
+def _chain_edgeless_flowchart(text: str) -> str:
+    """Connect consecutive flowchart nodes when the source has no edges at all.
+
+    A ``flowchart TD`` of bare nodes lays out as one horizontal row with empty
+    gaps. Sequence, state, mindmap, and timeline are left untouched. An existing
+    ``-->`` / ``---`` keeps the graph as written, including orphan nodes.
+    """
+    lines = text.splitlines()
+    if not any(_FLOW_HEADER.match(line) for line in lines):
+        return text
+    if any(
+        _FLOW_EDGE.search(line) and not line.strip().startswith("%%") for line in lines
+    ):
+        return text
+    ids: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        if line.strip().startswith("%%"):
+            continue
+        match = _FLOW_NODE.match(line)
+        if not match:
+            continue
+        node_id = match.group(1)
+        if node_id.lower() in _FLOW_SKIP_IDS or node_id in seen:
+            continue
+        seen.add(node_id)
+        ids.append(node_id)
+    if len(ids) < 2:
+        return text
+    edges = [f"  {left} --> {right}" for left, right in zip(ids, ids[1:])]
+    return text.rstrip() + "\n" + "\n".join(edges)
+
+
 def sanitize_mermaid(text: str) -> str:
     """Strip optional fences; reject empty / oversized bodies; normalize graph→flowchart.
 
@@ -339,6 +391,7 @@ def sanitize_mermaid(text: str) -> str:
     raw = _quote_flowchart_nodes(raw)
     raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
     raw = _rewrite_unsafe_colors(raw)
+    raw = _chain_edgeless_flowchart(raw)
     return raw
 
 

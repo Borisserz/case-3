@@ -24,7 +24,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
 - `reportHistory.ts` — local history + last-run payloads
-- `ArtifactRail.tsx` — sidecar: tabs (Превью·PDF·Схема·Source), Export, resize, sticky TOC (`RailToc`), figure→PDF, SourcePane. An original PDF/DOCX/DOC/RTF on a report or presentation is a card (`SourceOriginCard`); click opens `SourceReadModal` with the extracted markdown. Pasted text stays in the rail.
+- `ArtifactRail.tsx` — sidecar: tabs (Превью·PDF·Схема·Source), Export, resize, sticky TOC (`RailToc`), figure→PDF, SourcePane. An original PDF/DOCX/DOC/RTF on a report or presentation is a card (`SourceOriginCard`); click opens `SourceReadModal` with the extracted markdown. The same tab keeps «Найти…» on that markdown. Pasted text stays in the rail. Document search stays put while an answer streams: the modal locks the page once, not on every token, and the open key ignores the body.
 - Source draft click-to-edit (2026-11-02): live `sourceDraft` + artifact `kind=source` → preview click → textarea; Esc/blur back; write-through to draft — spec `2026-11-02-liber-source-draft-edit-design`
 - Report collapse (C11): chevron on headings in `ReportView`; body until next same/higher level; `sessionStorage` `liber-report-collapse:{runId}` via `reportSections.ts`
 - `DiagramPane.tsx` / `MermaidView.tsx` / `DiagramFullscreen.tsx` / `downloadDiagramPng.ts` — tab «Схема»; PNG + **SVG** download (live DOM; API `GET …/diagrams/{id}/svg` fallback). The same `dia_*` PNG is injected into PDF/DOCX
@@ -62,7 +62,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Focused workbench: rail default ~62%; card has no Export (rail only); Presentation CTA primary — `docs/superpowers/specs/2026-10-22-liber-focused-workbench-design.md`
 - Schema tab: premium hero (type RU · Liber·PNG + serif title); PNG primary; zoom ± / % / short hint; PNG via viewBox + slug(title); fullscreen has own SVG ref
 - Mode **Схема**: after llm, pipeline stage `diagram_repair` (2nd LLM) enriches Mermaid from Source; soft-fail keeps draft; meta `diagrams_repaired` / `diagrams_draft` in figures.json — see `docs/superpowers/specs/2026-10-23-liber-diagram-repair-premium-design.md`
-- Diagram colors: **model-owned** Mermaid `:::role` + `classDef` (start/process/decision/ok/warn/data, Liber hex by Settings palette); sanitize strips `click` + purple neon → sage (`diagrams.sanitize_mermaid`)
+- Diagram colors: **model-owned** Mermaid `:::role` + `classDef` (start/process/decision/ok/warn/data, Liber hex by Settings palette); sanitize strips `click` + purple neon → sage (`diagrams.sanitize_mermaid`). A flowchart with 2+ nodes and no edges gets a `-->` chain (TD without edges is a gap row).
 - Schema pane: legend · **Ещё вариант** (`POST …/diagrams/regenerate` + undo) · **Изменить** → visual React Flow editor (flowchart IR; Mermaid textarea fallback) · `POST …/diagrams/{id}/edit` — specs `diagram-edit-legend` + `diagram-visual-editor`. Empty mode keeps tab + CTA.
 
 ## Gotchas

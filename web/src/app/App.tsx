@@ -178,6 +178,8 @@ export default function App() {
   >(null);
   const [sourceReadAt, setSourceReadAt] = useState(0);
   const [sourceReadLive, setSourceReadLive] = useState(false);
+  const closeSourceRead = useCallback(() => setSourceReadDocs(null), []);
+  const closeDashboardRead = useCallback(() => setDashboardRead(null), []);
   const [phraseViewer, setPhraseViewer] = useState<string | null>(null);
   const activeCardId = useRef<string | null>(null);
   const cardsRef = useRef<Map<string, DashboardCard>>(new Map());
@@ -1479,7 +1481,7 @@ export default function App() {
         <DashboardReadModal
           title={dashboardRead.title}
           text={dashboardRead.text}
-          onClose={() => setDashboardRead(null)}
+          onClose={closeDashboardRead}
         />
       ) : null}
 
@@ -1487,7 +1489,7 @@ export default function App() {
         <SourceReadModal
           docs={sourceReadDocs}
           startIndex={sourceReadAt}
-          onClose={() => setSourceReadDocs(null)}
+          onClose={closeSourceRead}
           onSave={saveSourceRead}
         />
       ) : null}

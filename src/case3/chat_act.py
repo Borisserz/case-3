@@ -484,6 +484,74 @@ def _text_after_slide_cue(raw: str) -> str:
     return body.strip(" .:—–-")
 
 
+_TITLE_LEAK = re.compile(
+    r"верни|укаж\w*|вместо\s+заголов|коротк\w+\s+фраз|новых\s+чисел|"
+    r"текущ\w+\s+заголов|напиши\s+текст",
+    re.IGNORECASE,
+)
+
+
+def usable_slide_title(text: str, current: str = "") -> str:
+    """One short heading. Empty when the model repeats the title or the instruction."""
+    raw = " ".join((text or "").split())
+    if not raw:
+        return ""
+    line = re.split(r"[.!?]\s+", raw, maxsplit=1)[0].strip(" «».—-\"")
+    if len(line) > 80:
+        cut = line[:80].rsplit(" ", 1)[0].strip()
+        line = cut or line[:80].strip()
+    if len(line) < 2:
+        return ""
+    cur = " ".join((current or "").split()).casefold()
+    if cur and (line.casefold() == cur or cur in line.casefold()):
+        return ""
+    if _TITLE_LEAK.search(line):
+        return ""
+    return line
+
+
+def slide_rewrite_bits(
+    text: str,
+    *,
+    title_only: bool,
+    current_title: str = "",
+) -> tuple[str, tuple[str, ...]]:
+    """One draft paragraph → (title, bullets). Title-only keeps bullets empty.
+
+    A title-only draft that repeats the current title is empty, so the edit
+    does not pretend the heading changed.
+    """
+    raw = " ".join((text or "").split())
+    if not raw:
+        return "", ()
+    same = (current_title or "").casefold()
+    if title_only:
+        parts = [
+            part.strip(" «».—-")
+            for part in re.split(r"[.!?]\s+", raw)
+            if part.strip()
+        ]
+        for part in parts:
+            line = part[:90]
+            if line and line.casefold() != same:
+                return line, ()
+        return "", ()
+    def bit(part: str, limit: int) -> str:
+        part = part.strip(" -•\t«».—-")
+        if len(part) <= limit:
+            return part
+        cut = part[:limit].rsplit(" ", 1)[0].strip()
+        return cut or part[:limit].strip()
+
+    lines = [bit(ln, 180) for ln in (text or "").splitlines() if bit(ln, 180)]
+    if len(lines) >= 2 and len(lines[0]) <= 90:
+        return lines[0][:90], tuple(lines[1:5])
+    parts = [bit(part, 180) for part in re.split(r"(?<=[.!?])\s+", raw) if bit(part, 180)]
+    if not parts:
+        return "", ()
+    return parts[0][:90], tuple(parts[:4])
+
+
 def parse_slide_body(text: str | None) -> tuple[int, str]:
     raw = _norm(text or "").strip()
     if re.search(r"добав|перестав|перемест|подвинь|убери|удали", raw, re.IGNORECASE):
@@ -1388,7 +1456,7 @@ def _clarify(
     elif has_report:
         bits.append("назвать раздел")
     if has_deck:
-        bits.append("назвать стиль презентации")
+        bits.append("назвать слайд, например «измени первый слайд»")
     if has_report or has_deck:
         bits.append("назвать цвет графиков")
     if has_deck or has_report or has_diagram:
@@ -2117,6 +2185,15 @@ def resolve_act(
             )
         title = parse_title(raw)
         if not title:
+            slide_num = _slide_number_named(raw)
+            if slide_num and has_deck and title_target(raw) != "report":
+                return ChatAct(
+                    kind="revise",
+                    op="rewrite_slide",
+                    slide=slide_num,
+                    brief="title",
+                    say=f"Меняю заголовок слайда {slide_num}.",
+                )
             return ChatAct(
                 kind="revise",
                 op="ask",
@@ -2328,7 +2405,11 @@ def resolve_act(
         )
         or (
             _slide_number_named(raw)
-            and re.search(r"сделай|сделать|короче|проще|упрости", raw, re.IGNORECASE)
+            and re.search(
+                r"сделай|сделать|короче|проще|упрости|назван|заголов",
+                raw,
+                re.IGNORECASE,
+            )
         )
     ):
         if not has_deck:
@@ -2341,16 +2422,22 @@ def resolve_act(
             return ChatAct(
                 kind="revise",
                 op="ask",
-                say="Какой слайд изменить? Например «измени слайд 1» или «на слайде 2 напиши …».",
+                say="Какой слайд изменить? Например «измени первый слайд» или «на слайде 2 напиши …».",
             )
+        title_only = bool(re.search(r"назван|заголов", raw, re.IGNORECASE))
+        brief = "title" if title_only else _brief_for(raw)
+        if brief == "title":
+            say = f"Меняю заголовок слайда {index}."
+        elif brief == "tighter":
+            say = f"Сокращаю слайд {index}."
+        else:
+            say = f"Переписываю слайд {index} по документам."
         return ChatAct(
             kind="revise",
-            op="ask",
+            op="rewrite_slide",
             slide=index,
-            say=(
-                f"Что изменить на слайде {index}? "
-                f"Например «на слайде {index} напиши …» или «убери слайд {index}»."
-            ),
+            brief=brief,
+            say=say,
         )
 
     if (

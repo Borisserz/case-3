@@ -40,7 +40,7 @@ import { reportToMarkdown } from "./domain/reportMarkdown";
 import { modeSurfaces } from "./domain/liberModes";
 import { SOURCE_LABEL } from "./domain/sourceCopy";
 import { redoChord, undoChord } from "./domain/undoChord";
-import { sourceOpensAsCard, sourceRailView } from "./domain/sourceRead";
+import { railSourceBody, sourceOpensAsCard, sourceRailView } from "./domain/sourceRead";
 import { SourceOriginCard } from "./SourceOriginCard";
 import { SourcePane } from "./SourcePane";
 import {
@@ -414,10 +414,20 @@ export function ArtifactRail({
         artifact.kind === "intent",
     );
 
-  const displaySource =
-    artifact.kind === "source" || artifact.kind === "intent"
-      ? artifact.text
-      : reportSourceDoc?.text || sourceText || "";
+  const attachmentText =
+    reportSourceDoc?.text ||
+    sourceDocs?.find((doc) => (doc.text || "").trim())?.text ||
+    sourceAttachment?.text ||
+    "";
+  const displaySource = railSourceBody({
+    kind: artifact.kind,
+    artifactText:
+      artifact.kind === "source" || artifact.kind === "intent"
+        ? artifact.text
+        : "",
+    attachmentText,
+    draftText: sourceText,
+  });
   const displaySourceTitle =
     artifact.kind === "source" || artifact.kind === "intent"
       ? artifact.title
@@ -1138,10 +1148,13 @@ export function ArtifactRail({
                 </div>
               ) : null}
 
-              {!showDiagramSurface && tab === "source" && originDocs.length === 0 ? (
+              {!showDiagramSurface &&
+              tab === "source" &&
+              (originDocs.length === 0 || displaySource.trim()) ? (
                 <SourcePane
                   title={displaySourceTitle}
                   text={displaySource}
+                  hideTitle={originDocs.length > 0}
                   fileName={sourceFileName}
                   editable={sourceEditable && !sourceAsDocument}
                   onTextChange={onSourceTextChange}

@@ -161,6 +161,40 @@ def test_sanitize_rewrites_purple_and_strips_click() -> None:
     assert "#dce8df" in out or "#6b8f76" in out
 
 
+def test_sanitize_chains_flowchart_when_model_omits_edges() -> None:
+    """LLM listed pipeline nodes and classDefs but no `-->` — TD then draws a row of boxes."""
+    raw = (
+        "flowchart TD\n"
+        " S[Начало]:::start\n"
+        " A[Загрузка данных]:::process\n"
+        " B[Конкатенация признаков]:::process\n"
+        " C[Обучение модели]:::process\n"
+        " D[Предсказание]:::ok\n"
+        "  classDef start fill:#DCE6F0,stroke:#4E79A7,color:#1a2e22\n"
+        "  classDef process fill:#E4F2EF,stroke:#76B7B2,color:#1a2e22\n"
+        "  classDef ok fill:#D8EBE4,stroke:#59A14F,color:#1a2e22\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert "S --> A" in out
+    assert "A --> B" in out
+    assert "B --> C" in out
+    assert "C --> D" in out
+    assert "classDef start fill:#DCE6F0" in out
+    assert out.index("classDef ok") < out.index("S --> A")
+
+
+def test_sanitize_does_not_invent_edges_when_flowchart_already_linked() -> None:
+    raw = "flowchart TD\n  A[Start] --> B[Mid]\n  C[End]\n"
+    out = sanitize_mermaid(raw)
+    assert out.count("-->") == 1
+
+
+def test_sanitize_does_not_chain_non_flowchart() -> None:
+    raw = "sequenceDiagram\n  participant A as A\n  participant B as B\n  A->>B: hi\n"
+    out = sanitize_mermaid(raw)
+    assert "-->" not in out
+
+
 def test_sanitize_rejects_empty() -> None:
     with pytest.raises(ValueError):
         sanitize_mermaid("   ")

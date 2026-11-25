@@ -253,16 +253,9 @@ def _presentation_chat_blurb(
     charts: list[dict[str, Any]] | None = None,
     figures: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Local blurb for presentation — skip second LLM; slides job is the product."""
-    n_ch = len([c for c in (charts or []) if isinstance(c, dict)])
-    n_fig = len([f for f in (figures or []) if isinstance(f, dict)])
-    bits: list[str] = []
-    if n_ch:
-        bits.append(f"графиков: {n_ch}")
-    if n_fig:
-        bits.append(f"фото: {n_fig}")
-    media = f" ({', '.join(bits)})" if bits else ""
-    return f"Ок, собираем презентацию{media}…"
+    """No canned chat line. The deck card is the presentation result."""
+    del charts, figures
+    return ""
 
 
 def _write_meta(meta: dict[str, Any], out: Path, logs: Path) -> None:

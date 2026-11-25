@@ -2409,3 +2409,39 @@ def draft_section(
         if must_shrink and len(text) >= len(current_flat):
             return ""
     return text
+
+
+def draft_slide_title(
+    *,
+    current: str,
+    source: str,
+    user_text: str = "",
+    client: LLMClient | None = None,
+) -> str:
+    """One new slide heading. Empty when it repeats the old one or adds a number."""
+    from case3.chat_act import usable_slide_title
+
+    system = (
+        "Ты меняешь только заголовок слайда. "
+        "Ответ — одна короткая фраза на русском, без кавычек и без пояснения. "
+        "Не повторяй текущий заголовок. Новых чисел нет."
+    )
+    said = (user_text or "").strip()[:300]
+    user = (
+        f"Текущий заголовок:\n{(current or '').strip()[:300]}\n\n"
+        f"Просьба:\n{said or 'Другой заголовок того же смысла.'}\n\n"
+        f"SOURCE:\n{_clip_source(source, focus=said)}"
+    )
+    text = ""
+    try:
+        llm = client or _client(120, 40.0)
+        text = _accepted(
+            _speak(llm, system=system, user_text=user, max_tokens=80, on_delta=None)
+        )
+    except (LLMError, LLMConfigError, OSError, ValueError) as exc:
+        log.warning("slide title draft failed: %s", exc)
+        text = ""
+    allowed = f"{current}\n{source}\n{said}"
+    if not text or not _numbers_grounded(text, allowed, source=source):
+        return ""
+    return usable_slide_title(text, current)

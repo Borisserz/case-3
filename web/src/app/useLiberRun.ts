@@ -313,13 +313,6 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
   setStopping(false);
   setChatTitle(workMode ? provisionalSessionTitle(workMode) : null);
   const photosSnapshot = hidden ? [] : [...attachPhotos];
-  // Do not auto-open the right rail on send for attached documents (they open in MD modal on click).
-  if (!hidden && !fileForRun && draftSnap) {
-    setActiveArtifact((a) =>
-      a?.kind === "source" || a?.kind === "intent" ? null : a,
-    );
-  }
-
   const fd = buildRunFormData({
     file: fileForRun,
     draftSnap,

@@ -84,7 +84,7 @@ Rules for colors:
 
 - `mermaid`: plain source, **no** ``` fences.
 - Prefer flat flowcharts (Liber visual editor). `subgraph` is OK for big org/hierarchy charts — Liber flattens them when editing by hand.
-- Edges: `-->` (and labeled `-->|…|`); avoid `A --> B --> C` chains on one line — one edge per line.
+- Edges: `-->` (and labeled `-->|…|`); avoid `A --> B --> C` chains on one line — one edge per line. A flowchart that only lists nodes, with no `-->`, is invalid — connect the steps.
 - **Node ids ASCII** (`A`, `step1`); Russian only inside `[]` / `()` / participant aliases — never invent actors/steps not in Source.
 - `title`: short Russian (≤80 chars) for Liber tab «Схема» — **specific** (not «Универсальная схема процесса»).
 - Ids prefer `dia_NN`. Unique across figures + charts + diagrams.

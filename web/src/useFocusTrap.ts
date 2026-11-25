@@ -39,6 +39,8 @@ export function useFocusTrap(
         : null;
 
     const focusFirst = () => {
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && container.contains(activeEl)) return;
       const nodes = getFocusable(container);
       if (nodes[0]) {
         nodes[0].focus();

@@ -8,6 +8,7 @@ from case3.tex_prose import (
     drop_empty_lists,
     harden_prose_lists,
     normalize_includegraphics_aspect,
+    promote_bare_list_lines,
 )
 
 
@@ -106,6 +107,31 @@ def test_ensure_preamble_runs_prose_harden() -> None:
     )
     out = ensure_document_preamble(tex)
     assert r"\item пункт A" in out
+
+
+def test_prose_before_first_item_becomes_item() -> None:
+    """A sentence inside itemize before \\item is ``missing \\item`` and latexmk exit 12."""
+    tex = (
+        "\\begin{itemize}\n"
+        " Работающий продукт за 48 часов.\n"
+        "\\item \\textbf{Space Hackathon} — финал.\n"
+        "\\end{itemize}\n"
+    )
+    out = promote_bare_list_lines(tex)
+    assert r"\item Работающий продукт за 48 часов." in out
+    assert out.count(r"\item") == 2
+
+
+def test_item_continuation_is_not_a_new_item() -> None:
+    tex = (
+        "\\begin{itemize}\n"
+        "\\item Первый пункт\n"
+        "продолжение строки.\n"
+        "\\end{itemize}\n"
+    )
+    out = promote_bare_list_lines(tex)
+    assert out.count(r"\item") == 1
+    assert "продолжение строки." in out
 
 
 def test_empty_itemize_is_removed_before_compile() -> None:

@@ -118,15 +118,15 @@ def test_resolve_pipeline_formats_keeps_empty_for_presentation() -> None:
     assert resolve_pipeline_formats(parse_formats_form("none")) == set()
 
 
-def test_presentation_chat_blurb_is_local_and_mentions_media() -> None:
-    blurb = _presentation_chat_blurb(
-        charts=[{"id": "cht_01"}, {"id": "cht_02"}],
-        figures=[{"id": "fig_01"}],
+def test_presentation_chat_blurb_is_empty() -> None:
+    assert (
+        _presentation_chat_blurb(
+            charts=[{"id": "cht_01"}, {"id": "cht_02"}],
+            figures=[{"id": "fig_01"}],
+        )
+        == ""
     )
-    assert "презентац" in blurb.lower()
-    assert "графиков: 2" in blurb
-    assert "фото: 1" in blurb
-    assert _presentation_chat_blurb() == "Ок, собираем презентацию…"
+    assert _presentation_chat_blurb() == ""
 
 
 def test_diagram_mode_intent_forces_schemas_no_charts() -> None:

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  documentOpenKey,
   docsForSourceModal,
+  railSourceBody,
   resolveOriginalDownload,
   sourceDocBadge,
   sourceModalEyebrow,
@@ -101,6 +103,41 @@ describe("sourceRead", () => {
       false,
     );
     assert.equal(sourceDocBadge({ title: "a", fileName: "отчёт.docx" }), "DOCX");
+  });
+
+  it("keeps document search identity when only the body changes", () => {
+    const before = documentOpenKey([
+      { fileName: "пояснительная.pdf", title: "Записка" },
+    ]);
+    const duringAnswer = documentOpenKey([
+      { fileName: "пояснительная.pdf", title: "Записка" },
+    ]);
+    assert.equal(before, duringAnswer);
+    assert.notEqual(
+      before,
+      documentOpenKey([{ fileName: "другой.pdf", title: "Записка" }]),
+    );
+  });
+
+  it("searches the attached copy after the composer draft is cleared", () => {
+    assert.equal(
+      railSourceBody({
+        kind: "report",
+        artifactText: "",
+        attachmentText: "Выручка 12,4",
+        draftText: "",
+      }),
+      "Выручка 12,4",
+    );
+    assert.equal(
+      railSourceBody({
+        kind: "source",
+        artifactText: "Исходный текст",
+        attachmentText: "другое",
+        draftText: "",
+      }),
+      "Исходный текст",
+    );
   });
 
   it("formats crisp modal eyebrow from format or extension", () => {

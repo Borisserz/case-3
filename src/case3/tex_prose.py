@@ -408,6 +408,52 @@ def harden_prose_lists(tex: str) -> str:
     return "".join(out)
 
 
+def promote_bare_list_lines(tex: str) -> str:
+    """Turn prose before the first ``\\item`` into an item.
+
+    ``\\begin{itemize}`` then a sentence, then ``\\item``, is a hard XeLaTeX
+    error (``missing \\item``) and latexmk exit 12. A line after an ``\\item``
+    stays a continuation of that item.
+    """
+    if not tex or (r"\begin{itemize}" not in tex and r"\begin{enumerate}" not in tex):
+        return tex or ""
+    lines = tex.splitlines(keepends=True)
+    out: list[str] = []
+    waiting: list[bool] = []
+    for line in lines:
+        core = line.strip()
+        begins = len(re.findall(r"\\begin\{(?:itemize|enumerate)\b", core))
+        ends = len(re.findall(r"\\end\{(?:itemize|enumerate)\b", core))
+        is_item = bool(re.match(r"\\item\b", core))
+        structural = (
+            not core
+            or core.startswith("%")
+            or core.startswith(r"\begin{")
+            or core.startswith(r"\end{")
+            or is_item
+        )
+        if waiting and waiting[-1] and not structural and begins == 0:
+            nl = ""
+            body = line
+            if body.endswith("\r\n"):
+                nl, body = "\r\n", body[:-2]
+            elif body.endswith("\n"):
+                nl, body = "\n", body[:-1]
+            indent = body[: len(body) - len(body.lstrip(" \t"))]
+            out.append(f"{indent}\\item {body.strip()}{nl}")
+            waiting[-1] = False
+        else:
+            out.append(line)
+            if is_item and waiting:
+                waiting[-1] = False
+        for _ in range(begins):
+            waiting.append(True)
+        for _ in range(ends):
+            if waiting:
+                waiting.pop()
+    return "".join(out)
+
+
 _EMPTY_LIST = re.compile(
     r"\\begin\{(itemize|enumerate)\}(?:\[[^\]]*\])?"
     r"((?:(?!\\begin\{(?:itemize|enumerate)\})(?!\\end\{\1\}).)*?)"

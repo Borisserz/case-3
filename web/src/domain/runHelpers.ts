@@ -71,9 +71,11 @@ export function reportReadyText(result?: RunResult, streamed?: string): string {
       "В запросе недостаточно данных для составления документа. Пожалуйста, укажите конкретные данные или прикрепите файл."
     );
   }
-  const official = (result?.chat_summary || "").trim();
+  const officialRaw = (result?.chat_summary || "").trim();
+  const official = isCannedStatus(officialRaw) ? "" : officialRaw;
   const shownRaw = (streamed || "").trim();
   const shown = isCannedStatus(shownRaw) ? "" : shownRaw;
+  if (result?.output_mode === "presentation" && !official && !shown) return "";
   if (shown && official) {
     if (official.startsWith(shown)) return official;
     return shown;
@@ -126,7 +128,7 @@ export function softMediaFailToast(_result?: {
 }
 
 const CANNED_BUBBLE =
-  /^(?:думаю над структурой|собираю документ|собираю презентац\w*|генерирую документ|набираю отчёт)[\s.!?…]*$/i;
+  /^(?:ок[,!]?\s+)?(?:думаю над структурой|собираю документ|генерирую документ|набираю отчёт|собира(?:ем|ю) презентац\p{L}*(?:\s*\([^)]*\))?)[\s.!?…]*$/iu;
 
 /** Hardcoded build line. The fold already shows the real step. */
 export function isCannedStatus(text?: string | null): boolean {

@@ -159,7 +159,7 @@ export function ChatComposer({
                 title={plaque.title}
                 subtitle={plaque.subtitle}
                 fileName={plaque.fileName}
-                disabled={busy}
+                dismissDisabled={busy}
                 onOpen={() => onOpenPlaque(index)}
                 onDismiss={() => onDismissPlaque(index)}
               />
