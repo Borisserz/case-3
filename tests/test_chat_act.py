@@ -112,6 +112,14 @@ def test_named_section_without_new_text_is_a_rewrite():
     assert supplied.brief == "supplied"
     assert supplied.section == "Введение"
 
+    swapped = resolve_act("поменять раздел введения", has_report=True)
+    assert swapped.kind == "revise"
+    assert swapped.op == "rewrite"
+    assert swapped.section.casefold() == "введения"
+
+    title = resolve_act("поменяй заголовок на Гомель", has_report=True)
+    assert title.op == "retitle"
+
 
 def test_unnamed_section_complaint_asks_which_one():
     act = resolve_act("точнее раздел, мне не нравится", has_report=True)
@@ -524,6 +532,26 @@ def test_named_chart_type_still_retypes_when_no_color():
     assert act.chart == "line"
 
 
+def test_change_to_pie_retypes_the_open_chart():
+    for line in (
+        "изменить на круговую",
+        "измени график на круговую",
+        "переделай в круговую",
+        "переделай график на пончик",
+    ):
+        act = resolve_act(line, has_chart=True)
+        assert act.kind == "revise", line
+        assert act.op == "retype_charts", line
+        assert act.chart == "donut", line
+    with_report = resolve_act(
+        "изменить на круговую", has_chart=True, has_report=True
+    )
+    assert with_report.op == "retype_charts"
+    assert with_report.chart == "donut"
+    assert resolve_act("переделай введение", has_report=True).op == "rewrite"
+    assert resolve_act("измени формат вывода в чате").kind == "talk"
+
+
 def test_chart_word_picks_a_real_type():
     line = resolve_act("сделай график линейным", has_report=True)
     assert line.op == "retype_charts"
@@ -546,6 +574,53 @@ def test_chart_type_named_ignores_area_without_grafik_word():
     assert chart_type_named("сделай площадь меньше") == ""
     assert chart_type_named("сделай график площадью") == "area"
     assert resolve_act("сделай площадь меньше", has_chart=True).kind == "talk"
+
+
+def test_chart_style_edit_is_not_a_fake_section():
+    labels = resolve_act("поправь подписи на графике", has_chart=True, has_report=True)
+    assert labels.kind == "revise"
+    assert labels.op == "restyle_chart"
+    legend = resolve_act("убери легенду у графика", has_chart=True, has_report=True)
+    assert legend.op == "restyle_chart"
+    bare = resolve_act("отредактируй график", has_chart=True)
+    assert bare.op == "ask"
+    assert "подписи" in bare.say
+    still = resolve_act("а сделай ее кругового формата", has_chart=True)
+    assert still.op == "retype_charts"
+    assert still.chart == "donut"
+
+
+def test_report_wording_hits_the_named_section():
+    para = resolve_act("поменяй абзац во введении", has_report=True)
+    assert para.op == "rewrite"
+    assert para.section.casefold().startswith("введен")
+    body = resolve_act("измени текст раздела анализ", has_report=True)
+    assert body.op == "rewrite"
+    assert body.section.casefold().startswith("анализ")
+    short = resolve_act("поменяй раздел введения на более короткий", has_report=True)
+    assert short.op == "rewrite"
+    assert short.section.casefold().startswith("введен")
+    assert "коротк" not in short.section.casefold()
+    assert short.brief == "tighter"
+
+
+def test_screenshot_chart_phrases_do_not_stay_talk():
+    """«давай пончиком» and «сделай другого типа его» used to be talk.
+
+    The model then claimed a new chart that was never drawn.
+    """
+    donut = resolve_act("давай пончиком", has_chart=True)
+    assert donut.kind == "revise"
+    assert donut.op == "retype_charts"
+    assert donut.chart == "donut"
+    bare = resolve_act("пончиком", has_chart=True)
+    assert bare.op == "retype_charts"
+    assert bare.chart == "donut"
+    other = resolve_act("сделай другого типа его", has_chart=True)
+    assert other.kind == "revise"
+    assert other.op == "ask"
+    assert "пончик" in other.say
+    assert resolve_act("давай пончиком").kind == "talk"
 
 
 def test_krugovaya_retypes_chart_without_grafik_word():
@@ -739,6 +814,88 @@ def test_inline_chat_chart_retype_and_recolor_in_chat_revise(tmp_path, monkeypat
     assert res.get("previews") and res["previews"][0]["id"] == "cht_01"
     saved = json.loads((out / "figures.json").read_text(encoding="utf-8"))
     assert saved["charts"][0]["type"] == "line"
+
+    pie = try_chat_revise("изменить на круговую", run_id, root=tmp_path)
+    assert pie is not None
+    assert pie["op"] == "retype_charts"
+    assert pie.get("previews") and pie["previews"][0]["kind"] == "chart"
+    saved = json.loads((out / "figures.json").read_text(encoding="utf-8"))
+    assert saved["charts"][0]["type"] == "donut"
+    assert "doughnut" in saved["charts"][0]["html"]
+
+
+def test_retype_does_not_claim_a_new_picture_when_the_file_stays(tmp_path, monkeypatch):
+    import json
+    from case3.chat_revise import try_chat_revise
+
+    run_id = "source_20261123T120100Z"
+    out = tmp_path / "runs" / "out" / run_id
+    (out / "figures").mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps({"run_id": run_id, "output_mode": "chat", "charts_planned": ["cht_01"]}),
+        encoding="utf-8",
+    )
+    (out / "figures.json").write_text(
+        json.dumps(
+            {
+                "charts": [
+                    {
+                        "id": "cht_01",
+                        "type": "bar",
+                        "html": "{type:'bar',data:{labels:['А'],datasets:[{data:[1]}]}}",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (out / "figures" / "cht_01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    def keep(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr("case3.chart_edit.edit_chart_in_run", keep)
+    result = try_chat_revise("а сделай ее кругового формата", run_id, root=tmp_path)
+    assert result is not None
+    assert "пончик" not in result["chat"].casefold()
+    assert "прежней" in result["chat"]
+    assert not result.get("previews")
+
+
+def test_chart_phrase_restyles_and_rebuilds_the_report(tmp_path, monkeypatch):
+    import json
+    from case3.chat_revise import try_chat_revise
+
+    run_id = "source_20261123T120200Z"
+    out = tmp_path / "runs" / "out" / run_id
+    (out / "figures").mkdir(parents=True)
+    (out / "meta.json").write_text(
+        json.dumps({"run_id": run_id, "output_mode": "report", "charts_planned": ["cht_01"]}),
+        encoding="utf-8",
+    )
+    (out / "figures.json").write_text(
+        json.dumps({"charts": [{"id": "cht_01", "type": "bar", "html": "{type:'bar'}"}]}),
+        encoding="utf-8",
+    )
+    (out / "figures" / "cht_01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (out / "report.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    seen: dict = {}
+
+    def fake(_out, chart_id, **kwargs):
+        seen["id"] = chart_id
+        seen["style"] = kwargs.get("style")
+        seen["formats"] = kwargs.get("formats")
+        return {}
+
+    monkeypatch.setattr("case3.chart_edit.edit_chart_in_run", fake)
+    result = try_chat_revise("убери легенду у графика", run_id, root=tmp_path)
+    assert result is not None
+    assert result["op"] == "restyle_chart"
+    assert seen["id"] == "cht_01"
+    assert "легенду" in seen["style"]
+    assert seen["formats"] == {"pdf", "docx"}
+    assert "PDF" in result["chat"]
+    assert result.get("previews")
 
 
 def test_section_target_strips_trailing_adverbs_and_history_title_skips_generic() -> None:

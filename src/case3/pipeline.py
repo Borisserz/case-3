@@ -1476,6 +1476,7 @@ def run_pipeline(
             materialize_user_figures(user_figs, out / "figures")
         charts_list: list[dict[str, Any]] = []
         diagrams: list[dict[str, Any]] = []
+        figures_list: list[dict[str, Any]] = []
         media_status: dict[str, dict[str, Any]] = {}
         if dry_run:
             answer = "Разбор останется в чате. В пробном прогоне модель не вызывается."
@@ -1509,9 +1510,13 @@ def run_pipeline(
             clarifying_visual = _is_clarifying_visual_request(
                 turn_text, answer, kind="chart"
             ) or _is_clarifying_visual_request(turn_text, answer, kind="diagram")
+            from case3.turn_route import asks_for_generated_photo
+
+            photo_request = asks_for_generated_photo(turn_text)
             auto_chart = (
                 not explicit_chart
                 and not wants_diag
+                and not photo_request
                 and not clarifying_visual
                 and not landing
                 and not answer_declines_chart(answer)
@@ -1523,6 +1528,21 @@ def run_pipeline(
                 )
             )
             eff_charts_budget = charts_budget or (1 if prev_chart is not None else 0)
+            if photo_request:
+                from case3.chat_turn import generate_chat_photo
+
+                bump("images", "рисую фото…")
+                figures_list, photo_status = generate_chat_photo(
+                    turn_text,
+                    out / "figures",
+                    pack_id=str(meta.get("image_style_pack") or ""),
+                )
+                media_status.update(photo_status)
+                if not (photo_status.get("fig_01") or {}).get("ok"):
+                    answer = (
+                        answer.rstrip()
+                        + "\n\nФото не собралось. Проверь, что сервис картинок отвечает."
+                    )
             if (explicit_chart or auto_chart) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
@@ -1565,11 +1585,11 @@ def run_pipeline(
         from case3.chat_turn import session_title
 
         meta["title"] = session_title(user_text, enriched_source)
-        if charts_list or diagrams:
+        if charts_list or diagrams or figures_list:
             (out / "figures.json").write_text(
                 json.dumps(
                     {
-                        "figures": [],
+                        "figures": figures_list,
                         "charts": charts_list,
                         "diagrams": diagrams,
                     },

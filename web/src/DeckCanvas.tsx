@@ -345,21 +345,6 @@ function MediaSlot({
         highlightNodeIds={highlightNodeIds}
         onNodeHover={onNodeHover}
       />
-      {onDiagramZoom ? (
-        <button
-          type="button"
-          className="deck-cv-diagram-zoom-btn"
-          title="Открыть схему в полном размере"
-          aria-label="Открыть схему в полном размере"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDiagramZoom();
-          }}
-        >
-          <span className="deck-cv-zoom-icon" aria-hidden>🔍</span>
-          <span>Увеличить</span>
-        </button>
-      ) : null}
     </div>
   ) : img ? (
     <img src={img} alt="" />
@@ -404,8 +389,6 @@ function MediaSlot({
             }
           : undefined
       }
-      style={diagram && onDiagramZoom ? { cursor: "zoom-in" } : undefined}
-      title={diagram && onDiagramZoom ? "Нажмите для увеличения схемы" : undefined}
     >
       {body}
       {children}

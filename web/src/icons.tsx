@@ -193,6 +193,16 @@ export function IconPanelRight(p: IconProps) {
   );
 }
 
+export function IconDownload(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M12 4v10" />
+      <path {...stroke} d="m8 10 4 4 4-4" />
+      <path {...stroke} d="M5 19h14" />
+    </svg>
+  );
+}
+
 export function IconCopy(p: IconProps) {
   return (
     <svg {...base(p)}>

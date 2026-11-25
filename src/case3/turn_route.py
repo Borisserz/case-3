@@ -175,6 +175,35 @@ def _asked(pattern: re.Pattern[str], text: str | None) -> bool:
     return False
 
 
+_BARE_PHOTO = re.compile(
+    r"^(?:фото|фотк\w*|картинк\w*|изображен\w*|иллюстрац\w*|рисун\w*)$",
+    re.IGNORECASE,
+)
+_PHOTO_LEAD = re.compile(
+    r"^(?:пожалуйста[, ]+)?(?:сделай|сделать|нарисуй|сгенерируй|сгенерировать|создай|покажи)\s+",
+    re.IGNORECASE,
+)
+
+
+def asks_for_generated_photo(text: str | None) -> bool:
+    """True when this turn wants a photo, not a chart."""
+    from case3.image_opt_in import wants_generated_images
+
+    raw = _norm(text or "").strip()
+    if not raw or wants_chat_chart(raw):
+        return False
+    return wants_generated_images(raw, "")
+
+
+def photo_subject(text: str | None) -> str:
+    """Scene for the image model. A bare «сделай картинку» still gets a photo."""
+    raw = " ".join(_norm(text or "").split())
+    cleaned = _PHOTO_LEAD.sub("", raw).strip(" .")
+    if not cleaned or _BARE_PHOTO.fullmatch(cleaned):
+        return "Реалистичная фотография без текста, графиков и схем"
+    return cleaned
+
+
 def wants_chat_chart(text: str | None, *, has_prior_chart: bool = False) -> bool:
     """True when the user asks to draw a chart/graph or refines an inline chart."""
     raw = _norm(text or "")
@@ -236,6 +265,8 @@ def should_auto_chat_chart(
     """True when an ordinary analytical chat answer benefits from an inline chart."""
     raw = _norm(turn_text or "").strip()
     if not raw or _CHITCHAT.search(raw) or _NEG_CHART.search(raw):
+        return False
+    if asks_for_generated_photo(raw):
         return False
     if "длинный разбор в чат не пиши" in raw.lower():
         return False

@@ -11,12 +11,60 @@ export function bindSlidePngs(
   slides: SlideRef[],
   pngs: string[],
 ): Record<string, string | null> {
-  const aligned = pngs.length > 0 && pngs.length === slides.length;
+  // Same length: each file belongs to that slide. A shorter file list (a new
+  // slide was added, PNGs not rebuilt yet) still keeps the pictures we have.
+  // Wiping every thumb made the grid and the bottom strip look empty on return.
   const map: Record<string, string | null> = {};
   for (let i = 0; i < slides.length; i++) {
-    map[slides[i].id] = aligned ? pngs[i] : null;
+    map[slides[i].id] = i < pngs.length && pngs[i] ? pngs[i] : null;
   }
   return map;
+}
+
+const PNG_MAP_PREFIX = "liber-deck-png-map:";
+
+export function rememberDeckPngMap(
+  runId: string,
+  key: string,
+  map: Record<string, string | null>,
+): void {
+  if (typeof sessionStorage === "undefined" || !runId) return;
+  try {
+    sessionStorage.setItem(
+      PNG_MAP_PREFIX + runId,
+      JSON.stringify({ key, map }),
+    );
+  } catch {
+    /* quota */
+  }
+}
+
+export function recallDeckPngMap(
+  runId: string,
+): { key: string; map: Record<string, string | null> } | null {
+  if (typeof sessionStorage === "undefined" || !runId) return null;
+  try {
+    const raw = sessionStorage.getItem(PNG_MAP_PREFIX + runId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      key?: unknown;
+      map?: unknown;
+    };
+    if (
+      !parsed ||
+      typeof parsed.key !== "string" ||
+      !parsed.map ||
+      typeof parsed.map !== "object"
+    ) {
+      return null;
+    }
+    return {
+      key: parsed.key,
+      map: parsed.map as Record<string, string | null>,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function retargetSlidePngs(

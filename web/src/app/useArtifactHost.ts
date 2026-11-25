@@ -20,6 +20,7 @@ import type {
   UserPhotoThumb,
 } from "../domain/liberTypes";
 import { reportTitle } from "../domain/runHelpers";
+import { sourceRailView } from "../domain/sourceRead";
 import { loadRailWidth, saveRailWidth } from "../domain/railWidth";
 
 type Deps = {
@@ -171,7 +172,7 @@ export function useArtifactHost({ msgs, activeRunIdRef }: Deps) {
       setRailCollapsed(false);
       const isDoc =
         draft.viewMode === "document" || Boolean(draft.ingestId);
-      const viewMode = isDoc ? "document" : draft.viewMode || "text";
+      const viewMode = sourceRailView(draft.text, isDoc);
       const previewUrl =
         draft.previewUrl ||
         (draft.ingestId

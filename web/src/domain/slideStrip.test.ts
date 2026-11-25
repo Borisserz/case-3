@@ -19,10 +19,10 @@ describe("bindSlidePngs", () => {
     });
   });
 
-  it("drops pictures when the deck and the files disagree", () => {
+  it("keeps the pictures it has when a new slide has no file yet", () => {
     assert.deepEqual(bindSlidePngs(slides, ["/a.png", "/b.png"]), {
-      s01: null,
-      s02: null,
+      s01: "/a.png",
+      s02: "/b.png",
       s03: null,
     });
   });

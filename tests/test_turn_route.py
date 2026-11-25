@@ -113,3 +113,16 @@ def test_wants_and_auto_chat_chart_cover_visual_and_numeric_analysis():
     assert should_auto_chat_chart("без графика сравни области", rich_table, "Минск лидирует.") is False
     assert should_auto_chat_chart("привет, как дела?", rich_table, "Привет!") is False
     assert should_auto_chat_chart("сравни области", "короткая заметка без таблицы", "Ок.") is False
+    assert should_auto_chat_chart("сделай картинку", rich_table, "Факт 10. План 12.\n" * 4) is False
+    assert should_auto_chat_chart("сделай фото цеха", rich_table, "Факт 10. План 12.\n" * 4) is False
+
+
+def test_photo_request_is_not_a_chart():
+    from case3.turn_route import asks_for_generated_photo, photo_subject, wants_chat_chart
+
+    assert asks_for_generated_photo("сделай картинку") is True
+    assert asks_for_generated_photo("сделай фото цеха") is True
+    assert wants_chat_chart("сделай картинку") is False
+    assert asks_for_generated_photo("сделай график по областям") is False
+    assert photo_subject("сделай картинку") != "картинку"
+    assert "цеха" in photo_subject("сделай фото цеха")

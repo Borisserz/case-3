@@ -25,6 +25,20 @@ describe("diagramIr", () => {
   it("canParseFlowchart accepts flowchart headers", () => {
     assert.equal(canParseFlowchart(SAMPLE), true);
     assert.equal(canParseFlowchart("sequenceDiagram\nA->>B: hi"), false);
+    assert.equal(
+      canParseFlowchart("%%{init: {'theme':'neutral'}}%%\nflowchart TD\n  A --> B\n"),
+      true,
+    );
+    assert.equal(
+      canParseFlowchart("title Схема платежей\nflowchart LR\n  A[Факт] --> B[План]\n"),
+      true,
+    );
+    const ir = parseMermaidFlowchart(
+      "%%{init: {'theme':'neutral'}}%%\nflowchart TD\n  A[Факт] --> B[План]\n",
+      { id: "dia_01", title: "Схема" },
+    );
+    assert.equal(ir.nodes.length, 2);
+    assert.equal(ir.direction, "TD");
   });
 
   it("parses nodes kinds edges and direction", () => {

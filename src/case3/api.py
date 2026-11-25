@@ -2785,7 +2785,12 @@ def download_figure(run_id: str, name: str) -> FileResponse:
     if not name.lower().endswith(".png"):
         raise HTTPException(400, detail="only PNG figures")
     path = _safe_run_file(run_id, "figures", name)
-    return FileResponse(path, media_type="image/png", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="image/png",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 from case3.api_edits import router as edits_router

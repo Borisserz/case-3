@@ -60,6 +60,123 @@ describe("streamPacer", () => {
     pacer.stop();
   });
 
+  it("keeps already shown words when the final text only drops a leading newline", () => {
+    const clock = makeManualClock();
+    const emitted: string[] = [];
+    const pacer = createStreamPacer({
+      baseCps: 80,
+      onUpdate: (v) => emitted.push(v),
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+
+    const raw = "\n\nВыручка составила 120 млн руб. Дальше идёт продолжение ответа.";
+    const finalText = raw.trim();
+    pacer.pushTarget(raw);
+    for (let i = 0; i < 12; i += 1) {
+      clock.step(25);
+    }
+    const shown = pacer.getVisible().trimStart();
+    assert.ok(shown.startsWith("Выручка"), `expected visible answer, got ${JSON.stringify(pacer.getVisible())}`);
+    assert.ok(shown.length < finalText.length);
+    const beforeReplace = emitted.length;
+
+    pacer.replaceTarget(finalText);
+    const afterReplace = pacer.getVisible();
+    assert.ok(
+      afterReplace.startsWith("Выручка"),
+      `replace cleared the bubble: ${JSON.stringify(afterReplace)}`,
+    );
+    assert.equal(
+      emitted.slice(beforeReplace).some((snap) => snap.trim() === ""),
+      false,
+    );
+
+    const done = pacer.markDone(finalText);
+    clock.step(16);
+    assert.ok(
+      pacer.getVisible().startsWith(afterReplace.slice(0, Math.min(8, afterReplace.length))),
+      `markDone rewound visible text to ${JSON.stringify(pacer.getVisible())}`,
+    );
+    assert.notEqual(pacer.getVisible(), finalText);
+    for (let i = 0; i < 40 && pacer.isDraining(); i += 1) {
+      clock.step(30);
+    }
+    return done.then(() => {
+      assert.equal(pacer.getVisible(), finalText);
+      assert.equal(
+        emitted.slice(beforeReplace).some((snap) => snap.trim() === ""),
+        false,
+      );
+    });
+  });
+
+  it("keeps the shown sentence when a later correction only changes a number", () => {
+    const clock = makeManualClock();
+    const emitted: string[] = [];
+    const pacer = createStreamPacer({
+      baseCps: 68,
+      onUpdate: (v) => emitted.push(v),
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+
+    const raw =
+      "Выручка за январь составила 120 млн руб. Итог положительный по всем регионам, включая Минск и Брест, без исключения из отчёта.";
+    const corrected = raw.replace("120", "125");
+    pacer.pushTarget(raw);
+    for (let i = 0; i < 80 && !pacer.getVisible().includes("Брест"); i += 1) {
+      clock.step(25);
+    }
+    const before = pacer.getVisible();
+    assert.ok(before.includes("120"), `number not on screen yet: ${JSON.stringify(before)}`);
+    assert.ok(before.includes("Брест"), `tail not on screen yet: ${JSON.stringify(before)}`);
+
+    const atReplace = emitted.length;
+    pacer.replaceTarget(corrected);
+    const after = pacer.getVisible();
+    assert.ok(
+      after.includes("Брест"),
+      `shown tail was erased after a one-digit correction: ${JSON.stringify(after)}`,
+    );
+    assert.ok(after.includes("125"), `correction was not applied: ${JSON.stringify(after)}`);
+    assert.ok(
+      after.length >= before.length - 4,
+      `bubble shrank from ${before.length} to ${after.length}`,
+    );
+    assert.equal(
+      emitted.slice(atReplace).some((snap) => snap.length < before.length / 2),
+      false,
+    );
+
+    pacer.markDone(corrected);
+    clock.step(16);
+    assert.ok(pacer.getVisible().includes("Брест"));
+    assert.notEqual(pacer.getVisible(), corrected);
+    pacer.stop();
+  });
+
+  it("still rewinds when the correction is a different answer", () => {
+    const clock = makeManualClock();
+    const pacer = createStreamPacer({
+      baseCps: 80,
+      onUpdate: () => {},
+      now: clock.now,
+      scheduleFrame: clock.scheduleFrame,
+      cancelFrame: clock.cancelFrame,
+    });
+    pacer.pushTarget(
+      "Выручка за январь составила 120 млн руб. Итог положительный по всем регионам.",
+    );
+    for (let i = 0; i < 40; i += 1) clock.step(30);
+    assert.ok(pacer.getVisible().length > 40);
+    pacer.replaceTarget("Совсем другой ответ про кассу и остатки.");
+    assert.ok(pacer.getVisible().length < 15, pacer.getVisible());
+    pacer.stop();
+  });
+
   it("handles replaceTarget from common prefix without resetting visible text to zero", () => {
     const clock = makeManualClock();
     const emitted: string[] = [];

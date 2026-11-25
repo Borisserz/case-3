@@ -852,7 +852,7 @@ export default function App() {
     activeArtifact?.kind === "source" || activeArtifact?.kind === "intent"
       ? activeArtifact.title
       : sourceDraft?.title ?? null;
-  /** User Source plaque for this report — keep PDF on «Документ» tab after send. */
+  /** User Source plaque for this report — «Документ» shows the extracted markdown. */
   const reportSourceAttachment = useMemo((): SourceAttachment | null => {
     if (railArtifact?.kind !== "report") return null;
     const idx = msgs.findIndex((m) => m.id === railArtifact.msgId);

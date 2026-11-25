@@ -4,6 +4,7 @@ import {
   docsForSourceModal,
   resolveOriginalDownload,
   sourceModalEyebrow,
+  sourceRailView,
 } from "./sourceRead";
 
 describe("sourceRead", () => {
@@ -61,6 +62,13 @@ describe("sourceRead", () => {
         fileName: "Вставленный текст.md",
       },
     );
+  });
+
+  it("shows parsed markdown in the rail when the extract exists", () => {
+    assert.equal(sourceRailView("| A | B |\n| --- | --- |\n| 1 | 2 |", true), "text");
+    assert.equal(sourceRailView("", true), "document");
+    assert.equal(sourceRailView("   ", true), "document");
+    assert.equal(sourceRailView("", false), "text");
   });
 
   it("formats crisp modal eyebrow from format or extension", () => {

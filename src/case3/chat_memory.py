@@ -980,7 +980,11 @@ def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[s
         if not png.is_file():
             continue
         stem = png.stem
-        if not (stem.startswith("cht_") or stem.startswith("dia_")):
+        if not (
+            stem.startswith("cht_")
+            or stem.startswith("dia_")
+            or stem.startswith("fig_")
+        ):
             continue
         info = status.get(stem) if isinstance(status, dict) else None
         if isinstance(info, dict) and info.get("ok") is False:
@@ -989,7 +993,13 @@ def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[s
             str(info.get("kind") or "")
             if isinstance(info, dict)
             else ""
-        ) or ("diagram" if stem.startswith("dia_") else "chart")
+        ) or (
+            "diagram"
+            if stem.startswith("dia_")
+            else "figure"
+            if stem.startswith("fig_")
+            else "chart"
+        )
         previews.append(
             {
                 "id": stem,

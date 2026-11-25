@@ -101,9 +101,35 @@ function asKind(raw: string | undefined, hint?: DiaKind): DiaKind {
   return hint || "process";
 }
 
+const _OTHER_DIAGRAM =
+  /^(?:sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|mindmap|timeline|gitGraph|journey|quadrantChart|sankey|xychart|block-beta|C4Context|C4Container)\b/i;
+
+/** Lines Mermaid would draw, without init directives, fences, or a title preamble. */
+export function flowchartBodyLines(mermaid: string): string[] {
+  const lines = (mermaid || "").replace(/^\uFEFF/, "").split(/\r?\n/);
+  let frontmatter = false;
+  const out: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line === "---") {
+      frontmatter = !frontmatter;
+      continue;
+    }
+    if (frontmatter) continue;
+    if (line.startsWith("%%") || line.startsWith("```")) continue;
+    if (/^(?:title|accTitle|accDescr)\b/i.test(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
 export function canParseFlowchart(mermaid: string): boolean {
-  const first = (mermaid || "").trim().split(/\r?\n/)[0] || "";
-  return /^\s*flowchart\s+/i.test(first) || /^\s*graph\s+/i.test(first);
+  const lines = flowchartBodyLines(mermaid);
+  if (lines.some((line) => /^(?:flowchart|graph)\b/i.test(line))) return true;
+  const first = lines[0] || "";
+  if (_OTHER_DIAGRAM.test(first)) return false;
+  return lines.some((line) => /-->|<-->|-\.->/.test(line));
 }
 
 /** True when visual editor can open without risking silent data loss. */

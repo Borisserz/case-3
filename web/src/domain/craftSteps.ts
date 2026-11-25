@@ -52,7 +52,7 @@ const DIAGRAM: CraftStep[] = [
 
 const PRESENTATION: CraftStep[] = [
   { id: "source", label: "Изучаю материал" },
-  { id: "layout", label: "Пишу структуру слайдов" },
+  { id: "layout", label: "Готовлю текст" },
   { id: "charts", label: "Рисую графики" },
   { id: "photos", label: "Собираю медиа" },
   { id: "slides_plan", label: "План слайдов" },
@@ -249,6 +249,10 @@ export type CraftProgressOpts = {
   frozen?: boolean;
 };
 
+function slideStructureBlurb(text: string): boolean {
+  return /^(?:пишу|формирую|собираю)\s+структуру\s+слайд/i.test(text.trim());
+}
+
 /**
  * Steps the user can see.
  * While the run is live and the model has not spoken, the menu stays hidden.
@@ -268,7 +272,7 @@ export function spokenCraftRows(
   if (ids.length) {
     return arrived.flatMap((step) => {
       const text = spoken[step.id]?.trim();
-      if (!text) return [];
+      if (!text || slideStructureBlurb(text)) return [];
       return [{ ...step, label: text }];
     });
   }

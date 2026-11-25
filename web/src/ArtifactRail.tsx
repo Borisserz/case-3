@@ -39,6 +39,7 @@ import {
 import { reportToMarkdown } from "./domain/reportMarkdown";
 import { modeSurfaces } from "./domain/liberModes";
 import { SOURCE_LABEL } from "./domain/sourceCopy";
+import { sourceRailView } from "./domain/sourceRead";
 import { redoChord, undoChord } from "./domain/undoChord";
 import { SourcePane } from "./SourcePane";
 import {
@@ -1101,7 +1102,7 @@ export function ArtifactRail({
                   fileName={sourceFileName}
                   editable={sourceEditable && !sourceAsDocument}
                   onTextChange={onSourceTextChange}
-                  viewMode={sourceAsDocument ? "document" : "text"}
+                  viewMode={sourceRailView(displaySource, sourceAsDocument)}
                   previewUrl={
                     artifact.kind === "source"
                       ? artifact.previewUrl

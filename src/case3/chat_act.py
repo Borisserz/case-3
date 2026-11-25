@@ -23,6 +23,11 @@ _REWRITE = re.compile(
     r"распиши|разверни|расширь|дополни",
     re.IGNORECASE,
 )
+# «поменять раздел …» is a rewrite. «поменяй заголовок» and «поменяй цвет» are not.
+_SECTION_SWAP = re.compile(
+    r"поменя(?:й|ть)\s+(?:раздел\w*|абзац\w*|глав\w*)\b",
+    re.IGNORECASE,
+)
 _PROSE = re.compile(
     r"переделай|переделать|точнее|не нравится|улучши|улучшить|поправь|"
     r"слабо|размыт|перефразир|короче|сократи|подробнее|детальнее|шире",
@@ -272,6 +277,13 @@ def _clean_name(name: str) -> str:
         if trimmed == cleaned:
             break
         cleaned = trimmed
+    cleaned = re.sub(
+        r"\s+на\s+(?:более\s+)?(?:коротк\w*|подробн\w*|ясн\w*|прост\w*)\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    cleaned = re.sub(r"^(?:во|в)\s+", "", cleaned, count=1, flags=re.IGNORECASE)
     cleaned = cleaned.strip(" «»\"")
     if not cleaned:
         return ""
@@ -956,7 +968,7 @@ def title_target(text: str | None) -> str:
 def _brief_for(raw: str) -> str:
     if re.search(r"точн|строж|построж|суше|яснее|делове", raw, re.IGNORECASE):
         return "clearer"
-    if re.search(r"короче|сократ|проще|упрост", raw, re.IGNORECASE):
+    if re.search(r"короче|коротк|сократ|проще|упрост", raw, re.IGNORECASE):
         return "tighter"
     if re.search(r"не нравится|слаб|размыт", raw, re.IGNORECASE):
         return "dislike"
@@ -1069,6 +1081,51 @@ def explicit_new_artifact(raw: str) -> bool:
 def _explicit_new_artifact(raw: str) -> bool:
     """Backward-compatible private alias."""
     return explicit_new_artifact(raw)
+
+
+_CHART_STYLE = re.compile(
+    r"подпис|легенд|шрифт|контраст|крупн|мельч|сетк|\bос[ьи]\b|оформ|"
+    r"отредактир|поправ|убери|добав|размер|толщ",
+    re.IGNORECASE,
+)
+_CHART_STYLE_FILLER = re.compile(
+    r"\b(?:отредактир\w*|поправ\w*|исправ\w*|измени\w*|график\w*|"
+    r"пожалуйста|его|ее|её|этот|эта|эту|это)\b",
+    re.IGNORECASE,
+)
+
+
+def _chart_style_act(raw: str, *, question: bool, has_chart: bool) -> ChatAct | None:
+    """A wording change of an open chart. Type changes stay on the retype path."""
+    if question or not has_chart or explicit_new_artifact(raw):
+        return None
+    if chart_type_named(raw) or not re.search(r"график", raw, re.IGNORECASE):
+        return None
+    if not _CHART_STYLE.search(raw):
+        return None
+    detail = " ".join(_CHART_STYLE_FILLER.sub(" ", raw).split())
+    if not detail or detail in {"на", "у", "в", "и"}:
+        return ChatAct(
+            kind="revise",
+            op="ask",
+            say=(
+                "Что изменить на графике: вид (пончик, столбцы, линия), "
+                "подписи, легенду или цвета?"
+            ),
+        )
+    return ChatAct(
+        kind="revise",
+        op="restyle_chart",
+        title=raw,
+        say="Меняю график по твоей фразе. Числа те же.",
+    )
+
+
+def _named_chart_edit(raw: str, *, has_chart: bool) -> bool:
+    """A named shape for a chart already on the table, not a new build."""
+    if not chart_type_named(raw) or explicit_new_artifact(raw):
+        return False
+    return bool(re.search(r"график", raw, re.IGNORECASE) or has_chart)
 
 
 def resolve_act(
@@ -1507,9 +1564,19 @@ def resolve_act(
                 say="Меняю схему по твоей фразе. Новых чисел не добавлю.",
             )
 
+    chart_style = _chart_style_act(raw, question=question, has_chart=has_chart)
+    if chart_style is not None:
+        return chart_style
+
     if (
         not question
-        and (_REWRITE.search(raw) or _PROSE.search(raw))
+        and not _named_chart_edit(raw, has_chart=has_chart)
+        and (
+            _REWRITE.search(raw)
+            or _PROSE.search(raw)
+            or _SECTION_SWAP.search(raw)
+            or re.search(r"измени(?:ть)?\s+текст", raw, re.IGNORECASE)
+        )
         and not (has_deck and re.search(r"слайд", raw, re.IGNORECASE))
     ):
         if not has_report:
@@ -1669,17 +1736,27 @@ def resolve_act(
             return _hue_act(raw, hue)
 
     named_chart = chart_type_named(raw)
-    if (
-        not question
-        and not _explicit_new_artifact(raw)
-        and re.search(
-            r"смени|поменя|сделай|сделать|переделай|исправ|вид",
+    other_type = bool(re.search(r"друг\w*\s+тип", raw, re.IGNORECASE))
+    chart_verb = bool(
+        re.search(
+            r"смени|поменя|сделай|сделать|переделай|исправ|измени|вид",
             raw,
             re.IGNORECASE,
         )
+    )
+    if (
+        not question
+        and not _explicit_new_artifact(raw)
         and (
-            re.search(r"график", raw, re.IGNORECASE)
-            or (named_chart and has_chart)
+            (named_chart and has_chart)
+            or (
+                chart_verb
+                and (
+                    re.search(r"график", raw, re.IGNORECASE)
+                    or (named_chart and has_chart)
+                    or (other_type and has_chart)
+                )
+            )
         )
     ):
         if not (has_report or has_deck or has_chart):

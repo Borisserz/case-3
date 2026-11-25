@@ -6,7 +6,7 @@ import { ArtifactCard } from "./ArtifactCard";
 import { DashboardChatCard } from "./DashboardChatCard";
 import { ContextPlaque } from "./ContextPlaque";
 import { EmptyState } from "./EmptyState";
-import { IconCopy, IconLiberMark } from "./icons";
+import { IconCopy, IconDownload, IconLiberMark } from "./icons";
 import { LONG_TEXT_CHARS } from "./domain/liberConstants";
 import type { LiberWorkMode } from "./domain/liberModes";
 import type { CraftFilmFrame } from "./domain/craftSteps";
@@ -556,8 +556,10 @@ export function ChatMessages({
                             (p) =>
                               p.kind === "chart" ||
                               p.kind === "diagram" ||
+                              p.kind === "figure" ||
                               p.id.startsWith("cht_") ||
-                              p.id.startsWith("dia_"),
+                              p.id.startsWith("dia_") ||
+                              p.id.startsWith("fig_"),
                           ) && (
                             <div className="msg-inline-charts">
                               {(m.result.previews || [])
@@ -565,17 +567,38 @@ export function ChatMessages({
                                   (p) =>
                                     p.kind === "chart" ||
                                     p.kind === "diagram" ||
+                                    p.kind === "figure" ||
                                     p.id.startsWith("cht_") ||
-                                    p.id.startsWith("dia_"),
+                                    p.id.startsWith("dia_") ||
+                                    p.id.startsWith("fig_"),
                                 )
-                                .map((p) => (
+                                .map((p) => {
+                                  const diagram =
+                                    p.kind === "diagram" || p.id.startsWith("dia_");
+                                  const photo =
+                                    p.kind === "figure" || p.id.startsWith("fig_");
+                                  const chart = !diagram && !photo;
+                                  return (
                                   <figure key={p.id} className="msg-inline-chart-card">
+                                    <a
+                                      className="msg-inline-chart-save"
+                                      href={p.url}
+                                      download={
+                                        diagram
+                                          ? "diagram.png"
+                                          : photo
+                                            ? "photo.png"
+                                            : "chart.png"
+                                      }
+                                      aria-label="Скачать PNG"
+                                      title="Скачать PNG"
+                                    >
+                                      <IconDownload />
+                                    </a>
                                     <button
                                       type="button"
                                       className="msg-inline-chart-open"
                                       onClick={() => {
-                                        const diagram =
-                                          p.kind === "diagram" || p.id.startsWith("dia_");
                                         if (
                                           diagram &&
                                           onOpenStoredRun &&
@@ -591,14 +614,14 @@ export function ChatMessages({
                                         }
                                         setOpenChart({
                                           url: p.url,
-                                          title: diagram ? "Схема" : "График",
+                                          title: diagram ? "Схема" : photo ? "Фото" : "График",
                                         });
                                       }}
                                     >
                                       <img src={p.url} alt="" />
                                     </button>
-                                    <figcaption>
-                                      {onRefineVisual ? (
+                                    {onRefineVisual && !chart ? (
+                                      <figcaption>
                                         <button
                                           type="button"
                                           className="msg-inline-chart-refine"
@@ -606,20 +629,11 @@ export function ChatMessages({
                                         >
                                           Уточнить
                                         </button>
-                                      ) : null}
-                                      <a
-                                        href={p.url}
-                                        download={
-                                          p.kind === "diagram" || p.id.startsWith("dia_")
-                                            ? "diagram.png"
-                                            : "chart.png"
-                                        }
-                                      >
-                                        Скачать PNG
-                                      </a>
-                                    </figcaption>
+                                      </figcaption>
+                                    ) : null}
                                   </figure>
-                                ))}
+                                  );
+                                })}
                             </div>
                           )}
                       </>

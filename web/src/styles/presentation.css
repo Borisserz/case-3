@@ -1080,42 +1080,6 @@
   transition: opacity 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: pointer;
 }
-.deck-cv-diagram-zoom-btn {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.75rem;
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--deck-ink, #232a26);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  cursor: pointer;
-  opacity: 0;
-  transform: translateY(-2px);
-  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
-  z-index: 10;
-}
-.deck-cv-diagram-live:hover .deck-cv-diagram-zoom-btn,
-.deck-cv-media:hover .deck-cv-diagram-zoom-btn {
-  opacity: 1;
-  transform: translateY(0);
-}
-.deck-cv-diagram-zoom-btn:hover {
-  background: #ffffff;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
-}
-.deck-cv-zoom-icon {
-  font-size: 0.9rem;
-  line-height: 1;
-}
 .deck-cv-diagram-live .mermaid-view,
 .deck-cv-diagram-live .mermaid-view-svg {
   width: 100%;
@@ -2392,11 +2356,11 @@ button.deck-cv-media,
 .presentation-layout-picker {
   background: var(--sheet, #ffffff);
   color: var(--ink, #14161a);
-  border: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.15)) 90%, var(--primary, #1e3a8a));
+  border: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.15)) 90%, var(--primary, #307060));
   border-radius: 14px;
-  max-width: 680px;
+  max-width: 880px;
   width: 100%;
-  max-height: 85vh;
+  height: min(820px, 92vh);
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 48px rgba(12, 14, 16, 0.28);
@@ -2449,57 +2413,141 @@ button.deck-cv-media,
   background: color-mix(in srgb, var(--primary, #1e3a8a) 8%, transparent);
 }
 
-.presentation-layout-picker-grid {
+.presentation-layout-picker-body {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.75rem;
-  padding: 1.25rem 1.5rem 1.5rem;
-  overflow-y: auto;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+
+.presentation-layout-picker-list {
+  overflow: auto;
+  padding: 0.55rem;
+  border-right: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.1)) 80%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .presentation-layout-opt {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--border, rgba(0, 0, 0, 0.12)) 90%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--sheet, #fff) 96%, var(--paper, #f7f6f2));
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.42rem 0.7rem 0.42rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.presentation-layout-opt:hover {
-  border-color: var(--deck-foil, var(--deck-accent, #3b82f6));
-  background: color-mix(in srgb, var(--deck-accent, #3b82f6) 8%, var(--sheet, #fff));
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+.presentation-layout-opt:hover,
+.presentation-layout-opt:focus-visible {
+  background: color-mix(in srgb, var(--primary, #307060) 7%, var(--sheet, #fff));
+  outline: none;
 }
 
-.presentation-layout-opt-icon {
-  font-size: 1.4rem;
-  line-height: 1.2;
-  flex-shrink: 0;
-}
-
-.presentation-layout-opt-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
+.presentation-layout-opt.is-active {
+  background: color-mix(in srgb, var(--primary, #307060) 10%, var(--sheet, #fff));
+  border-color: color-mix(in srgb, var(--primary, #307060) 28%, transparent);
+  box-shadow: inset 2px 0 0 var(--primary, #307060);
 }
 
 .presentation-layout-opt-name {
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   color: var(--ink, #14161a);
 }
 
 .presentation-layout-opt-desc {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--muted, #6b7280);
   line-height: 1.35;
+}
+
+.presentation-layout-preview {
+  min-width: 0;
+  padding: 0.9rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  background: color-mix(in srgb, var(--paper, #f4f1ea) 62%, var(--sheet, #fff));
+}
+
+.presentation-layout-preview-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--primary, #307060) 70%, var(--muted, #6b7280));
+}
+
+.presentation-layout-slide-frame {
+  flex: 0 1 auto;
+  min-height: 220px;
+  max-height: 100%;
+  overflow: auto;
+  padding: 1rem 1.15rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--rule, rgba(0, 0, 0, 0.12)) 90%, transparent);
+  background:
+    linear-gradient(180deg, #fff 0%, color-mix(in srgb, var(--paper, #f7f6f2) 35%, #fff) 100%);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--ink, #14161a) 6%, transparent);
+}
+
+.presentation-layout-slide.msg-md {
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.presentation-layout-slide.msg-md h2.src-h {
+  font-size: 1.15rem;
+  margin-top: 0;
+}
+
+.presentation-layout-slide.msg-md h3.src-h {
+  font-size: 0.95rem;
+  margin-top: 0.2rem;
+}
+
+.presentation-layout-slide.msg-md h4.src-h {
+  font-size: 0.82rem;
+  margin-top: 0.45rem;
+  margin-bottom: 0.15rem;
+}
+
+.presentation-layout-slide.msg-md .src-p,
+.presentation-layout-slide.msg-md .src-ul {
+  margin-bottom: 0.4rem;
+}
+
+.presentation-layout-slide.msg-md .msg-table {
+  font-size: 0.74rem;
+}
+
+.presentation-layout-preview-note {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--muted, #6b7280);
+}
+
+@media (max-width: 760px) {
+  .presentation-layout-picker-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .presentation-layout-preview {
+    order: -1;
+  }
+
+  .presentation-layout-slide-frame {
+    max-height: 220px;
+  }
 }
 
 

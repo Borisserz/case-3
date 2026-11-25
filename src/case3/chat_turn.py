@@ -1439,6 +1439,38 @@ def chart_plot_blank(html: str | None) -> bool:
     return True
 
 
+def generate_chat_photo(
+    user_text: str,
+    figs_dir,
+    *,
+    pack_id: str = "",
+) -> tuple[list[dict], dict[str, dict]]:
+    """One Image API photo for a chat turn that asked for a picture, not a chart."""
+    from pathlib import Path
+
+    from case3.image_api import ImageApiConfig, generate_png
+    from case3.image_prompt import ImagePromptError, ensure_english_image_prompt
+    from case3.turn_route import photo_subject
+
+    dest_dir = Path(figs_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    fid = "fig_01"
+    dest = dest_dir / f"{fid}.png"
+    subject = photo_subject(user_text)
+    try:
+        try:
+            prompt = ensure_english_image_prompt(subject)
+        except ImagePromptError:
+            prompt = subject
+        generate_png(ImageApiConfig.from_env(), prompt, dest, pack_id=pack_id or None)
+    except Exception as exc:  # noqa: BLE001 — chat still finishes if the photo service fails
+        return [], {fid: {"ok": False, "error": str(exc)[:300], "kind": "figure"}}
+    return (
+        [{"id": fid, "prompt": subject, "caption": subject, "source": "api"}],
+        {fid: {"ok": True, "path": str(dest), "kind": "figure"}},
+    )
+
+
 def generate_chat_charts(
     source: str,
     intent: str,

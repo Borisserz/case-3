@@ -370,6 +370,82 @@ def context_shrink_max_tokens(current: int, *, floor: int = 1024) -> int | None:
     return nxt if nxt < cur else None
 
 
+def parse_context_window(body_txt: str) -> tuple[int, int] | None:
+    """(prompt tokens, n_ctx) from a llama-server overflow body. None if absent."""
+    text = body_txt or ""
+    prompt = re.search(r"n_prompt_tokens\"?\s*[:=]\s*(\d+)", text)
+    ctx = re.search(r"n_ctx\"?\s*[:=]\s*(\d+)", text)
+    if not prompt:
+        prompt = re.search(r"request\s*\((\d+)\s*tokens\)", text, re.I)
+    if not ctx:
+        ctx = re.search(r"context size\s*\((\d+)\s*tokens\)", text, re.I)
+    if not prompt or not ctx:
+        return None
+    n_prompt, n_ctx = int(prompt.group(1)), int(ctx.group(1))
+    if n_prompt < 1 or n_ctx < 512:
+        return None
+    return n_prompt, n_ctx
+
+
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(part.get("text") or "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return str(content or "")
+
+
+_CLIP_NOTE = (
+    "\n\n[Дальше источник обрезан: в окно модели не влез. "
+    "Числа бери только из текста выше.]\n"
+)
+
+
+def fit_oversize_prompt(body: dict[str, Any], body_txt: str, max_tokens: int) -> int | None:
+    """Clip the longest message so prompt + reply fit n_ctx.
+
+    Returns the max_tokens to send on the retry, or None when this body is not
+    a measured prompt overflow. The prompt itself is larger than the window,
+    so shrinking only the reply cannot help.
+    """
+    if not context_exceeded(body_txt):
+        return None
+    parsed = parse_context_window(body_txt)
+    if not parsed:
+        return None
+    n_prompt, n_ctx = parsed
+    reserve = min(int(max_tokens), 4096)
+    reserve = max(2048, min(reserve, max(1024, n_ctx // 4)))
+    budget = n_ctx - reserve - 256
+    if budget < 1500:
+        return None
+    messages = body.get("messages") or []
+    texts = [_message_text(msg.get("content")) for msg in messages if isinstance(msg, dict)]
+    if not texts:
+        return None
+    if n_prompt <= budget:
+        room = n_ctx - n_prompt - 256
+        if 1024 <= room < int(max_tokens):
+            return room
+        return None
+    total_chars = sum(len(text) for text in texts) or 1
+    drop_chars = int((n_prompt - budget) * (total_chars / float(n_prompt))) + 64
+    idx = max(range(len(texts)), key=lambda i: len(texts[i]))
+    text = texts[idx]
+    keep = max(1500, len(text) - drop_chars)
+    if keep >= len(text):
+        return None
+    head = text[:keep].rstrip()
+    if _CLIP_NOTE.strip() not in head:
+        head = head[: max(0, keep - len(_CLIP_NOTE))].rstrip() + _CLIP_NOTE
+    messages[idx]["content"] = head
+    return reserve
+
+
 def build_body(
     *,
     system: str,
@@ -653,6 +729,21 @@ class LLMClient:
                         )
                         max_tokens = nxt
                         credit_shrinks += 1
+                        attempt += 1
+                        continue
+
+                # Prompt itself is larger than n_ctx (HTTP 400). Cutting the reply
+                # does not help — drop the tail of the longest message and retry.
+                if exc.code in (400, 500) and context_shrinks < 3:
+                    fitted = fit_oversize_prompt(body, body_txt, max_tokens)
+                    if fitted is not None:
+                        log.warning(
+                            "LLM context overflow — clipped prompt, max_tokens %d → %d",
+                            max_tokens,
+                            fitted,
+                        )
+                        max_tokens = fitted
+                        context_shrinks += 1
                         attempt += 1
                         continue
 

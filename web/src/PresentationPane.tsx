@@ -14,6 +14,8 @@ import type { DeckIR, DeckSlide } from "./deckTypes";
 import {
   addedSlideIndex,
   bindSlidePngs,
+  recallDeckPngMap,
+  rememberDeckPngMap,
   retargetSlidePngs,
 } from "./domain/slideStrip";
 import { recallDeckPlace, rememberDeckPlace, type DeckPlace } from "./domain/deckPlace";
@@ -189,19 +191,24 @@ export function PresentationPane({
   const [pickerAfterId, setPickerAfterId] = useState<string | null>(null);
   const [zoomDiagram, setZoomDiagram] = useState<DiagramInfo | null>(null);
   const [copiedPng, setCopiedPng] = useState(false);
-  const pngKey = `${runId}\n${slidePngs.join("\n")}`;
+  const [localPngs, setLocalPngs] = useState<string[]>([]);
+  const pngList = localPngs.length > slidePngs.length ? localPngs : slidePngs;
+  const pngKey = `${runId}\n${pngList.join("\n")}`;
   const [pngSession, setPngSession] = useState<{
     key: string;
     map: Record<string, string | null>;
   } | null>(null);
   const dirtyRef = useRef(false);
-  const n = Math.max(slidePngs.length, deck?.slides?.length || 0);
+  const n = Math.max(pngList.length, deck?.slides?.length || 0);
   const safeIdx = n ? Math.min(idx, n - 1) : 0;
   const live = Boolean(deck?.slides?.length);
+  const recalledPngs = recallDeckPngMap(runId);
   const pngById =
     pngSession && pngSession.key === pngKey
       ? pngSession.map
-      : bindSlidePngs(deck?.slides || [], slidePngs);
+      : recalledPngs && recalledPngs.key === pngKey
+        ? recalledPngs.map
+        : bindSlidePngs(deck?.slides || [], pngList);
   const currentSlideId = deck?.slides?.[safeIdx]?.id;
   const currentPng =
     live && currentSlideId
@@ -278,6 +285,11 @@ export function PresentationPane({
   }, [diagramsProp]);
 
   useEffect(() => {
+    if (!pngSession || pngSession.key !== pngKey) return;
+    rememberDeckPngMap(runId, pngSession.key, pngSession.map);
+  }, [pngKey, pngSession, runId]);
+
+  useEffect(() => {
     let cancelled = false;
     void fetch(`/api/runs/${encodeURIComponent(runId)}/slides`)
       .then((r) => r.json())
@@ -285,12 +297,25 @@ export function PresentationPane({
         (body: {
           charts?: Record<string, { type?: string; palette?: string }>;
           diagrams?: DiagramResult[];
+          slide_pngs?: unknown;
+          deck?: DeckIR;
+          downloads?: Record<string, string>;
         }) => {
-          if (!cancelled && body?.charts && typeof body.charts === "object") {
+          if (cancelled) return;
+          if (body?.charts && typeof body.charts === "object") {
             setChartIndex(body.charts);
           }
-          if (!cancelled && Array.isArray(body?.diagrams) && body.diagrams.length > 0) {
+          if (Array.isArray(body?.diagrams) && body.diagrams.length > 0) {
             setDiagrams(body.diagrams);
+          }
+          const pngs = Array.isArray(body.slide_pngs)
+            ? body.slide_pngs.filter(
+                (url): url is string => typeof url === "string" && url.length > 0,
+              )
+            : [];
+          if (pngs.length) setLocalPngs(pngs);
+          if (!deckProp?.slides?.length && body.deck?.slides?.length) {
+            setDeck(body.deck);
           }
         },
       )
@@ -300,6 +325,8 @@ export function PresentationPane({
     return () => {
       cancelled = true;
     };
+    // deckProp is read once per run. onDeckUpdated stays on the safety-net effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
   const refreshSlidesNow = useCallback(async (): Promise<DeckIR | null> => {
@@ -1123,7 +1150,7 @@ export function PresentationPane({
         case "llm_retry":
         case "plan":
         case "ir":
-          return "Пишу структуру слайдов";
+          return "Собираю презентацию";
         case "diagrams":
         case "media":
         case "charts":

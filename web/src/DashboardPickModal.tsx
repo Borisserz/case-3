@@ -243,6 +243,23 @@ export function DashboardPickModal({
   }, [onClose]);
 
   const litRow = (list || []).find((row) => row.name === lit && row.preview);
+  const hoverTimer = useRef<number | null>(null);
+
+  function armPreview(name: string) {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setLit(name), lit ? 0 : 120);
+  }
+
+  function clearPreview() {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setLit(""), 90);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    };
+  }, []);
 
   if (!viewing) {
     return (
@@ -297,9 +314,13 @@ export function DashboardPickModal({
                 className={`dash-pick-item is-sketch-${index % 3}`}
                 disabled={busy}
                 onMouseEnter={() => {
+                  if (row.preview) armPreview(row.name);
+                }}
+                onMouseLeave={clearPreview}
+                onFocus={() => {
                   if (row.preview) setLit(row.name);
                 }}
-                onMouseLeave={() => setLit("")}
+                onBlur={clearPreview}
                 onClick={() => void choose(row.name)}
               >
                 <span
@@ -341,15 +362,23 @@ export function DashboardPickModal({
               <p className="dash-viewer-note">Доступных дашбордов пока нет.</p>
             ) : null}
           </div>
-        </div>
-        {litRow ? (
-          <div className="dash-pick-lightbox" aria-hidden="true">
-            <figure className="dash-pick-lightbox-sheet">
-              <img src={previewUrl(litRow.name)} alt="" />
-              <figcaption>{litRow.title || litRow.name}</figcaption>
-            </figure>
+          <div
+            className={`dash-pick-preview-slot${litRow ? " is-on" : ""}`}
+            aria-hidden="true"
+          >
+            <div>
+              {litRow ? (
+                <figure className="dash-pick-preview">
+                  <img src={previewUrl(litRow.name)} alt="" />
+                  <figcaption>
+                    <span>{litRow.title || litRow.name}</span>
+                    <small>Нажмите карточку, чтобы открыть экран</small>
+                  </figcaption>
+                </figure>
+              ) : null}
+            </div>
           </div>
-        ) : null}
+        </div>
       </div>
     );
   }

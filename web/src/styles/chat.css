@@ -327,6 +327,7 @@
 }
 
 .msg-inline-chart-card {
+  position: relative;
   margin: 0;
   width: 100%;
   max-width: 460px;
@@ -335,6 +336,31 @@
   background: var(--sheet);
   overflow: hidden;
   transition: transform 0.16s var(--ease-out), border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.msg-inline-chart-save {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 8px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--sheet) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, var(--border));
+  box-shadow: var(--shadow-card);
+}
+
+.msg-inline-chart-save svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.msg-inline-chart-save:hover {
+  background: var(--sheet);
 }
 
 .msg-inline-chart-card:hover {

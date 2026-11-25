@@ -48,6 +48,7 @@ export function reviseSurface(
     op === "recolor_charts" ||
     op === "retype_charts" ||
     op === "retype_chart" ||
+    op === "restyle_chart" ||
     op === "undo" ||
     op === "redo" ||
     op === "retitle" ||

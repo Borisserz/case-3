@@ -57,6 +57,15 @@ export function resolveOriginalDownload(
   };
 }
 
+/** Right rail shows the extracted markdown. The original PDF stays a download. */
+export function sourceRailView(
+  text: string | null | undefined,
+  asDocument: boolean,
+): "text" | "document" {
+  if ((text || "").trim()) return "text";
+  return asDocument ? "document" : "text";
+}
+
 export function sourceModalEyebrow(
   doc: Pick<SourceAttachment, "title" | "fileName" | "format">,
 ): string {

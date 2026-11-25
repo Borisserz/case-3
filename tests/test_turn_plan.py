@@ -95,6 +95,14 @@ def test_bare_chart_auto_is_chat_chart():
     assert p.want_chat_chart is True
 
 
+def test_change_to_pie_is_revise_when_prior_chart():
+    plan = plan_turn("изменить на круговую", mode_hint="auto", has_chart=True)
+    assert plan.kind == "revise"
+    assert plan.edit_act is not None
+    assert plan.edit_act.op == "retype_charts"
+    assert plan.edit_act.chart == "donut"
+
+
 def test_dorabotay_grafik_krugovaya_is_revise_when_prior_chart():
     assert (
         plan_turn(

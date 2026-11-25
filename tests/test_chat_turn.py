@@ -1180,3 +1180,21 @@ def test_generate_chat_charts_preserves_prev_type_hint_when_color_only_edit(tmp_
         previous_chart={"id": "cht_02", "type": "pie", "caption": "Доли", "html": "<canvas id='c'></canvas>"},
     )
     assert seen and "СОХРАНИ type=pie" in seen[0]
+
+
+def test_generate_chat_photo_writes_one_png(tmp_path: Path, monkeypatch) -> None:
+    from case3.chat_turn import generate_chat_photo
+
+    def _png(_cfg, prompt, dest, **_kw):
+        assert "workshop" in prompt
+        dest.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    monkeypatch.setattr(
+        "case3.image_prompt.ensure_english_image_prompt",
+        lambda text, **_kw: "a workshop photo",
+    )
+    monkeypatch.setattr("case3.image_api.generate_png", _png)
+    figures, status = generate_chat_photo("сделай фото цеха", tmp_path / "figures")
+    assert figures[0]["id"] == "fig_01"
+    assert status["fig_01"]["ok"] is True
+    assert (tmp_path / "figures" / "fig_01.png").is_file()

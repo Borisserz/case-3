@@ -128,6 +128,7 @@ def _surface(act: Any) -> str:
         "recolor_charts",
         "retype_charts",
         "retype_chart",
+        "restyle_chart",
         "undo",
         "redo",
         "retitle",
@@ -653,6 +654,8 @@ def try_chat_revise(
         say = _retype_charts(work_dir, act.chart) or say
     elif act.op == "retype_chart" and act.chart and act.chart_at:
         say = _retype_one(work_dir, act.chart, act.chart_at) or say
+    elif act.op == "restyle_chart":
+        say = _restyle_charts(work_dir, text) or say
     elif act.op == "rename_heading" and act.section and act.title:
         say = _rename_heading(work_dir, act.section, act.title) or say
     elif act.op == "slide_text" and act.slide and act.title:
@@ -702,12 +705,15 @@ def try_chat_revise(
     # copy on the older file shows the same line twice.
     noted_surface = history_surface if act.op in {"undo", "redo"} and history_surface else _surface(act)
     chart_previews: list[dict[str, str]] | None = None
-    if (
-        act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue"}
-        and not any(work_dir.glob("*.tex"))
-        and not _flags(work_meta)[0]
-    ):
-        noted_surface = "chat"
+    if act.op in {
+        "retype_charts",
+        "retype_chart",
+        "recolor_charts",
+        "recolor_hue",
+        "restyle_chart",
+    } and _chart_edit_shown(say):
+        if not any(work_dir.glob("*.tex")) and not _flags(work_meta)[0]:
+            noted_surface = "chat"
         chart_previews = _chart_previews(work_id, work_dir)
     if rows and head_dir.is_dir() and head_id in chain_ids:
         _note(head_dir, text, say, act, surface=noted_surface)
@@ -818,11 +824,10 @@ def _rename_heading(out_dir: Path, old: str, new: str) -> str:
         titles = _heading_titles(texs[0].read_text(encoding="utf-8"))
     except OSError:
         return "Не смог прочитать разделы отчёта."
-    want = old.casefold()
     hits = [
         index
         for index, title in enumerate(titles, start=1)
-        if want in title.casefold() or title.casefold() in want
+        if _titles_match(old, title)
     ]
     if len(hits) != 1:
         shown = ", ".join(titles[:8])
@@ -955,6 +960,41 @@ def _friendly_chart_edit_error(exc: Exception) -> str:
     return "Не удалось изменить график. Попробуйте ещё раз или перестройте его в чате заново."
 
 
+def _pdf_note(out_dir: Path) -> str:
+    if any(out_dir.glob("*.tex")):
+        return " PDF и DOCX пересобраны."
+    return ""
+
+
+def _chart_html(out_dir: Path, chart_id: str) -> str:
+    path = out_dir / "figures.json"
+    if not path.is_file():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    charts = payload.get("charts") if isinstance(payload, dict) else None
+    if not isinstance(charts, list):
+        return ""
+    for chart in charts:
+        if isinstance(chart, dict) and str(chart.get("id") or "") == chart_id:
+            return str(chart.get("html") or "")
+    return ""
+
+
+def _type_landed(out_dir: Path, chart_id: str, chart_type: str) -> bool:
+    from case3.chart_harden import html_matches_type
+
+    html = _chart_html(out_dir, chart_id)
+    return bool(html) and html_matches_type(html, chart_type)
+
+
+def _chart_edit_shown(say: str) -> bool:
+    low = (say or "").casefold()
+    return low.startswith(("меняю", "поправил", "перекрасил"))
+
+
 def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
     from case3.chart_edit import ChartEditError, edit_chart_in_run
     from case3.chat_act import CHART_SAY
@@ -970,7 +1010,9 @@ def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
         edit_chart_in_run(out_dir, ids[index - 1], chart_type=chart_type, formats=formats)
     except ChartEditError as exc:
         return _friendly_chart_edit_error(exc)
-    return f"Меняю график {index} на {label}. Числа те же."
+    if not _type_landed(out_dir, ids[index - 1], chart_type):
+        return "Тип не сменился, картинка осталась прежней."
+    return f"Меняю график {index} на {label}. Числа те же.{_pdf_note(out_dir)}"
 
 
 def _retype_charts(out_dir: Path, chart_type: str) -> str:
@@ -992,7 +1034,26 @@ def _retype_charts(out_dir: Path, chart_type: str) -> str:
             )
         except ChartEditError as exc:
             return _friendly_chart_edit_error(exc)
-    return f"Меняю графики на {label}. Числа те же."
+        if not _type_landed(out_dir, chart_id, chart_type):
+            return "Тип не сменился, картинка осталась прежней."
+    return f"Меняю графики на {label}. Числа те же.{_pdf_note(out_dir)}"
+
+
+def _restyle_charts(out_dir: Path, text: str) -> str:
+    """Hand the user's sentence to the chart editor. Numbers stay, then the file rebuilds."""
+    from case3.chart_edit import ChartEditError, edit_chart_in_run
+
+    ids = _chart_ids(out_dir)
+    if not ids:
+        return "Графиков в этом материале нет."
+    targets = ids if re.search(r"графики|все\s+график", text or "", re.IGNORECASE) else ids[-1:]
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    for chart_id in targets:
+        try:
+            edit_chart_in_run(out_dir, chart_id, style=text, formats=formats)
+        except ChartEditError as exc:
+            return _friendly_chart_edit_error(exc)
+    return f"Поправил график. Числа те же.{_pdf_note(out_dir)}"
 
 
 def _chart_ids(out_dir: Path) -> list[str]:
@@ -1114,6 +1175,9 @@ def _rewrite(out_dir: Path, text: str, act: Any) -> str:
     if not texs:
         return "В этом чате нет текста отчёта, раздел править негде."
     tex = texs[0].read_text(encoding="utf-8")
+    resolved = _matched_title(titles, name)
+    if resolved:
+        name = resolved
     under = _paragraphs_under(tex, name)
     if under is None:
         shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
@@ -1150,15 +1214,16 @@ def _rewrite(out_dir: Path, text: str, act: Any) -> str:
     except ParagraphEditError as exc:
         return str(exc)
     if parsed:
-        return f"Переписал раздел «{name}» в текущем отчёте."
+        return f"Переписал раздел «{name}» в текущем отчёте.{_pdf_note(out_dir)}"
     from case3.chat_turn import number_norms, stray_numbers
 
     fresh = stray_numbers(body, number_norms(f"{current}\n{source}"))
     if fresh:
         return (
             f"Переписал раздел «{name}». Поставил {fresh[0]} из твоего сообщения."
+            f"{_pdf_note(out_dir)}"
         )
-    return f"Переписал раздел «{name}» по документам. Новых чисел нет."
+    return f"Переписал раздел «{name}» по документам. Новых чисел нет.{_pdf_note(out_dir)}"
 
 
 def _replace_section_prose(
@@ -1193,7 +1258,7 @@ def _replace_section_prose(
         except OSError:
             pass
         return f"Не стал менять «{name}»: {exc}"
-    return f"Переписал раздел «{name}» в текущем отчёте."
+    return f"Переписал раздел «{name}» в текущем отчёте.{_pdf_note(out_dir)}"
 
 
 def _paragraph_word(count: int) -> str:
@@ -1274,7 +1339,7 @@ def _rewrite_section(
         say = f"Переписал раздел «{name}»: {count}. Новых чисел нет."
     if skipped:
         say += f" Без изменений: {skipped}."
-    return say
+    return say + _pdf_note(out_dir)
 
 
 def _intro_title(titles: list[str]) -> str:
@@ -1319,13 +1384,53 @@ def _heading_titles(tex: str) -> list[str]:
     return titles
 
 
+def _title_stems(text: str) -> list[str]:
+    import re
+
+    from case3.chat_memory import _stem
+
+    stems: list[str] = []
+    for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", text or ""):
+        stem = _stem(word).rstrip("ьъ")
+        if len(stem) >= 3:
+            stems.append(stem)
+    return stems
+
+
+def _titles_match(name: str, title: str) -> bool:
+    """True when the asked section is this heading, including Russian case.
+
+    «Введения» and «введении» are the heading «Введение». A short heading that
+    merely sits inside a longer asked name still matches, as before.
+    """
+    from case3.chat_turn import _same_topic
+
+    want = (name or "").casefold().replace("ё", "е").strip()
+    folded = (title or "").casefold().replace("ё", "е").strip()
+    if not want or not folded:
+        return False
+    if want in folded or folded in want:
+        return True
+    asked = _title_stems(name)
+    have = _title_stems(title)
+    if not asked or not have:
+        return False
+    return all(any(_same_topic(stem, other) for other in have) for stem in asked)
+
+
+def _matched_title(titles: list[str], name: str) -> str:
+    hits = [title for title in titles if _titles_match(name, title)]
+    if len(hits) != 1:
+        return ""
+    return hits[0]
+
+
 def _paragraphs_under(tex: str, name: str) -> list[int] | None:
     """1-based paragraph indexes inside one heading. None when the name is ambiguous."""
     from case3.tex_preview import find_heading_spans, find_paragraph_spans
 
     titles = _heading_titles(tex)
-    want = name.casefold()
-    hits = [i for i, title in enumerate(titles) if want in title.casefold() or title.casefold() in want]
+    hits = [i for i, title in enumerate(titles) if _titles_match(name, title)]
     if len(hits) != 1:
         return None
     headings = find_heading_spans(tex)
@@ -1705,11 +1810,10 @@ def _add_paragraph(out_dir: Path, section: str, text: str) -> str:
             )
         else:
             titles = _heading_titles(tex)
-            want = section.casefold()
             hits = [
                 i
                 for i, title in enumerate(titles, start=1)
-                if want in title.casefold() or title.casefold() in want
+                if _titles_match(section, title)
             ]
             insert_paragraph_in_run(
                 out_dir,
@@ -1962,12 +2066,7 @@ def _delete_section(out_dir: Path, name: str) -> str:
     for start, end in headings:
         chunk = tex[start:end]
         levels.append(2 if chunk.startswith("\\subsection") else 1)
-    want = name.casefold()
-    hits = [
-        i
-        for i, title in enumerate(titles)
-        if want in title.casefold() or title.casefold() in want
-    ]
+    hits = [i for i, title in enumerate(titles) if _titles_match(name, title)]
     if len(hits) != 1 or len(headings) != len(titles):
         shown = ", ".join(titles[:8]) if titles else "разделов не вижу"
         return f"Раздела «{name}» нет одного. Есть: {shown}."

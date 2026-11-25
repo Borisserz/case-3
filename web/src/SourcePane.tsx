@@ -74,7 +74,7 @@ export function SourcePane({
   const looksMd =
     !isDocument &&
     (/\.(md|markdown)$/i.test(fileName || title) ||
-      /^#{1,3}\s|```|\*\*/m.test(text));
+      /^#{1,3}\s|```|\*\*|^\s*\|.+\|\s*$/m.test(text));
 
   const html = useMemo(
     () => (looksMd ? renderLightMd(text, query) : null),
@@ -225,6 +225,15 @@ export function SourcePane({
           >
             {copied ? "Скопировано" : "Копировать"}
           </button>
+          {originalUrl ? (
+            <a
+              className="artifact-source-copy"
+              href={originalUrl}
+              download={fileName || true}
+            >
+              Скачать оригинал
+            </a>
+          ) : null}
         </div>
       </div>
 

@@ -75,6 +75,19 @@ describe("craftSteps phase 2A", () => {
     );
     assert.equal(rows[0]?.label, "Смотрю поступления за январь.");
     assert.equal(rows.some((row) => row.id === "slides_pack"), false);
+    const withoutBlurb = spokenCraftRows(
+      "llm",
+      "presentation",
+      {
+        source: "Читаю данные из таблицы РОХ.",
+        layout: "Пишу структуру слайдов…",
+      },
+      { live: true },
+    );
+    assert.deepEqual(
+      withoutBlurb.map((row) => row.label),
+      ["Читаю данные из таблицы РОХ."],
+    );
   });
 
   it("formats ETA only when confident", () => {

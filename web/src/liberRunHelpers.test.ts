@@ -60,7 +60,9 @@ describe("liberRunHelpers", () => {
   it("stageLabel scales by thinking mode", () => {
     assert.match(stageLabel("llm", null, "diagram"), /схем/i);
     assert.match(stageLabel("diagram_repair", null, "diagram"), /схем/i);
-    assert.match(stageLabel("llm", null, "presentation"), /слайд/i);
+    assert.match(stageLabel("llm", null, "presentation"), /презентац/i);
+    assert.doesNotMatch(stageLabel("llm", null, "presentation"), /структуру слайд/i);
+    assert.doesNotMatch(stageLabel("slides_llm", null, "presentation"), /структуру слайд/i);
     assert.match(stageLabel("slides_render", null, "presentation"), /слайд/i);
   });
 

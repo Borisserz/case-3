@@ -67,7 +67,7 @@ function deckStageLabel(stage?: string | null): string {
     case "llm_retry":
     case "plan":
     case "ir":
-      return "Пишу структуру слайдов";
+      return "Собираю презентацию";
     case "diagrams":
     case "media":
     case "charts":

@@ -26,6 +26,7 @@ test("only a full chat offers a new-chat button", () => {
 test("a renamed section and a new slide open the right rail", () => {
   assert.equal(reviseSurface("rename_heading"), "report");
   assert.equal(reviseSurface("retype_chart"), "report");
+  assert.equal(reviseSurface("restyle_chart"), "report");
   assert.equal(reviseSurface("add_slide"), "deck");
   assert.equal(reviseSurface("slide_text"), "deck");
   assert.equal(reviseSurface("slide_bullets"), "deck");
