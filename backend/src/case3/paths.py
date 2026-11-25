@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def repo_root(*, start: Path | None = None) -> Path:
-    """Return case-3 repo root (directory that contains ``Dockerfile`` or ``prompt``+``assets``).
+    """Return the backend root (directory with ``Dockerfile`` and ``src/case3``, or ``prompt``+``assets``).
 
     Falls back to ``Path.cwd()`` when the sentinel is missing (Docker / installed wheel).
     """

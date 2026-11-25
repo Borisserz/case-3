@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0..\web"
+cd /d "%~dp0..\frontend"
 
 REM Don't inherit Cursor/corporate proxy into Vite → API proxy.
 set "HTTP_PROXY="

@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0.."
+cd /d "%~dp0..\backend"
 
 REM Cursor / corporate proxy often breaks Vision (403). Always clear for local desk.
 set "HTTP_PROXY="

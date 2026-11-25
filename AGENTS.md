@@ -12,16 +12,17 @@
 
 | Слой | Путь |
 |------|------|
-| Pipeline | `src/case3/pipeline.py` |
-| LLM prompts | `prompt/MANIFEST.md` + `case3.prompts` · TeX via `generate.py` |
+| Pipeline | `backend/src/case3/pipeline.py` |
+| LLM prompts | `backend/prompt/MANIFEST.md` + `case3.prompts` · TeX via `generate.py` |
 | Charts | `chart_*.py`, Playwright, `templates/chart_frame.html` |
 | Images | `image_api.py`, `workers/case3-image/` |
 | Render | `render.py` → Docker `case-3:tex` |
-| API | `src/case3/api.py` (FastAPI) |
-| UI | `web/src/` (Vite + React) |
+| API | `backend/src/case3/api.py` (FastAPI :8000) |
+| Stimulsoft | `backend/stimulsoft/` (Flask :8040, отдельный процесс) |
+| UI | `frontend/src/` (Vite + React) |
 
-Прод-контур: **Windows desk**, Qwen (`VISION_*`), Image API (`IMAGE_API_BASE_URL`).  
-Локальный стол без Docker: `uv venv --python 3.12`, `uv pip install -r requirements.txt`, `uv run inspectra`; фронт в `web/`: `npm i`, `npm run dev`. Windows-скрипты `scripts\api.cmd` + `scripts\web.cmd` остаются. PDF/DOCX по-прежнему через Docker TeX — это отложено. См. README и `docs/knowledge/ops-windows.md`.  
+Прод-контур: **Windows desk**, Qwen (`VISION_*`), Image API (`IMAGE_API_BASE_URL`). 
+Локальный стол без Docker: из `backend/` — `uv venv --python 3.12`, `uv pip install -r requirements.txt`, `uv run inspectra`; Stimulsoft из `backend/stimulsoft/` — свой venv Python 3.11 и `uv run python view_dashboard.py`; фронт из `frontend/`: `npm i`, `npm run dev`. Windows-скрипты `scripts\api.cmd` + `scripts\web.cmd` остаются. Весь стек: `docker compose up -d --build` (frontend, backend, stimulsoft). См. README и `docs/knowledge/ops-windows.md`. ADR-0027.
 Карта папок: [`docs/knowledge/repo-map.md`](docs/knowledge/repo-map.md). One-shot matrix/gallery → `scripts/archive/`.
 
 ## Состояние на 2026-11-23
@@ -44,7 +45,7 @@
 - Палитры: editorial / ocean / sunset / mono / atelier — без фиолетового нейрослопа.
 - Chart types — whitelist в `chart_html.CHART_TYPES`.
 - PDF — истина печати; чат-превью ≈ TeX blocks, может расходиться.
-- Не коммитить `runs/`, `.env`, секреты, PDF/DOCX артефакты (кроме `assets/docx/reference.docx`).
+- Не коммитить `backend/runs/`, `.env`, секреты, `.mrt`, PDF/DOCX артефакты (кроме `backend/assets/docx/reference.docx`).
 
 ## Process
 

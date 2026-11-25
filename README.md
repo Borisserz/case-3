@@ -15,47 +15,62 @@
 
 ## Запуск у себя, без Docker
 
-Два терминала. Скрипты не нужны.
+Три терминала. Скрипты не нужны. Команды из корня репозитория.
 
-**Бэк**, из корня репозитория:
+**API** (`backend/`, FastAPI :8000):
 
 ```bash
+cd backend
 uv venv --python 3.12
 uv pip install -r requirements.txt
 uv run inspectra
 ```
 
-**Фронт**, вторым окном:
+**Stimulsoft** (`backend/stimulsoft/`, Flask :8040). Свой venv: пакеты 2024.2.2 не ставятся в API.
 
 ```bash
-cd web
+cd backend/stimulsoft
+uv venv --python 3.11
+uv pip install -r requirements.txt
+uv run python view_dashboard.py
+```
+
+**Фронт** (`frontend/`, Vite :5173):
+
+```bash
+cd frontend
 npm i
 npm run dev
 ```
 
 - Сайт: http://127.0.0.1:5173
 - API: http://127.0.0.1:8000/docs
-- Живой чат, дашборд и превью работают без Docker.
-- Графики в чате, один раз: `uv run playwright install chromium`
-- Свой Qwen: скопируй `.env.example` → `.env` и поставь `VISION_API_BASE_URL`.
+- Дашборд: http://127.0.0.1:8040/viewer
+- Живой чат и превью работают без Docker. «BI система» ходит на :8040.
+- Графики в чате, один раз из `backend/`: `uv run playwright install chromium`
+- Qwen: скопируй `backend/.env.example` → `backend/.env` и поставь `VISION_API_BASE_URL`.
+- База и лицензия Stimulsoft: `backend/stimulsoft/.env` (файл не коммитится). `.mrt` лежат в `backend/stimulsoft/local/`.
 
-`uv run` без имени не знает, что запускать. Команда стола — `uv run inspectra`. Перезагрузка кода на каждый файл рвёт длинную сборку, поэтому её нет. Для неё: `CASE3_RELOAD=1 uv run inspectra`.
+`uv run` без имени не знает, что запускать. Команда API — `uv run inspectra`. Перезагрузка кода на каждый файл рвёт длинную сборку, поэтому её нет. Для неё: `CASE3_RELOAD=1 uv run inspectra`.
 
-Печать PDF и DOCX по-прежнему собирается образом TeX. Это отложено: стол поднимается без Docker.
+Печать PDF и DOCX в локальном столе по-прежнему ждёт образ TeX. Чат поднимается без Docker.
 
-## Позже: полный стек в Docker
+## Полный стек в Docker
 
-Весь стек (`frontend` на Nginx `:5173` + `backend` на FastAPI `:8000` со встроенным TeX Live, Pandoc, LibreOffice и Playwright Chromium) поднимается одной командой:
+Из корня репозитория. Три сервиса: Nginx `:5173`, FastAPI `:8000` (TeX Live, Pandoc, LibreOffice, Playwright), Stimulsoft `:8040`.
 
 ```bash
 docker compose up -d --build
 ```
 
-- **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE-стриминг на `backend:8000`)
-- **Swagger / OpenAPI:** http://127.0.0.1:8000/docs
-- **Проверка готовности:** `curl -s http://127.0.0.1:5173/api/health`
+- **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE на `backend:8000`)
+- **Swagger API:** http://127.0.0.1:8000/docs
+- **Swagger Stimulsoft:** http://127.0.0.1:8040/docs
+- **Проверка:** `curl -s http://127.0.0.1:5173/api/health`
 
-Если нужен отдельный контейнер `case-3:tex` для внешнего рендера на хосте:
+Внутри сети контейнеров API зовёт `http://stimulsoft:8040`. Браузер открывает дашборд по `DASHBOARD_PUBLIC_URL` (по умолчанию `http://127.0.0.1:8040`). Postgres остаётся на хосте: контейнер Stimulsoft ходит в `host.docker.internal`.
+
+Отдельный образ `case-3:tex`, если рендер нужен снаружи backend-контейнера:
 
 ```bash
 docker compose --profile tex build tex
@@ -100,7 +115,7 @@ git pull origin main
 scripts\setup.cmd
 ```
 
-Правь `.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
+Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
 (сгенерированные фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, перезапуск `api.cmd`.
 
@@ -111,13 +126,13 @@ scripts\api.cmd
 scripts\web.cmd
 ```
 
-После `git pull` в `web\`: `npm install` (нужен `pdfjs-dist` для превью 1-й стр. PDF в чате).
+После `git pull` в `frontend\`: `npm install` (нужен `pdfjs-dist` для превью 1-й стр. PDF в чате). Stimulsoft: `backend\stimulsoft\.env` и `python view_dashboard.py` на :8040.
 
 - UI: http://127.0.0.1:5173  (прокси `/api` → `:8000`)
 - API: http://127.0.0.1:8000/docs · health: `/api/health`
 - Сборка в Liber идёт с прогрессом (`POST /api/run` → poll `/status`); `api.cmd` **без** `--reload` (иначе рвёт длинные job). Dev-reload: `set CASE3_RELOAD=1` перед `api.cmd`.
 
-Сборка и артефакты: через Liber UI → `runs\out\<run_id>\`.
+Сборка и артефакты: через Liber UI → `backend\runs\out\<run_id>\`.
 
 ## Env (`.env`)
 
@@ -126,7 +141,8 @@ scripts\web.cmd
 | `VISION_API_BASE_URL` | URL сервера Qwen / OpenAI-совместимого LLM (`http://<host>:8080/v1`) |
 | `VISION_API_KEY` | API-ключ LLM (если требуется) |
 | `VISION_MODEL` | Имя модели (например, `qwen3.5-4b` или `openrouter/free`) |
-| `DASHBOARD_BASE_URL` | URL сервиса предпросмотра Stimulsoft (по умолчанию `http://127.0.0.1:8040`) |
+| `DASHBOARD_SERVICE_URL` | Куда API ходит за дашбордом. Локально `http://127.0.0.1:8040`. В Docker Compose это `http://stimulsoft:8040` |
+| `DASHBOARD_PUBLIC_URL` | URL, который открывает браузер. По умолчанию `http://127.0.0.1:8040` |
 | `CASE3_MAX_CHARTS` | Потолок графиков в отчёте (0 = off, default 5) |
 | `CASE3_MAX_DIAGRAMS` | Потолок схем (0–5, default 5). PNG в PDF/DOCX и нативные фигуры в PPTX |
 | `IMAGE_API_BASE_URL` | Офисный Image API (`/generate`, `/edit`) |
@@ -147,7 +163,7 @@ scripts\web.cmd
 | HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
 | Завис после TeX на «фото» / `stage=images` / `inject` навсегда | Баг ETA-lock (fixed `4a64a98`+): `git pull`, убей python, один прогон. Image `:8000` мёртв → `IMAGE_MAX_IMAGES=0` |
 | «PDF 6 минут» а файла нет | Это не latexmk — LLM + deadlock на 2-й стадии; после pull PDF ~секунды после TeX |
-| Куча `running` в `runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
+| Куча `running` в `backend\runs\out` | Task Manager → убей все `python`, один `api.cmd`, один прогон |
 | HTTP **409** | Третий `POST /api/run`: один прогон уже идёт, второй ждёт (`202 queued`). Сброс слота — `POST /api/pipeline/slot/reset`, только если поток мёртв |
 | Коллега «404» | Не тот URL: Qwen≠`/generate`; или качаешь PDF пока `status=running` |
 | мало текста / нет графиков (обрыв) | поднять `VISION_MAX_TOKENS` (≥12288 при 4–5 графиках); UI «Графиков ≤» + `CASE3_MAX_CHARTS`; рестарт `api.cmd` |
@@ -158,12 +174,12 @@ scripts\web.cmd
 
 ## Папки
 
-`scripts\` (4 cmd) · `web\` · `src\` · `prompt\` · `assets\` · `runs\` (out / logs / work / uploads)
+`frontend\` · `backend\` (`src`, `stimulsoft`, `prompt`, `assets`, `runs`) · `scripts\` (4 cmd) · `docker-compose.yml`
 
 ## Windows checklist после pull
 
 1. Docker Desktop → `scripts\setup.cmd` (образ `case-3:tex`, Playwright, `pip install -e .`)
-2. `.env` с Qwen URL; `.env` не в git
+2. `backend\.env` с Qwen URL и `backend\stimulsoft\.env` с Postgres и лицензией; оба файла не в git
 3. `scripts\api.cmd` + `scripts\web.cmd` → health `ok` / `vision_configured`
 4. Liber: Source → «Собрать»; PDF/DOCX в панели
 5. Логи коллеге: `scripts\push-debug.cmd`

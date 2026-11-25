@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0.."
+cd /d "%~dp0..\backend"
 echo === case-3 setup (one-time) ===
 
 where docker >nul 2>&1 || (echo ERROR: Docker not installed. & exit /b 1)
@@ -31,23 +31,25 @@ if errorlevel 1 (
   echo WARNING: playwright chromium install failed — charts will be skipped until fixed.
 )
 
-echo Building case-3:tex ...
-docker compose build
-if errorlevel 1 exit /b 1
-
 if not exist assets\docx\reference.docx (
-  echo WARNING: assets\docx\reference.docx missing — DOCX will use pandoc default.
+  echo WARNING: backend\assets\docx\reference.docx missing — DOCX will use pandoc default.
   echo          git pull origin main
 )
 
+echo Building images from the repo root ...
+cd /d "%~dp0.."
+docker compose build
+if errorlevel 1 exit /b 1
+
 echo.
 echo OK. Next:
-echo   1^) Edit .env: VISION_API_BASE_URL=http://^<qwen-host^>:8080
-echo      ^(KANDINSKY_MAX_IMAGES=0 if no image API^)
-echo   2^) Two windows:
+echo   1^) Edit backend\.env: VISION_API_BASE_URL=http://^<qwen-host^>:8080
+echo      Stimulsoft: backend\stimulsoft\.env  ^(Postgres, license^)
+echo   2^) Three windows:
 echo        scripts\api.cmd
 echo        scripts\web.cmd
-echo      UI http://127.0.0.1:5173  ·  API http://127.0.0.1:8000/docs
+echo        cd backend\stimulsoft ^& python view_dashboard.py
+echo      UI http://127.0.0.1:5173  ·  API http://127.0.0.1:8000/docs  ·  Viewer :8040
 echo   3^) CLI: scripts\run.cmd notes.txt -p "отчёт" --dry-run
 echo   4^) Smoke: scripts\smoke.cmd
 endlocal

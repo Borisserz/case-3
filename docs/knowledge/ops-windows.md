@@ -7,8 +7,8 @@
 1. Docker Desktop running  
 2. `git pull origin main`  
 3. `scripts\setup.cmd`  
-4. Edit `.env`: `VISION_*`, `IMAGE_API_BASE_URL`, optional `CASE3_MAX_CHARTS`  
-5. `cd web && npm install`  
+4. Edit `backend\.env`: `VISION_*`, `IMAGE_API_BASE_URL`, optional `CASE3_MAX_CHARTS`. Stimulsoft: `backend\stimulsoft\.env`  
+5. `cd frontend && npm install`  
 6. `scripts\api.cmd` + `scripts\web.cmd`  
 7. Check `http://127.0.0.1:8000/api/health` → `ok` / vision / image flags  
 
@@ -16,7 +16,7 @@
 
 ```cmd
 git pull origin main
-cd web && npm install
+cd frontend && npm install
 ```
 
 Restart api + web. If charts blank: `python -m playwright install chromium`.

@@ -28,6 +28,7 @@
 | [0022](0022-concurrent-multiuser-runs.md) | Multi-user concurrent execution & per-browser workspace isolation | Accepted |
 | [0024](0024-grounded-context-packet.md) | Grounded Context Packet after TTG, before chat LLM | Accepted |
 | [0025](0025-inspectra-desk-green.md) | Desk name Inspectra, tax-desk green `#307060` | Accepted |
-| [0026](0026-local-desk-without-docker.md) | Local desk starts with uv and npm, Docker stays for print | Accepted |
+| [0026](0026-local-desk-without-docker.md) | Local desk starts with uv and npm, Docker stays for print | Accepted, paths amended by 0027 |
+| [0027](0027-unified-backend-frontend-stimulsoft.md) | One repo: frontend, backend, Stimulsoft as its own process | Accepted |
 
 Новый ADR: скопируй [`0000-template.md`](0000-template.md), обнови таблицу выше.

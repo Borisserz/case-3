@@ -67,8 +67,8 @@ GET http://127.0.0.1:8000/api/health
 1. Docker Desktop **запущен**.
 2. `git pull origin main`
 3. `scripts\setup.cmd` (pip editable, Playwright Chromium, `docker compose build` → `case-3:tex`)
-4. Скопировать/поправить `.env` под **Qwen + Image API** (не OpenRouter).
-5. `cd web && npm install`
+4. Скопировать/поправить `backend\.env` под **Qwen + Image API** (не OpenRouter). Stimulsoft: `backend\stimulsoft\.env`.
+5. `cd frontend && npm install`
 6. Окно 1: `scripts\api.cmd` (**без** `--reload`, иначе рвёт длинные job)
 7. Окно 2: `scripts\web.cmd`
 8. Health → Liber UI `http://127.0.0.1:5173`

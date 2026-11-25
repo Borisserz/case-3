@@ -48,11 +48,11 @@ def _mermaid_js_path() -> Path:
     vendored = root / "assets" / "charts" / "mermaid.min.js"
     if vendored.is_file():
         return vendored
-    cand = root / "web" / "node_modules" / "mermaid" / "dist" / "mermaid.min.js"
+    cand = root.parent / "frontend" / "node_modules" / "mermaid" / "dist" / "mermaid.min.js"
     if cand.is_file():
         return cand
     raise FileNotFoundError(
-        "mermaid.min.js missing — run npm install in web/ "
+        "mermaid.min.js missing — run npm install in frontend/ "
         f"(expected {vendored} or {cand})"
     )
 

@@ -6,7 +6,7 @@ Corporate Windows workstation: Qwen Vision URL + Image API + Docker Desktop + Li
 ## Entry
 - `scripts\setup.cmd` — image, playwright, pip
 - `scripts\api.cmd` + `scripts\web.cmd`
-- `.env` — never commit
+- `backend\.env` and `backend\stimulsoft\.env` — never commit
 
 ## Invariants
 - `VISION_API_BASE_URL` required for real runs
@@ -15,7 +15,7 @@ Corporate Windows workstation: Qwen Vision URL + Image API + Docker Desktop + Li
 - Docker image tag `case-3:tex` (env `CASE3_IMAGE`)
 
 ## Gotchas
-- After pull: `cd web && npm install` (pdfjs)
+- After pull: `cd frontend && npm install` (pdfjs). Stimulsoft stays `python view_dashboard.py` in `backend\stimulsoft`
 - Proxy unset for API if corp proxy breaks localhost
 - Don't use CASE3_RELOAD=1 on long jobs
 - Health tip in UI may still sound Windows-centric (ok here)

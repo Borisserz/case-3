@@ -6,21 +6,20 @@
 
 | Путь | Зачем |
 |------|--------|
-| `src/case3/` | Pipeline, API, charts, TeX/DOCX/PPTX, images |
-| `web/` | Liber UI (Vite + React) |
-| `prompt/` | System prompts для LLM |
-| `assets/docx/reference.docx` | Pandoc reference для DOCX |
+| `backend/src/case3/` | Pipeline, API, charts, TeX/DOCX/PPTX, images |
+| `backend/stimulsoft/` | Flask-viewer Stimulsoft, порт 8040. Отдельный процесс и свой venv |
+| `frontend/` | Liber UI (Vite + React) |
+| `backend/prompt/` | System prompts для LLM |
+| `backend/assets/docx/reference.docx` | Pandoc reference для DOCX |
 | `workers/case3-image/` | Cloudflare Workers AI image API (local `:8787`) |
-| `fixtures/smoke/` | Готовые Source для smoke |
-| `tests/` | Pytest |
-| `scripts/` | Desk launchers (`api`/`web`/`run`/`smoke`/`mac-up`) |
-| `scripts/archive/` | One-shot matrix / gallery (не desk) |
-| `runs/` | Локальные артефакты прогонов (не коммитить) |
+| `backend/tests/` | Pytest. Запуск из `backend/` |
+| `scripts/` | Desk launchers (`api`/`web`/`setup`/`push-debug`) |
+| `backend/runs/` | Локальные артефакты прогонов (не коммитить) |
 | `docs/` | MEMORY, ADR, knowledge, superpowers specs/plans |
 | `AGENTS.md` | Контракт для агентов |
-| `Dockerfile` + `docker-compose.yml` | Образ `case-3:tex` |
+| `docker-compose.yml` | frontend + backend + stimulsoft. TeX-only — профиль `tex` |
 
-## `src/case3` (ядро)
+## `backend/src/case3` (ядро)
 
 | Модуль (примеры) | Роль |
 |------------------|------|
@@ -33,7 +32,7 @@
 | `image_api.py` | Фото generate/edit |
 | `docx_*.py` | Post-pandoc polish / lists / charts |
 
-## `web/src`
+## `frontend/src`
 
 | Зона | Роль |
 |------|------|

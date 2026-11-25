@@ -50,50 +50,50 @@ _qa/
 .cursor/*.png
 
 # Run artifacts (keep directory markers)
-runs/work/
-runs/uploads/
-runs/out/*
-!runs/out/.gitkeep
-runs/logs/*
-!runs/logs/.gitkeep
-runs/workspaces/
-# One-shot QA / matrix dumps under runs/
-runs/_qa/
-runs/*_matrix*/
-runs/*_matrix/
-runs/e2e_*/
-runs/home_*/
-runs/mac_*/
-runs/full_*/
-runs/freeform_*/
-runs/slides_*/
-runs/slide_*/
-runs/structure_*/
-runs/atelier_*/
-runs/chart_*/
-runs/julius_*/
-runs/vivid_*/
-runs/*.json
-runs/*.png
-runs/*.svg
-runs/*.tex
-runs/*.txt
-runs/*.raw_model.txt
+backend/runs/work/
+backend/runs/uploads/
+backend/runs/out/*
+!backend/runs/out/.gitkeep
+backend/runs/logs/*
+!backend/runs/logs/.gitkeep
+backend/runs/workspaces/
+# One-shot QA / matrix dumps under backend/runs/
+backend/runs/_qa/
+backend/runs/*_matrix*/
+backend/runs/*_matrix/
+backend/runs/e2e_*/
+backend/runs/home_*/
+backend/runs/mac_*/
+backend/runs/full_*/
+backend/runs/freeform_*/
+backend/runs/slides_*/
+backend/runs/slide_*/
+backend/runs/structure_*/
+backend/runs/atelier_*/
+backend/runs/chart_*/
+backend/runs/julius_*/
+backend/runs/vivid_*/
+backend/runs/*.json
+backend/runs/*.png
+backend/runs/*.svg
+backend/runs/*.tex
+backend/runs/*.txt
+backend/runs/*.raw_model.txt
 
 # Old debug dumps
 debug-bundle/
 
-web/node_modules/
-web/dist/
-web/tsconfig.tsbuildinfo
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 # Offline Mermaid copy for local HTML demos only (app imports npm `mermaid`)
-web/public/vendor/
+frontend/public/vendor/
 workers/*/node_modules/
 workers/*/.wrangler/
 
 *.pdf
 *.docx
-!assets/docx/reference.docx
+!backend/assets/docx/reference.docx
 .DS_Store
 *.aux
 *.toc

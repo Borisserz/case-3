@@ -1,40 +1,70 @@
 services:
-  tex:
+  stimulsoft:
     build:
-      context: .
+      context: ./backend/stimulsoft
       dockerfile: Dockerfile
-    image: case-3:tex
-    profiles: ["tex-only"]
+    image: case-3:stimulsoft
+    restart: unless-stopped
+    ports:
+      - "8040:8040"
+    env_file:
+      - path: ./backend/stimulsoft/.env
+        required: false
+    environment:
+      VIEWER_HOST: 0.0.0.0
+      VIEWER_PORT: "8040"
+      VIEWER_OPEN: "0"
+      # База остаётся на хосте. 127.0.0.1 внутри контейнера — это сам контейнер.
+      POSTGRES_HOST: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # .mrt и лицензия в образ не входят.
+      - ./backend/stimulsoft/local:/app/local:ro
+      - ./backend/stimulsoft/dashboards:/app/dashboards:ro
+      - stimulsoft-exports:/app/exports
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ./backend
+      dockerfile: Dockerfile
     image: case-3:backend
     restart: unless-stopped
     shm_size: "1gb"
+    depends_on:
+      - stimulsoft
     env_file:
-      - path: .env
+      - path: ./backend/.env
         required: false
     environment:
       CASE3_TEX_LOCAL: "1"
-      DASHBOARD_SERVICE_URL: "${DASHBOARD_SERVICE_URL:-http://host.docker.internal:8040}"
+      DASHBOARD_SERVICE_URL: http://stimulsoft:8040
       DASHBOARD_PUBLIC_URL: "${DASHBOARD_PUBLIC_URL:-http://127.0.0.1:8040}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./runs:/app/runs
-      - ./local:/app/local
+      - ./backend/runs:/app/runs
+      - ./backend/local:/app/local
     ports:
       - "8000:8000"
 
   frontend:
     build:
-      context: .
-      dockerfile: web/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     image: case-3:frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "5173:80"
+
+  tex:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.tex
+    image: case-3:tex
+    profiles: ["tex-only"]
+
+volumes:
+  stimulsoft-exports:
