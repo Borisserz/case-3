@@ -922,7 +922,8 @@ def test_color_followup_of_the_open_photo_edits_every_time():
         assert plan.kind == "revise", line
         assert asks_for_generated_photo(line) is False
     fresh = plan_turn("сделай картинку машины бмв белую", has_photo=True)
-    assert fresh.kind != "revise"
+    assert fresh.kind == "revise"
+    assert fresh.edit_act is not None and fresh.edit_act.brief == "fresh"
     assert asks_for_generated_photo("сделай картинку машины бмв белую")
     both = resolve_act("а сделай ее красного цвета", has_photo=True, has_chart=True)
     assert both.op == "ask"
@@ -948,13 +949,40 @@ def test_color_of_the_open_photo_does_not_need_the_word_change():
         assert plan.kind == "revise", line
         assert plan.edit_act is not None and plan.edit_act.op == "edit_photo"
     fresh = plan_turn("сделай красную машину", has_photo=True)
-    assert fresh.kind != "revise"
+    assert fresh.kind == "revise"
+    assert fresh.edit_act is not None and fresh.edit_act.op == "edit_photo"
+    assert fresh.edit_act.brief == "fresh"
+    assert "новое фото" in fresh.edit_act.say
     assert asks_for_generated_photo("сделай красную машину")
     assert asks_for_generated_photo("сделай красным и покажи фото")
     both = resolve_act("сделай ее красного цвета", has_photo=True, has_chart=True)
     assert both.op == "ask"
     chart = resolve_act("сделай ее красного цвета", has_chart=True)
     assert chart.op == "recolor_hue"
+
+
+def test_open_photo_keeps_a_change_and_names_how_to_start_a_new_one():
+    """A picture already on the table is edited. A new one needs «сделай новое фото»."""
+    from case3.turn_plan import plan_turn
+    from case3.turn_route import asks_for_generated_photo
+
+    held = resolve_act("сделай картинку машины бмв белую", has_photo=True)
+    assert held.op == "edit_photo"
+    assert held.brief == "fresh"
+    assert "бел" in held.title.casefold()
+    rain = resolve_act("добавь дождь", has_photo=True)
+    assert rain.op == "edit_photo"
+    assert rain.brief == ""
+    assert "дожд" in rain.title.casefold()
+    report = resolve_act("сделай отчёт по регионам", has_photo=True)
+    assert report.op != "edit_photo"
+    alone = resolve_act("сделай красную машину")
+    assert alone.op != "edit_photo"
+    new = plan_turn("сделай новое фото красной машины", has_photo=True)
+    assert new.kind != "revise"
+    assert asks_for_generated_photo("сделай новое фото красной машины")
+    other = plan_turn("нарисуй другую картинку цеха", has_photo=True)
+    assert other.kind != "revise"
 
 
 def test_unnamed_color_follows_the_only_open_picture():

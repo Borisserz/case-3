@@ -913,6 +913,63 @@ def _bare_color_line(raw: str) -> bool:
     return not rest.split()
 
 
+_EXPLICIT_FRESH_PHOTO = re.compile(
+    r"(?:нов\w+|друг\w+)\s+(?:фото|фотк\w*|картинк\w*|изображен\w*|иллюстрац\w*)"
+    r"|\bс\s+нуля\b|\bзаново\b",
+    re.IGNORECASE,
+)
+_OTHER_JOB = re.compile(
+    r"отч[её]т|справк|ворд|\bpdf\b|\bdocx\b|презентац|резентац|\bпрезу\b|\bпреза\b|"
+    r"слайд|график|диаграмм|схем|таблиц|раздел|абзац|заголовок|список|пункт",
+    re.IGNORECASE,
+)
+_PICTURE_CHANGE = re.compile(
+    r"\b(?:сделай|сделать|измени(?:ть)?|поменяй|поменять|замени(?:ть)?|"
+    r"убери|убрать|удали|удалить|добавь|добавить|поставь|поставить|"
+    r"перекрась|перекрасить|осветли|затемни|нарисуй|нарисовать|"
+    r"создай|создать|сгенерируй|сгенерировать|покажи)\b",
+    re.IGNORECASE,
+)
+FRESH_PHOTO_HINT = (
+    " Если нужна новая картинка, а не правка этой, напишите «сделай новое фото …»."
+)
+
+
+def explicit_fresh_photo(text: str | None) -> bool:
+    """«сделай новое фото», «другую картинку», «с нуля», «заново»."""
+    return bool(_EXPLICIT_FRESH_PHOTO.search(_norm(text or "")))
+
+
+def open_photo_change(text: str | None) -> tuple[str, str] | None:
+    """A change while a photo is open. None when this is a new picture or another job.
+
+    The brief is ``fresh`` when the line would otherwise start a new picture.
+    """
+    raw = _norm(text or "").strip()
+    if not raw or explicit_fresh_photo(raw) or _document_not_photo(raw):
+        return None
+    if _OTHER_JOB.search(raw) or not _PICTURE_CHANGE.search(raw):
+        return None
+    instruction = _photo_instruction(raw)
+    instruction = re.sub(
+        r"^(?:нарисуй|нарисовать|создай|создать|сгенерируй|сгенерировать|покажи)\s+",
+        "",
+        instruction,
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    if len(instruction) < 2:
+        return None
+    brief = ""
+    if creates_new_picture(raw) or _FRESH_PHOTO.search(raw):
+        brief = "fresh"
+    else:
+        from case3.image_opt_in import wants_generated_images
+
+        if wants_generated_images(raw, ""):
+            brief = "fresh"
+    return instruction, brief
+
+
 def creates_new_picture(text: str | None) -> bool:
     """«создай фото», «нарисуй красную машину», «сделай красную машину».
 
@@ -2000,6 +2057,20 @@ def resolve_act(
                 title=instruction,
                 say=say + " Картинку перерисую по твоей фразе.",
             )
+        if has_photo and not question:
+            opened = open_photo_change(raw)
+            if opened is not None:
+                instruction, brief = opened
+                say = "Меняю открытое фото. Картинку перерисую по твоей фразе."
+                if brief == "fresh":
+                    say = "Меняю открытое фото." + FRESH_PHOTO_HINT
+                return ChatAct(
+                    kind="revise",
+                    op="edit_photo",
+                    title=instruction,
+                    brief=brief,
+                    say=say,
+                )
         removed_item = parse_item_delete(raw)
         if removed_item:
             if not has_report:

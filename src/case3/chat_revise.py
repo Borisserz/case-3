@@ -8,7 +8,13 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from case3.chat_act import ChatAct, edit_clauses, next_deck_pack, resolve_act
+from case3.chat_act import (
+    FRESH_PHOTO_HINT,
+    ChatAct,
+    edit_clauses,
+    next_deck_pack,
+    resolve_act,
+)
 from case3.context_packet import ArtifactTarget
 from case3.chat_memory import append_dialogue, load_chain_dirs, merge_edit
 from case3.run_meta import update_meta
@@ -717,6 +723,8 @@ def try_chat_revise(
         say = _refine_diagram(work_dir, act.title) or say
     elif act.op == "edit_photo" and act.title:
         say = _edit_photo(work_dir, act.section, act.title) or say
+        if act.brief == "fresh" and str(say).startswith("Меняю фото"):
+            say = say + FRESH_PHOTO_HINT
     elif act.op == "delete_section" and act.section:
         say = _delete_section(work_dir, act.section) or say
     elif act.op == "delete_chart":
