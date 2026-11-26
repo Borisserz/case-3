@@ -1,4 +1,4 @@
-"""Office Image API client: POST /generate + POST /edit (FastAPI wrapper).
+"""Office Image API client: JSON POST /generate and POST /edit.
 
 Not Kandinsky / OpenAI images — local service e.g. http://192.168.4.101:8000
 """
@@ -142,18 +142,16 @@ def _headers(cfg: ImageApiConfig) -> dict[str, str]:
     return h
 
 
-def _knobs(cfg: ImageApiConfig, *, negative_prompt: str | None = None) -> dict[str, Any]:
-    out: dict[str, Any] = {
-        "width": cfg.width,
-        "height": cfg.height,
-        "steps": cfg.steps,
-        "guidance": cfg.guidance,
-        "seed": cfg.seed,
+def _job_body(cfg: ImageApiConfig, prompt: str) -> dict[str, Any]:
+    """Fields from the office OpenAPI schema. Extra keys are a 422."""
+    return {
+        "prompt": prompt,
+        "width": int(cfg.width),
+        "height": int(cfg.height),
+        "steps": int(cfg.steps),
+        "guidance": float(cfg.guidance),
+        "seed": int(cfg.seed),
     }
-    if negative_prompt:
-        # Forward-compat: worker may ignore; prompt also bakes Avoid:
-        out["negative_prompt"] = negative_prompt
-    return out
 
 
 def _resolve_pack_id(pack_id: str | None) -> str | None:
@@ -394,16 +392,11 @@ def generate_png(
     *,
     pack_id: str | None = None,
 ) -> None:
-    """POST /generate — new image from prompt (pack-lock + brand-safe applied)."""
-    from case3.image_prompt import brand_safe_negative
-
+    """POST /generate — JSON GenerateRequest. Avoid-list stays inside prompt."""
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     cooked = _outbound_prompt(prompt, pack_id=pack_id)
-    body = {
-        "prompt": cooked,
-        **_knobs(cfg, negative_prompt=brand_safe_negative()),
-    }
+    body = _job_body(cfg, cooked)
     if not body["prompt"]:
         raise RuntimeError("empty image prompt")
     url = cfg.generate_url
@@ -459,14 +452,10 @@ def edit_png(
     *,
     pack_id: str | None = None,
 ) -> None:
-    """POST /edit — office FastAPI expects multipart; prefer base64 form field.
+    """POST /edit — JSON with image as a list of base64 strings.
 
-    Swagger ``image: array[string]`` → form field ``image`` = base64 (not file).
-    Fallback: UploadFile-style multipart, then ``images`` plural.
-    Same pack-lock + brand-safe path as generate.
+    Same fields as /generate, plus required ``image``. Multipart is a 422.
     """
-    from case3.image_prompt import brand_safe_negative
-
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     if not source_png.is_file():
@@ -475,60 +464,25 @@ def edit_png(
     if not prompt:
         raise RuntimeError("empty edit prompt")
     png_bytes = _png_bytes_max_side(source_png.read_bytes(), 512)
-    knobs = {
-        k: str(v)
-        for k, v in _knobs(cfg, negative_prompt=brand_safe_negative()).items()
-    }
     b64 = base64.b64encode(png_bytes).decode("ascii")
     url = cfg.edit_url
+    body = _job_body(cfg, prompt)
+    body["image"] = [b64]
     log.info(
         "image POST %s (edit) prompt_len=%d pack=%s",
         url,
         len(prompt),
         pack_id or "-",
     )
-    errors: list[str] = []
-
-    def _try_decode(resp: httpx.Response, label: str) -> bool:
-        try:
+    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(url, json=body, headers=_headers(cfg))
             resp.raise_for_status()
             payload = _parse_http_body(resp)
-            decode_image_string(payload, cfg=cfg, dest=dest)
-            return True
-        except Exception as exc:  # noqa: BLE001
-            snip = (resp.text or "")[:140].replace("\n", " ")
-            errors.append(f"{label}: {exc} body={snip!r}")
-            log.debug("image edit attempt (%s) did not succeed: %s body=%s", label, exc, snip)
-            return False
-
-    with httpx.Client(timeout=cfg.timeout_s) as client:
-        # 1) Multipart file upload under image= (office FastAPI UploadFile / list[UploadFile])
-        data1 = {"prompt": prompt, **knobs}
-        files1 = {"image": (source_png.name, png_bytes, "image/png")}
-        if _try_decode(
-            client.post(url, data=data1, files=files1, headers=_headers(cfg)),
-            "multipart-file",
-        ):
-            return
-        # 2) JSON body with image array (OpenAPI image: array<string>)
-        json2 = {
-            "prompt": prompt,
-            "image": [b64],
-            **_knobs(cfg, negative_prompt=brand_safe_negative()),
-        }
-        if _try_decode(client.post(url, json=json2, headers=_headers(cfg)), "json-b64-array"):
-            return
-        # 3) form field image=<base64> (legacy form backends)
-        data3 = {"prompt": prompt, "image": b64, **knobs}
-        if _try_decode(client.post(url, data=data3, headers=_headers(cfg)), "form-b64"):
-            return
-        # 4) plural images=
-        data4 = {"prompt": prompt, "images": b64, **knobs}
-        if _try_decode(client.post(url, data=data4, headers=_headers(cfg)), "form-images"):
-            return
-
-    log.warning("Image API %s edit failed across all formats: %s", url, " | ".join(errors[:3]))
-    raise RuntimeError(f"Image API {url} edit failed: " + " | ".join(errors[:3]))
+        decode_image_string(payload, cfg=cfg, dest=dest)
+    except Exception as exc:
+        raise RuntimeError(f"Image API {url}: {exc}") from exc
 
 
 def generate_all_figures(
