@@ -11,7 +11,7 @@ import { LONG_TEXT_CHARS } from "./domain/liberConstants";
 import type { LiberWorkMode } from "./domain/liberModes";
 import type { CraftFilmFrame } from "./domain/craftSteps";
 import type { Msg, RunResult, SourceAttachment, UserPhotoThumb } from "./domain/liberTypes";
-import { storedOpenLabel } from "./domain/priorRun";
+import { messageHasArtifact, storedOpenLabel } from "./domain/priorRun";
 import { hideAssemblyGaps, isCannedStatus, reportThumb, reportTitle } from "./domain/runHelpers";
 import { MsgMarkdown as RawMarkdown } from "./lightMd";
 
@@ -150,15 +150,7 @@ export function ChatMessages({
             <EmptyState workMode={workMode} />
           )}
         {msgs.map((m, mi) => {
-          const hasArtifact =
-            m.role === "bot" &&
-            Boolean(
-              m.result?.preview?.blocks?.length ||
-                m.result?.downloads?.pdf ||
-                m.result?.downloads?.pptx ||
-                m.result?.downloads?.deck_pdf ||
-                (m.result?.diagrams && m.result.diagrams.length > 0),
-            );
+          const hasArtifact = m.role === "bot" && messageHasArtifact(m.result);
           const slidesLive =
             m.role === "bot" &&
             (Boolean(m.pending && m.pendingStage?.startsWith("slides_")) ||

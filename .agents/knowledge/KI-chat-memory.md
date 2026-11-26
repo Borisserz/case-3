@@ -30,6 +30,7 @@ One Liber chat is a chain of runs. The chain explains the next line. It is not a
 ## Gotchas
 - `output_mode=chat` is not a real intent mode. `build_intent_from_ui` stores `auto` and still appends `Требования UI:`. The chat path strips that suffix.
 - `memory_view` used to flatten paragraphs. Reopen goes through it. Live chat does not.
+- Reopening a chat puts the report and the presentation back on the turn that built them. Chart and diagram PNGs from that run do not replace the card. A later chat answer stays a chat answer.
 - Notes saved before 2026-11-19 are already one line. Reading them cannot put the line breaks back.
 - A clause whose only numbers are foreign is dropped. A clause that also has a Source number keeps that number.
 - «Перепиши раздел» rewrites every paragraph under that heading and rebuilds PDF once. A named абзац still rewrites one. Supplied text replaces the section and drops the other paragraphs. «Сократи весь отчёт» rewrites every paragraph under each heading and rebuilds once.

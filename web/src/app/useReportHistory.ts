@@ -30,9 +30,37 @@ import {
 } from "../domain/reportHistory";
 import { reportReadyText, reportTitle, uid } from "../domain/runHelpers";
 import { loadOpenChat, rememberOpenChat } from "../domain/openChat";
-import { historyResult, messagesFromMemory } from "../domain/priorRun";
+import {
+  artifactRunIds,
+  messageHasArtifact,
+  messagesFromMemory,
+  restoredBotResult,
+} from "../domain/priorRun";
 import { chatToReopen, historyRailRun } from "../domain/reviseRefresh";
 import type { Msg, RunResult, SourceDraft } from "../domain/liberTypes";
+
+async function loadStoredRun(runId: string): Promise<RunResult | null> {
+  let remote: RunResult | null = null;
+  try {
+    const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/status`);
+    if (res.ok) remote = (await res.json()) as RunResult;
+  } catch {
+    return null;
+  }
+  let row = hydrateHistoryResult(null, remote);
+  if (!row) return null;
+  if (needsSlidesHydrate(row) || row.output_mode === "presentation") {
+    try {
+      const sr = await fetch(`/api/runs/${encodeURIComponent(runId)}/slides`);
+      if (sr.ok) {
+        row = hydrateHistoryResult(row, null, (await sr.json()) as SlidesPayload) || row;
+      }
+    } catch {
+      /* status payload is enough */
+    }
+  }
+  return row;
+}
 
 type Deps = {
   busy: boolean;
@@ -193,28 +221,20 @@ export function useReportHistory({
         let shown = result;
         const railId = historyRailRun(result, memory?.artifact_run_id || "");
         if (railId && railId !== result.run_id) {
-          try {
-            const ar = await fetch(`/api/runs/${encodeURIComponent(railId)}/status`);
-            if (ar.ok) {
-              shown = {
-                ...((await ar.json()) as RunResult),
-                chain_head: result.run_id,
-              };
-            }
-          } catch {
-            shown = result;
-          }
+          const row = await loadStoredRun(railId);
+          if (row) shown = { ...row, chain_head: result.run_id };
         }
-        const shownHasArtifact = Boolean(
-          shown.preview?.blocks?.length ||
-            shown.downloads?.pdf ||
-            shown.downloads?.pptx ||
-            shown.downloads?.deck_pdf ||
-            shown.diagrams?.length ||
-            shown.deck?.slides?.length ||
-            shown.slide_pngs?.length,
-        );
         const remembered = messagesFromMemory(memory?.turns || [], uid);
+        const byRun = new Map<string, RunResult>();
+        if (result.run_id) byRun.set(result.run_id, result);
+        if (shown.run_id) byRun.set(shown.run_id, shown);
+        const missing = artifactRunIds(remembered).filter((id) => !byRun.has(id));
+        await Promise.all(
+          missing.map(async (id) => {
+            const row = await loadStoredRun(id);
+            if (row) byRun.set(row.run_id || id, row);
+          }),
+        );
         const next: Msg[] = remembered.length
           ? remembered.map((line) =>
               line.role === "user"
@@ -232,7 +252,7 @@ export function useReportHistory({
                     text: line.text,
                     lead: line.lead,
                     dashboard: line.dashboard,
-                    result: historyResult(line, result.run_id),
+                    result: restoredBotResult(line, byRun, result.run_id),
                   },
             )
           : [];
@@ -258,26 +278,18 @@ export function useReportHistory({
           });
         }
         let botMsgId: string | null = null;
-        if (remembered.length && (hasArtifact || hasChat || shownHasArtifact)) {
-          for (let i = next.length - 1; i >= 0; i -= 1) {
-            const line = next[i];
-            if (line.role !== "bot") continue;
-            const prevPreviews = line.result?.previews;
-            line.result =
-              prevPreviews?.length && !(shown.previews || []).length
-                ? { ...shown, previews: prevPreviews }
-                : shown;
-            botMsgId = line.id;
-            break;
-          }
-        } else {
-          const bot = [...next].reverse().find((line) => line.role === "bot");
-          botMsgId = bot?.id ?? null;
+        let openResult: RunResult | null = null;
+        for (let i = next.length - 1; i >= 0; i -= 1) {
+          const line = next[i];
+          if (line.role !== "bot" || !messageHasArtifact(line.result)) continue;
+          botMsgId = line.id;
+          openResult = line.result ?? null;
+          break;
         }
         setMsgs(next);
         onRestoreSource?.(null);
-        if (botMsgId && shownHasArtifact) {
-          openReportArtifact?.(botMsgId, shown);
+        if (botMsgId && openResult) {
+          openReportArtifact?.(botMsgId, openResult);
         }
       })();
     },
