@@ -427,7 +427,7 @@ export function DashboardPickModal({
               disabled={busy}
             >
               {phase === "shot"
-                ? "Снимаю срез…"
+                ? "Беру данные…"
                 : phase === "attach"
                   ? "Прикрепляю…"
                   : "В данные"}
@@ -454,9 +454,9 @@ export function DashboardPickModal({
         </header>
         <p className="dash-viewer-note">
           {phase === "shot"
-            ? "Снимаю текущий экран и таблицу дашборда. Окно не закроется."
+            ? "Забираю таблицу с открытого дашборда. Окно не закроется."
             : phase === "attach"
-              ? "Сохраняю срез данных. Окно не закроется."
+              ? "Сохраняю данные. Окно не закроется."
             : shotCount
               ? `Срезов в буфере: ${shotCount}. Можно выбрать другой фильтр и нажать «В данные» ещё раз, либо нажать «Прикрепить (${shots.length || shotCount})».`
               : "Выберите нужные фильтры на дашборде и нажмите «В данные»."}
@@ -488,8 +488,30 @@ export function DashboardPickModal({
           />
           {busy ? (
             <div className="dash-viewer-loader" role="status">
-              <span className="dash-viewer-spinner" />
-              <p>{phase === "attach" ? "Прикрепляю данные в чат" : "Снимаю скрин"}</p>
+              <div className="dash-data-pull" aria-hidden="true">
+                <span className="dash-data-kicker" />
+                <span className="dash-data-row">
+                  <i />
+                  <b />
+                </span>
+                <span className="dash-data-row">
+                  <i />
+                  <b />
+                </span>
+                <span className="dash-data-row">
+                  <i />
+                  <b />
+                </span>
+                <span className="dash-data-row is-total">
+                  <i />
+                  <b />
+                </span>
+              </div>
+              <p>
+                {phase === "attach"
+                  ? "Прикрепляю данные в чат"
+                  : "Беру данные дашборда"}
+              </p>
             </div>
           ) : null}
         </div>

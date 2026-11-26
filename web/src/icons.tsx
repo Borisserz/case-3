@@ -262,6 +262,17 @@ export function IconDiagram(p: IconProps) {
   );
 }
 
+export function IconDashboard(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path {...stroke} d="M4 19.5h16" />
+      <path {...stroke} d="M7 19.5V11" />
+      <path {...stroke} d="M12 19.5V6.5" />
+      <path {...stroke} d="M17 19.5v-5" />
+    </svg>
+  );
+}
+
 export function IconSlides(p: IconProps) {
   return (
     <svg {...base(p)}>

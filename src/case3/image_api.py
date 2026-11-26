@@ -505,31 +505,39 @@ def edit_png(
     *,
     pack_id: str | None = None,
 ) -> None:
-    """POST /edit — JSON with image as a list of base64 strings.
+    """POST /edit — multipart file of the picture we already have, plus prompt.
 
-    Same fields as /generate, plus required ``image``. Multipart is a 422.
+    The live handler wants ``UploadFile``. A JSON list or a base64 string is 422
+    (``Expected UploadFile, received str``).
     """
     if not cfg.base_url:
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     if not source_png.is_file():
         raise RuntimeError(f"source image missing: {source_png}")
-    raw_prompt = prompt
     prompt = _outbound_prompt(prompt, pack_id=pack_id)
     if not prompt:
         raise RuntimeError("empty edit prompt")
-    png_bytes = _png_bytes_max_side(source_png.read_bytes(), 512)
-    b64 = base64.b64encode(png_bytes).decode("ascii")
+    png_bytes = source_png.read_bytes()
+    if not png_bytes:
+        raise RuntimeError(f"source image empty: {source_png}")
     url = cfg.edit_url
-    body = _job_body(cfg, prompt)
-    body["image"] = [b64]
+    knobs = _job_body(cfg, prompt)
+    data = {key: str(value) for key, value in knobs.items()}
+    files = {"image": (source_png.name, png_bytes, "image/png")}
     log.info(
-        "image POST %s (edit) prompt_len=%d pack=%s",
+        "image POST %s (edit file) prompt_len=%d bytes=%d pack=%s",
         url,
         len(prompt),
+        len(png_bytes),
         pack_id or "-",
     )
+    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
     try:
-        _deliver_image(cfg, url, body, dest, raw_prompt=raw_prompt)
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(url, data=data, files=files, headers=_headers(cfg))
+        if resp.status_code >= 400:
+            raise RuntimeError(_response_error(resp))
+        decode_image_string(_parse_http_body(resp), cfg=cfg, dest=dest)
     except Exception as exc:
         raise RuntimeError(f"Image API {url}: {exc}") from exc
 

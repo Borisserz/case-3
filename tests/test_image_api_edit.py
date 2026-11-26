@@ -80,7 +80,7 @@ def test_generate_posts_the_documented_json(tmp_path: Path) -> None:
     assert "red car" in body["prompt"]
 
 
-def test_edit_posts_image_as_a_string_list(tmp_path: Path) -> None:
+def test_edit_posts_the_saved_png_as_a_file(tmp_path: Path) -> None:
     src = tmp_path / "fig.png"
     dest = tmp_path / "out.png"
     src.write_bytes(_PNG)
@@ -97,16 +97,16 @@ def test_edit_posts_image_as_a_string_list(tmp_path: Path) -> None:
     assert dest.read_bytes().startswith(b"\x89PNG")
     assert len(calls) == 1
     assert calls[0]["url"].endswith("/edit")
-    assert calls[0]["files"] is None
-    assert calls[0]["data"] is None
-    body = calls[0]["json"]
-    assert set(body) == _JOB_KEYS | {"image"}
-    assert isinstance(body["image"], list)
-    assert len(body["image"]) == 1
-    assert isinstance(body["image"][0], str) and body["image"][0]
-    assert "blue" in body["prompt"]
-    raw = base64.b64decode(body["image"][0])
-    assert raw.startswith(b"\x89PNG")
+    assert calls[0]["json"] is None
+    upload = calls[0]["files"]["image"]
+    assert upload[0] == "fig.png"
+    assert upload[1] == _PNG
+    assert upload[2] == "image/png"
+    form = calls[0]["data"]
+    assert set(form) == _JOB_KEYS
+    assert "blue" in form["prompt"]
+    assert form["width"] == "1024"
+    assert form["guidance"] == "0"
 
 
 def test_rejected_body_is_retried_with_prompt_only(tmp_path: Path) -> None:

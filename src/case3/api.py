@@ -1682,7 +1682,7 @@ def api_dashboard_service() -> JSONResponse:
 
 @app.post("/api/dashboard/service-capture")
 def api_dashboard_service_capture(payload: dict | None = Body(default=None)) -> JSONResponse:
-    """GET the open viewer's /shot, then parse the screen and tables as one document."""
+    """GET the open viewer's /shot, then parse the table export as one document."""
     import httpx
 
     mrt = str((payload or {}).get("mrt") or "").strip() if isinstance(payload, dict) else ""

@@ -7,7 +7,14 @@ import { ContextPlaque } from "./ContextPlaque";
 import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
 import { ModeStarterGrid } from "./ModeStarterGrid";
-import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
+import {
+  IconDashboard,
+  IconPalette,
+  IconPaperclip,
+  IconSend,
+  IconSlides,
+  IconStop,
+} from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
@@ -257,22 +264,24 @@ export function ChatComposer({
             {onOpenDashboard ? (
               <button
                 type="button"
-                className="composer-data"
+                className="composer-data composer-data-bi"
                 disabled={busy}
                 title="Открыть дашборд и забрать текущий экран"
                 onClick={onOpenDashboard}
               >
+                <IconDashboard size={15} />
                 BI система
               </button>
             ) : null}
             <button
               type="button"
-              className={`composer-data${presentationOn ? " is-on" : ""}`}
+              className={`composer-data composer-data-deck${presentationOn ? " is-on" : ""}`}
               disabled={busy}
               title={presentationHint}
               aria-pressed={presentationOn}
               onClick={() => onWorkMode(presentationOn ? null : "presentation")}
             >
+              <IconSlides size={15} />
               Презентация
             </button>
             {showDeckStyleBtn ? (
