@@ -4,6 +4,7 @@ services:
       context: ./stimulsoft
       dockerfile: Dockerfile
     image: case-3:stimulsoft
+    platform: linux/amd64
     restart: unless-stopped
     ports:
       - "${CASE3_STIMULSOFT_HOST_PORT:-8040}:${VIEWER_PORT:-8040}"
@@ -56,6 +57,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     image: case-3:frontend
+    platform: linux/amd64
     restart: unless-stopped
     depends_on:
       - backend
@@ -69,6 +71,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.tex
     image: case-3:tex
+    platform: linux/amd64
     profiles: ["tex-only"]
 
 volumes:
