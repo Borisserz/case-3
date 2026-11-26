@@ -592,17 +592,42 @@ def load_chain(root: Path, run_id: str, *, hops: int = _MAX_HOPS) -> list[dict[s
     return found
 
 
-def append_dialogue(meta: dict[str, Any], user: str, assistant: str) -> None:
+def _preview_notes(raw: object) -> list[dict[str, str]]:
+    """Photo shown under an edit reply. Only a run figure URL is kept."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw[:4]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        pid = str(item.get("id") or "").strip()
+        if not pid or not url.startswith("/api/runs/") or ".." in url:
+            continue
+        kind = str(item.get("kind") or "figure").strip() or "figure"
+        out.append({"id": pid[:40], "kind": kind[:20], "url": url[:300]})
+    return out
+
+
+def append_dialogue(
+    meta: dict[str, Any],
+    user: str,
+    assistant: str,
+    *,
+    previews: list[dict[str, str]] | None = None,
+) -> None:
     """Remember an in-place edit on the same run. Cap the list."""
     notes = meta.get("dialogue")
     if not isinstance(notes, list):
         notes = []
-    notes.append(
-        {
-            "user": _clip_prose(user, 300),
-            "assistant": _clip_prose(assistant, 300),
-        }
-    )
+    note: dict[str, Any] = {
+        "user": _clip_prose(user, 300),
+        "assistant": _clip_prose(assistant, 300),
+    }
+    shown = _preview_notes(previews)
+    if shown:
+        note["previews"] = shown
+    notes.append(note)
     meta["dialogue"] = notes[-12:]
 
 
@@ -738,7 +763,32 @@ def newest_edit(root: Path, run_id: str) -> dict[str, str]:
     return found
 
 
-def _dialogue(meta: dict[str, Any]) -> list[dict[str, str]]:
+def _dialogue_with_photos(
+    root: Path, run_id: str, meta: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """A photo edit from before previews were stored still shows its file."""
+    notes = _dialogue(meta)
+    missing = [
+        note
+        for note in notes
+        if not note.get("previews")
+        and str(note.get("assistant") or "").startswith("Меняю фото")
+    ]
+    if not missing:
+        return notes
+    figures = [
+        item
+        for item in _chat_previews(root, run_id, meta)
+        if str(item.get("id") or "").startswith("fig_")
+    ]
+    if not figures:
+        return notes
+    for note in missing:
+        note["previews"] = figures
+    return notes
+
+
+def _dialogue(meta: dict[str, Any]) -> list[dict[str, Any]]:
     notes = meta.get("dialogue")
     if not isinstance(notes, list):
         return []
@@ -746,12 +796,14 @@ def _dialogue(meta: dict[str, Any]) -> list[dict[str, str]]:
     for note in notes:
         if not isinstance(note, dict):
             continue
-        out.append(
-            {
-                "user": _clip_prose(note.get("user"), 300),
-                "assistant": _clip_prose(note.get("assistant"), 300),
-            }
-        )
+        row: dict[str, Any] = {
+            "user": _clip_prose(note.get("user"), 300),
+            "assistant": _clip_prose(note.get("assistant"), 300),
+        }
+        shown = _preview_notes(note.get("previews"))
+        if shown:
+            row["previews"] = shown
+        out.append(row)
     return out[-12:]
 
 
@@ -1103,7 +1155,7 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
             ),
             "chat_opening": _clip_prose(meta.get("chat_opening"), 600),
             "output_mode": _clip(meta.get("output_mode"), 20),
-            "dialogue": _dialogue(meta),
+            "dialogue": _dialogue_with_photos(root, turn_id, meta),
             "last_edit": edit if isinstance(edit, dict) else {},
             "photos": _photo_thumbs(root, turn_id),
             "previews": _chat_previews(root, turn_id, meta),

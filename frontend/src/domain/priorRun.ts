@@ -29,7 +29,7 @@ export type MemoryTurn = {
   chat_summary?: string;
   chat_opening?: string;
   dashboard_source?: string;
-  dialogue?: { user?: string; assistant?: string }[];
+  dialogue?: { user?: string; assistant?: string; previews?: MemoryPreview[] }[];
   photos?: { url: string; name?: string }[];
   attachments?: MemoryAttachment[];
   previews?: MemoryPreview[];
@@ -127,11 +127,31 @@ export function messagesFromMemory(
         dashboard,
       });
     }
+    const turnRunId = (turn.run_id || "").trim() || undefined;
     for (const note of turn.dialogue || []) {
       const user = (note.user || "").trim();
       const assistant = (note.assistant || "").trim();
       if (user) lines.push({ id: id(), role: "user", text: user });
-      if (assistant) lines.push({ id: id(), role: "bot", text: assistant });
+      const notePreviews: MediaPreview[] = (note.previews || [])
+        .filter((item) => item && item.url)
+        .map((item, idx) => {
+          const pid = (item.id || "").trim() || previewIdFromUrl(item.url, idx);
+          return {
+            id: pid,
+            kind: normalizePreviewKind(item.kind, pid),
+            url: item.url,
+          };
+        });
+      if (assistant) {
+        lines.push({
+          id: id(),
+          role: "bot",
+          text: assistant,
+          runId: notePreviews.length ? turnRunId : undefined,
+          outputMode: notePreviews.length ? "chat" : undefined,
+          previews: notePreviews.length ? notePreviews : undefined,
+        });
+      }
     }
   }
   return lines;
