@@ -1,0 +1,10 @@
+Playwright 1.65.2, Chromium 159.0.8154.6, revision 1255.
+Контейнер linux/amd64. Сборка не ходит на cdn.playwright.dev.
+
+chrome-linux64.zip
+  https://cdn.playwright.dev/builds/cft/159.0.8154.6/linux64/chrome-linux64.zip
+  sha256 370601106c1b5619aae5f06f7a3fdc60836486135934779461e2a208d777f596
+
+chrome-headless-shell-linux64.zip
+  https://cdn.playwright.dev/builds/cft/159.0.8154.6/linux64/chrome-headless-shell-linux64.zip
+  sha256 77a6442fd3c8acd3bef9e1067fc26f5ef464277d22f0e8cb58dc3e4077a3e458

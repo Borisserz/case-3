@@ -1,14 +1,14 @@
 services:
   stimulsoft:
     build:
-      context: ./backend/stimulsoft
+      context: ./stimulsoft
       dockerfile: Dockerfile
     image: case-3:stimulsoft
     restart: unless-stopped
     ports:
       - "${CASE3_STIMULSOFT_HOST_PORT:-8040}:${VIEWER_PORT:-8040}"
     env_file:
-      - path: ./backend/stimulsoft/.env
+      - path: ./stimulsoft/.env
         required: false
     environment:
       VIEWER_HOST: 0.0.0.0
@@ -20,8 +20,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       # .mrt и лицензия в образ не входят.
-      - ./backend/stimulsoft/local:/app/local:ro
-      - ./backend/stimulsoft/dashboards:/app/dashboards:ro
+      - ./stimulsoft/local:/app/local:ro
+      - ./stimulsoft/dashboards:/app/dashboards:ro
       - stimulsoft-exports:/app/exports
 
   backend:

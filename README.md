@@ -26,10 +26,10 @@ uv pip install -r requirements.txt
 uv run inspectra
 ```
 
-**Stimulsoft** (`backend/stimulsoft/`, Flask :8040). Свой venv: пакеты 2024.2.2 не ставятся в API.
+**Stimulsoft** (`stimulsoft/`, Flask :8040). Свой venv: пакеты 2024.2.2 не ставятся в API.
 
 ```bash
-cd backend/stimulsoft
+cd stimulsoft
 uv venv --python 3.11
 uv pip install -r requirements.txt
 uv run python view_dashboard.py
@@ -49,7 +49,7 @@ npm run dev
 - Живой чат и превью работают без Docker. «BI система» ходит на :8040.
 - Графики в чате, один раз из `backend/`: `uv run playwright install chromium`
 - Qwen: скопируй `backend/.env.example` → `backend/.env` и поставь `VISION_API_BASE_URL`.
-- База и лицензия Stimulsoft: `backend/stimulsoft/.env` (файл не коммитится). `.mrt` лежат в `backend/stimulsoft/local/`.
+- База и лицензия Stimulsoft: `stimulsoft/.env` (файл не коммитится). `.mrt` лежат в `stimulsoft/local/`.
 
 `uv run` без имени не знает, что запускать. Команда API — `uv run inspectra`. Перезагрузка кода на каждый файл рвёт длинную сборку, поэтому её нет. Для неё: `CASE3_RELOAD=1 uv run inspectra`.
 
@@ -63,7 +63,7 @@ npm run dev
 docker compose up -d --build
 ```
 
-Сборка API не ходит на `cdn.playwright.dev`. Chrome 159 для контейнера linux/amd64 лежит в `backend/vendor/playwright/`. Docker на Windows запускает именно этот контейнер. Оба zip больше 100 МБ: коллеге их нужно отдать вместе с архивом.
+Сборка API не ходит на `cdn.playwright.dev`. Chrome 159 для контейнера linux/amd64 лежит в `backend/vendor/playwright/` и хранится в Git LFS. Один раз на машине: `git lfs install`, дальше `git pull` забирает zip сам.
 
 - **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE на `backend:${CASE3_PORT}`)
 - **Swagger API:** http://127.0.0.1:8010/docs
@@ -121,7 +121,7 @@ docker compose up -d --build
 (фото: `IMAGE_API_BASE_URL=http://host.docker.internal:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, затем `docker compose up -d --build backend`.
 
-Сайт уже внутри контейнера `frontend`. Отдельно `npm` и `python` для монолита не нужны. `.mrt` положи в `backend\stimulsoft\dashboards\`.
+Сайт уже внутри контейнера `frontend`. Отдельно `npm` и `python` для монолита не нужны. `.mrt` положи в `stimulsoft\dashboards\`.
 
 - UI: http://127.0.0.1:5173  (прокси `/api` на порт контейнера `CASE3_PORT`)
 - API: http://127.0.0.1:8010/docs · health: `/api/health`
@@ -174,7 +174,7 @@ docker compose up -d --build
 ## Windows checklist после pull
 
 1. Docker Desktop → `docker compose up -d --build`
-2. `backend\.env` с Qwen URL и `backend\stimulsoft\.env` с Postgres и лицензией; оба файла не в git
-3. `.mrt` в `backend\stimulsoft\dashboards\`
+2. `backend\.env` с Qwen URL и `stimulsoft\.env` с Postgres и лицензией; оба файла не в git
+3. `.mrt` в `stimulsoft\dashboards\`
 4. http://127.0.0.1:5173/api/health → `"ok": true`
 5. Liber: «BI система», затем отчёт в панели
