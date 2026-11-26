@@ -4,13 +4,13 @@ services:
     build: .
     image: stimulsoft-preview:latest
     ports:
-      - "8040:8040"
+      - "${CASE3_STIMULSOFT_HOST_PORT:-8040}:${VIEWER_PORT:-8040}"
     env_file:
       - path: .env
         required: false
     environment:
       VIEWER_HOST: 0.0.0.0
-      VIEWER_PORT: "8040"
+      VIEWER_PORT: ${VIEWER_PORT:-8040}
       VIEWER_OPEN: "0"
       # База остаётся на Mac. 127.0.0.1 внутри контейнера — это сам контейнер.
       POSTGRES_HOST: host.docker.internal

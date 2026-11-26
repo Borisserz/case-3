@@ -6,13 +6,13 @@ services:
     image: case-3:stimulsoft
     restart: unless-stopped
     ports:
-      - "8040:8040"
+      - "${CASE3_STIMULSOFT_HOST_PORT:-8040}:${VIEWER_PORT:-8040}"
     env_file:
       - path: ./backend/stimulsoft/.env
         required: false
     environment:
       VIEWER_HOST: 0.0.0.0
-      VIEWER_PORT: "8040"
+      VIEWER_PORT: ${VIEWER_PORT:-8040}
       VIEWER_OPEN: "0"
       # База остаётся на хосте. 127.0.0.1 внутри контейнера — это сам контейнер.
       POSTGRES_HOST: host.docker.internal
@@ -29,6 +29,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     image: case-3:backend
+    platform: linux/amd64
     restart: unless-stopped
     shm_size: "1gb"
     depends_on:
@@ -38,7 +39,8 @@ services:
         required: false
     environment:
       CASE3_TEX_LOCAL: "1"
-      DASHBOARD_SERVICE_URL: http://stimulsoft:8040
+      CASE3_PORT: ${CASE3_PORT:-8000}
+      DASHBOARD_SERVICE_URL: http://stimulsoft:${VIEWER_PORT:-8040}
       DASHBOARD_PUBLIC_URL: "${DASHBOARD_PUBLIC_URL:-http://127.0.0.1:8040}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -46,7 +48,8 @@ services:
       - ./backend/runs:/app/runs
       - ./backend/local:/app/local
     ports:
-      - "8000:8000"
+      # Слева — порт на Windows. 8000 на хосте занят image-моделью, поэтому снаружи 8010.
+      - "${CASE3_BACKEND_HOST_PORT:-8010}:${CASE3_PORT:-8000}"
 
   frontend:
     build:
@@ -56,8 +59,10 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    environment:
+      CASE3_PORT: ${CASE3_PORT:-8000}
     ports:
-      - "5173:80"
+      - "${CASE3_FRONTEND_HOST_PORT:-5173}:80"
 
   tex:
     build:

@@ -57,14 +57,16 @@ npm run dev
 
 ## Полный стек в Docker
 
-Из корня репозитория. Три сервиса: Nginx `:5173`, FastAPI `:8000` (TeX Live, Pandoc, LibreOffice, Playwright), Stimulsoft `:8040`.
+Из корня репозитория. Три сервиса: Nginx `:5173`, FastAPI снаружи `:8010` (внутри сети Docker порт `CASE3_PORT`, по умолчанию 8000; TeX Live, Pandoc, LibreOffice, Playwright), Stimulsoft `:8040`. На хосте `:8000` — image-модель, `:8080` — Qwen. Порты меняются в корневом `.env` (образец `.env.example`), не в Dockerfile.
 
 ```bash
 docker compose up -d --build
 ```
 
-- **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE на `backend:8000`)
-- **Swagger API:** http://127.0.0.1:8000/docs
+Сборка API не ходит на `cdn.playwright.dev`. Chrome 159 для контейнера linux/amd64 лежит в `backend/vendor/playwright/`. Docker на Windows запускает именно этот контейнер. Оба zip больше 100 МБ: коллеге их нужно отдать вместе с архивом.
+
+- **Интерфейс Inspectra:** http://127.0.0.1:5173 (проксирует `/api/*` и SSE на `backend:${CASE3_PORT}`)
+- **Swagger API:** http://127.0.0.1:8010/docs
 - **Swagger Stimulsoft:** http://127.0.0.1:8040/docs
 - **Проверка:** `curl -s http://127.0.0.1:5173/api/health`
 
@@ -115,14 +117,14 @@ git pull
 docker compose up -d --build
 ```
 
-Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
-(сгенерированные фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
+Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://host.docker.internal:8080`  
+(фото: `IMAGE_API_BASE_URL=http://host.docker.internal:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, затем `docker compose up -d --build backend`.
 
 Сайт уже внутри контейнера `frontend`. Отдельно `npm` и `python` для монолита не нужны. `.mrt` положи в `backend\stimulsoft\dashboards\`.
 
-- UI: http://127.0.0.1:5173  (прокси `/api` → `:8000`)
-- API: http://127.0.0.1:8000/docs · health: `/api/health`
+- UI: http://127.0.0.1:5173  (прокси `/api` на порт контейнера `CASE3_PORT`)
+- API: http://127.0.0.1:8010/docs · health: `/api/health`
 - Сборка в Liber идёт с прогрессом (`POST /api/run` → poll `/status`); `api.cmd` **без** `--reload` (иначе рвёт длинные job). Dev-reload: `set CASE3_RELOAD=1` перед `api.cmd`.
 
 Сборка и артефакты: через Liber UI → `backend\runs\out\<run_id>\`.
