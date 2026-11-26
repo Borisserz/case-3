@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Protocol
 
-from case3.diagram_repair import parse_repair_response, repair_diagrams
+from case3.diagram_repair import repair_diagrams
 from case3.diagram_style import format_diagram_color_prompt
 from case3.diagrams import DIAGRAM_TYPES, parse_diagrams, sanitize_mermaid
 from case3.diagrams import DiagramError
@@ -212,7 +212,14 @@ def regenerate_diagrams_in_run(
     client: _Completer,
     skip_repair: bool = False,
 ) -> dict[str, Any]:
-    """Full LLM regenerate of diagrams[] (+ optional repair). No TeX/PDF."""
+    """Full LLM regenerate of diagrams[] (+ optional repair). No TeX/PDF.
+
+    Uses ``complete_diagrams`` so a Mermaid parse/render failure triggers silent
+    LLM retries before the draft is shown in Liber.
+    """
+    from case3.diagram_generate import complete_diagrams, diagrams_pass_render
+    from case3.diagram_render import mermaid_syntax_ok
+
     out_dir = out_dir.resolve()
     meta = _load_meta(out_dir)
     source_path = Path(str(meta.get("source") or ""))
@@ -223,23 +230,23 @@ def regenerate_diagrams_in_run(
     max_d = int(meta.get("max_diagrams") or 2)
     max_d = max(1, min(max_d, 3))
 
-    system = _load_generate_system(max_diagrams=max_d, palette=palette)
-    user = (
-        f"## Intent\n{intent.strip() or '(none)'}\n\n"
-        f"## Source\n{source[:12000]}\n\n"
-    )
     try:
-        raw = client.complete(system=system, user_text=user)
+        diagrams = complete_diagrams(
+            intent=intent,
+            source_text=source,
+            max_diagrams=max_d,
+            client=client,
+            palette=palette,
+        )
     except Exception as exc:
         raise DiagramEditError(f"LLM generate failed: {exc}") from exc
 
-    diagrams = parse_repair_response(raw or "", max_diagrams=max_d)
     if not diagrams:
         raise DiagramEditError("model returned no valid diagrams")
 
     repaired = False
     if not skip_repair:
-        diagrams, rmeta = repair_diagrams(
+        candidate, rmeta = repair_diagrams(
             diagrams,
             source=source,
             intent=intent,
@@ -247,7 +254,13 @@ def regenerate_diagrams_in_run(
             client=client,
             palette=palette,
         )
-        repaired = bool(rmeta.get("diagrams_repaired"))
+        if candidate and diagrams_pass_render(candidate, mermaid_syntax_ok):
+            diagrams = candidate
+            repaired = bool(rmeta.get("diagrams_repaired"))
+        elif candidate:
+            log.warning(
+                "diagram repair broke Mermaid render — keeping pre-repair draft"
+            )
 
     from case3.run_undo import capture_before_edit, undo_meta
 

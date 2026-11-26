@@ -147,6 +147,21 @@ def render_mermaid_svg_string(
                     "#diagram svg", state="attached", timeout=timeout_ms
                 )
                 page.wait_for_timeout(200)
+                # Mermaid always ships `.error-icon` / `.error-text` CSS rules in
+                # successful SVGs — check the DOM, not a raw substring.
+                is_err = page.evaluate(
+                    """() => {
+                  const svg = document.querySelector('#diagram svg');
+                  if (!svg) return true;
+                  if (svg.getAttribute('aria-roledescription') === 'error') return true;
+                  if (svg.querySelector('.error-icon, .error-text')) return true;
+                  const txt = svg.textContent || '';
+                  return txt.includes('Syntax error in text');
+                }"""
+                )
+                if is_err:
+                    holder["error"] = "mermaid syntax error rendered"
+                    return
                 holder["svg"] = page.locator("#diagram svg").evaluate(
                     "el => el.outerHTML"
                 )
@@ -155,15 +170,11 @@ def render_mermaid_svg_string(
                 browser.close()
 
     _run_sync_playwright(_render)
+    if holder.get("error"):
+        raise DiagramSvgError(str(holder["error"]))
     raw = str(holder.get("svg") or "").strip()
     if not raw:
         raise DiagramSvgError("svg render empty")
-    if (
-        'aria-roledescription="error"' in raw
-        or "error-icon" in raw
-        or "Syntax error in text" in raw
-    ):
-        raise DiagramSvgError("mermaid syntax error rendered")
     return normalize_svg_document(raw)
 
 
