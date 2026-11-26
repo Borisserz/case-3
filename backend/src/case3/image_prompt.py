@@ -101,7 +101,6 @@ class ImagePromptError(ValueError):
 def sanitize_image_prompt(
     prompt: str,
     *,
-    min_len: int = 8,
     max_len: int = 800,
 ) -> str:
     text = unicodedata.normalize("NFKC", prompt or "")
@@ -120,8 +119,6 @@ def sanitize_image_prompt(
     text = "".join(cleaned)
     text = _ALLOWED.sub(" ", text)
     text = " ".join(text.split())
-    if len(text) < min_len:
-        raise ImagePromptError(f"image prompt too short (<{min_len})")
     if len(text) > max_len:
         text = text[:max_len].rstrip()
     return text
