@@ -682,6 +682,8 @@ def try_chat_revise(
         say = _retype_charts(work_dir, act.chart) or say
     elif act.op == "retype_chart" and act.chart and act.chart_at:
         say = _retype_one(work_dir, act.chart, act.chart_at) or say
+    elif act.op == "retype_chart" and act.chart and act.slide:
+        say = _retype_on_slide(work_dir, act.chart, act.slide) or say
     elif act.op == "restyle_chart":
         say = _restyle_charts(work_dir, text) or say
     elif act.op == "rename_heading" and act.section and act.title:
@@ -1165,6 +1167,53 @@ def _retype_one(out_dir: Path, chart_type: str, index: int) -> str:
     if not _type_landed(out_dir, ids[index - 1], chart_type):
         return "Тип не сменился, картинка осталась прежней."
     return f"Меняю график {index} на {label}. Числа те же.{_pdf_note(out_dir)}"
+
+
+def _chart_id_on_slide(out_dir: Path, slide: int) -> str | None:
+    """``cht_*`` on 1-based slide from deck.json, or None when that slide has no chart."""
+    path = out_dir / "slides" / "deck.json"
+    if not path.is_file() or slide < 1:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    slides = data.get("slides") if isinstance(data, dict) else None
+    if not isinstance(slides, list) or slide > len(slides):
+        return None
+    row = slides[slide - 1]
+    if not isinstance(row, dict):
+        return None
+    for key in ("chart_id", "media_id"):
+        mid = str(row.get(key) or "").strip()
+        if mid.startswith("cht_"):
+            return mid
+    return None
+
+
+def _retype_on_slide(out_dir: Path, chart_type: str, slide: int) -> str:
+    """Change type for the chart on one deck slide only."""
+    from case3.chart_edit import ChartEditError, edit_chart_in_run
+    from case3.chat_act import CHART_SAY
+
+    label = CHART_SAY.get(chart_type, chart_type)
+    if slide < 1:
+        return "Укажите номер слайда, например «на слайде 3 сделай график площадью»."
+    chart_id = _chart_id_on_slide(out_dir, slide)
+    if not chart_id:
+        deck = out_dir / "slides" / "deck.json"
+        if not deck.is_file():
+            # No IR yet — fall back to N-th chart in figures.json.
+            return _retype_one(out_dir, chart_type, slide)
+        return f"На слайде {slide} нет графика."
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    try:
+        edit_chart_in_run(out_dir, chart_id, chart_type=chart_type, formats=formats)
+    except ChartEditError as exc:
+        return _friendly_chart_edit_error(exc)
+    if not _type_landed(out_dir, chart_id, chart_type):
+        return "Тип не сменился, картинка осталась прежней."
+    return f"Меняю график на слайде {slide} на {label}. Числа те же.{_pdf_note(out_dir)}"
 
 
 def _retype_charts(out_dir: Path, chart_type: str) -> str:

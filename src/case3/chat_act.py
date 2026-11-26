@@ -2458,6 +2458,7 @@ def resolve_act(
             )
         chart = named_chart
         index = chart_at(raw)
+        slide = _slide_number_named(raw)
         if not chart:
             names = ", ".join(CHART_SAY[key] for key in ("line", "bar", "donut", "horizontal_bar", "area", "scatter"))
             return ChatAct(
@@ -2472,6 +2473,15 @@ def resolve_act(
                 chart=chart,
                 chart_at=index,
                 say=f"Меняю график {index} на {CHART_SAY[chart]}. Числа те же.",
+            )
+        # «третий слайд … площадь» — one chart on that slide, not every chart.
+        if slide and has_deck:
+            return ChatAct(
+                kind="revise",
+                op="retype_chart",
+                chart=chart,
+                slide=slide,
+                say=f"Меняю график на слайде {slide} на {CHART_SAY[chart]}. Числа те же.",
             )
         return ChatAct(
             kind="revise",
