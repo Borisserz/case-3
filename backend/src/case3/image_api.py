@@ -144,14 +144,72 @@ def _headers(cfg: ImageApiConfig) -> dict[str, str]:
 
 def _job_body(cfg: ImageApiConfig, prompt: str) -> dict[str, Any]:
     """Fields from the office OpenAPI schema. Extra keys are a 422."""
+    guidance = float(cfg.guidance)
     return {
         "prompt": prompt,
         "width": int(cfg.width),
         "height": int(cfg.height),
         "steps": int(cfg.steps),
-        "guidance": float(cfg.guidance),
+        "guidance": int(guidance) if guidance.is_integer() else guidance,
         "seed": int(cfg.seed),
     }
+
+
+def _response_error(resp: httpx.Response) -> str:
+    text = (resp.text or "").replace("\n", " ").strip()
+    if len(text) > 400:
+        text = text[:400] + "…"
+    return f"HTTP {resp.status_code}: {text}" if text else f"HTTP {resp.status_code}"
+
+
+def _send_image(client: httpx.Client, url: str, headers: dict[str, str], body: dict[str, Any], *, form: bool) -> httpx.Response:
+    if not form:
+        return client.post(url, json=body, headers=headers)
+    data: dict[str, str] = {}
+    for key, value in body.items():
+        if key == "image" and isinstance(value, list):
+            data["image"] = str(value[0]) if value else ""
+        else:
+            data[key] = value if isinstance(value, str) else str(value)
+    return client.post(url, data=data, headers=headers)
+
+
+def _deliver_image(
+    cfg: ImageApiConfig,
+    url: str,
+    body: dict[str, Any],
+    dest: Path,
+    *,
+    raw_prompt: str,
+) -> None:
+    """POST the documented JSON. On 422, retry with prompt only, then as a form.
+
+    The live schema defaults guidance to 0. Our knob 3, a long Avoid-prompt,
+    or a JSON body against a form endpoint are all validation errors.
+    """
+    headers = _headers(cfg)
+    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
+    short = " ".join((raw_prompt or "").split())[:240] or str(body.get("prompt") or "")[:240]
+    minimal: dict[str, Any] = {"prompt": short}
+    if isinstance(body.get("image"), list):
+        minimal["image"] = body["image"]
+    attempts: list[tuple[dict[str, Any], bool]] = [(body, False)]
+    if set(minimal) != set(body) or minimal.get("prompt") != body.get("prompt"):
+        attempts.append((minimal, False))
+    attempts.append((minimal, True))
+    errors: list[str] = []
+    with httpx.Client(timeout=timeout) as client:
+        for payload, form in attempts:
+            if not str(payload.get("prompt") or "").strip():
+                continue
+            resp = _send_image(client, url, headers, payload, form=form)
+            if resp.status_code < 400:
+                decode_image_string(_parse_http_body(resp), cfg=cfg, dest=dest)
+                return
+            errors.append(("form " if form else "") + _response_error(resp))
+            if resp.status_code != 422:
+                break
+    raise RuntimeError(" | ".join(errors[:3]))
 
 
 def _resolve_pack_id(pack_id: str | None) -> str | None:
@@ -407,13 +465,8 @@ def generate_png(
         pack_id or "-",
     )
     # connect=5s: fail fast when LAN Image API is down (Win 10061).
-    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
     try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, json=body, headers=_headers(cfg))
-            resp.raise_for_status()
-            payload = _parse_http_body(resp)
-        decode_image_string(payload, cfg=cfg, dest=dest)
+        _deliver_image(cfg, url, body, dest, raw_prompt=prompt)
     except Exception as exc:
         # Surface target URL — WinError 10061 usually means IMAGE_API_BASE_URL down/wrong
         raise RuntimeError(f"Image API {url}: {exc}") from exc
@@ -460,6 +513,7 @@ def edit_png(
         raise RuntimeError("IMAGE_API_BASE_URL is empty")
     if not source_png.is_file():
         raise RuntimeError(f"source image missing: {source_png}")
+    raw_prompt = prompt
     prompt = _outbound_prompt(prompt, pack_id=pack_id)
     if not prompt:
         raise RuntimeError("empty edit prompt")
@@ -474,13 +528,8 @@ def edit_png(
         len(prompt),
         pack_id or "-",
     )
-    timeout = httpx.Timeout(cfg.timeout_s, connect=5.0)
     try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(url, json=body, headers=_headers(cfg))
-            resp.raise_for_status()
-            payload = _parse_http_body(resp)
-        decode_image_string(payload, cfg=cfg, dest=dest)
+        _deliver_image(cfg, url, body, dest, raw_prompt=raw_prompt)
     except Exception as exc:
         raise RuntimeError(f"Image API {url}: {exc}") from exc
 
