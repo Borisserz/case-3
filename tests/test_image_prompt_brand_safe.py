@@ -94,3 +94,8 @@ def test_prepare_rejects_cyrillic() -> None:
 
 def test_sanitize_still_alone() -> None:
     assert sanitize_image_prompt("Sharp product photo on linen").startswith("Sharp")
+
+
+def test_sanitize_allows_a_short_english_word() -> None:
+    assert sanitize_image_prompt("red") == "red"
+    assert prepare_image_prompt("blue", pack_id="atelier").lower().startswith("blue")

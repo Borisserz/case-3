@@ -19,7 +19,7 @@ Generate and edit report photos via office HTTP API; optional user uploads; chat
 - Vision: `user_photos_to_vision_images` (max edge 768) goes into the LLM call so placement can follow the picture. Photos illustrate; they do not satisfy the data gate
 - Report: each `usr_*` slot at most once (`deduplicate_slots_in_tex` + `ensure_user_slots_in_tex`). Deck: `ensure_deck_photos` places `usr_*` (`media_hero` / `media_split`)
 - Health: `image_api_configured` + **live** `image_api_ok` / `image_api_error` via `probe_image_api` (~1.5s)
-- Prompts: `sanitize` → `apply_pack_style_lock` → `harden_brand_safe` (+ `Avoid:`) in `prepare_image_prompt` on generate **and** edit
+- Prompts: `sanitize` → `apply_pack_style_lock` → `harden_brand_safe` (+ `Avoid:`) in `prepare_image_prompt` on generate **and** edit. A short English word such as `red` is allowed. An empty prompt still fails.
 - User edit prompts may be RU: `ensure_english_image_prompt` (Qwen) before Image API in `figure_edit` + `api_photo.quick_photo_edit`; already-EN passthrough
 - Pack id: report → `palette_from_intent` / `meta.image_style_pack`; slides → `slides_theme_pack`
 
