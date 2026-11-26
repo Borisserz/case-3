@@ -7,15 +7,7 @@ import { ContextPlaque } from "./ContextPlaque";
 import type { DeckStyle, DeckThemePackInfo } from "./deckStyle";
 import { DeckTemplateGallery } from "./DeckTemplateGallery";
 import { ModeStarterGrid } from "./ModeStarterGrid";
-import {
-  IconDiagram,
-  IconPalette,
-  IconPaperclip,
-  IconReport,
-  IconSend,
-  IconSlides,
-  IconStop,
-} from "./icons";
+import { IconPalette, IconPaperclip, IconSend, IconStop } from "./icons";
 import { LIBER_MODE_PILLS, type LiberWorkMode } from "./domain/liberModes";
 import type { SourceDraft } from "./domain/liberTypes";
 import { takeInputFiles } from "./domain/takeInputFiles";
@@ -38,7 +30,7 @@ type Props = {
   photoRef: RefObject<HTMLInputElement | null>;
   workMode: LiberWorkMode;
   onWorkMode: (mode: LiberWorkMode) => void;
-  /** Mode pills — empty home only (hide once chat has messages). */
+  /** Empty home — starter cards and the wide stage. */
   showModes: boolean;
   /** Documents, last section, and turn count for this chat. */
   memoryLine?: string;
@@ -110,6 +102,10 @@ export function ChatComposer({
   onOpenDashboard,
 }: Props) {
   const galleryRef = useRef<HTMLDivElement>(null);
+  const presentationOn = workMode === "presentation";
+  const presentationHint =
+    LIBER_MODE_PILLS.find((pill) => pill.id === "presentation")?.hint ??
+    "Только презентация · PPTX и PDF";
   const placeholder =
     workMode === "diagram"
       ? "Опишите процесс — или просто спросите"
@@ -269,6 +265,16 @@ export function ChatComposer({
                 BI система
               </button>
             ) : null}
+            <button
+              type="button"
+              className={`composer-data${presentationOn ? " is-on" : ""}`}
+              disabled={busy}
+              title={presentationHint}
+              aria-pressed={presentationOn}
+              onClick={() => onWorkMode(presentationOn ? null : "presentation")}
+            >
+              Презентация
+            </button>
             {showDeckStyleBtn ? (
               <button
                 type="button"
@@ -309,45 +315,6 @@ export function ChatComposer({
           </div>
         </div>
 
-        <div
-          className={`chat-bias${showModes ? "" : " is-compact"}`}
-          role="group"
-          aria-label="Режим ответа"
-        >
-          <button
-            type="button"
-            className={workMode === null ? "is-on" : ""}
-            disabled={busy}
-            title="Свободный диалог по данным и автовыбор графика/отчёта"
-            aria-pressed={workMode === null}
-            onClick={() => onWorkMode(null)}
-          >
-            <span>Авто</span>
-          </button>
-          {LIBER_MODE_PILLS.map((p) => {
-            const on = workMode === p.id;
-            const Icon =
-              p.id === "diagram"
-                ? IconDiagram
-                : p.id === "presentation"
-                  ? IconSlides
-                  : IconReport;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={on ? "is-on" : ""}
-                disabled={busy}
-                title={p.hint}
-                aria-pressed={on}
-                onClick={() => onWorkMode(on ? null : p.id)}
-              >
-                <Icon size={15} />
-                <span>{p.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {showModes && onPickStarter && workMode ? (
