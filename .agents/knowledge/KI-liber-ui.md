@@ -11,7 +11,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - `useLiberDevPreviews.ts` — `?preview=artifact|flow` bootstraps
 - `Sidebar.tsx` — New / History (sessionStorage) / Settings; collapse
 - `EmptyState.tsx` — «Чем займёмся?»; empty desk uses `is-empty-home` (composer centered mid-viewport like Julius)
-- `liberModes.ts` + `ChatComposer` pills: Отчёт · Схема · Презентация — **остаются** после первого сообщения; gallery только empty∧presentation; стиль → `DeckStyleSheet`
+- Composer (2026-11-26): «Презентация» справа от «BI система», переключатель. Нижнего ряда Авто · Отчёт · Схема нет. Отчёт и схема собираются, когда их назвали в запросе. Gallery только empty∧presentation; стиль → `DeckStyleSheet`
 - Template apply: **только** pack+structure (не DNA-промпт в чат); honesty «пример · 6 кадров / 10–12 в деке». Отправка не режется порогом 48 символов: пустой/бессмысленный запрос ловит `input_validation` и остаётся сообщением в чате (`insufficient_data`), карточка артефакта не открывается
 - `output_mode=presentation` → `formats=none` (без PDF/DOCX) + после run сразу `makePresentation`; rail **не** авто-открывается — Julius large `DeckFileCard`s in-chat; rail only on card click
 - Mode surfaces (2026-10-23): **report** → rail Превью(+PDF)+Схема if any; **diagram** → **only Схема** (no Preview/PDF/Source; formats=none); in-chat `DiagramChatCard` = live Mermaid + source snippet (Julius); **presentation** → only PPTX+deck PDF. Auto-open primary tab on finish. `output_mode` in meta.
@@ -19,7 +19,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Julius in-chat cards (2026-10-23): matte paper stage + file glyph + hover veil + footer «→»; deck = PPTX+PDF twin (+ filmstrip); report = A4 sheet; diagram = sketch hero; `DeckMakeSplit quiet` under cards; empty hero = Crimson serif + segmented mode track; `?preview=deck` QA; history/restore **не** auto-open rail
 - Deck gen (2026-10-23): `makePresentation` **closes rail**, keeps progress in chat (`DeckBuildCard` + thinking); presentation tab only when `ok`/`error`; `thinkingMode` pools in `pipelinePhrases.ts` (report/diagram/presentation + slides_*)
 - Julius strip (2026-10-23): composer `Working · m:ss` on **any** busy run (report/diagram/deck); chat column session title from `preview.title` (`provisionalSessionTitle` → `reportTitle`) — **scrolls with transcript**, not sticky over cards; sidebar brand unchanged
-- Empty-home (2026-10-23): all pills use `is-empty-stage` @ `--deck-stage-max` — composer = starters = templates same width; `ModeStarterGrid` under input for report/diagram/**presentation**; rail-open chat column centered
+- Empty-home: `is-empty-stage` @ `--deck-stage-max` — composer = starters = templates same width; `ModeStarterGrid` under the input when «Презентация» is on; rail-open chat column centered
 - `ThinkingFold.tsx` + `pipelinePhrases.ts` — collapsible «Размышления» in bot bubble (Flow above); no ThinkingBar; phrases from large pools, seeded per run (`thinkingStartedAt`) so logs don’t repeat the same sequence
 - `icons.tsx` — stroke icon set (no emoji chrome)
 - `ChartCard.tsx` — optional insight/highlights around chart figures
@@ -97,7 +97,7 @@ ADR-0003 · ADR-0006 · `docs/superpowers/specs/2026-10-21-liber-soft-premium-ui
 
 ## Chat-first (2026-11-18)
 
-Default send is a chat answer, full width, no bubble. The user message is a right bubble. Plaques Отчёт · Схема · Презентация sit above the composer and only bias the next send. The message wins when it names an artifact: «проанализируй отчёт» stays in chat; «проанализируй регионы» with the report plaque builds a report; «сделай презу» builds a deck even with the plaque off. An artifact turn speaks a short line first (`chat_opening`), then the existing pipeline, then the card and the side rail. Router: `turn_route.resolve_turn`. Spec: `docs/superpowers/specs/2026-11-18-liber-chat-first-design.md`.
+Default send is a chat answer, full width, no bubble. The user message is a right bubble. «Презентация» beside «BI система» biases the next send. Report and diagram have no composer button; naming them in the message still builds the file. «проанализируй отчёт» stays in chat; «проанализируй регионы» stays in chat; «сделай презу» builds a deck with the button off. ADR-0017 still applies when `artifact_bias` is sent. An artifact turn speaks a short line first (`chat_opening`), then the existing pipeline, then the card and the side rail. Router: `turn_route.resolve_turn`. Spec: `docs/superpowers/specs/2026-11-18-liber-chat-first-design.md`.
 
 ## Preview full edit (2026-11-02)
 
