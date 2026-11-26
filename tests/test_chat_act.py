@@ -903,6 +903,33 @@ def test_prior_run_photo_is_visible_to_the_router(tmp_path: Path) -> None:
     assert flags["has_photo"] is True
 
 
+def test_color_followup_of_the_open_photo_edits_every_time():
+    """A leading «а» or «измени» without the word «фото» still edits the open photo."""
+    from case3.turn_plan import plan_turn
+    from case3.turn_route import asks_for_generated_photo
+
+    lines = {
+        "а сделай ее красного цвета": "красн",
+        "измени сделай синей": "син",
+        "а сделай ее синей": "син",
+    }
+    for line, color in lines.items():
+        act = resolve_act(line, has_photo=True)
+        assert act.op == "edit_photo", line
+        assert color in act.title.casefold(), (line, act.title)
+        assert not act.title.casefold().startswith("а "), act.title
+        plan = plan_turn(line, has_photo=True)
+        assert plan.kind == "revise", line
+        assert asks_for_generated_photo(line) is False
+    fresh = plan_turn("сделай картинку машины бмв белую", has_photo=True)
+    assert fresh.kind != "revise"
+    assert asks_for_generated_photo("сделай картинку машины бмв белую")
+    both = resolve_act("а сделай ее красного цвета", has_photo=True, has_chart=True)
+    assert both.op == "ask"
+    chart = resolve_act("а сделай ее красного цвета", has_chart=True)
+    assert chart.op == "recolor_hue"
+
+
 def test_color_of_the_open_photo_does_not_need_the_word_change():
     """«сделай красным» edits the photo. «и покажи фото» is not a new picture."""
     from case3.turn_plan import plan_turn
