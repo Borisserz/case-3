@@ -891,15 +891,26 @@ def _drop_show_photo(raw: str) -> str:
 
 
 def _bare_color_line(raw: str) -> bool:
-    """True when the line is only a color command, not a sentence about an object."""
+    """True when the line is only a color command, not a sentence about an object.
+
+    Leftover is counted in words, so «а» and «измени» do not hide the color.
+    """
     rest = re.sub(
         r"зелен\w*|оранж\w*|желт\w*|розов\w*|красн\w*|голуб\w*|син\w*|сер\w*|черн\w*|"
-        r"цвет\w*|сделай|сделать|график\w*|столбц\w*|пожалуйста|\bв\b|\bи\b",
+        r"цвет\w*|график\w*|столбц\w*",
         " ",
         raw,
         flags=re.IGNORECASE,
     )
-    return len(" ".join(rest.split())) <= 2
+    rest = re.sub(
+        r"\b(?:а|и|ну|же|пожалуйста|в|на|"
+        r"ее|его|ей|им|эту|этот|это|этой|этого|"
+        r"сделай|сделать|измени(?:ть)?|поменяй|поменять|перекрась|перекрасить)\b",
+        " ",
+        rest,
+        flags=re.IGNORECASE,
+    )
+    return not rest.split()
 
 
 def creates_new_picture(text: str | None) -> bool:
@@ -1105,6 +1116,17 @@ def _photo_instruction(raw: str) -> str:
         flags=re.IGNORECASE,
     )
     body = _LEADING_PRONOUN.sub("", body)
+    for _ in range(4):
+        nxt = re.sub(
+            r"^(?:(?:а|и|ну|же)\s+|(?:ее|его|ей|им|эту|этот|это|этой|этого)\s+|"
+            r"(?:сделай|сделать|измени(?:ть)?|поменяй|поменять|перекрась|перекрасить)\s+)",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        ).strip()
+        if nxt == body:
+            break
+        body = nxt
     return body.strip(" .,")
 
 
