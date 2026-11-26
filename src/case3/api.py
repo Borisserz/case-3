@@ -1049,6 +1049,7 @@ def _prior_artifact_flags(root: Path, prior_run_id: str | None) -> dict[str, boo
         "has_report": False,
         "has_diagram": False,
         "has_chart": False,
+        "has_photo": False,
     }
     rid = (prior_run_id or "").strip()
     if not rid or not _RUN_ID_OK.match(rid):
@@ -1081,6 +1082,11 @@ def _prior_artifact_flags(root: Path, prior_run_id: str | None) -> dict[str, boo
         flags["has_chart"] = flags["has_chart"] or (
             isinstance(planned, list) and bool(planned)
         )
+        figs = out_dir / "figures"
+        if figs.is_dir() and (
+            any(figs.glob("usr_*.png")) or any(figs.glob("fig_*.png"))
+        ):
+            flags["has_photo"] = True
         figures_path = out_dir / "figures.json"
         if not figures_path.is_file():
             continue

@@ -493,6 +493,63 @@ def test_pptx_parsers_support_leading_comments() -> None:
     assert len(spec.periods) >= 1
 
 
+def test_sanitize_folds_prose_left_after_a_closed_node() -> None:
+    """``2025)] Консолидированный`` closes the node early; Mermaid then sees NODE_DSTART."""
+    raw = (
+        "flowchart TD\n"
+        "  A[Поступления в бюджет РБ<br/>январь 2025)] Консолидированный (местный) --> B[Уровень]\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert (
+        'A["Поступления в бюджет РБ<br/>январь 2025) Консолидированный (местный)"]'
+        in out
+    )
+    assert "--> B[Уровень]" in out
+    assert sanitize_mermaid(out) == out
+
+
+def test_sanitize_mindmap_folds_text_after_the_bracket() -> None:
+    raw = (
+        "mindmap\n"
+        "  root[Структура поступлений в бюджет РБ<br/>январь 2025)] Консолидированный (уровень)\n"
+        "    Республиканский\n"
+        "    Местные\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert (
+        'root["Структура поступлений в бюджет РБ<br/>январь 2025) Консолидированный (уровень)"]'
+        in out
+    )
+    assert "Республиканский" in out
+    assert "Местные" in out
+    assert "-->" not in out
+
+
+def test_sanitize_mindmap_quotes_a_circle_that_contains_a_paren() -> None:
+    raw = (
+        "mindmap\n"
+        "  root((Структура поступлений в бюджет РБ<br/>(январь 2025)))\n"
+        "    Консолидированный\n"
+    )
+    out = sanitize_mermaid(raw)
+    assert 'root(("Структура поступлений в бюджет РБ<br/>(январь 2025)"))' in out
+    assert "Консолидированный" in out
+
+
+def test_sanitize_does_not_merge_the_next_flowchart_node() -> None:
+    raw = "flowchart TD\n  A[Старт] B[Конец]\n"
+    out = sanitize_mermaid(raw)
+    assert "A[Старт]" in out
+    assert "B[Конец]" in out
+
+
+def test_sanitize_leaves_a_plain_mindmap_circle() -> None:
+    raw = "mindmap\n  root((Признаки))\n    Возраст\n"
+    out = sanitize_mermaid(raw)
+    assert "root((Признаки))" in out
+    assert "Возраст" in out
+
+
 def test_sanitize_mermaid_quotes_node_labels_with_parens_colons_quotes() -> None:
     raw = (
         "flowchart TD\n"

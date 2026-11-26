@@ -62,7 +62,7 @@ Vite React soft-premium chat desk: sidebar + compose → poll run → compact ch
 - Focused workbench: rail default ~62%; card has no Export (rail only); Presentation CTA primary — `docs/superpowers/specs/2026-10-22-liber-focused-workbench-design.md`
 - Schema tab: premium hero (type RU · Liber·PNG + serif title); PNG primary; zoom ± / % / short hint; PNG via viewBox + slug(title); fullscreen has own SVG ref
 - Mode **Схема**: after llm, pipeline stage `diagram_repair` (2nd LLM) enriches Mermaid from Source; soft-fail keeps draft; meta `diagrams_repaired` / `diagrams_draft` in figures.json — see `docs/superpowers/specs/2026-10-23-liber-diagram-repair-premium-design.md`
-- Diagram colors: **model-owned** Mermaid `:::role` + `classDef` (start/process/decision/ok/warn/data, Liber hex by Settings palette); sanitize strips `click` + purple neon → sage (`diagrams.sanitize_mermaid`). A flowchart with 2+ nodes and no edges gets a `-->` chain (TD without edges is a gap row).
+- Diagram colors: **model-owned** Mermaid `:::role` + `classDef` (start/process/decision/ok/warn/data, Liber hex by Settings palette); sanitize strips `click` + purple neon → sage (`diagrams.sanitize_mermaid`). A flowchart with 2+ nodes and no edges gets a `-->` chain (TD without edges is a gap row). A label that closes early (`2025)] Консолидированный`, or `(` inside a mindmap circle) is quoted and the leftover words go back into the node, so Mermaid does not die with NODE_DSTART.
 - Schema pane: legend · **Ещё вариант** (`POST …/diagrams/regenerate` + undo) · **Изменить** → visual React Flow editor (flowchart IR; Mermaid textarea fallback) · `POST …/diagrams/{id}/edit` — specs `diagram-edit-legend` + `diagram-visual-editor`. Empty mode keeps tab + CTA.
 
 ## Gotchas

@@ -31,6 +31,7 @@ def test_named_green_paints_bars_that_had_no_color() -> None:
         "</script>"
     )
     assert hue_from_text("столбцы зеленые") == "green"
+    assert hue_from_text("розовый") == "pink"
     assert hue_from_text("перекрась графики в закат") == ""
     painted = paint_hue_on_html(html, "green")
     assert "backgroundColor:[" in painted

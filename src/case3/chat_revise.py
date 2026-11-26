@@ -680,7 +680,13 @@ def try_chat_revise(
     elif act.op == "rename_heading" and act.section and act.title:
         say = _rename_heading(work_dir, act.section, act.title) or say
     elif act.op == "slide_text" and act.slide and act.title:
-        say = _slide_text(work_id, work_dir, act.slide, act.title) or say
+        say = _slide_text(
+            work_id,
+            work_dir,
+            act.slide,
+            act.title,
+            only=act.brief == "only",
+        ) or say
     elif act.op == "rewrite_slide" and act.slide:
         say = _rewrite_slide(work_id, work_dir, act.slide, act.brief, text) or say
     elif act.op == "add_slide" and act.title:
@@ -964,7 +970,14 @@ def _rewrite_slide(run_id: str, out_dir: Path, index: int, brief: str, user_text
     return f"Переписал слайд {index}. Новых чисел нет."
 
 
-def _slide_text(run_id: str, out_dir: Path, index: int, text: str) -> str:
+def _slide_text(
+    run_id: str,
+    out_dir: Path,
+    index: int,
+    text: str,
+    *,
+    only: bool = False,
+) -> str:
     from fastapi import HTTPException
 
     from case3.api_slides import _enqueue_deck_rebuild, _load_deck_for_patch
@@ -980,11 +993,18 @@ def _slide_text(run_id: str, out_dir: Path, index: int, text: str) -> str:
         return "В этой презентации нет слайдов."
     if index < 1 or index > len(slides):
         return f"Слайда {index} нет. Сейчас их {len(slides)}."
-    slide_id = str((slides[index - 1] or {}).get("id") or "")
+    slide = slides[index - 1] if isinstance(slides[index - 1], dict) else {}
+    slide_id = str(slide.get("id") or "")
+    fields: dict[str, object] = {"id": slide_id, "title": text}
+    if only:
+        for key in ("subtitle", "kicker", "takeaway", "body", "caption"):
+            if str(slide.get(key) or "").strip():
+                fields[key] = ""
+        bullets = slide.get("bullets")
+        if isinstance(bullets, list) and any(str(item).strip() for item in bullets):
+            fields["bullets"] = [text]
     try:
-        patched = apply_deck_text_patch(
-            base, {"slides": [{"id": slide_id, "title": text}]}
-        )
+        patched = apply_deck_text_patch(base, {"slides": [fields]})
     except DeckIrError as exc:
         return str(exc)
     _enqueue_deck_rebuild(
@@ -995,6 +1015,8 @@ def _slide_text(run_id: str, out_dir: Path, index: int, text: str) -> str:
         undo_kind="slides_patch",
         undo_target=slide_id or "*",
     )
+    if only:
+        return f"На слайде {index} теперь только «{text}». Остальные слайды те же."
     return f"Меняю заголовок слайда {index}. Новых чисел нет."
 
 

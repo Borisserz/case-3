@@ -22,6 +22,33 @@ import {
   slugDiagramFilename,
 } from "./downloadDiagramPng";
 
+function apiErrorText(
+  data: { detail?: unknown; error?: unknown },
+  fallback: string,
+): string {
+  if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+  if (typeof data.error === "string" && data.error.trim()) return data.error;
+  return fallback || "Не удалось обновить схему";
+}
+
+async function readApiJson(res: Response): Promise<{
+  detail?: unknown;
+  error?: unknown;
+  diagrams?: unknown;
+  undo?: unknown;
+}> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    const data = JSON.parse(text) as unknown;
+    return data && typeof data === "object"
+      ? (data as { detail?: unknown; error?: unknown; diagrams?: unknown; undo?: unknown })
+      : {};
+  } catch {
+    throw new Error("Не удалось обновить схему");
+  }
+}
+
 export type DiagramUpdateMeta = {
   undo?: { kind?: string; target?: string } | null;
   toast?: string;
@@ -160,14 +187,8 @@ export function DiagramPane({
             body: JSON.stringify({ mermaid, title }),
           },
         );
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(
-            typeof data.detail === "string"
-              ? data.detail
-              : data.error || res.statusText,
-          );
-        }
+        const data = await readApiJson(res);
+        if (!res.ok) throw new Error(apiErrorText(data, res.statusText));
         const next = Array.isArray(data.diagrams) ? data.diagrams : [];
         onDiagramsUpdated?.(next, {
           undo: data.undo ?? null,
@@ -201,14 +222,8 @@ export function DiagramPane({
           body: JSON.stringify({}),
         },
       );
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : data.error || res.statusText,
-        );
-      }
+      const data = await readApiJson(res);
+      if (!res.ok) throw new Error(apiErrorText(data, res.statusText));
       const next = Array.isArray(data.diagrams) ? data.diagrams : [];
       if (!next.length) {
         throw new Error("Модель не вернула схему — попробуйте ещё раз");
@@ -241,14 +256,8 @@ export function DiagramPane({
           body: JSON.stringify({ instruction: text }),
         },
       );
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : data.error || res.statusText,
-        );
-      }
+      const data = await readApiJson(res);
+      if (!res.ok) throw new Error(apiErrorText(data, res.statusText));
       const next = Array.isArray(data.diagrams) ? data.diagrams : [];
       if (!next.length) {
         throw new Error("Модель не вернула обновлённую схему");

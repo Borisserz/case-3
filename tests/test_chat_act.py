@@ -472,6 +472,41 @@ def test_slide_points_are_not_the_title():
     assert resolve_act("на слайде 2 пункты: риски", has_deck=False).kind == "talk"
 
 
+def test_keep_text_on_a_named_slide_does_not_build_a_new_deck():
+    from case3.turn_plan import plan_turn
+
+    phrase = "оставь просто январь 2025 на первом слайде"
+    act = resolve_act(phrase, has_deck=True)
+    assert act.op == "slide_text"
+    assert act.slide == 1
+    assert act.title == "январь 2025"
+    assert act.brief == "only"
+    other = resolve_act("на первом слайде оставь только январь 2025", has_deck=True)
+    assert other.op == "slide_text"
+    assert other.slide == 1
+    assert other.title == "январь 2025"
+    quarter = resolve_act(
+        "оставь первый квартал на втором слайде",
+        has_deck=True,
+    )
+    assert quarter.slide == 2
+    assert quarter.title == "первый квартал"
+    plan = plan_turn(phrase, mode_hint="presentation", has_deck=True)
+    assert plan.kind == "revise"
+    stray = plan_turn(
+        "на слайде 2 поменяй картинку",
+        mode_hint="presentation",
+        has_deck=True,
+    )
+    assert stray.kind == "clarify"
+    fresh = plan_turn(
+        "Собери новую презентацию",
+        mode_hint="presentation",
+        has_deck=True,
+    )
+    assert fresh.kind == "presentation"
+
+
 def test_slide_text_and_a_new_slide_stay_on_the_deck():
     text = resolve_act("на слайде 2 напиши Риски выросли", has_deck=True)
     assert text.op == "slide_text"
@@ -856,6 +891,45 @@ def test_named_photo_and_chart_stay_apart_when_both_are_open():
     assert deck.op == "recolor_deck"
 
 
+def test_prior_run_photo_is_visible_to_the_router(tmp_path: Path) -> None:
+    from case3.api import _prior_artifact_flags
+
+    run = tmp_path / "runs" / "out" / "source_photo"
+    figs = run / "figures"
+    figs.mkdir(parents=True)
+    (figs / "fig_01.png").write_bytes(b"png")
+    (run / "meta.json").write_text("{}", encoding="utf-8")
+    flags = _prior_artifact_flags(tmp_path, "source_photo")
+    assert flags["has_photo"] is True
+
+
+def test_color_of_the_open_photo_does_not_need_the_word_change():
+    """«сделай красным» edits the photo. «и покажи фото» is not a new picture."""
+    from case3.turn_plan import plan_turn
+    from case3.turn_route import asks_for_generated_photo
+
+    lines = (
+        "сделай ее красного цвета",
+        "сделай красным цветом",
+        "сделай красным и покажи фото",
+    )
+    for line in lines:
+        act = resolve_act(line, has_photo=True)
+        assert act.op == "edit_photo", line
+        assert "красн" in act.title.casefold(), (line, act.title)
+        plan = plan_turn(line, has_photo=True)
+        assert plan.kind == "revise", line
+        assert plan.edit_act is not None and plan.edit_act.op == "edit_photo"
+    fresh = plan_turn("сделай красную машину", has_photo=True)
+    assert fresh.kind != "revise"
+    assert asks_for_generated_photo("сделай красную машину")
+    assert asks_for_generated_photo("сделай красным и покажи фото")
+    both = resolve_act("сделай ее красного цвета", has_photo=True, has_chart=True)
+    assert both.op == "ask"
+    chart = resolve_act("сделай ее красного цвета", has_chart=True)
+    assert chart.op == "recolor_hue"
+
+
 def test_unnamed_color_follows_the_only_open_picture():
     photo = resolve_act("сделай красным", has_report=True, has_photo=True)
     assert photo.op == "edit_photo"
@@ -867,6 +941,22 @@ def test_unnamed_color_follows_the_only_open_picture():
     bare = resolve_act("поменяй цвет", has_report=True, has_chart=True)
     assert bare.op != "edit_photo"
     assert "график" in bare.say.casefold()
+
+
+def test_pink_recolors_and_keeps_a_named_chart_type():
+    bare = resolve_act("розовый", has_chart=True)
+    assert bare.op == "recolor_hue"
+    assert bare.palette == "pink"
+    pointed = resolve_act("измени ему цвет на розовый", has_chart=True)
+    assert pointed.op == "recolor_hue"
+    assert pointed.palette == "pink"
+    both = resolve_act("сделай круговой график розовым", has_chart=True)
+    assert both.op == "recolor_hue"
+    assert both.palette == "pink"
+    assert both.chart == "donut"
+    missing = resolve_act("сделай круговой график фиолетовым", has_chart=True)
+    assert missing.op == "ask"
+    assert "розов" in missing.say.casefold()
 
 
 def test_photo_without_a_change_asks():

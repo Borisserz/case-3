@@ -79,6 +79,8 @@
 
 ## Gotchas
 
+- **Chart click on a slide:** the twin PNG stays `object-fit: contain`. Opening the chart sheet swaps in `LiveChart` (print canvas 1100×560). `.deck-cv-live` letterboxes that chart to 11:5.6 inside the slot. Chart-field tracks are `minmax(0, …fr)` so the canvas cannot blow the column and the title cannot crush it.
+
 - Slides job = **daemon thread**; meta `running`/`starting` before kick. Crash → `slides_error` (never forever-`queued`).
 - Report `/api/run` = daemon thread (not BackgroundTasks — Windows stall).
 - Capture: home Playwright browsers if sandbox path broken.

@@ -520,6 +520,24 @@ def test_parse_mermaid_chained_and_ampersand_edges():
     assert ("C", "E") in pairs
 
 
+def test_quoted_paren_label_loses_the_mermaid_quotes():
+    from case3.slides_pptx_diagrams import parse_mermaid_flowchart, parse_mermaid_mindmap
+
+    graph = parse_mermaid_flowchart(
+        'flowchart TD\n  A["Поступления (январь)"] --> B[Местные]\n'
+    )
+    assert graph is not None
+    assert graph.nodes["A"].label == "Поступления (январь)"
+    assert graph.nodes["B"].label == "Местные"
+
+    root = parse_mermaid_mindmap(
+        'mindmap\n  root["Поступления<br/>(январь 2025)"]\n    Местные\n'
+    )
+    assert root is not None
+    assert root.label == "Поступления\n(январь 2025)"
+    assert root.children[0].label == "Местные"
+
+
 
 
 
