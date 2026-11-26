@@ -1,13 +1,8 @@
-/* Скрин дашборда + Table/Pivot → PDF.
+/* «В данные»: Table/Pivot открытого дашборда → PDF. Снимок страницы не делается.
  *
  * GET /shot → сигнал вкладке /open (long-poll), без reload.
- * html2canvas: /vendor/html2canvas.min.js (offline, MIT).
- *
- * Stimulsoft кладёт RegionMap HTML в iframe → html2canvas его не видит;
- * фикс: bake iframe/SVG, потом снимок страницы.
  */
 (function () {
-  var HTML2CANVAS = "/vendor/html2canvas.min.js";
   var SCALE = 2;
 
   function loadScript(src) {
@@ -1333,86 +1328,21 @@
       setStatus(result.error);
       return result;
     }
-    var restoreMaps = function () {};
-    var restoreFilters = function () {};
-    setStatus("снимок…");
+    setStatus("данные…");
     try {
-      await loadScript(HTML2CANVAS);
       var report = findReport();
-
-      setStatus("карты из iframe…");
-      restoreMaps = (await bakeMaps(root, report)) || function () {};
-
-      setStatus("фильтры…");
-      restoreFilters = bakeFilterValues(root) || function () {};
-
-      await new Promise(function (res) {
-        requestAnimationFrame(function () {
-          setTimeout(res, 80);
-        });
-      });
-
-      setStatus("рендер…");
-      var canvas = await window.html2canvas(root, {
-        scale: SCALE,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        foreignObjectRendering: false,
-        ignoreElements: function (el) {
-          return !!(el && el.id === "dashShotBar");
-        },
-        onclone: function (doc) {
-          onCloneFixFormValues(doc);
-        },
-      });
-
-      restoreFilters();
-      restoreMaps();
-      restoreFilters = function () {};
-      restoreMaps = function () {};
-
-      var blob = await new Promise(function (resolve, reject) {
-        canvas.toBlob(function (b) {
-          if (b) resolve(b);
-          else reject(new Error("toBlob failed"));
-        }, "image/png");
-      });
-      var name = "dashboard_" + stamp() + ".png";
-      try {
-        var b64 = await blobToBase64(blob);
-        var body = await postExportFile(name, b64, "png");
-        result.png = {
-          name: (body && body.name) || name,
-          path: body && body.path,
-          kind: "png",
-        };
-        result.files.push(result.png);
-        setStatus("saved " + result.png.name);
-      } catch (err) {
-        setStatus("снимок не сохранился на сервисе");
-        console.warn(err);
-        if (!result.png) result.error = String((err && err.message) || err);
+      result.pdfs = await exportTablesToPdf(report, root);
+      for (var pi = 0; pi < result.pdfs.length; pi++) {
+        result.files.push(result.pdfs[pi]);
       }
-
-      // дополнительно: Table/Pivot → PDF (все строки, как Save→но PDF)
-      setStatus("таблица → PDF…");
-      try {
-        result.pdfs = await exportTablesToPdf(report, root);
-        for (var pi = 0; pi < result.pdfs.length; pi++) {
-          result.files.push(result.pdfs[pi]);
-        }
-      } catch (err) {
-        console.warn("[dash-shot] tables pdf", err);
+      result.ok = result.pdfs.length > 0;
+      if (!result.ok) {
+        result.error = "На экране нет таблицы с данными.";
       }
-      result.ok = !!(result.png || result.pdfs.length);
-      if (result.ok) result.error = null;
       setStatus(
-        (result.png ? "saved " + result.png.name : "png нет") +
-          (result.pdfs.length
-            ? " | +" + result.pdfs.length + " pdf"
-            : " | pdf нет")
+        result.ok
+          ? "данные: " + result.pdfs.length + " табл."
+          : result.error
       );
       return result;
     } catch (err) {
@@ -1420,13 +1350,6 @@
       result.error = String((err && err.message) || err);
       setStatus(result.error);
       return result;
-    } finally {
-      try {
-        restoreFilters();
-      } catch (e) {}
-      try {
-        restoreMaps();
-      } catch (e) {}
     }
   }
 
@@ -1452,7 +1375,6 @@
       await new Promise(function (r) {
         setTimeout(r, 50);
       });
-      await loadScript(HTML2CANVAS);
       var result = await takeScreenshot();
       window.__dashShotDone = result || {
         ok: false,
@@ -1509,9 +1431,6 @@
   }
 
   function mount() {
-    loadScript(HTML2CANVAS).catch(function (e) {
-      console.warn("[dash-shot] html2canvas preload", e);
-    });
     startShotPoller();
   }
 
