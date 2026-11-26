@@ -552,6 +552,35 @@ def slide_rewrite_bits(
     return parts[0][:90], tuple(parts[:4])
 
 
+_SLIDE_LOCATOR = re.compile(
+    r"\bна\s+(?:"
+    r"слайд\w*(?:\s+\d{1,2})?"
+    r"|\d{1,2}\s*слайд\w*"
+    r"|(?:перв|втор|трет|четверт|пят|шест|седьм|восьм|девят|десят)\w*\s+слайд\w*"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def parse_slide_keep(text: str | None) -> tuple[int, str]:
+    """«Оставь просто январь 2025 на первом слайде» → (1, «январь 2025»)."""
+    raw = _norm(text or "").strip()
+    if not re.search(r"\bостав", raw, re.IGNORECASE):
+        return 0, ""
+    index = _slide_number_named(raw)
+    if not index:
+        return 0, ""
+    if not _SLIDE_LOCATOR.search(raw):
+        return 0, ""
+    body = _SLIDE_LOCATOR.sub(" ", raw)
+    body = re.sub(r"\bостав\w*\b", " ", body, flags=re.IGNORECASE)
+    body = re.sub(r"\b(?:просто|только|текст|слайд\w*)\b", " ", body, flags=re.IGNORECASE)
+    body = " ".join(body.split()).strip(" .:—–-«»\"")
+    if len(body) < 2:
+        return index, ""
+    return index, body[:120]
+
+
 def parse_slide_body(text: str | None) -> tuple[int, str]:
     raw = _norm(text or "").strip()
     if re.search(r"добав|перестав|перемест|подвинь|убери|удали", raw, re.IGNORECASE):
@@ -845,12 +874,26 @@ _MAKE_STATE = re.compile(
     rf"[а-я]{{3,}}\s+(?:{_COLOR_INS}|темнее|светлее|ярче|четче|контрастнее)\b",
     re.IGNORECASE,
 )
+# «и покажи фото» asks to see the result. It is not a request for a new picture.
+_SHOW_THE_PHOTO = re.compile(
+    r"(?:[,.]?\s+и)?\s+покажи\s+(?:мне\s+)?(?:это\s+)?"
+    r"(?:фото|фотку|картинку|изображение)\s*$",
+    re.IGNORECASE,
+)
+_LEADING_PRONOUN = re.compile(
+    r"^(?:ее|его|эту|этот|это|этой|этого)\s+",
+    re.IGNORECASE,
+)
+
+
+def _drop_show_photo(raw: str) -> str:
+    return _SHOW_THE_PHOTO.sub("", raw or "").strip(" .,")
 
 
 def _bare_color_line(raw: str) -> bool:
     """True when the line is only a color command, not a sentence about an object."""
     rest = re.sub(
-        r"зелен\w*|оранж\w*|желт\w*|красн\w*|голуб\w*|син\w*|сер\w*|черн\w*|"
+        r"зелен\w*|оранж\w*|желт\w*|розов\w*|красн\w*|голуб\w*|син\w*|сер\w*|черн\w*|"
         r"цвет\w*|сделай|сделать|график\w*|столбц\w*|пожалуйста|\bв\b|\bи\b",
         " ",
         raw,
@@ -949,13 +992,18 @@ def _subject_is_just_a_color(subject: str) -> bool:
 
 
 _HUE_WORD = re.compile(
-    r"зелен|оранж|желт|красн|голуб|(?<![а-я])син|сер(?:ый|ая|ое|ые|ого|ым)|черн",
+    r"зелен|оранж|желт|розов|красн|голуб|(?<![а-я])син|сер(?:ый|ая|ое|ые|ого|ым)|черн",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_HUE = re.compile(
+    r"фиолет|сирен|коричн|бирюз|бордов|малинов",
     re.IGNORECASE,
 )
 
 
 def _unnamed_color(raw: str) -> bool:
     """A color change that does not say photo, chart, deck, or a thing in the picture."""
+    raw = _drop_show_photo(raw)
     if _NAMED_SURFACE.search(raw) or _MAKE_STATE.search(raw):
         return False
     if re.search(
@@ -1000,12 +1048,13 @@ def _photo_or_chart(raw: str, *, has_photo: bool, has_chart: bool) -> ChatAct | 
         return ChatAct(
             kind="revise",
             op="ask",
-            say="Какой цвет графика? Напиши «график красным» или «столбцы зеленые».",
+            say="Какой цвет графика? Напиши «график красным», «розовым» или «столбцы зелёные».",
         )
     return None
 
 
 def _photo_instruction(raw: str) -> str:
+    raw = _drop_show_photo(raw)
     body = ""
     tail = _PHOTO_EDIT_TAIL.search(raw)
     if tail:
@@ -1049,12 +1098,14 @@ def _photo_instruction(raw: str) -> str:
             flags=re.IGNORECASE,
         )
         body = re.sub(r"^(?:поменяй|смени|измени)\s+", "", body, flags=re.IGNORECASE)
-    return re.sub(
+    body = re.sub(
         r"^(?:сделай|сделать|чтобы)\s+",
         "",
         body,
         flags=re.IGNORECASE,
-    ).strip(" .,")
+    )
+    body = _LEADING_PRONOUN.sub("", body)
+    return body.strip(" .,")
 
 
 def parse_photo_edit(text: str | None) -> tuple[str, str] | None:
@@ -2259,6 +2310,20 @@ def resolve_act(
             or ((has_report or has_deck) and re.search(r"график|столбц|цвет", raw, re.IGNORECASE))
         ):
             return _hue_act(raw, hue)
+        # A color the editor does not paint must not fall through to chat.
+        # Chat would answer «Перекрасил» and leave the chart file untouched.
+        if (
+            has_chart
+            and not has_photo
+            and not creates_new_picture(raw)
+            and _UNSUPPORTED_HUE.search(raw)
+            and re.search(r"график|столбц|пончик|кругов|цвет", raw, re.IGNORECASE)
+        ):
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Такого цвета нет. Напиши «график красным», «розовым» или «столбцы зелёные».",
+            )
 
     from case3.chart_style import asks_for_softer_fill
 
@@ -2320,6 +2385,31 @@ def resolve_act(
             op="retype_charts",
             chart=chart,
             say=f"Меняю графики на {CHART_SAY[chart]}. Числа те же.",
+        )
+
+    kept = parse_slide_keep(raw) if not question else (0, "")
+    if kept[0]:
+        if not has_deck:
+            return ChatAct(
+                kind="talk",
+                say="Презентации в этом чате ещё нет. Напиши «сделай презентацию», если её собрать.",
+            )
+        if not kept[1]:
+            return ChatAct(
+                kind="revise",
+                op="ask",
+                say="Что оставить на слайде? Например «оставь на первом слайде только январь 2025».",
+            )
+        return ChatAct(
+            kind="revise",
+            op="slide_text",
+            slide=kept[0],
+            title=kept[1],
+            brief="only",
+            say=(
+                f"На слайде {kept[0]} оставляю только «{kept[1]}». "
+                "Остальные слайды те же."
+            ),
         )
 
     points = parse_slide_bullets(raw) if not question else None

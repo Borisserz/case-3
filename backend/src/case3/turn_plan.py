@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from case3.chat_act import ChatAct, explicit_new_artifact, parse_photo_edit, resolve_act
+from case3.chat_act import (
+    ChatAct,
+    _slide_number_named,
+    explicit_new_artifact,
+    parse_photo_edit,
+    resolve_act,
+)
 from case3.turn_route import (
     _ANALYZE,
     _DIAGRAM,
@@ -183,7 +189,7 @@ def plan_turn(
     clarify_prompt: str | None = None
     container_primaries = _container_primaries_ordered(raw)
 
-    has_any_artifact = has_deck or has_report or has_diagram or has_chart
+    has_any_artifact = has_deck or has_report or has_diagram or has_chart or has_photo
     if parse_photo_edit(raw) is not None and not explicit_new_artifact(raw):
         act = resolve_act(
             raw,
@@ -309,6 +315,30 @@ def plan_turn(
         build_media["chart"] = True
     if kind == "report" and _diagram_embedded_in_report(raw):
         build_media["diagram"] = True
+
+    if (
+        kind == "presentation"
+        and has_deck
+        and _slide_number_named(raw)
+        and not explicit_new_artifact(raw)
+    ):
+        ask = (
+            "Это правка уже открытой презентации. "
+            "Напиши «на слайде 1 напиши …» или «собери новую презентацию»."
+        )
+        return TurnPlan(
+            route_version=ROUTE_VERSION,
+            kind="clarify",
+            steps=[TurnStep(kind="clarify")],
+            want_chat_chart=False,
+            want_chat_diagram=False,
+            build_media=_empty_build_media(),
+            edit_act=None,
+            mode_hint=hint,
+            reason="named_slide_is_not_a_new_deck",
+            clarify_prompt=ask,
+            note=None,
+        )
 
     note: str | None = None
     if reason == "multi_primary":

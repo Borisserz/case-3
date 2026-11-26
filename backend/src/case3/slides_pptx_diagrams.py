@@ -271,7 +271,10 @@ def _parse_subgraph_header(line: str) -> tuple[str, str] | None:
 def _clean_mermaid_label(text: str) -> str:
     s = re.sub(r"<br\s*/?>", "\n", text or "", flags=re.IGNORECASE)
     s = s.replace("#quot;", '"').replace("&quot;", '"').replace("#39;", "'").replace("&amp;", "&")
-    return s.strip()
+    s = s.strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        s = s[1:-1].strip()
+    return s
 
 
 def parse_mermaid_flowchart(mermaid: str) -> DiagramGraph | None:
@@ -491,10 +494,10 @@ def parse_mermaid_mindmap(mermaid: str) -> MindmapNode | None:
         m = re.match(r"^(?:[A-Za-z0-9_]+\s*)?(?:\(\((.*?)\)\)|\((.*?)\)|\[(.*?)\]|\)(.*?)\()$", s)
         if m:
             lbl = m.group(1) or m.group(2) or m.group(3) or m.group(4) or ""
-            return lbl.strip()
+            return _clean_mermaid_label(lbl) or s
         if s.lower().startswith("root"):
             s = s[4:].strip()
-        return s or text.strip()
+        return _clean_mermaid_label(s) or text.strip()
 
     nodes_with_indent: list[tuple[int, str]] = []
     for line in non_empty[1:]:

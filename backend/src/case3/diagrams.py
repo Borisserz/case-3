@@ -246,16 +246,109 @@ def _repair_sequence_diagram_lines(mermaid: str) -> str:
     return "\n".join(out)
 
 
-_FLOW_HDR = re.compile(r"^\s*(?:flowchart|graph)\b", re.IGNORECASE)
+_FLOW_HDR = re.compile(r"^\s*(?:flowchart|graph|mindmap)\b", re.IGNORECASE)
 _META_LINE = re.compile(
     r"^\s*(?:%%|classDef\b|class\s|style\s|linkStyle\b|subgraph\b|end\b|direction\b|click\b)",
     re.IGNORECASE,
 )
-_NODE_OPEN = {"[": "]", "{": "}", "(": ")"}
+# Longest pair first so `((` is a circle, not two rounded nodes.
+_SHAPE_PAIRS = (
+    ("((", "))"),
+    ("[[", "]]"),
+    ("{{", "}}"),
+    ("([", "])"),
+    ("[(", ")]"),
+    ("[/", "/]"),
+    ("[\\", "\\]"),
+    ("[", "]"),
+    ("{", "}"),
+    ("(", ")"),
+)
+_LABEL_SPECIAL = ('(', ')', ':', '"', '%')
+# A real next node (`B[Конец]`) or an edge. Cyrillic prose after `]` is a broken label.
+_NEXT_NODE = re.compile(r"^[A-Za-z_][\w-]*\s*[\[\(\{]")
+_EDGE_PREFIX = re.compile(r"^(?:-->|---|==>|-\.->|==|~~~|-\.-|--|:::|&|\|)")
+_EDGE_IN_TAIL = re.compile(r"\s(?:-->|---|==>|-\.->|:::|&)\s")
+_NEXT_SHAPE = re.compile(
+    r"\s+[A-Za-z_][\w-]*\s*(?:\(\(|\[\[|\{\{|\(\[|\[\(|\[|\{|\()"
+)
+
+
+def _shape_pair(line: str, i: int) -> tuple[str, str] | None:
+    for open_d, close_d in _SHAPE_PAIRS:
+        if line.startswith(open_d, i):
+            return open_d, close_d
+    return None
+
+
+def _circle_close(line: str, content_start: int) -> int:
+    """Last ``))`` before the next node or edge.
+
+    ``((текст (2025)))`` ends with three parens. The first ``))`` is the
+    label's ``)`` plus one closer, so a depth scan cuts the year off.
+    """
+    limit = len(line)
+    edge = _EDGE_IN_TAIL.search(line, content_start)
+    if edge:
+        limit = edge.start()
+    nxt = _NEXT_SHAPE.search(line, content_start)
+    if nxt and nxt.start() < limit:
+        limit = nxt.start()
+    return line.rfind("))", content_start, limit)
+
+
+def _close_at(line: str, start: int, open_d: str, close_d: str) -> int:
+    """Index of the matching close token, or -1."""
+    depth = 1
+    i = start
+    n = len(line)
+    ol, cl = len(open_d), len(close_d)
+    while i < n:
+        if line.startswith(open_d, i):
+            depth += 1
+            i += ol
+            continue
+        if line.startswith(close_d, i):
+            depth -= 1
+            if depth == 0:
+                return i
+            i += cl
+            continue
+        i += 1
+    return -1
+
+
+def _stray_label_tail(rest: str) -> tuple[str, int] | None:
+    """Prose after a closed node that Mermaid reads as a new shape.
+
+    ``A[январь 2025)] Консолидированный --> B`` returns the stray words and
+    the offset where `` --> B`` begins. A following ``B[Конец]`` or ``-->``
+    is left alone.
+    """
+    stripped = rest.lstrip()
+    if not stripped:
+        return None
+    if _EDGE_PREFIX.match(stripped) or _NEXT_NODE.match(stripped):
+        return None
+    edge = _EDGE_IN_TAIL.search(rest)
+    if edge:
+        extra = rest[: edge.start()].strip()
+        if not extra:
+            return None
+        return extra, edge.start()
+    extra = rest.strip()
+    if not extra:
+        return None
+    return extra, len(rest)
 
 
 def _quote_flowchart_nodes(mermaid: str) -> str:
-    """Auto-quote flowchart node labels containing (), :, \", or %."""
+    """Quote flowchart and mindmap labels that contain ``() : " %``.
+
+    Words left after the closing bracket (``2025)] Консолидированный``) are
+    pulled back into the label. Otherwise Mermaid closes the node at the
+    first ``)`` / ``]`` and the next ``(`` fails with NODE_DSTART.
+    """
     lines = (mermaid or "").splitlines()
     first = ""
     for ln in lines:
@@ -275,7 +368,7 @@ def _quote_flowchart_nodes(mermaid: str) -> str:
         n = len(line)
         while i < n:
             ch = line[i]
-            # Preserve quoted strings & edge labels |...|
+            # Preserve quoted strings & edge labels |...| outside a node.
             if ch == '"':
                 end = line.find('"', i + 1)
                 if end < 0:
@@ -292,33 +385,52 @@ def _quote_flowchart_nodes(mermaid: str) -> str:
                 buf.append(line[i : end + 1])
                 i = end + 1
                 continue
-            if ch in _NODE_OPEN and i > 0 and (line[i - 1].isalnum() or line[i - 1] in "_-"):
-                close = _NODE_OPEN[ch]
-                # Skip double delimiters [[...]], {{...}}, ((...)), ([...]), [(...)]
-                if i + 1 < n and line[i + 1] in "[]{}()/\\":
+            pair = (
+                _shape_pair(line, i)
+                if i > 0 and (line[i - 1].isalnum() or line[i - 1] in "_-")
+                else None
+            )
+            if pair:
+                open_d, close_d = pair
+                content_start = i + len(open_d)
+                close_at = (
+                    _circle_close(line, content_start)
+                    if open_d == "(("
+                    else _close_at(line, content_start, open_d, close_d)
+                )
+                if close_at < 0:
                     buf.append(ch)
                     i += 1
                     continue
-                depth = 1
-                j = i + 1
-                while j < n and depth > 0:
-                    if line[j] == ch:
-                        depth += 1
-                    elif line[j] == close:
-                        depth -= 1
-                    j += 1
-                if depth == 0:
-                    inner = line[i + 1 : j - 1]
-                    stripped = inner.strip()
-                    if (
-                        stripped
-                        and not (stripped.startswith('"') and stripped.endswith('"'))
-                        and any(c in inner for c in ('(', ')', ':', '"', '%'))
-                    ):
-                        safe = inner.replace('"', "#quot;")
-                        buf.append(f'{ch}"{safe}"{close}')
-                        i = j
-                        continue
+                shape_end = close_at + len(close_d)
+                inner = line[i + len(open_d) : close_at]
+                stripped = inner.strip()
+                already = (
+                    len(stripped) >= 2
+                    and stripped.startswith('"')
+                    and stripped.endswith('"')
+                )
+                tail = _stray_label_tail(line[shape_end:])
+                extra = ""
+                extra_end = 0
+                if tail:
+                    extra, extra_end = tail
+                if already and not extra:
+                    buf.append(line[i:shape_end])
+                    i = shape_end
+                    continue
+                bare = stripped[1:-1] if already else inner
+                if extra or any(c in bare for c in _LABEL_SPECIAL):
+                    text = bare.strip()
+                    if extra:
+                        text = f"{text} {extra}".strip()
+                    safe = text.replace('"', "#quot;")
+                    buf.append(f'{open_d}"{safe}"{close_d}')
+                    i = shape_end + extra_end
+                    continue
+                buf.append(line[i:shape_end])
+                i = shape_end
+                continue
             buf.append(ch)
             i += 1
         out_lines.append("".join(buf))

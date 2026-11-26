@@ -224,6 +224,9 @@ async def edit_run_diagram(
         raise HTTPException(400, detail=str(exc)) from exc
     except RenderError as exc:
         raise HTTPException(500, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("diagram edit failed run_id=%s id=%s", run_id, diagram_id)
+        raise HTTPException(500, detail="Не удалось обновить схему") from exc
     undo = None
     artifacts = None
     if isinstance(diagram, dict):
@@ -278,6 +281,9 @@ async def refine_run_diagram(
         raise HTTPException(500, detail=str(exc)) from exc
     except (LLMError, LLMConfigError) as exc:
         raise HTTPException(502, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("diagram refine failed run_id=%s id=%s", run_id, diagram_id)
+        raise HTTPException(500, detail="Не удалось обновить схему") from exc
     undo = None
     artifacts = None
     if isinstance(diagram, dict):
@@ -359,6 +365,9 @@ async def regenerate_run_diagrams(
         raise HTTPException(400, detail=str(exc)) from exc
     except (LLMError, LLMConfigError) as exc:
         raise HTTPException(502, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("diagram regenerate failed run_id=%s", run_id)
+        raise HTTPException(500, detail="Не удалось собрать новый вариант схемы") from exc
     return {
         "diagrams": result.get("diagrams") or load_diagrams_from_out(out_dir),
         "diagrams_repaired": bool(result.get("diagrams_repaired")),

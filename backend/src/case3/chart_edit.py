@@ -531,6 +531,8 @@ def paint_hue_charts_in_run(
         new_html = paint_hue_on_html(html, hue)
         if not new_html:
             continue
+        if str(chart.get("type") or "") == "donut" or "doughnut" in new_html.lower():
+            new_html = enhance_donut_html(new_html)
         chart["html"] = new_html
         chart["style_user"] = True
         chart["hue"] = hue

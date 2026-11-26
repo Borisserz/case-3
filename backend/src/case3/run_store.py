@@ -148,6 +148,8 @@ def load_diagrams_from_out(out_dir: Path) -> list[dict[str, Any]]:
     raw = data.get("diagrams") if isinstance(data, dict) else None
     if not isinstance(raw, list):
         return []
+    from case3.diagrams import DiagramError, sanitize_mermaid
+
     out: list[dict[str, Any]] = []
     for item in raw:
         if not isinstance(item, dict):
@@ -156,6 +158,10 @@ def load_diagrams_from_out(out_dir: Path) -> list[dict[str, Any]]:
         mermaid = str(item.get("mermaid") or "").strip()
         if not did or not mermaid:
             continue
+        try:
+            mermaid = sanitize_mermaid(mermaid)
+        except DiagramError:
+            pass
         out.append(
             {
                 "id": did,
