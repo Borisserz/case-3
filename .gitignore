@@ -12,12 +12,12 @@ build/
 .local-wrangler/
 .code-review-graph/
 
-# Home-only agent chrome. The desk still reads the memory below.
+# Home-only. The Docker images do not copy these.
 CLAUDE.md
 .cursor/
-.agents/*
-!.agents/knowledge/
-!.agents/knowledge/**
+.agents/
+AGENTS.md
+backend/tests/
 
 docs/*
 !docs/MEMORY.md
@@ -32,12 +32,8 @@ fixtures/
 # Cloudflare image worker — home/dev only (work desk uses office IMAGE_API)
 workers/
 
-# Scripts — work desk only needs setup / api / web / push-debug
-scripts/**
-!scripts/setup.cmd
-!scripts/api.cmd
-!scripts/web.cmd
-!scripts/push-debug.cmd
+# Desk launchers stay on the machine that already has them.
+scripts/
 
 # Stimulsoft filter catalog for this machine (dashboard_filters.json)
 local/

@@ -106,27 +106,20 @@ curl.exe -s --max-time 30 http://192.168.4.101:8080/v1/chat/completions -H "Cont
 Фото: офисный Image API `POST /generate` и `POST /edit` (`IMAGE_API_BASE_URL`).  
 DOCX: `assets/docx/reference.docx` (pandoc `--reference-doc`).
 
-**Скрипты на Windows:** только `setup.cmd` · `api.cmd` · `web.cmd` · `push-debug.cmd`.
-
 ## Запуск на Windows (из корня `case-3\`)
 
 ```cmd
-git pull origin main
-scripts\setup.cmd
+git fetch origin
+git checkout unify-stack
+git pull
+docker compose up -d --build
 ```
 
 Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://<host>:8080`  
 (сгенерированные фото: `IMAGE_API_BASE_URL=http://192.168.4.101:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
-Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, перезапуск `api.cmd`.
+Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, затем `docker compose up -d --build backend`.
 
-**Сайт — два окна cmd:**
-
-```cmd
-scripts\api.cmd
-scripts\web.cmd
-```
-
-После `git pull` в `frontend\`: `npm install` (нужен `pdfjs-dist` для превью 1-й стр. PDF в чате). Stimulsoft: `backend\stimulsoft\.env` и `python view_dashboard.py` на :8040.
+Сайт уже внутри контейнера `frontend`. Отдельно `npm` и `python` для монолита не нужны. `.mrt` положи в `backend\stimulsoft\dashboards\`.
 
 - UI: http://127.0.0.1:5173  (прокси `/api` → `:8000`)
 - API: http://127.0.0.1:8000/docs · health: `/api/health`
@@ -157,7 +150,7 @@ scripts\web.cmd
 
 | | |
 |--|--|
-| нет Docker-образа | Docker Desktop → `scripts\setup.cmd` |
+| нет Docker-образа | Docker Desktop → `docker compose up -d --build` |
 | нет графиков / Playwright | `python -m playwright install chromium` → перезапуск `api.cmd` |
 | нет `\documentclass` / пустой ответ | `.env`: `VISION_REASONING=off`, перезапуск `api.cmd` |
 | HTTP **500** Context size exceeded | `.env`: `VISION_MAX_TOKENS=4096` (не 16384 на LAN GGUF), Source короче, фото/графики=0, рестарт `api.cmd` |
@@ -174,12 +167,12 @@ scripts\web.cmd
 
 ## Папки
 
-`frontend\` · `backend\` (`src`, `stimulsoft`, `prompt`, `assets`, `runs`) · `scripts\` (4 cmd) · `docker-compose.yml`
+`frontend\` · `backend\` (`src`, `stimulsoft`, `prompt`, `assets`, `runs`) · `docker-compose.yml`
 
 ## Windows checklist после pull
 
-1. Docker Desktop → `scripts\setup.cmd` (образ `case-3:tex`, Playwright, `pip install -e .`)
+1. Docker Desktop → `docker compose up -d --build`
 2. `backend\.env` с Qwen URL и `backend\stimulsoft\.env` с Postgres и лицензией; оба файла не в git
-3. `scripts\api.cmd` + `scripts\web.cmd` → health `ok` / `vision_configured`
-4. Liber: Source → «Собрать»; PDF/DOCX в панели
-5. Логи коллеге: `scripts\push-debug.cmd`
+3. `.mrt` в `backend\stimulsoft\dashboards\`
+4. http://127.0.0.1:5173/api/health → `"ok": true`
+5. Liber: «BI система», затем отчёт в панели

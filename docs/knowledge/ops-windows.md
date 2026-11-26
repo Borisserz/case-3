@@ -5,29 +5,25 @@
 ## First install
 
 1. Docker Desktop running  
-2. `git pull origin main`  
-3. `scripts\setup.cmd`  
-4. Edit `backend\.env`: `VISION_*`, `IMAGE_API_BASE_URL`, optional `CASE3_MAX_CHARTS`. Stimulsoft: `backend\stimulsoft\.env`  
-5. `cd frontend && npm install`  
-6. `scripts\api.cmd` + `scripts\web.cmd`  
-7. Check `http://127.0.0.1:8000/api/health` → `ok` / vision / image flags  
+2. `git fetch origin` then `git checkout unify-stack` and `git pull`  
+3. Edit `backend\.env`: `VISION_*`, `IMAGE_API_BASE_URL`. Stimulsoft: `backend\stimulsoft\.env` and the `.mrt` files in `backend\stimulsoft\dashboards\`  
+4. `docker compose up -d --build`  
+5. Check `http://127.0.0.1:5173/api/health` → `ok` / vision flags  
 
 ## After every pull
 
 ```cmd
-git pull origin main
-cd frontend && npm install
+git pull
+docker compose up -d --build
 ```
 
-Restart api + web. If charts blank: `python -m playwright install chromium`.
-
-`scripts\*.cmd` are CRLF. API refuses to start without `python-pptx` (`scripts\setup.cmd`). Health must show `vision_configured` + `docker_ok` + `playwright_ok` before Liber runs.
+Health must show `vision_configured` + `docker_ok` + `playwright_ok` before Liber runs. Playwright and TeX are already inside the backend image.
 
 ## Common fixes
 
 | Symptom | Fix |
 |---------|-----|
-| `No module named 'pptx'` / api crash on import | `scripts\setup.cmd` or `python -m pip install -e .` (needs `python-pptx`) |
+| `No module named 'pptx'` / api crash on import | `docker compose up -d --build backend` |
 | Empty model / no documentclass | `VISION_REASONING=off`, restart api |
 | Truncated TeX | raise `VISION_MAX_TOKENS`, lower max_charts |
 | Charts `Timeout 15000ms` / all `cht_*` fail | `.env`: `CASE3_CHART_TIMEOUT_S=45` (or delete line), restart `api.cmd`; code default is 45s |

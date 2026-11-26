@@ -65,14 +65,11 @@ GET http://127.0.0.1:8000/api/health
 ### 1.3 Чеклист «с нуля» на винде
 
 1. Docker Desktop **запущен**.
-2. `git pull origin main`
-3. `scripts\setup.cmd` (pip editable, Playwright Chromium, `docker compose build` → `case-3:tex`)
-4. Скопировать/поправить `backend\.env` под **Qwen + Image API** (не OpenRouter). Stimulsoft: `backend\stimulsoft\.env`.
-5. `cd frontend && npm install`
-6. Окно 1: `scripts\api.cmd` (**без** `--reload`, иначе рвёт длинные job)
-7. Окно 2: `scripts\web.cmd`
-8. Health → Liber UI `http://127.0.0.1:5173`
-9. Финальный прогон: три запроса ниже (Отчёт → Схема → Презентация)
+2. `git fetch origin`, затем `git checkout unify-stack` и `git pull`
+3. `docker compose up -d --build`
+4. Скопировать/поправить `backend\.env` под **Qwen + Image API** (не OpenRouter). Stimulsoft: `backend\stimulsoft\.env` и `.mrt` в `backend\stimulsoft\dashboards\`.
+5. Health → Liber UI `http://127.0.0.1:5173`
+6. Финальный прогон: три запроса ниже (Отчёт → Схема → Презентация)
 
 ### 1.4 Риски (что ломалось на Mac / что ждать на Win)
 
