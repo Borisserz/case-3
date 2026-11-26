@@ -19,12 +19,9 @@ CLAUDE.md
 AGENTS.md
 backend/tests/
 
-docs/*
-!docs/MEMORY.md
-!docs/adr/
-!docs/adr/**
-!docs/knowledge/
-!docs/knowledge/**
+docs/
+Makefile
+frontend/ARCHITECTURE.md
 
 # Dev smoke Source texts (not needed on work desk)
 fixtures/
