@@ -584,6 +584,22 @@ def test_one_named_chart_does_not_retype_the_rest():
     assert all_charts.chart_at == 0
 
 
+def test_named_slide_plus_chart_type_targets_that_slide_not_all_charts():
+    """«третий слайд … площадь» must not become retype_charts (all)."""
+    for line in (
+        "переделай слайд третий сделай график типа площадь",
+        "переделай третий слайд сделай график типа площадь",
+        "на третьем слайде сделай график площадью",
+        "на слайде 3 сделай график площадью",
+    ):
+        act = resolve_act(line, has_deck=True, has_chart=True)
+        assert act.op == "retype_chart", line
+        assert act.chart == "area", line
+        assert act.slide == 3, line
+        assert act.chart_at == 0, line
+        assert "графики" not in (act.say or "").casefold(), line
+
+
 def test_green_edit_of_an_existing_chart_is_not_a_type_question():
     from case3.chat_act import resolve_act
 
