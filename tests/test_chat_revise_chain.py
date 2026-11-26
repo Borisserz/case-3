@@ -1092,6 +1092,15 @@ def test_change_photo_edits_the_chat_png_not_a_new_one(tmp_path: Path, monkeypat
     assert result["surface"] == "chat"
     assert result["previews"][0]["id"] == "fig_01"
     assert "?v=" in result["previews"][0]["url"]
+    saved = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+    note = saved["dialogue"][-1]
+    assert note["previews"][0]["id"] == "fig_01"
+    assert note["previews"][0]["url"] == result["previews"][0]["url"]
+    from case3.chat_memory import memory_view
+
+    view = memory_view(tmp_path, run_id)
+    assert view is not None
+    assert view["turns"][0]["dialogue"][-1]["previews"][0]["id"] == "fig_01"
 
 
 def test_unnamed_color_asks_when_a_chart_and_a_photo_are_both_open(tmp_path: Path, monkeypatch):

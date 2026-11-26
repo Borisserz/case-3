@@ -430,6 +430,39 @@ def test_memory_view_keeps_paragraphs_and_list_lines(tmp_path: Path):
     assert turn["dialogue"][0]["assistant"] == "Готово.\nСтрока осталась."
 
 
+def test_memory_view_puts_an_old_photo_edit_back_under_the_reply(tmp_path: Path) -> None:
+    from case3.chat_memory import memory_view
+
+    run_id = "source_20261126T120000Z"
+    out = tmp_path / "runs" / "out" / run_id
+    figs = out / "figures"
+    figs.mkdir(parents=True)
+    (figs / "fig_01.png").write_bytes(b"png")
+    (out / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "chat_prompt": "нарисуй машину",
+                "chat_summary": "Собрал картинку.",
+                "output_mode": "chat",
+                "dialogue": [
+                    {
+                        "user": "сделай синей",
+                        "assistant": "Меняю фото. Исходный снимок остаётся основой.",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    view = memory_view(tmp_path, run_id)
+    assert view is not None
+    preview = view["turns"][0]["dialogue"][0]["previews"][0]
+    assert preview["id"] == "fig_01"
+    assert preview["url"].startswith(f"/api/runs/{run_id}/figures/fig_01.png")
+
+
 def test_memory_view_keeps_the_dashboard_screen(tmp_path: Path) -> None:
     from case3.chat_memory import memory_view
 

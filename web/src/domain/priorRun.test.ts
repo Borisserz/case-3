@@ -177,6 +177,42 @@ test("messagesFromMemory and botHistoryResult restore inline chart/diagram previ
   assert.equal(res?.charts_ok, 1);
 });
 
+test("messagesFromMemory keeps an edited photo under the later reply", () => {
+  let n = 0;
+  const lines = messagesFromMemory(
+    [
+      {
+        run_id: "run_photo",
+        output_mode: "chat",
+        chat_prompt: "нарисуй красную машину",
+        chat_summary: "Собрал картинку.",
+        previews: [
+          { id: "fig_01", kind: "figure", url: "/api/runs/run_photo/figures/fig_01.png?v=1" },
+        ],
+        dialogue: [
+          {
+            user: "сделай её синей",
+            assistant: "Меняю фото. Исходный снимок остаётся основой.",
+            previews: [
+              { id: "fig_01", kind: "figure", url: "/api/runs/run_photo/figures/fig_01.png?v=2" },
+            ],
+          },
+        ],
+      },
+    ],
+    () => `id${(n += 1)}`,
+  );
+  const generated = lines[1];
+  const edited = lines.at(-1);
+  assert.equal(generated?.previews?.[0]?.url, "/api/runs/run_photo/figures/fig_01.png?v=1");
+  assert.equal(edited?.role, "bot");
+  assert.equal(edited?.previews?.[0]?.url, "/api/runs/run_photo/figures/fig_01.png?v=2");
+  assert.equal(edited?.outputMode, "chat");
+  const shown = botHistoryResult(edited!, "fallback_run");
+  assert.equal(shown?.previews?.[0]?.id, "fig_01");
+  assert.equal(shown?.output_mode, "chat");
+});
+
 test("a report turn keeps its file when the same run also has a chart", () => {
   const statuses = new Map<string, import("./liberTypes").RunResult>([
     [

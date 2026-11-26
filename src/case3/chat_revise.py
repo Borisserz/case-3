@@ -54,9 +54,10 @@ def _note(
     act: Any,
     *,
     surface: str = "",
+    previews: list[dict[str, str]] | None = None,
 ) -> None:
     def mut(meta: dict[str, Any]) -> None:
-        append_dialogue(meta, user, assistant)
+        append_dialogue(meta, user, assistant, previews=previews)
         if getattr(act, "op", "") == "undo" and "Отменил" in (assistant or ""):
             prev = dict(meta.get("last_edit") or {}) if isinstance(meta.get("last_edit"), dict) else {}
             prev["op"] = "undo"
@@ -767,9 +768,9 @@ def try_chat_revise(
             noted_surface = "chat"
         photo_previews = _photo_preview(work_id, work_dir, act.section)
     if rows and head_dir.is_dir() and head_id in chain_ids:
-        _note(head_dir, text, say, act, surface=noted_surface)
+        _note(head_dir, text, say, act, surface=noted_surface, previews=photo_previews)
     elif work_id in chain_ids and work_dir.is_dir():
-        _note(work_dir, text, say, act, surface=noted_surface)
+        _note(work_dir, text, say, act, surface=noted_surface, previews=photo_previews)
     return _payload(
         head_id,
         say,
