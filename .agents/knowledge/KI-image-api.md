@@ -25,7 +25,7 @@ Generate and edit report photos via office HTTP API; optional user uploads; chat
 
 ## Gotchas
 - Loopback URL rewrite for Docker/Windows host access
-- Office `192.168.4.101:8000` docs: `POST /generate` and `POST /edit` are JSON. Fields are `prompt`, `width`, `height`, `steps`, `guidance`, `seed`. `/edit` also requires `image: string[]` (one base64 PNG). Extra keys and multipart are 422. The Avoid-list stays inside `prompt`.
+- Office `192.168.4.101:8000` docs: `POST /generate` and `POST /edit` are JSON. Fields are `prompt`, `width`, `height`, `steps`, `guidance`, `seed`. `/edit` also requires `image: string[]` (one base64 PNG). Extra keys and multipart are 422. If that body is rejected, the client retries with `prompt` only (and `image` on edit) so the service defaults apply, then once as a form. The chat shows the 422 text.
 - Empty / down Image API → soft-fail strip `fig_*`; report run not blocked. Soft media-failure toasts were removed 2026-11-10 (`fcd443b`) — do not add them back. Click a composer/chat photo chip to preview it
 
 ## See

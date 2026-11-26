@@ -107,3 +107,26 @@ def test_edit_posts_image_as_a_string_list(tmp_path: Path) -> None:
     assert "blue" in body["prompt"]
     raw = base64.b64decode(body["image"][0])
     assert raw.startswith(b"\x89PNG")
+
+
+def test_rejected_body_is_retried_with_prompt_only(tmp_path: Path) -> None:
+    dest = tmp_path / "out.png"
+    calls: list[dict] = []
+    payload = json.dumps(base64.b64encode(_PNG).decode("ascii")).encode()
+    detail = b'{"detail":[{"loc":["body","guidance"],"msg":"ensure this value is less than or equal to 1"}]}'
+
+    def _post(url: str, **kwargs):
+        calls.append({"json": kwargs.get("json"), "data": kwargs.get("data")})
+        if len(calls) == 1:
+            return _Resp(422, detail)
+        return _Resp(200, payload)
+
+    with patch("case3.image_api.httpx.Client", return_value=_client(_post)):
+        generate_png(_cfg(), "a red car", dest)
+
+    assert dest.read_bytes().startswith(b"\x89PNG")
+    assert len(calls) == 2
+    assert set(calls[0]["json"]) == _JOB_KEYS
+    assert set(calls[1]["json"]) == {"prompt"}
+    assert "guidance" not in calls[1]["json"]
+    assert "red car" in calls[1]["json"]["prompt"]
