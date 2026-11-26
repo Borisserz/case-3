@@ -192,6 +192,58 @@ export function storedOpenLabel(mode: string | undefined): string | null {
   return null;
 }
 
+/** The chat card: a file, a deck, or a scheme. Inline chart PNGs are not a card. */
+export function messageHasArtifact(result: RunResult | null | undefined): boolean {
+  if (!result) return false;
+  return Boolean(
+    result.preview?.blocks?.length ||
+      result.downloads?.pdf ||
+      result.downloads?.docx ||
+      result.downloads?.pptx ||
+      result.downloads?.deck_pdf ||
+      result.diagrams?.length ||
+      result.deck?.slides?.length ||
+      result.slide_pngs?.length,
+  );
+}
+
+/** Report, scheme, and deck turns whose files must be loaded again on reopen. */
+export function artifactRunIds(lines: ThreadLine[]): string[] {
+  const ids: string[] = [];
+  for (const line of lines) {
+    if (line.role !== "bot") continue;
+    const mode = (line.outputMode || "").trim();
+    const runId = (line.runId || "").trim();
+    if (!runId || !STORED_MODES.has(mode) || ids.includes(runId)) continue;
+    ids.push(runId);
+  }
+  return ids;
+}
+
+/**
+ * Put the saved file back on the turn that built it.
+ * Chart and diagram PNGs on that turn stay attached, and a later chat
+ * answer does not inherit the report or the deck.
+ */
+export function restoredBotResult(
+  line: Pick<ThreadLine, "runId" | "outputMode" | "previews">,
+  statuses: ReadonlyMap<string, RunResult>,
+  fallbackRunId: string,
+): RunResult | undefined {
+  const runId = (line.runId || "").trim();
+  const mode = (line.outputMode || "").trim();
+  const loaded = runId ? statuses.get(runId) : undefined;
+  if (loaded && STORED_MODES.has(mode)) {
+    return {
+      ...loaded,
+      run_id: loaded.run_id || runId,
+      output_mode: loaded.output_mode || mode,
+      previews: line.previews?.length ? line.previews : loaded.previews,
+    };
+  }
+  return historyResult(line, fallbackRunId);
+}
+
 export function priorRunIdFromMessages(
   msgs: Array<{
     role: string;

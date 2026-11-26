@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  artifactRunIds,
   botHistoryResult,
   historyResult,
-  storedOpenLabel,
+  messageHasArtifact,
   messagesFromMemory,
   priorRunIdFromMessages,
+  restoredBotResult,
+  storedOpenLabel,
 } from "./priorRun";
 
 test("priorRunIdFromMessages uses the latest bot run, skipping an empty pending bubble", () => {
@@ -172,6 +175,91 @@ test("messagesFromMemory and botHistoryResult restore inline chart/diagram previ
   assert.equal(res?.output_mode, "chat");
   assert.equal(res?.previews?.length, 2);
   assert.equal(res?.charts_ok, 1);
+});
+
+test("a report turn keeps its file when the same run also has a chart", () => {
+  const statuses = new Map<string, import("./liberTypes").RunResult>([
+    [
+      "run_rep",
+      {
+        run_id: "run_rep",
+        status: "ok",
+        output_mode: "report",
+        downloads: { pdf: "/api/runs/run_rep/files/source.pdf" },
+        charts_ok: 1,
+        figures_ok: 0,
+        charts_planned: ["cht_01"],
+        figures_planned: [],
+        warnings: [],
+        preview: { title: "Отчёт", blocks: [{ type: "paragraph", text: "Текст" }] },
+      },
+    ],
+    [
+      "run_deck",
+      {
+        run_id: "run_deck",
+        status: "ok",
+        output_mode: "presentation",
+        downloads: { pptx: "/api/runs/run_deck/files/deck.pptx" },
+        charts_ok: 1,
+        figures_ok: 0,
+        charts_planned: ["cht_02"],
+        figures_planned: [],
+        warnings: [],
+        slides_status: "ok",
+        slide_pngs: ["/api/runs/run_deck/slides/png/slide_01.png"],
+      },
+    ],
+  ]);
+  const report = restoredBotResult(
+    {
+      role: "bot",
+      runId: "run_rep",
+      outputMode: "report",
+      previews: [{ id: "cht_01", kind: "chart", url: "/c.png" }],
+    },
+    statuses,
+    "run_chat",
+  );
+  assert.equal(report?.downloads.pdf, "/api/runs/run_rep/files/source.pdf");
+  assert.equal(report?.output_mode, "report");
+  assert.equal(report?.previews?.[0]?.id, "cht_01");
+  assert.equal(messageHasArtifact(report), true);
+  const deck = restoredBotResult(
+    {
+      role: "bot",
+      runId: "run_deck",
+      outputMode: "presentation",
+      previews: [
+        { id: "cht_02", kind: "chart", url: "/c2.png" },
+        { id: "dia_01", kind: "diagram", url: "/d.png" },
+      ],
+    },
+    statuses,
+    "run_chat",
+  );
+  assert.equal(deck?.downloads.pptx, "/api/runs/run_deck/files/deck.pptx");
+  assert.equal(deck?.slide_pngs?.[0], "/api/runs/run_deck/slides/png/slide_01.png");
+  assert.equal(messageHasArtifact(deck), true);
+  const later = restoredBotResult(
+    {
+      role: "bot",
+      runId: "run_chat",
+      outputMode: "chat",
+      previews: [{ id: "cht_03", kind: "chart", url: "/c3.png" }],
+    },
+    statuses,
+    "run_chat",
+  );
+  assert.equal(later?.output_mode, "chat");
+  assert.equal(later?.downloads.pdf, undefined);
+  assert.equal(messageHasArtifact(later), false);
+  assert.deepEqual(artifactRunIds([
+    { id: "u", role: "user", text: "сделай отчёт" },
+    { id: "b1", role: "bot", text: "готово", runId: "run_rep", outputMode: "report" },
+    { id: "b2", role: "bot", text: "слайды", runId: "run_deck", outputMode: "presentation" },
+    { id: "b3", role: "bot", text: "график", runId: "run_chat", outputMode: "chat" },
+  ]), ["run_rep", "run_deck"]);
 });
 
 test("a past report or deck can be opened from its run id", () => {
