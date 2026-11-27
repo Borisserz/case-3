@@ -107,6 +107,80 @@ function hasSeparatorAbove(target: string, lineStart: number): boolean {
   return false;
 }
 
+/**
+ * A markdown table is shown in one shot. While the trailing table is still
+ * open (header, separator, or body rows can still grow), hold at its start.
+ * When a non-table line follows it — or the stream is finished — snap from
+ * the header through the last row together.
+ */
+function scanMarkdownTable(
+  target: string,
+  tableStart: number,
+  done: boolean,
+): { action: "hold" | "snap" | "skip"; end: number } {
+  const header = lineBounds(target, tableStart);
+  if (header.nl < 0) {
+    if (!done) return { action: "hold", end: tableStart };
+    if (!TABLE_ROW_RE.test(header.line)) return { action: "skip", end: tableStart };
+    return { action: "snap", end: target.length };
+  }
+  if (!TABLE_ROW_RE.test(header.line)) return { action: "skip", end: tableStart };
+
+  const fromBody = hasSeparatorAbove(target, tableStart);
+  let pos: number;
+  if (!fromBody) {
+    if (header.endWithNl >= target.length) {
+      return done
+        ? { action: "skip", end: tableStart }
+        : { action: "hold", end: tableStart };
+    }
+    const sep = lineBounds(target, header.endWithNl);
+    if (sep.nl < 0) {
+      if (!done) {
+        const pending =
+          sep.line.length === 0 ||
+          PARTIAL_SEP_RE.test(sep.line) ||
+          PIPE_START_RE.test(sep.line);
+        return pending
+          ? { action: "hold", end: tableStart }
+          : { action: "skip", end: tableStart };
+      }
+      if (!TABLE_SEP_RE.test(sep.line)) return { action: "skip", end: tableStart };
+      return { action: "snap", end: target.length };
+    }
+    if (!TABLE_SEP_RE.test(sep.line)) return { action: "skip", end: tableStart };
+    pos = sep.endWithNl;
+  } else {
+    pos = tableStart;
+  }
+
+  while (pos < target.length) {
+    const row = lineBounds(target, pos);
+    if (row.nl < 0) {
+      if (TABLE_ROW_RE.test(row.line)) {
+        return done
+          ? { action: "snap", end: target.length }
+          : { action: "hold", end: tableStart };
+      }
+      if (PIPE_START_RE.test(row.line)) {
+        return done
+          ? { action: "snap", end: pos }
+          : { action: "hold", end: tableStart };
+      }
+      return { action: "snap", end: pos };
+    }
+    if (TABLE_ROW_RE.test(row.line)) {
+      pos = row.endWithNl;
+      continue;
+    }
+    return { action: "snap", end: pos };
+  }
+
+  return done
+    ? { action: "snap", end: target.length }
+    : { action: "hold", end: tableStart };
+}
+
 function stepTableBoundary(
   target: string,
   currentEnd: number,
@@ -137,50 +211,20 @@ function stepTableBoundary(
   if (pipeStart > currentEnd) {
     return { end: pipeStart, tableAction: "none" };
   }
-  if (currentEnd > pipeStart) {
-    return { end: candidateEnd, tableAction: "none" };
-  }
 
-  const row1 = lineBounds(target, pipeStart);
-  if (hasSeparatorAbove(target, pipeStart)) {
-    if (row1.nl >= 0) {
-      return TABLE_ROW_RE.test(row1.line)
-        ? { end: row1.endWithNl, tableAction: "snap" }
-        : { end: candidateEnd, tableAction: "none" };
-    }
-    if (done) {
-      return TABLE_ROW_RE.test(row1.line)
-        ? { end: target.length, tableAction: "snap" }
-        : { end: candidateEnd, tableAction: "none" };
-    }
+  const table = scanMarkdownTable(target, pipeStart, done);
+  if (table.action === "hold") {
     return { end: currentEnd, tableAction: "hold" };
   }
-
-  if (row1.nl < 0) {
-    return done
-      ? { end: candidateEnd, tableAction: "none" }
-      : { end: currentEnd, tableAction: "hold" };
-  }
-  if (!TABLE_ROW_RE.test(row1.line)) {
+  if (table.action === "snap") {
+    const end = Math.max(currentEnd, table.end);
+    if (end > currentEnd) return { end, tableAction: "snap" };
     return { end: candidateEnd, tableAction: "none" };
   }
 
-  const row2 = lineBounds(target, row1.nl + 1);
-  if (row2.nl < 0) {
-    if (done) {
-      return TABLE_SEP_RE.test(row2.line)
-        ? { end: target.length, tableAction: "snap" }
-        : { end: candidateEnd, tableAction: "none" };
-    }
-    return PARTIAL_SEP_RE.test(row2.line)
-      ? { end: currentEnd, tableAction: "hold" }
-      : { end: candidateEnd, tableAction: "none" };
-  }
-
-  if (TABLE_SEP_RE.test(row2.line)) {
-    return { end: row2.endWithNl, tableAction: "snap" };
-  }
-  return { end: candidateEnd, tableAction: "none" };
+  const line = lineBounds(target, pipeStart);
+  const lineEnd = line.nl < 0 ? target.length : line.endWithNl;
+  return { end: Math.min(candidateEnd, lineEnd), tableAction: "none" };
 }
 
 export function createStreamPacer(opts: StreamPacerOptions): StreamPacer {
