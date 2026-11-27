@@ -140,6 +140,9 @@ def edit_figure_in_run(
         -1,
     )
 
+    from case3.chat_memory import freeze_figure_file
+
+    frozen_name = freeze_figure_file(out_dir, figure_id)
     bak: bytes | None = dest.read_bytes() if dest.is_file() else None
     meta_path = out_dir / "meta.json"
     meta_bak: str | None = meta_path.read_text(encoding="utf-8") if meta_path.is_file() else None
@@ -200,6 +203,10 @@ def edit_figure_in_run(
     from case3.run_meta import update_meta
 
     def _mut_fig_edit(m: dict[str, Any]) -> None:
+        if frozen_name:
+            from case3.chat_memory import point_old_previews_at_freeze
+
+            point_old_previews_at_freeze(m, figure_id, frozen_name)
         med = dict(m.get("media_status") or {})
         med[figure_id] = {"ok": True, "path": str(dest), "kind": "figure"}
         m["media_status"] = med

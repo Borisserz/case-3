@@ -556,6 +556,9 @@ def edit_chart_in_run(
     figs_dir = out_dir / "figures"
     figs_dir.mkdir(parents=True, exist_ok=True)
     dest = figs_dir / f"{chart_id}.png"
+    from case3.chat_memory import freeze_figure_file
+
+    frozen_name = freeze_figure_file(out_dir, chart_id)
     work = out_dir / "chart_work" / chart_id
     bak: bytes | None = dest.read_bytes() if dest.is_file() else None
     try:
@@ -581,6 +584,10 @@ def edit_chart_in_run(
 
     # meta media_status
     def _mut_chart_edit(m: dict[str, Any]) -> None:
+        if frozen_name:
+            from case3.chat_memory import point_old_previews_at_freeze
+
+            point_old_previews_at_freeze(m, chart_id, frozen_name)
         med = dict(m.get("media_status") or {})
         med[chart_id] = {"ok": True, "path": str(dest), "kind": "chart"}
         m["media_status"] = med
@@ -838,6 +845,7 @@ def recolor_all_charts_in_run(
 
     recolored = 0
     recolored_paths: dict[str, Path] = {}
+    frozen_names: dict[str, str] = {}
     batch_items: list[tuple[str, dict[str, Any], Path, Path]] = []
     for chart in charts:
         cid = str(chart.get("id") or "").strip()
@@ -868,6 +876,9 @@ def recolor_all_charts_in_run(
                 pass
 
         png_path = figs_dir / f"{cid}.png"
+        from case3.chat_memory import freeze_figure_file
+
+        frozen_names[cid] = freeze_figure_file(out_dir, cid)
         if render_chart_png is not _DEFAULT_RENDER_CHART_PNG:
             render_chart_png(new_html, png_path)
             recolored_paths[cid] = png_path
@@ -889,8 +900,13 @@ def recolor_all_charts_in_run(
     fj_path.write_text(json.dumps(fj, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _mut_recolor(m: dict[str, Any]) -> None:
+        from case3.chat_memory import point_old_previews_at_freeze
+
         med = dict(m.get("media_status") or {})
         for cid, png_path in recolored_paths.items():
+            frozen = frozen_names.get(cid) or ""
+            if frozen:
+                point_old_previews_at_freeze(m, cid, frozen)
             med[cid] = {"ok": True, "path": str(png_path), "kind": "chart"}
         m["chart_palette"] = palette_id
         m["media_status"] = med

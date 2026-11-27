@@ -316,8 +316,11 @@ def _download_url(url: str, dest: Path, *, cfg: ImageApiConfig) -> None:
             "(prefer base64 string; set IMAGE_ALLOW_URL_DOWNLOAD=1 for public https)"
         )
     # No redirect follow → prevents SSRF via 302 to metadata/LAN
+    headers: dict[str, str] = {}
+    if cfg.api_key and _same_api_host(url, cfg.base_url):
+        headers["Authorization"] = f"Bearer {cfg.api_key}"
     with httpx.Client(timeout=cfg.timeout_s, follow_redirects=False) as client:
-        resp = client.get(url)
+        resp = client.get(url, headers=headers)
         if resp.is_redirect:
             raise RuntimeError("image URL redirects are not followed")
         resp.raise_for_status()

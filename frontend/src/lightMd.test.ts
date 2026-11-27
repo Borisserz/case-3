@@ -48,6 +48,18 @@ test("renderLightMdBlocks splits top-level blocks and keeps code fences intact",
   assert.match(blocks[3], /^<ul class="src-ul">/);
 });
 
+test("a table row without a closing pipe still joins the table", () => {
+  const md = [
+    "| Регион | Факт | План |",
+    "| --- | --- | --- |",
+    "| Брестская | 10 | 12 |",
+    "| Минск | 23 414,38 | 47 680,67",
+  ].join("\n");
+  const html = renderLightMd(md);
+  assert.match(html, /<td>Минск<\/td><td>23 414,38<\/td><td>47 680,67<\/td>/);
+  assert.doesNotMatch(html, /\| Минск \|/);
+});
+
 test("stabilizeStreamingMd hides partial table rows and unconfirmed headers during streaming", () => {
   assert.equal(
     stabilizeStreamingMd("| Регион | Факт |\n| --- | --- |\n| Минск | 184"),

@@ -656,7 +656,11 @@ def parse_row_add(text: str | None) -> tuple[int, tuple[str, ...]] | None:
 
 
 _CHART_KEEP = re.compile(
-    r"(?:оставь|оставить|покажи|выведи)\s+только\s+(.+)$",
+    r"(?:оставь|оставить|покажи|выведи|сделай|сделать|построй|собери|нарисуй)"
+    r"(?:\s+мне)?"
+    r"(?:\s+график\w*)?"
+    r"\s+только\s+(?:по\s+)?(.+)$"
+    r"|только\s+по\s+(.+)$",
     re.IGNORECASE,
 )
 _CHART_DROP = re.compile(
@@ -685,7 +689,7 @@ def parse_chart_categories(text: str | None) -> tuple[str, tuple[str, ...]] | No
     drop = None if keep else _CHART_DROP.search(raw)
     if not keep and not drop:
         return None
-    body = (keep or drop).group(1)
+    body = next((part for part in (keep or drop).groups() if part), "")
     body = _CHART_FILTER_NOISE.sub(" ", body)
     names: list[str] = []
     for part in re.split(r"\s*,\s*|\s+и\s+|\s*;\s*", body):
@@ -916,6 +920,7 @@ _ACCUSATIVE_SCENE = re.compile(
 _MAKE_STATE = re.compile(
     rf"(?:сделай|сделать)\s+(?:там\s+)?(?:эту\s+|этот\s+|это\s+)?"
     rf"(?!фото\b|фотк|картинк|изображен|иллюстрац)"
+    rf"(?!его\b|её\b|ее\b|это\b|эту\b|этот\b|этой\b)"
     rf"[а-я]{{3,}}\s+(?:{_COLOR_INS}|темнее|светлее|ярче|четче|контрастнее)\b",
     re.IGNORECASE,
 )
@@ -2088,6 +2093,21 @@ def resolve_act(
                 say="Меняю подпись рисунка.",
             )
         photo = parse_photo_edit(raw)
+        if (
+            photo is not None
+            and has_chart
+            and not has_photo
+            and re.match(
+                r"(?:сделай|сделать)\s+(?:его|её|ее|это)\b",
+                raw,
+                re.IGNORECASE,
+            )
+        ):
+            from case3.chart_style import hue_from_text
+
+            hue = hue_from_text(raw)
+            if hue:
+                return _hue_act(raw, hue)
         if photo is not None:
             fid, instruction = photo
             if not instruction:
@@ -2483,6 +2503,25 @@ def resolve_act(
             re.IGNORECASE,
         )
     )
+    if (
+        has_chart
+        and not question
+        and not _explicit_new_artifact(raw)
+        and not named_chart
+    ):
+        picked = parse_chart_categories(raw)
+        if picked:
+            mode, names = picked
+            shown = " и ".join(names)
+            verb = "оставляю только" if mode == "keep" else "убираю"
+            return ChatAct(
+                kind="revise",
+                op="filter_chart",
+                brief=mode,
+                items=names,
+                say=f"Меняю график: {verb} {shown}.",
+            )
+
     if (
         not question
         and not _explicit_new_artifact(raw)

@@ -1604,6 +1604,9 @@ def run_pipeline(
                 encoding="utf-8",
             )
             meta["media_status"] = media_status
+            from case3.chat_memory import _chat_previews
+
+            meta["shown_previews"] = _chat_previews(root, run_id, meta)
         if charts_list:
             meta["charts_planned"] = [c["id"] for c in charts_list if c.get("id")]
             meta["charts_ok"] = sum(

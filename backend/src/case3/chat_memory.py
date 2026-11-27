@@ -763,10 +763,84 @@ def newest_edit(root: Path, run_id: str) -> dict[str, str]:
     return found
 
 
+def freeze_figure_file(out_dir: Path, figure_id: str) -> str:
+    """Copy the current PNG aside. Older chat lines keep that picture.
+
+    Empty when the file is missing. The live ``{id}.png`` can then be replaced
+    without every previous message showing the new bytes.
+    """
+    fid = (figure_id or "").strip()
+    if not fid or not re.fullmatch(r"[A-Za-z0-9_]+", fid):
+        return ""
+    src = Path(out_dir) / "figures" / f"{fid}.png"
+    if not src.is_file():
+        return ""
+    try:
+        stamp = int(src.stat().st_mtime)
+    except OSError:
+        stamp = 0
+    name = f"_hist_{fid}_{stamp}.png"
+    dest = src.with_name(name)
+    n = 2
+    while dest.is_file() and n < 50:
+        name = f"_hist_{fid}_{stamp}_{n}.png"
+        dest = src.with_name(name)
+        n += 1
+    if dest.is_file():
+        return ""
+    try:
+        dest.write_bytes(src.read_bytes())
+    except OSError:
+        return ""
+    return name
+
+
+def point_old_previews_at_freeze(
+    meta: dict[str, Any], figure_id: str, frozen_name: str
+) -> None:
+    """Point saved lines at the frozen PNG. The new line keeps the live file."""
+    fid = (figure_id or "").strip()
+    frozen = (frozen_name or "").strip()
+    if not fid or not frozen:
+        return
+
+    def retarget(url: str) -> str:
+        base, mark, query = url.partition("?")
+        suffix = f"/{fid}.png"
+        if "/_hist_" in base or not base.endswith(suffix):
+            return url
+        nxt = base[: -len(f"{fid}.png")] + frozen
+        return nxt if not mark else f"{nxt}?{query}"
+
+    def walk(items: object) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "")
+            nxt = retarget(url)
+            if nxt == url:
+                continue
+            item["url"] = nxt
+            item["id"] = frozen[:-4] if frozen.endswith(".png") else frozen
+
+    notes = meta.get("dialogue")
+    if isinstance(notes, list):
+        for note in notes:
+            if isinstance(note, dict):
+                walk(note.get("previews"))
+    walk(meta.get("shown_previews"))
+
+
 def _dialogue_with_photos(
     root: Path, run_id: str, meta: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """A photo edit from before previews were stored still shows its file."""
+    """A photo edit from before previews were stored still shows its file.
+
+    Only the latest such line gets the current file. Copying it onto every
+    older line makes the whole thread show the last picture.
+    """
     notes = _dialogue(meta)
     missing = [
         note
@@ -783,8 +857,7 @@ def _dialogue_with_photos(
     ]
     if not figures:
         return notes
-    for note in missing:
-        note["previews"] = figures
+    missing[-1]["previews"] = figures[-1:]
     return notes
 
 
@@ -1013,6 +1086,20 @@ def _photo_thumbs(root: Path, run_id: str) -> list[dict[str, str]]:
     return thumbs
 
 
+def _shown_or_live_previews(
+    root: Path, run_id: str, meta: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Pictures as they were when the turn finished.
+
+    A later edit freezes the old PNG and points this list at it, so the
+    first message does not switch to the newest file.
+    """
+    stored = _preview_notes(meta.get("shown_previews"))
+    if stored:
+        return stored
+    return _chat_previews(root, run_id, meta)
+
+
 def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[str, str]]:
     """Inline chat chart/diagram PNG previews (cht_* / dia_*) for a run."""
     rid = (run_id or "").strip()
@@ -1032,6 +1119,8 @@ def _chat_previews(root: Path, run_id: str, meta: dict[str, Any]) -> list[dict[s
         if not png.is_file():
             continue
         stem = png.stem
+        if stem.startswith("_hist_"):
+            continue
         if not (
             stem.startswith("cht_")
             or stem.startswith("dia_")
@@ -1158,7 +1247,7 @@ def memory_view(root: Path, run_id: str) -> dict[str, Any] | None:
             "dialogue": _dialogue_with_photos(root, turn_id, meta),
             "last_edit": edit if isinstance(edit, dict) else {},
             "photos": _photo_thumbs(root, turn_id),
-            "previews": _chat_previews(root, turn_id, meta),
+            "previews": _shown_or_live_previews(root, turn_id, meta),
         }
         attachments = _turn_attachments(meta, turn_source, prev_raw_source)
         if attachments:

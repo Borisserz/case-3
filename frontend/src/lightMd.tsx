@@ -20,6 +20,14 @@ function splitTableRow(line: string): string[] {
     .map((cell) => cell.trim());
 }
 
+function finishPipeRow(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || /\|\s*$/.test(trimmed)) return line;
+  const pipes = trimmed.match(/\|/g);
+  if (!pipes || pipes.length < 2) return line;
+  return `${trimmed} |`;
+}
+
 function isTableRow(line: string): boolean {
   return /^\s*\|.+\|\s*$/.test(line);
 }
@@ -29,7 +37,7 @@ function isTableSep(line: string): boolean {
 }
 
 function renderTables(src: string): string {
-  const lines = src.split("\n");
+  const lines = src.split("\n").map(finishPipeRow);
   const out: string[] = [];
   let i = 0;
   while (i < lines.length) {

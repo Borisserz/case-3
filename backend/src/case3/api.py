@@ -2488,6 +2488,8 @@ def _media_previews(
     out: list[dict[str, str]] = []
     for png in sorted(figs.glob("*.png")):
         mid = png.stem
+        if mid.startswith("_hist_"):
+            continue
         st = media.get(mid) if isinstance(media.get(mid), dict) else {}
         if st and not st.get("ok"):
             continue

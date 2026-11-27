@@ -168,9 +168,12 @@ def _has_chart(meta: dict[str, Any], path: Path | None = None) -> bool:
     planned = meta.get("charts_planned")
     if isinstance(planned, list) and any(str(item or "").strip() for item in planned):
         return True
-    if path is not None and (path / "figures.json").is_file():
-        return bool(_chart_ids(path))
-    return False
+    if path is None:
+        return False
+    if (path / "figures.json").is_file() and _chart_ids(path):
+        return True
+    figs = path / "figures"
+    return figs.is_dir() and any(figs.glob("cht_*.png"))
 
 
 def _chart_previews(run_id: str, out_dir: Path) -> list[dict[str, str]]:
@@ -2296,7 +2299,11 @@ def _photo_pngs(figs: Path) -> list[Path]:
         return []
     found: list[Path] = []
     for pattern in ("usr_*.png", "fig_*.png"):
-        found.extend(path for path in figs.glob(pattern) if path.is_file())
+        found.extend(
+            path
+            for path in figs.glob(pattern)
+            if path.is_file() and not path.name.startswith("_hist_")
+        )
     return sorted(found, key=lambda path: path.name)
 
 
