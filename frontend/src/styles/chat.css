@@ -1,6 +1,10 @@
 .messages {
   flex: 1;
+  min-width: 0;
   overflow: auto;
+  /* Keep the bar's width reserved so a one-shot table does not
+     shrink the column and reflow the thread when the bar appears. */
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   overflow-anchor: auto;
   display: flex;
@@ -92,6 +96,7 @@
 .msg {
   width: min(100%, var(--chat-column));
   max-width: min(100%, var(--chat-column));
+  min-width: 0;
   padding: 0.2rem 0;
   border-radius: 0;
   line-height: 1.65;
@@ -405,6 +410,7 @@
 .msg-table-wrap {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   margin: 0.85rem 0 0.35rem;
   border-radius: 10px;
@@ -477,6 +483,14 @@
   gap: 0.65rem;
   align-items: flex-start;
   width: 100%;
+  min-width: 0;
+}
+
+.msg-bot-stack,
+.msg-stream-wrap,
+.msg-md {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Document flow — no chat avatar chrome */

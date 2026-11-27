@@ -43,6 +43,9 @@ export function useChatChrome({
   const rafRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const programmaticScrollRef = useRef(false);
+  // Scroll events from a pin land after the flag is cleared. Ignore that
+  // window so overflow-anchor cannot unstick the thread mid-jump.
+  const ignoreScrollUntilRef = useRef(0);
   const prevMsgCountRef = useRef(msgs.length);
   const touchStartYRef = useRef<number | null>(null);
 
@@ -66,6 +69,19 @@ export function useChatChrome({
     [msgs.length, stickBottom],
   );
 
+  const pinToBottom = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el || !stickBottom.current) return;
+    const targetTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (Math.abs(targetTop - el.scrollTop) <= 1) return;
+    stopScrollLoop();
+    programmaticScrollRef.current = true;
+    ignoreScrollUntilRef.current = performance.now() + 48;
+    el.scrollTop = targetTop;
+    lastScrollTopRef.current = el.scrollTop;
+    programmaticScrollRef.current = false;
+  }, [messagesRef, stickBottom, stopScrollLoop]);
+
   const startSmoothFollow = useCallback(
     (instant = false) => {
       const el = messagesRef.current;
@@ -77,6 +93,7 @@ export function useChatChrome({
       ) {
         stopScrollLoop();
         programmaticScrollRef.current = true;
+        ignoreScrollUntilRef.current = performance.now() + 48;
         el.scrollTop = targetTop;
         lastScrollTopRef.current = el.scrollTop;
         programmaticScrollRef.current = false;
@@ -102,6 +119,7 @@ export function useChatChrome({
         }
         const nextTop = stepSmoothScroll(node.scrollTop, maxTop, dt);
         programmaticScrollRef.current = true;
+        ignoreScrollUntilRef.current = performance.now() + 48;
         node.scrollTop = nextTop;
         lastScrollTopRef.current = node.scrollTop;
         programmaticScrollRef.current = false;
@@ -156,7 +174,10 @@ export function useChatChrome({
     };
 
     const onScroll = () => {
-      if (programmaticScrollRef.current) {
+      if (
+        programmaticScrollRef.current ||
+        performance.now() < ignoreScrollUntilRef.current
+      ) {
         lastScrollTopRef.current = el.scrollTop;
         return;
       }
@@ -191,38 +212,31 @@ export function useChatChrome({
     };
   }, [messagesRef, stickBottom, stopScrollLoop, syncScrollBottomFlag]);
 
-  // Follow async height changes (inline charts, PDF thumbs, rail resize) only when pinned to bottom.
+  // A one-shot table grows the thread by its full height in one layout.
+  // Easing scrollTop after paint slides text that is already on screen.
+  // Pin before paint, while the user is stuck to the bottom.
   useEffect(() => {
     const el = messagesRef.current;
-    if (!el) return;
-    let lastHeight = el.scrollHeight;
-    const onMediaLoad = () => {
-      if (stickBottom.current) {
-        startSmoothFollow(false);
-      } else {
-        syncScrollBottomFlag(el);
-      }
-    };
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      pinToBottom();
+    });
+    const watch = (node: Element) => ro.observe(node);
+    watch(el);
+    for (const child of el.children) watch(child);
+    const mo = new MutationObserver(() => {
+      for (const child of el.children) watch(child);
+      pinToBottom();
+    });
+    mo.observe(el, { childList: true });
+    const onMediaLoad = () => pinToBottom();
     el.addEventListener("load", onMediaLoad, true);
-    const ro =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => {
-            if (el.scrollHeight !== lastHeight) {
-              lastHeight = el.scrollHeight;
-              if (stickBottom.current) {
-                startSmoothFollow(false);
-              } else {
-                syncScrollBottomFlag(el);
-              }
-            }
-          })
-        : null;
-    ro?.observe(el);
     return () => {
       el.removeEventListener("load", onMediaLoad, true);
-      ro?.disconnect();
+      mo.disconnect();
+      ro.disconnect();
     };
-  }, [messagesRef, stickBottom, startSmoothFollow, syncScrollBottomFlag]);
+  }, [messagesRef, pinToBottom]);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -255,7 +269,9 @@ export function useChatChrome({
     }
 
     if (stickBottom.current) {
-      startSmoothFollow(false);
+      // Backup if the pre-paint pin missed this commit. Still instant:
+      // a damped catch-up is the jerk after a table lands in one shot.
+      startSmoothFollow(true);
     } else if (el) {
       syncScrollBottomFlag(el);
     }
