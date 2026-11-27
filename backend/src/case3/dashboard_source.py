@@ -646,6 +646,135 @@ def _measure_column(
     return labels, values, is_pct, has_neg, row_indices
 
 
+_CHART_ROW_CAP = 24
+_CHART_FOCUS_SKIP = re.compile(
+    r"^(?:график\w*|диаграмм\w*|данн\w*|созда\w*|постро\w*|нарис\w*|"
+    r"сдела\w*|покаж\w*|сравн\w*|консолидир\w*|бюджет\w*|регион\w*|"
+    r"област\w*|мне|пожалуйста)$",
+    re.IGNORECASE,
+)
+
+
+def table_chart_series(markdown: str, focus: str = "") -> dict | None:
+    """Labels and numbers from the richest markdown table. None when it cannot be drawn."""
+    tables = _markdown_tables(markdown or "")
+    if not tables:
+        return None
+    pdf = [item for item in tables if item[0] == "Таблица PDF"]
+    pool = pdf or tables
+    focus_words = [
+        word.casefold()
+        for word in re.findall(r"[0-9A-Za-zА-Яа-яЁё]{5,}", focus or "")
+        if not _CHART_FOCUS_SKIP.match(word)
+    ]
+    best: dict | None = None
+    best_score = -1
+    for title, rows in pool:
+        spec = _series_from_rows(title, rows, focus_words)
+        if spec is None:
+            continue
+        score = len(spec["labels"]) * 10 + len(spec["datasets"])
+        if title == "Таблица PDF":
+            score += 100
+        if score > best_score:
+            best = spec
+            best_score = score
+    return best
+
+
+def _series_from_rows(
+    title: str,
+    rows: list[list[str]],
+    focus_words: list[str],
+) -> dict | None:
+    if len(rows) < 2:
+        return None
+    header, body = rows[0], rows[1:]
+    data = [row for row in body if not _is_total_row(row)]
+    if len(data) < 2:
+        return None
+    label_at = _label_column(data)
+    if label_at is None:
+        return None
+    width = max(len(row) for row in rows)
+    usable: list[tuple[int, str, bool]] = []
+    for col in range(width):
+        if col == label_at:
+            continue
+        name = header[col].strip() if col < len(header) else ""
+        if not name or _YEAR_HEADER.match(name) or _CODE_HEADER.search(name):
+            continue
+        filled = 0
+        percent = False
+        for row in data:
+            cell = row[col].strip() if col < len(row) else ""
+            if "%" in cell:
+                percent = True
+            if _cell_decimal(cell) is not None:
+                filled += 1
+        if filled >= 2:
+            usable.append((col, name, percent))
+    money = [col for col in usable if not col[2]]
+    pool = money or usable
+    if not pool:
+        return None
+    picked = _pick_chart_columns(pool, header, focus_words)
+    points: list[tuple[str, list[Decimal]]] = []
+    for row in data:
+        label = row[label_at].strip() if label_at < len(row) else ""
+        if not label:
+            continue
+        values: list[Decimal] = []
+        missing = False
+        for col, _name, _percent in picked:
+            number = _cell_decimal(row[col].strip()) if col < len(row) else None
+            if number is None:
+                missing = True
+                break
+            values.append(number)
+        if not missing:
+            points.append((label, values))
+    if len(points) < 2:
+        return None
+    if len(points) > _CHART_ROW_CAP:
+        ranked = sorted(range(len(points)), key=lambda i: abs(points[i][1][0]), reverse=True)
+        keep = set(ranked[:_CHART_ROW_CAP])
+        points = [point for index, point in enumerate(points) if index in keep]
+    return {
+        "title": title,
+        "labels": [label for label, _values in points],
+        "datasets": [
+            {
+                "label": name,
+                "values": [float(values[index]) for _label, values in points],
+            }
+            for index, (_col, name, _percent) in enumerate(picked)
+        ],
+    }
+
+
+def _pick_chart_columns(
+    columns: list[tuple[int, str, bool]],
+    header: list[str],
+    focus_words: list[str],
+) -> list[tuple[int, str, bool]]:
+    if focus_words:
+        hits = [
+            col
+            for col in columns
+            if any(word in col[1].casefold() for word in focus_words)
+        ]
+        if hits:
+            return hits[:3]
+    pair = _find_fact_plan_pair(header)
+    if pair is not None:
+        by_col = {col[0]: col for col in columns}
+        fact, plan = pair
+        if fact in by_col and plan in by_col:
+            return [by_col[fact], by_col[plan]]
+    return columns[:2]
+
+
 def _cell_decimal(cell: str) -> Decimal | None:
     text = re.sub(r"^([+\-])\s+", r"\1", cell.strip().replace("−", "-"))
     if not _COMPLETE_NUM.match(text):

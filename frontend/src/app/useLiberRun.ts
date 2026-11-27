@@ -490,6 +490,15 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         return;
       }
       saveUserTurn(runId, { text: userBody });
+      const earlyTitle = userBody.replace(/\s+/g, " ").trim().slice(0, 52);
+      rememberRun({
+        run_id: runId,
+        output_mode:
+          (typeof data.output_mode === "string" && data.output_mode) || "chat",
+        chat_summary: earlyTitle,
+        title: earlyTitle,
+        prior_run_id: priorRunId || undefined,
+      });
       setMsgs((m) =>
         m.map((msg) => {
           if (msg.id !== pendingId || msg.role !== "bot") return msg;

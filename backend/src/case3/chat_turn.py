@@ -161,19 +161,19 @@ def _source_phrase(source: str) -> str:
 
 
 def session_title(user_text: str, source: str = "") -> str:
-    """Sidebar name. A dashboard heading wins over the user's command."""
+    """Sidebar name. A follow-up question keeps its words. A bare screen keeps the heading."""
     from case3.dashboard_source import dashboard_title
 
     named = dashboard_title(source or "")
-    if named:
-        return named
     first = " ".join((user_text or "").strip().splitlines()[:1]).strip()
-    if first and not _TITLE_META.search(first):
+    if first and "Длинный разбор в чат не пиши" not in (user_text or "") and not _TITLE_META.search(first):
         topic = _TITLE_LEAD.sub("", first).strip(" ?.!,")
         if topic and (topic.casefold() != first.casefold() or not _TITLE_LEAD.match(first)):
             clipped = _clip_title(topic)
             if len(clipped) >= 3:
                 return clipped
+    if named:
+        return named
     return _source_phrase(source) or "Разбор"
 
 
@@ -1475,6 +1475,148 @@ def generate_chat_photo(
     )
 
 
+_TABLE_CHART_COLORS = ("#4E79A7", "#F28E2B", "#59A14F", "#E15759")
+
+
+def _js_quote(value: str) -> str:
+    text = " ".join((value or "").split())
+    return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _js_num(value: float) -> str:
+    text = f"{value:.6f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _chart_item_from_table(source: str, message: str) -> dict | None:
+    """One Chart.js chart from a markdown table. None when the table is not drawable."""
+    from case3.chat_act import chart_type_named
+    from case3.dashboard_source import table_chart_series
+
+    named = chart_type_named(message)
+    if named in {"scatter", "kpi"}:
+        return None
+    spec = table_chart_series(source, message)
+    if not spec:
+        return None
+    labels = spec["labels"]
+    datasets = spec["datasets"]
+    if named == "donut":
+        datasets = datasets[:1]
+    kind = named or ("grouped_bar" if len(datasets) > 1 else "bar")
+    if kind == "horizontal_bar":
+        js_type = "bar"
+        extra = "indexAxis:'y',"
+    elif kind == "stacked_bar":
+        js_type = "bar"
+        extra = "scales:{x:{stacked:true},y:{stacked:true}},"
+    elif kind == "line":
+        js_type = "line"
+        extra = ""
+    elif kind == "area":
+        js_type = "line"
+        extra = ""
+    elif kind == "donut":
+        js_type = "doughnut"
+        extra = ""
+    else:
+        js_type = "bar"
+        extra = ""
+    series = []
+    for index, dataset in enumerate(datasets):
+        color = _TABLE_CHART_COLORS[index % len(_TABLE_CHART_COLORS)]
+        fill = ",fill:true" if kind == "area" else ""
+        numbers = ",".join(_js_num(value) for value in dataset["values"])
+        series.append(
+            "{label:"
+            + _js_quote(str(dataset["label"]))
+            + ",data:["
+            + numbers
+            + "],backgroundColor:'"
+            + color
+            + "',borderColor:'"
+            + color
+            + "'"
+            + fill
+            + "}"
+        )
+    label_js = ",".join(_js_quote(label) for label in labels)
+    scales = ""
+    if (js_type == "bar" or js_type == "line") and "scales:" not in extra:
+        scales = "scales:{x:{ticks:{font:{size:16}}},y:{ticks:{font:{size:16}}}},"
+    html = (
+        "<canvas id='c' width='1100' height='560'></canvas><script>"
+        "new Chart(document.getElementById('c'),{"
+        f"type:'{js_type}',data:{{labels:[{label_js}],datasets:[{','.join(series)}]}},"
+        f"options:{{responsive:false,{extra}{scales}plugins:{{legend:{{display:true}}}}}}}});"
+        "</script>"
+    )
+    caption = str(datasets[0]["label"] if datasets else "") or "По данным таблицы"
+    title = str(spec.get("title") or "")
+    if title and title not in {"Таблица PDF", "Экран"}:
+        caption = title
+    return {
+        "id": "cht_01",
+        "type": kind if kind != "grouped_bar" else "grouped_bar",
+        "caption": caption,
+        "html": html,
+    }
+
+
+def _render_table_chart(
+    source: str,
+    message: str,
+    *,
+    palette_id: str,
+    figs_dir,
+    charts_dir,
+) -> tuple[list[dict], dict[str, dict]] | None:
+    """Draw the table chart without a second model call. None when there is no table."""
+    from pathlib import Path
+
+    from case3.chart_coerce import polish_charts
+    from case3.chart_harden import full_chat_canvas
+    from case3.charts import render_charts_batch
+    from case3.chart_type_fit import chart_is_stick
+
+    item = _chart_item_from_table(source, message)
+    if item is None:
+        return None
+    polished = polish_charts([item], palette_id=palette_id)
+    for chart in polished:
+        chart["html"] = full_chat_canvas(
+            str(chart.get("html") or ""),
+            chart_type=str(chart.get("type") or ""),
+        )
+    kept = [
+        chart
+        for chart in polished
+        if not chart_plot_blank(str(chart.get("html") or ""))
+        and not chart_is_stick(chart)
+    ]
+    if not kept:
+        return [], {}
+    out_figs = Path(figs_dir)
+    out_charts = Path(charts_dir)
+    out_figs.mkdir(parents=True, exist_ok=True)
+    out_charts.mkdir(parents=True, exist_ok=True)
+    batch = [
+        (chart["id"], chart, out_figs / f"{chart['id']}.png", out_charts)
+        for chart in kept
+        if isinstance(chart, dict) and chart.get("id")
+    ]
+    try:
+        status = render_charts_batch(batch) if batch else {}
+    except Exception as exc:  # noqa: BLE001 — the written answer stays if the picture fails
+        log.warning("table chart render failed: %s", exc)
+        status = {
+            str(chart.get("id")): {"ok": False, "error": str(exc)[:300], "kind": "chart"}
+            for chart in kept
+            if chart.get("id")
+        }
+    return kept, status
+
+
 def generate_chat_charts(
     source: str,
     intent: str,
@@ -1550,6 +1692,16 @@ def generate_chat_charts(
                 [(item["id"], item, out_figs / f"{item['id']}.png", out_charts)]
             )
             return [item], status
+    if not previous_chart:
+        drawn = _render_table_chart(
+            source,
+            message,
+            palette_id=palette,
+            figs_dir=figs_dir,
+            charts_dir=charts_dir,
+        )
+        if drawn is not None:
+            return drawn
     color_line = hue_prompt_line(message)
     if color_line:
         system += "\n" + color_line

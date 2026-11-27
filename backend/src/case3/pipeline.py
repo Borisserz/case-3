@@ -1542,7 +1542,7 @@ def run_pipeline(
             if (explicit_chart or auto_chart) and eff_charts_budget > 0:
                 bump("charts", "рисую график…")
                 charts_list, media_status = generate_chat_charts(
-                    grounded_source,
+                    enriched_source or grounded_source,
                     intent or user_text,
                     max_charts=eff_charts_budget if explicit_chart else 1,
                     palette_id=str(meta.get("chart_palette") or "atelier"),
