@@ -216,7 +216,7 @@ class LLMConfig:
         base = _env("VISION_API_BASE_URL", "CASE3_API_BASE_URL", "INGEST_VISION_API_BASE_URL")
         if base is None:
             raise LLMConfigError(
-                "Set VISION_API_BASE_URL in .env (e.g. http://192.168.x.x:8080)"
+                "Set VISION_API_BASE_URL in .env (e.g. http://host.docker.internal:8080/v1)"
             )
         # Default off: thinking burns max_tokens and was the #1 truncation cause.
         reasoning = (_env("VISION_REASONING", "CASE3_REASONING") or "off").lower()

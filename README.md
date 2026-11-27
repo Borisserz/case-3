@@ -117,7 +117,7 @@ git pull
 docker compose up -d --build
 ```
 
-Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://host.docker.internal:8080`  
+Правь `backend\.env` под **Qwen**: `VISION_API_BASE_URL=http://host.docker.internal:8080/v1`  
 (фото: `IMAGE_API_BASE_URL=http://host.docker.internal:8000`, `IMAGE_MAX_IMAGES=2`. Свои вложения в презу — отдельно, до 5)  
 Если «нет documentclass» / пустой ответ → `VISION_REASONING=off`, затем `docker compose up -d --build backend`.
 

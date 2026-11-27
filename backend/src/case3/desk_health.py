@@ -14,15 +14,28 @@ import httpx
 from case3.slides_lo import find_soffice
 
 
+def _vision_root(base: str) -> str:
+    """Server root. A Stimulsoft-style ``.../v1`` base still pings the host."""
+    url = base.rstrip("/")
+    for suffix in ("/chat/completions", "/v1"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+    return url + "/"
+
+
 def probe_vision(*, timeout_s: float = 1.5) -> tuple[bool, bool, str | None]:
     """Return (configured, live_ok, error_hint)."""
     base = (os.environ.get("VISION_API_BASE_URL") or "").strip()
     if not base:
         return False, False, "Задай VISION_API_BASE_URL в .env"
-    url = base.rstrip("/") + "/"
+    url = _vision_root(base)
+    headers: dict[str, str] = {}
+    key = (os.environ.get("VISION_API_KEY") or "").strip()
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     try:
         with httpx.Client(timeout=timeout_s) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=headers)
             if resp.status_code >= 500:
                 return True, False, f"Vision HTTP {resp.status_code} — проверь Qwen/сервер"
             return True, True, None
