@@ -1552,6 +1552,14 @@ def run_pipeline(
                     previous_chart=prev_chart,
                     context_block=context_block,
                 )
+                chart_drawn = any(
+                    str(key).startswith("cht_")
+                    and isinstance(slot, dict)
+                    and slot.get("ok")
+                    for key, slot in media_status.items()
+                )
+                if explicit_chart and not chart_drawn and "не собрал" not in answer.casefold():
+                    answer = answer.rstrip() + "\n\nГрафик не собрался."
             if wants_diag:
                 bump("charts", "рисую схему…")
                 diagrams, diagram_status = generate_chat_diagram(

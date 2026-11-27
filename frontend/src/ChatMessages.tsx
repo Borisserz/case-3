@@ -488,6 +488,40 @@ export function ChatMessages({
                     ) : null}
                     {m.role === "bot" && !m.error ? (
                       <>
+                        {m.result &&
+                        !(m.result.downloads?.pdf || m.result.downloads?.docx) &&
+                        (m.result.previews || []).some(
+                          (p) => p.kind === "chart" || p.id.startsWith("cht_"),
+                        ) ? (
+                          <div className="msg-inline-charts">
+                            {(m.result.previews || [])
+                              .filter(
+                                (p) => p.kind === "chart" || p.id.startsWith("cht_"),
+                              )
+                              .map((p) => (
+                                <figure key={p.id} className="msg-inline-chart-card">
+                                  <a
+                                    className="msg-inline-chart-save"
+                                    href={p.url}
+                                    download="chart.png"
+                                    aria-label="Скачать PNG"
+                                    title="Скачать PNG"
+                                  >
+                                    <IconDownload />
+                                  </a>
+                                  <button
+                                    type="button"
+                                    className="msg-inline-chart-open"
+                                    onClick={() =>
+                                      setOpenChart({ url: p.url, title: "График" })
+                                    }
+                                  >
+                                    <img src={p.url} alt="" />
+                                  </button>
+                                </figure>
+                              ))}
+                          </div>
+                        ) : null}
                         {(m.lead || "").trim() ? (
                           <MsgMarkdown text={m.lead || ""} />
                         ) : null}
@@ -547,23 +581,23 @@ export function ChatMessages({
                           ) &&
                           (m.result.previews || []).some(
                             (p) =>
-                              p.kind === "chart" ||
-                              p.kind === "diagram" ||
-                              p.kind === "figure" ||
-                              p.id.startsWith("cht_") ||
-                              p.id.startsWith("dia_") ||
-                              p.id.startsWith("fig_"),
+                              (p.kind === "diagram" ||
+                                p.kind === "figure" ||
+                                p.id.startsWith("dia_") ||
+                                p.id.startsWith("fig_")) &&
+                              p.kind !== "chart" &&
+                              !p.id.startsWith("cht_"),
                           ) && (
                             <div className="msg-inline-charts">
                               {(m.result.previews || [])
                                 .filter(
                                   (p) =>
-                                    p.kind === "chart" ||
-                                    p.kind === "diagram" ||
-                                    p.kind === "figure" ||
-                                    p.id.startsWith("cht_") ||
-                                    p.id.startsWith("dia_") ||
-                                    p.id.startsWith("fig_"),
+                                    (p.kind === "diagram" ||
+                                      p.kind === "figure" ||
+                                      p.id.startsWith("dia_") ||
+                                      p.id.startsWith("fig_")) &&
+                                    p.kind !== "chart" &&
+                                    !p.id.startsWith("cht_"),
                                 )
                                 .map((p) => {
                                   const diagram =

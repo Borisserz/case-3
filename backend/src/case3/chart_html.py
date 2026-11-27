@@ -164,6 +164,21 @@ def _strip_function_props(text: str, prop: str) -> str:
     return text
 
 
+def _drop_dangling_closers(rest: str) -> str:
+    """Drop `}` / `)` the model left after a balanced ``new Chart(...)``.
+
+    ``new Chart(...);`` is already closed. A tail like ``});requestAnimationFrame``
+    is a syntax error (``Unexpected token '}'``) and Playwright then stores no PNG.
+    """
+    m = re.match(r"^(?P<junk>(?:\s*[})])+)\s*(?P<semi>;?)", rest)
+    if not m:
+        return rest
+    tail = rest[m.end() :]
+    if m.group("semi") or (tail and re.match(r"\s*[A-Za-z_$]", tail)):
+        return ";" + tail
+    return tail
+
+
 def _balance_chart_call(script: str) -> str:
     """Drop extra `}` / insert missing `}` and `)` inside `new Chart(...)` args."""
     m = re.search(r"new\s+Chart\s*\(", script, re.I)
@@ -228,14 +243,14 @@ def _balance_chart_call(script: str) -> str:
                     out.append("}" * brace)
                     brace = 0
                 out.append(ch)
-                out.append(script[i + 1 :])
+                out.append(_drop_dangling_closers(script[i + 1 :]))
                 return "".join(out)
             paren -= 1
             out.append(ch)
         elif ch == ";" and paren == 1 and brace == 0 and bracket == 0:
             # Missing closing ')' before statement semicolon: `new Chart(ctx, {...};`
             out.append(")")
-            out.append(script[i:])
+            out.append(_drop_dangling_closers(script[i:]))
             return "".join(out)
         else:
             out.append(ch)
