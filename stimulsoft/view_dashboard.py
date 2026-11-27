@@ -1321,7 +1321,7 @@ def openapi_spec() -> dict:
             "/shot": {
                 "get": {
                     "tags": ["export"],
-                    "summary": "Сигнал открытому /open: таблицы в exports/, без снимка страницы",
+                    "summary": "Сигнал открытому /open: скрин и таблицы в exports/",
                     "description": (
                         "Держи /open в браузере. GET /shot — общий сигнал любой вкладке, "
                         "токен не нужен. Дашборд не перезагружается."
@@ -1715,9 +1715,10 @@ def api_shot_done():
 
 @app.get("/shot")
 def api_shot():
-    """Сигнал открытой вкладке /open: таблицы в exports/, без снимка страницы.
+    """Сигнал открытой вкладке /open: скрин и таблицы в exports/.
 
-    Нужна открытая вкладка /open|/viewer.
+    Нужна открытая вкладка /open|/viewer (html2canvas локально, без CDN).
+    PNG уходит в Qwen, PDF таблицы — в ячейки markdown.
     """
     sid = secrets.token_urlsafe(8)
     with _SHOT_LOCK:

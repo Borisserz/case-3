@@ -98,6 +98,24 @@ function writeHistory(list: HistoryItem[]): HistoryItem[] {
   return next;
 }
 
+/** A finished chat belongs in the sidebar even when it has no PDF, deck, or diagram. */
+export function shouldKeepInHistory(result: {
+  run_id?: string;
+  output_mode?: string;
+  chat_summary?: string;
+  preview?: { blocks?: unknown[] } | null;
+  downloads?: { pdf?: string; pptx?: string } | null;
+  diagrams?: unknown[] | null;
+}): boolean {
+  if (!(result.run_id || "").trim()) return false;
+  const mode = (result.output_mode || "").trim();
+  if (mode === "chat" || mode === "presentation") return true;
+  if ((result.chat_summary || "").trim()) return true;
+  if (result.preview?.blocks?.length) return true;
+  if (result.downloads?.pdf || result.downloads?.pptx) return true;
+  return (result.diagrams?.length || 0) > 0;
+}
+
 export function collapseChatHeads(items: HistoryItem[]): HistoryItem[] {
   const continued = new Set(
     items

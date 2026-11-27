@@ -39,6 +39,143 @@ class ChartEditError(RuntimeError):
     pass
 
 
+def _fold_name(value: str) -> str:
+    return (value or "").casefold().replace("ё", "е").strip()
+
+
+def _name_hits(label: str, query: str) -> bool:
+    """True when a spoken place is the same category as a chart label."""
+    lab = _fold_name(label)
+    query_name = _fold_name(query)
+    if len(query_name) < 4 or not lab:
+        return False
+    if query_name in lab or lab in query_name:
+        return True
+    shared = 0
+    for left, right in zip(lab, query_name):
+        if not left.isalpha() or left != right:
+            break
+        shared += 1
+    return shared >= 5
+
+
+def _quoted_items(inner: str) -> list[str]:
+    return re.findall(r"""['"]([^'"]*)['"]""", inner or "")
+
+
+def _number_tokens(inner: str) -> list[str]:
+    from case3.chart_number import compact_chart_number_text, take_chart_number
+
+    text = compact_chart_number_text(inner or "")
+    tokens: list[str] = []
+    index = 0
+    size = len(text)
+    while index < size:
+        if text[index].isspace() or text[index] == ",":
+            index += 1
+            continue
+        if text[index : index + 4].lower() == "null" and (
+            index == 0 or not text[index - 1].isalnum()
+        ):
+            tokens.append("null")
+            index += 4
+            continue
+        taken = take_chart_number(text, index)
+        if not taken:
+            index += 1
+            continue
+        token, index = taken
+        tokens.append(token)
+    return tokens
+
+
+def _array_spans(html: str, key: str) -> list[tuple[int, int, str]]:
+    """``key:[...]`` spans as (start, end, inner), start at ``[``."""
+    found: list[tuple[int, int, str]] = []
+    for match in re.finditer(rf"\b{key}\s*:\s*\[", html or "", flags=re.I):
+        start = match.end() - 1
+        depth = 0
+        cursor = start
+        while cursor < len(html):
+            char = html[cursor]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+                if depth == 0:
+                    found.append((start, cursor + 1, html[start + 1 : cursor]))
+                    break
+            cursor += 1
+    return found
+
+
+def _quote_label(label: str) -> str:
+    safe = label.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{safe}'"
+
+
+def filter_chart_html(
+    html: str,
+    names: list[str] | tuple[str, ...],
+    *,
+    mode: str = "keep",
+) -> tuple[str, list[str], list[str]]:
+    """Drop chart categories. Numbers that stay are copied, not recomputed.
+
+    Returns ``(html, kept_labels, missing_names)``. The html is unchanged when
+    no spoken name matches a label.
+    """
+    source = html or ""
+    label_spans = _array_spans(source, "labels")
+    if not label_spans:
+        raise ChartEditError("На графике нет подписей, нечего оставить.")
+    _start, _end, inner = label_spans[0]
+    labels = _quoted_items(inner)
+    if len(labels) < 2:
+        raise ChartEditError("На графике нет нескольких областей, фильтр не к чему применить.")
+    queries = [name.strip() for name in names if name and name.strip()]
+    if not queries:
+        raise ChartEditError("Напиши, какие подписи оставить.")
+    matched = [index for index, label in enumerate(labels) if any(_name_hits(label, name) for name in queries)]
+    missing = [name for name in queries if not any(_name_hits(label, name) for label in labels)]
+    if mode == "drop":
+        chosen = [index for index in range(len(labels)) if index not in set(matched)]
+    else:
+        chosen = matched
+    if not chosen:
+        shown = ", ".join(labels)
+        raise ChartEditError(f"Таких подписей на графике нет. Сейчас: {shown}.")
+    if len(chosen) == len(labels):
+        return source, list(labels), missing
+    kept = [labels[index] for index in chosen]
+    pieces: list[tuple[int, int, str]] = [
+        (label_spans[0][0], label_spans[0][1], "[" + ",".join(_quote_label(label) for label in kept) + "]")
+    ]
+    replaced_data = False
+    for key in ("data", "backgroundColor", "borderColor", "hoverBackgroundColor"):
+        for start, end, body in _array_spans(source, key):
+            if key == "data":
+                tokens = _number_tokens(body)
+            else:
+                tokens = _quoted_items(body)
+            if len(tokens) != len(labels):
+                continue
+            picked = [tokens[index] for index in chosen]
+            if key == "data":
+                rendered = "[" + ",".join(picked) + "]"
+                replaced_data = True
+            else:
+                rendered = "[" + ",".join(_quote_label(token) for token in picked) + "]"
+            pieces.append((start, end, rendered))
+    if not replaced_data:
+        raise ChartEditError("Не разобрал числа графика, подписи не трогаю.")
+    pieces.sort(key=lambda item: item[0], reverse=True)
+    out = source
+    for start, end, rendered in pieces:
+        out = out[:start] + rendered + out[end:]
+    return out, kept, missing
+
+
 class ChartNumberChange(ChartEditError):
     """Style rewrite changed data numbers. Nothing was written."""
 

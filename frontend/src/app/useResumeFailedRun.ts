@@ -23,6 +23,7 @@ import {
   RunFailedError,
 } from "../domain/runHelpers";
 import type { Msg, RunResult } from "../domain/liberTypes";
+import { shouldKeepInHistory } from "../domain/reportHistory";
 
 type Args = {
   busy: boolean;
@@ -281,13 +282,13 @@ async (botMsgId: string, runId: string) => {
     }
     try {
       setChatTitle(reportTitle(result));
+      if (shouldKeepInHistory(result)) rememberRun(result);
       if (
         result.preview?.blocks?.length ||
         result.downloads?.pdf ||
         result.downloads?.pptx ||
         result.diagrams?.length
       ) {
-        rememberRun(result);
         setHasStoredReport(true);
       }
     } catch {

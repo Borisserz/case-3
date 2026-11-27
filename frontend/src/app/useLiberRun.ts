@@ -50,7 +50,11 @@ import {
   refreshSteps,
   reviseChatStaysText,
 } from "../domain/reviseRefresh";
-import { saveUserTurn, uploadedPhotoThumbs } from "../domain/reportHistory";
+import {
+  saveUserTurn,
+  shouldKeepInHistory,
+  uploadedPhotoThumbs,
+} from "../domain/reportHistory";
 import {
   attachSlidesPayload,
   needsSlidesHydrate,
@@ -1086,6 +1090,9 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
     }
     try {
       setChatTitle(reportTitle(result));
+      if (shouldKeepInHistory(result) || isPresentationOnly) {
+        rememberRun(result);
+      }
       if (
         result.preview?.blocks?.length ||
         result.downloads?.pdf ||
@@ -1093,7 +1100,6 @@ async (override?: string, quiet?: { sourceText: string; outputMode: "chat"; titl
         (result.diagrams && result.diagrams.length > 0) ||
         isPresentationOnly
       ) {
-        rememberRun(result);
         setHasStoredReport(true);
       }
     } catch {

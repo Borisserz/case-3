@@ -655,6 +655,51 @@ def parse_row_add(text: str | None) -> tuple[int, tuple[str, ...]] | None:
     return _slot_index(raw, "таблиц"), cells
 
 
+_CHART_KEEP = re.compile(
+    r"(?:оставь|оставить|покажи|выведи)\s+только\s+(.+)$",
+    re.IGNORECASE,
+)
+_CHART_DROP = re.compile(
+    r"(?:убери|убрать|удали|удалить)\s+(.+)$",
+    re.IGNORECASE,
+)
+_NOT_CHART_FILTER = re.compile(
+    r"слайд|таблиц|раздел|абзац|фото|схем|пункт|спис|легенд|подпис",
+    re.IGNORECASE,
+)
+_CHART_FILTER_NOISE = re.compile(
+    r"\b(?:на|из|в)\s+график\w*\b|\bграфик\w*\b|\bобласт\w*\b|\bрегион\w*\b|\bгород\w*\b",
+    re.IGNORECASE,
+)
+
+
+def parse_chart_categories(text: str | None) -> tuple[str, tuple[str, ...]] | None:
+    """«Оставь только Витебск и Брест» → ('keep', ('Витебск', 'Брест')).
+
+    None when the line is about a slide, a table, or a chart style, not categories.
+    """
+    raw = _norm(text or "").strip().rstrip(".!")
+    if not raw or _NOT_CHART_FILTER.search(raw):
+        return None
+    keep = _CHART_KEEP.search(raw)
+    drop = None if keep else _CHART_DROP.search(raw)
+    if not keep and not drop:
+        return None
+    body = (keep or drop).group(1)
+    body = _CHART_FILTER_NOISE.sub(" ", body)
+    names: list[str] = []
+    for part in re.split(r"\s*,\s*|\s+и\s+|\s*;\s*", body):
+        name = part.strip(" .«»\"'")
+        if len(name) < 4:
+            continue
+        if re.fullmatch(r"итог\w*|тип\w*|цвет\w*|столб\w*|лини\w*", name, re.IGNORECASE):
+            continue
+        names.append(name)
+    if not names:
+        return None
+    return ("keep" if keep else "drop", tuple(names))
+
+
 def parse_row_delete(text: str | None) -> tuple[int, str] | None:
     """«Убери из таблицы строку Гомель» → (slot, label)."""
     raw = _norm(text or "").strip()
@@ -1670,6 +1715,8 @@ def _chart_style_act(raw: str, *, question: bool, has_chart: bool) -> ChatAct | 
     """A wording change of an open chart. Type changes stay on the retype path."""
     if question or not has_chart or explicit_new_artifact(raw):
         return None
+    if parse_chart_categories(raw):
+        return None
     if chart_type_named(raw) or not re.search(r"график", raw, re.IGNORECASE):
         return None
     if not _CHART_STYLE.search(raw):
@@ -2489,6 +2536,20 @@ def resolve_act(
             chart=chart,
             say=f"Меняю графики на {CHART_SAY[chart]}. Числа те же.",
         )
+
+    if has_chart and not question and not _explicit_new_artifact(raw):
+        picked = parse_chart_categories(raw)
+        if picked:
+            mode, names = picked
+            shown = " и ".join(names)
+            verb = "оставляю только" if mode == "keep" else "убираю"
+            return ChatAct(
+                kind="revise",
+                op="filter_chart",
+                brief=mode,
+                items=names,
+                say=f"Меняю график: {verb} {shown}.",
+            )
 
     kept = parse_slide_keep(raw) if not question else (0, "")
     if kept[0]:

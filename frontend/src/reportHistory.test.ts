@@ -14,6 +14,7 @@ import {
   pushHistory,
   removeHistory,
   saveUserTurn,
+  shouldKeepInHistory,
   syncServerHistory,
   togglePinHistory,
   uploadedPhotoThumbs,
@@ -228,6 +229,25 @@ describe("reportHistory folders + pin", () => {
     const netFail = await syncServerHistory([item], []);
     assert.equal(netFail.ok, false);
     if (!netFail.ok) assert.match(netFail.error, /offline/);
+  });
+
+  it("keeps a chat answer in history without a file", () => {
+    assert.equal(
+      shouldKeepInHistory({
+        run_id: "source_chat",
+        output_mode: "chat",
+        chat_summary: "Привет",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldKeepInHistory({
+        run_id: "source_empty",
+        output_mode: "report",
+      }),
+      false,
+    );
+    assert.equal(shouldKeepInHistory({ output_mode: "chat" }), false);
   });
 
   it("pushHistory keeps one row for a continued chat", () => {

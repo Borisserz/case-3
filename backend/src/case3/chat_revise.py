@@ -137,6 +137,7 @@ def _surface(act: Any) -> str:
         "retype_charts",
         "retype_chart",
         "restyle_chart",
+        "filter_chart",
         "undo",
         "redo",
         "retitle",
@@ -597,6 +598,8 @@ def try_chat_revise(
         "recolor_charts",
         "recolor_hue",
         "fade_chart",
+        "filter_chart",
+        "restyle_chart",
     }:
         for run_id, path, row in reversed(rows):
             if _has_chart(row, path):
@@ -645,7 +648,15 @@ def try_chat_revise(
             work_id, work_dir = carried_id, carried_path
         elif act.op in deck_ops and not _flags(_read(work_dir))[0] and _flags(carried_meta)[0]:
             work_id, work_dir = carried_id, carried_path
-        elif act.op in {"retype_charts", "retype_chart", "recolor_charts", "recolor_hue", "fade_chart"}:
+        elif act.op in {
+            "retype_charts",
+            "retype_chart",
+            "recolor_charts",
+            "recolor_hue",
+            "fade_chart",
+            "filter_chart",
+            "restyle_chart",
+        }:
             has_here = _has_chart(_read(work_dir), work_dir)
             has_carried = _has_chart(carried_meta, carried_path)
             if not has_here and has_carried:
@@ -686,6 +697,8 @@ def try_chat_revise(
         say = _retype_on_slide(work_dir, act.chart, act.slide) or say
     elif act.op == "restyle_chart":
         say = _restyle_charts(work_dir, text) or say
+    elif act.op == "filter_chart" and act.items:
+        say = _filter_charts(work_dir, text, act.items, act.brief or "keep") or say
     elif act.op == "rename_heading" and act.section and act.title:
         say = _rename_heading(work_dir, act.section, act.title) or say
     elif act.op == "slide_text" and act.slide and act.title:
@@ -756,6 +769,7 @@ def try_chat_revise(
         "recolor_hue",
         "fade_chart",
         "restyle_chart",
+        "filter_chart",
     } and _chart_edit_shown(say):
         if not any(work_dir.glob("*.tex")) and not _flags(work_meta)[0]:
             noted_surface = "chat"
@@ -1238,6 +1252,68 @@ def _retype_charts(out_dir: Path, chart_type: str) -> str:
         if not _type_landed(out_dir, chart_id, chart_type):
             return "Тип не сменился, картинка осталась прежней."
     return f"Меняю графики на {label}. Числа те же.{_pdf_note(out_dir)}"
+
+
+def _filter_charts(
+    out_dir: Path,
+    text: str,
+    names: tuple[str, ...],
+    mode: str,
+) -> str:
+    """Keep or drop chart categories. The numbers that stay are copied."""
+    from case3.chart_edit import ChartEditError, edit_chart_in_run, filter_chart_html
+
+    ids = _chart_ids(out_dir)
+    if not ids:
+        return "Графиков в этом материале нет."
+    formats = {"pdf", "docx"} if any(out_dir.glob("*.tex")) else set()
+    kept_labels: list[str] = []
+    missing: list[str] = []
+    last_error = ""
+    saw_html = False
+    for chart_id in ids:
+        html = _chart_html(out_dir, chart_id)
+        if not html.strip():
+            continue
+        saw_html = True
+        try:
+            new_html, kept, missed = filter_chart_html(html, names, mode=mode or "keep")
+        except ChartEditError as exc:
+            last_error = str(exc)
+            continue
+        for name in missed:
+            if name not in missing:
+                missing.append(name)
+        if new_html == html:
+            continue
+        try:
+            edit_chart_in_run(
+                out_dir,
+                chart_id,
+                style=text,
+                accepted_html=new_html,
+                formats=formats,
+            )
+        except ChartEditError as exc:
+            return _friendly_chart_edit_error(exc)
+        kept_labels = kept
+    if kept_labels:
+        shown = " и ".join(kept_labels)
+        if (mode or "keep") == "keep":
+            line = f"Меняю график: оставляю только {shown}."
+        else:
+            line = f"Меняю график: остаются {shown}."
+        if missing:
+            line += " Нет на графике: " + ", ".join(missing) + "."
+        return f"{line} Числа те же.{_pdf_note(out_dir)}"
+    if last_error:
+        return last_error
+    if not saw_html:
+        return "Графиков в этом материале нет."
+    shown = " и ".join(names)
+    if (mode or "keep") == "keep":
+        return f"На графике уже только {shown}."
+    return "Этих подписей на графике нет, картинка осталась прежней."
 
 
 def _restyle_charts(out_dir: Path, text: str) -> str:
