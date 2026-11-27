@@ -168,10 +168,6 @@
   min-height: 240px;
 }
 
-.diagram-pane.is-premium .diagram-zoom-hint {
-  opacity: 0.72;
-}
-
 .diagram-metrics {
   margin: 0.15rem 0 0.55rem;
   padding: 0.55rem 0.65rem 0.6rem;
@@ -974,13 +970,6 @@
   border-color: color-mix(in srgb, var(--ink) 22%, var(--border));
   background: #fff;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 6%, transparent);
-}
-
-.diagram-zoom-hint {
-  font-size: 0.72rem;
-  color: var(--muted);
-  font-family: var(--font);
-  margin-left: 0.25rem;
 }
 
 .diagram-zoom-viewport {

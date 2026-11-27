@@ -245,12 +245,6 @@ export function DiagramZoomView({
         >
           +
         </button>
-        <span
-          className="diagram-zoom-hint"
-          title="Ctrl+колёсико · перетаскивание при zoom"
-        >
-          ⌘/Ctrl + scroll
-        </span>
       </div>
       <div
         ref={viewportRef}

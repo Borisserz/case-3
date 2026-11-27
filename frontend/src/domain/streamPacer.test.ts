@@ -273,7 +273,7 @@ describe("streamPacer", () => {
     assert.equal(pacer.getVisible(), "Быстрый текст!");
   });
 
-  it("reveals markdown table header+sep and each row whole without flashing partial pipes", async () => {
+  it("reveals a markdown table in one shot, without partial pipes or row-by-row growth", async () => {
     const clock = makeManualClock();
     const emitted: string[] = [];
     const pacer = createStreamPacer({
@@ -319,10 +319,21 @@ describe("streamPacer", () => {
     const withHeader = emitted.findIndex((s) => s.includes("| --- | --- | --- |"));
     const withRow1 = emitted.findIndex((s) => s.includes("| Минск | 184 520 | 180 000 |"));
     const withRow2 = emitted.findIndex((s) => s.includes("| Брест | 57 846 | 60 000 |"));
-    assert.ok(withHeader >= 0 && withRow1 > withHeader && withRow2 > withRow1);
+    assert.ok(withHeader >= 0);
+    assert.equal(withHeader, withRow1);
+    assert.equal(withRow1, withRow2);
+    const introOnly = emitted.findIndex(
+      (s) => s.includes("Вводная строка.") && !s.includes("| Область"),
+    );
+    assert.ok(introOnly >= 0 && introOnly < withHeader);
+    assert.ok(
+      emitted
+        .filter((s) => s.includes("| Область"))
+        .every((s) => s.includes("| Минск |") && s.includes("| Брест |")),
+    );
   });
 
-  it("holds incomplete SSE table row until complete line arrives, then reveals whole row", () => {
+  it("holds an open table until it closes, then reveals every row at once", () => {
     const clock = makeManualClock();
     const emitted: string[] = [];
     const pacer = createStreamPacer({
@@ -337,15 +348,28 @@ describe("streamPacer", () => {
     for (let i = 0; i < 20; i += 1) {
       clock.step(30);
     }
-    assert.equal(pacer.getVisible(), "Данные:\n\n| Регион | Факт |\n| --- | --- |\n");
+    assert.equal(pacer.getVisible(), "Данные:\n\n");
 
     pacer.pushTarget("Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n");
     for (let i = 0; i < 10; i += 1) {
       clock.step(30);
     }
+    assert.equal(pacer.getVisible(), "Данные:\n\n");
+
+    const closed =
+      "Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n| Брест | 57 846 |\n\nИтог.";
+    const beforeClose = emitted.length;
+    pacer.pushTarget(closed);
+    for (let i = 0; i < 8; i += 1) {
+      clock.step(30);
+    }
+    const revealed = emitted.slice(beforeClose).find((s) => s.includes("| Регион |"));
+    assert.ok(revealed, "table never appeared");
+    assert.ok(revealed.includes("| Минск | 184 520 |"));
+    assert.ok(revealed.includes("| Брест | 57 846 |"));
     assert.equal(
-      pacer.getVisible(),
-      "Данные:\n\n| Регион | Факт |\n| --- | --- |\n| Минск | 184 520 |\n",
+      emitted.some((s) => s.includes("| Регион |") && !s.includes("| Брест |")),
+      false,
     );
     assert.equal(emitted.some((s) => s.endsWith("| Минск | 184")), false);
     pacer.stop();
