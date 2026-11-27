@@ -70,7 +70,7 @@ docker compose up -d --build
 - **Swagger Stimulsoft:** http://127.0.0.1:8040/docs
 - **Проверка:** `curl -s http://127.0.0.1:5173/api/health`
 
-Внутри сети контейнеров API зовёт `http://stimulsoft:8040`. Браузер открывает дашборд по `DASHBOARD_PUBLIC_URL` (по умолчанию `http://127.0.0.1:8040`). Postgres остаётся на хосте: контейнер Stimulsoft ходит в `host.docker.internal`.
+Внутри сети контейнеров API зовёт `http://stimulsoft:8040`. Браузер открывает дашборд по `DASHBOARD_PUBLIC_URL` (по умолчанию `http://127.0.0.1:8040`). Postgres на удалённом ПК: адрес в `stimulsoft/.env`, переменная `POSTGRES_HOST`.
 
 Отдельный образ `case-3:tex`, если рендер нужен снаружи backend-контейнера:
 

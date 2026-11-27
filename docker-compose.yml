@@ -15,8 +15,7 @@ services:
       VIEWER_HOST: 0.0.0.0
       VIEWER_PORT: ${VIEWER_PORT:-8040}
       VIEWER_OPEN: "0"
-      # База остаётся на хосте. 127.0.0.1 внутри контейнера — это сам контейнер.
-      POSTGRES_HOST: host.docker.internal
+      # Адрес базы берётся из stimulsoft/.env (удалённый ПК). Не подменять на host.docker.internal.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
